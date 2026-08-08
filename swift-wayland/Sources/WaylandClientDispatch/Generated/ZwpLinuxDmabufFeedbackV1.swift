@@ -30,7 +30,7 @@ package protocol ZwpLinuxDmabufFeedbackV1Events: AnyObject {
     func trancheFlags(_ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>, flags: ZwpLinuxDmabufFeedbackV1TrancheFlags)
 }
 package extension ZwpLinuxDmabufFeedbackV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_linux_dmabuf_feedback_v1_events())
         unsafe p.pointee.done = done_impl
@@ -45,7 +45,7 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxDmabufFeedbackV1Events? {
         context.owner as? any ZwpLinuxDmabufFeedbackV1Events
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -53,14 +53,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy))
     }
-    private static let formatTable_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, UInt32) -> Void = { data, proxy, fd, size in
+    private static let formatTable_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, UInt32) -> Void = { data, proxy, fd, size in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -68,14 +63,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.formatTable(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy), fd: WaylandClientOwnedFileDescriptor(fd), size: size)
-        }
+        unsafe h.formatTable(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy), fd: WaylandClientOwnedFileDescriptor(fd), size: size)
     }
-    private static let mainDevice_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
+    private static let mainDevice_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -83,15 +73,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_device = unsafe device
-        MainActor.assumeIsolated {
-            unsafe eventHandler.mainDevice(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy), device: WaylandClientArrayView(_event_device!))
-        }
+        unsafe h.mainDevice(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy), device: WaylandClientArrayView(device!))
     }
-    private static let trancheDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let trancheDone_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -99,14 +83,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.trancheDone(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy))
-        }
+        unsafe h.trancheDone(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy))
     }
-    private static let trancheTargetDevice_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
+    private static let trancheTargetDevice_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -114,15 +93,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_device = unsafe device
-        MainActor.assumeIsolated {
-            unsafe eventHandler.trancheTargetDevice(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy), device: WaylandClientArrayView(_event_device!))
-        }
+        unsafe h.trancheTargetDevice(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy), device: WaylandClientArrayView(device!))
     }
-    private static let trancheFormats_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, indices in
+    private static let trancheFormats_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, indices in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -130,15 +103,9 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_indices = unsafe indices
-        MainActor.assumeIsolated {
-            unsafe eventHandler.trancheFormats(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy), indices: WaylandClientArrayView(_event_indices!))
-        }
+        unsafe h.trancheFormats(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy), indices: WaylandClientArrayView(indices!))
     }
-    private static let trancheFlags_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in
+    private static let trancheFlags_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -146,12 +113,7 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.trancheFlags(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(eventProxy), flags: ZwpLinuxDmabufFeedbackV1TrancheFlags(rawValue: flags))
-        }
+        unsafe h.trancheFlags(WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>(proxy), flags: ZwpLinuxDmabufFeedbackV1TrancheFlags(rawValue: flags))
     }
 }
 package extension WaylandProxy where Interface == ZwpLinuxDmabufFeedbackV1Client {

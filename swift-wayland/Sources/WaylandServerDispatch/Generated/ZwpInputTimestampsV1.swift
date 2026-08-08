@@ -12,15 +12,14 @@ package extension ZwpInputTimestampsV1Requests {
     }
 }
 package enum ZwpInputTimestampsV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpInputTimestampsV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_input_timestamps_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_input_timestamps_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_input_timestamps_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_input_timestamps_v1_requests(
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_timestamps_v1(),
@@ -28,22 +27,18 @@ package enum ZwpInputTimestampsV1Server: WaylandServerInterface {
     package static func sendTimestamp(_ target: UnsafeMutablePointer<wl_resource>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32) {
         unsafe zwp_input_timestamps_v1_send_timestamp(target, tv_sec_hi, tv_sec_lo, tv_nsec)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputTimestampsV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputTimestampsV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputTimestampsV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpInputTimestampsV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpInputTimestampsV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpInputTimestampsV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -67,7 +62,9 @@ package extension WlNewId where Interface == ZwpInputTimestampsV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpInputTimestampsV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any ZwpInputTimestampsV1Requests
+            }, installed: installed)
     }
 }
 package extension ZwpInputTimestampsV1Server {
@@ -78,12 +75,14 @@ package extension ZwpInputTimestampsV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpInputTimestampsV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputTimestampsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any ZwpInputTimestampsV1Requests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -97,10 +96,12 @@ package extension ZwpInputTimestampsV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpInputTimestampsV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputTimestampsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any ZwpInputTimestampsV1Requests
+            },
             installed: installed)
     }
 }

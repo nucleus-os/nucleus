@@ -4,10 +4,16 @@
 package import WaylandServerC
 package import WaylandServer
 package enum ZwpLinuxBufferReleaseV1Server: WaylandServerInterface {
+    package typealias Requests = AnyObject
     package nonisolated static let maximumVersion: Int32 = 1
+    nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
+        let vtable = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: 0)
+        return UnsafeRawPointer(vtable)
+    }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_buffer_release_v1(),
-        nativeRequestVtable: nil)
+        nativeRequestVtable: nativeRequestVtable)
     package static func sendFencedRelease(_ target: UnsafeMutablePointer<wl_resource>, fence: Int32) {
         unsafe zwp_linux_buffer_release_v1_send_fenced_release(target, fence)
     }
@@ -41,7 +47,9 @@ package extension WlNewId where Interface == ZwpLinuxBufferReleaseV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpLinuxBufferReleaseV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpLinuxBufferReleaseV1Server {
@@ -52,12 +60,14 @@ package extension ZwpLinuxBufferReleaseV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpLinuxBufferReleaseV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxBufferReleaseV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -71,10 +81,12 @@ package extension ZwpLinuxBufferReleaseV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpLinuxBufferReleaseV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxBufferReleaseV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

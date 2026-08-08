@@ -62,7 +62,10 @@ package struct WaylandBorrowedObject<
     package func owner<Owner: AnyObject>(
         as _: Owner.Type
     ) -> Owner? {
-        unsafe WaylandResource.owner(of: resource, as: Owner.self)
+        unsafe WaylandResource.owner(
+            of: resource,
+            interface: Interface.self,
+            as: Owner.self)
     }
 
     package var version: Int32 {

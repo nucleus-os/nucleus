@@ -43,7 +43,7 @@ package protocol ExtSessionLockV1Events: AnyObject {
     func finished(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>)
 }
 package extension ExtSessionLockV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_session_lock_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_session_lock_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_session_lock_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_session_lock_v1_events())
         unsafe p.pointee.locked = locked_impl
@@ -53,7 +53,7 @@ package extension ExtSessionLockV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtSessionLockV1Events? {
         context.owner as? any ExtSessionLockV1Events
     }
-    private static let locked_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let locked_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -61,14 +61,9 @@ package extension ExtSessionLockV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.locked(WaylandBorrowedProxy<ExtSessionLockV1Client>(eventProxy))
-        }
+        unsafe h.locked(WaylandBorrowedProxy<ExtSessionLockV1Client>(proxy))
     }
-    private static let finished_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let finished_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -76,12 +71,7 @@ package extension ExtSessionLockV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.finished(WaylandBorrowedProxy<ExtSessionLockV1Client>(eventProxy))
-        }
+        unsafe h.finished(WaylandBorrowedProxy<ExtSessionLockV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ExtSessionLockV1Client {

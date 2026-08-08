@@ -25,28 +25,27 @@ package extension ZwpInputMethodContextV1Requests {
     }
 }
 package enum ZwpInputMethodContextV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpInputMethodContextV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_input_method_context_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_input_method_context_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_input_method_context_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.commit_string = commitString_impl
-        unsafe vt.pointee.preedit_string = preeditString_impl
-        unsafe vt.pointee.preedit_styling = preeditStyling_impl
-        unsafe vt.pointee.preedit_cursor = preeditCursor_impl
-        unsafe vt.pointee.delete_surrounding_text = deleteSurroundingText_impl
-        unsafe vt.pointee.cursor_position = cursorPosition_impl
-        unsafe vt.pointee.modifiers_map = modifiersMap_impl
-        unsafe vt.pointee.keysym = keysym_impl
-        unsafe vt.pointee.grab_keyboard = grabKeyboard_impl
-        unsafe vt.pointee.key = key_impl
-        unsafe vt.pointee.modifiers = modifiers_impl
-        unsafe vt.pointee.language = language_impl
-        unsafe vt.pointee.text_direction = textDirection_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_input_method_context_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_input_method_context_v1_requests(
+            destroy: destroy_impl,
+            commit_string: commitString_impl,
+            preedit_string: preeditString_impl,
+            preedit_styling: preeditStyling_impl,
+            preedit_cursor: preeditCursor_impl,
+            delete_surrounding_text: deleteSurroundingText_impl,
+            cursor_position: cursorPosition_impl,
+            modifiers_map: modifiersMap_impl,
+            keysym: keysym_impl,
+            grab_keyboard: grabKeyboard_impl,
+            key: key_impl,
+            modifiers: modifiers_impl,
+            language: language_impl,
+            text_direction: textDirection_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_method_context_v1(),
@@ -69,161 +68,99 @@ package enum ZwpInputMethodContextV1Server: WaylandServerInterface {
     package static func sendPreferredLanguage(_ target: UnsafeMutablePointer<wl_resource>, language: UnsafePointer<CChar>?) {
         unsafe zwp_input_method_context_v1_send_preferred_language(target, language)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputMethodContextV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputMethodContextV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputMethodContextV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpInputMethodContextV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpInputMethodContextV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let commitString_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, text in
+    private static let commitString_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, text in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_text = unsafe text
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commitString(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, text: unsafe String(cString: _request_text!))
-        }
+        unsafe h.commitString(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, text: unsafe String(cString: text!))
     }
-    private static let preeditString_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void = { _, res, serial, text, commit in
+    private static let preeditString_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void = { _, res, serial, text, commit in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_text = unsafe text
-        nonisolated(unsafe) let _request_commit = unsafe commit
-        MainActor.assumeIsolated {
-            unsafe requestHandler.preeditString(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, text: unsafe String(cString: _request_text!), commit: unsafe String(cString: _request_commit!))
-        }
+        unsafe h.preeditString(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, text: unsafe String(cString: text!), commit: unsafe String(cString: commit!))
     }
-    private static let preeditStyling_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32) -> Void = { _, res, index, length, style in
+    private static let preeditStyling_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32) -> Void = { _, res, index, length, style in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.preeditStyling(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), index: index, length: length, style: style)
-        }
+        unsafe h.preeditStyling(WaylandRequest<ZwpInputMethodContextV1Server>(res), index: index, length: length, style: style)
     }
-    private static let preeditCursor_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, index in
+    private static let preeditCursor_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, index in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.preeditCursor(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), index: index)
-        }
+        unsafe h.preeditCursor(WaylandRequest<ZwpInputMethodContextV1Server>(res), index: index)
     }
-    private static let deleteSurroundingText_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32) -> Void = { _, res, index, length in
+    private static let deleteSurroundingText_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32) -> Void = { _, res, index, length in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.deleteSurroundingText(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), index: index, length: length)
-        }
+        unsafe h.deleteSurroundingText(WaylandRequest<ZwpInputMethodContextV1Server>(res), index: index, length: length)
     }
-    private static let cursorPosition_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, index, anchor in
+    private static let cursorPosition_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, index, anchor in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.cursorPosition(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), index: index, anchor: anchor)
-        }
+        unsafe h.cursorPosition(WaylandRequest<ZwpInputMethodContextV1Server>(res), index: index, anchor: anchor)
     }
-    private static let modifiersMap_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_array>?) -> Void = { _, res, map in
+    private static let modifiersMap_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_array>?) -> Void = { _, res, map in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_map = unsafe map
-        MainActor.assumeIsolated {
-            unsafe requestHandler.modifiersMap(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), map: WaylandArrayView(_request_map!))
-        }
+        unsafe h.modifiersMap(WaylandRequest<ZwpInputMethodContextV1Server>(res), map: WaylandArrayView(map!))
     }
-    private static let keysym_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, sym, state, modifiers in
+    private static let keysym_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, sym, state, modifiers in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.keysym(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, time: time, sym: sym, state: state, modifiers: modifiers)
-        }
+        unsafe h.keysym(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, time: time, sym: sym, state: state, modifiers: modifiers)
     }
-    private static let grabKeyboard_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, keyboard in
+    private static let grabKeyboard_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, keyboard in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.grabKeyboard(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), keyboard: WlNewId<WlKeyboardServer>(client: requestClient, id: keyboard, version: Swift::min(wl_resource_get_version(requestResource), Int32(10))))
-        }
+        unsafe h.grabKeyboard(WaylandRequest<ZwpInputMethodContextV1Server>(res), keyboard: WlNewId<WlKeyboardServer>(client: client, id: keyboard, version: Swift::min(wl_resource_get_version(res), Int32(10))))
     }
-    private static let key_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, key, state in
+    private static let key_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, key, state in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.key(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, time: time, key: key, state: state)
-        }
+        unsafe h.key(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, time: time, key: key, state: state)
     }
-    private static let modifiers_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, mods_depressed, mods_latched, mods_locked, group in
+    private static let modifiers_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, mods_depressed, mods_latched, mods_locked, group in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.modifiers(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, mods_depressed: mods_depressed, mods_latched: mods_latched, mods_locked: mods_locked, group: group)
-        }
+        unsafe h.modifiers(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, mods_depressed: mods_depressed, mods_latched: mods_latched, mods_locked: mods_locked, group: group)
     }
-    private static let language_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, language in
+    private static let language_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, language in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_language = unsafe language
-        MainActor.assumeIsolated {
-            unsafe requestHandler.language(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, language: unsafe String(cString: _request_language!))
-        }
+        unsafe h.language(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, language: unsafe String(cString: language!))
     }
-    private static let textDirection_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, serial, direction in
+    private static let textDirection_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, serial, direction in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.textDirection(WaylandRequest<ZwpInputMethodContextV1Server>(requestResource), serial: serial, direction: direction)
-        }
+        unsafe h.textDirection(WaylandRequest<ZwpInputMethodContextV1Server>(res), serial: serial, direction: direction)
     }
 }
 package extension WaylandResourceHandle where Interface == ZwpInputMethodContextV1Server {
@@ -288,7 +225,9 @@ package extension WlNewId where Interface == ZwpInputMethodContextV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpInputMethodContextV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpInputMethodContextV1Server {
@@ -299,12 +238,14 @@ package extension ZwpInputMethodContextV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpInputMethodContextV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputMethodContextV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -318,10 +259,12 @@ package extension ZwpInputMethodContextV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpInputMethodContextV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputMethodContextV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

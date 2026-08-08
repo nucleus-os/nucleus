@@ -8,36 +8,29 @@ package import WaylandProtocolTypes
     func getShellSurface(_ request: WaylandRequest<WlShellServer>, id: WlNewId<WlShellSurfaceServer>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
 package enum WlShellServer: WaylandServerInterface {
+    package typealias Requests = any WlShellRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_shell_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_shell_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_shell_requests.self, capacity: 1)
-        unsafe vt.pointee.get_shell_surface = getShellSurface_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_shell_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_shell_requests(
+            get_shell_surface: getShellSurface_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shell(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShellRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShellRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlShellRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlShellServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let getShellSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getShellSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getShellSurface(WaylandRequest<WlShellServer>(requestResource), id: WlNewId<WlShellSurfaceServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getShellSurface(WaylandRequest<WlShellServer>(res), id: WlNewId<WlShellSurfaceServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
 }
 package extension WaylandRequest where Interface == WlShellServer {
@@ -59,7 +52,9 @@ package extension WlNewId where Interface == WlShellServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlShellServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlShellServer {
@@ -70,12 +65,14 @@ package extension WlShellServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlShellServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShellServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -89,10 +86,12 @@ package extension WlShellServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlShellServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShellServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

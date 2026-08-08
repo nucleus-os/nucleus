@@ -68,7 +68,7 @@ package protocol WlDataOfferEvents: AnyObject {
     func action(_ proxy: WaylandBorrowedProxy<WlDataOfferClient>, dnd_action: WlDataDeviceManagerDndAction)
 }
 package extension WlDataOfferClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_data_offer_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_data_offer_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_data_offer_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_data_offer_events())
         unsafe p.pointee.offer = offer_impl
@@ -79,7 +79,7 @@ package extension WlDataOfferClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlDataOfferEvents? {
         context.owner as? any WlDataOfferEvents
     }
-    private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
+    private static let offer_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -87,15 +87,9 @@ package extension WlDataOfferClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.offer(WaylandBorrowedProxy<WlDataOfferClient>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
-        }
+        unsafe h.offer(WaylandBorrowedProxy<WlDataOfferClient>(proxy), mime_type: unsafe String(cString: mime_type!))
     }
-    private static let sourceActions_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, source_actions in
+    private static let sourceActions_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, source_actions in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -103,14 +97,9 @@ package extension WlDataOfferClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.sourceActions(WaylandBorrowedProxy<WlDataOfferClient>(eventProxy), source_actions: WlDataDeviceManagerDndAction(rawValue: source_actions))
-        }
+        unsafe h.sourceActions(WaylandBorrowedProxy<WlDataOfferClient>(proxy), source_actions: WlDataDeviceManagerDndAction(rawValue: source_actions))
     }
-    private static let action_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, dnd_action in
+    private static let action_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, dnd_action in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -118,12 +107,7 @@ package extension WlDataOfferClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.action(WaylandBorrowedProxy<WlDataOfferClient>(eventProxy), dnd_action: WlDataDeviceManagerDndAction(rawValue: dnd_action))
-        }
+        unsafe h.action(WaylandBorrowedProxy<WlDataOfferClient>(proxy), dnd_action: WlDataDeviceManagerDndAction(rawValue: dnd_action))
     }
 }
 package extension WaylandProxy where Interface == WlDataOfferClient {

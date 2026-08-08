@@ -8,7 +8,7 @@ cast, no isolation laundering, and no global-table lookup. Resource identity is 
 `wl_resource_instance_of` against the interface's own request vtable, so the runtime holds no
 side table keyed by resource address.
 
-Status: active
+Status: complete
 
 ## Why
 
@@ -45,9 +45,10 @@ The design rests on four facts, each confirmed against the Swift 6.4 toolchain i
   `assumeIsolated` wrapper are required.
 - Assigning an isolated thunk into a plain C function-pointer field is rejected:
   *"converting function value ... loses global actor 'MainActor'"*.
-- `__attribute__((swift_attr("@MainActor")))` on the C function-pointer field makes that
-  assignment legal, and a non-isolated thunk still assigns to an annotated field. Annotating the C
-  surface is therefore non-breaking on its own, which is what lets phase 1 stand alone.
+- `__attribute__((swift_attr("@MainActor")))` in the C function-pointer type declarator imports the
+  callback as `@MainActor @Sendable @convention(c)`. A field-level attribute isolates field access
+  but does not isolate the callback type, while an attributed typedef triggers a Swift 6.4 Clang
+  importer assertion because the attributed alias differs from its underlying function type.
 
 `wl_resource_instance_of` is declared at `wayland-server-core.h:617`. `WaylandServerInterface` is
 used only as a generic constraint — there are no `any WaylandServerInterface` existentials — so it
@@ -60,10 +61,10 @@ Status: complete
 `WaylandServerC.h` (655 lines) and `WaylandClientC.h` (5,106 lines) are both emitted by
 `SwiftWaylandGen`, so this is a generator change, not a hand-edit.
 
-Emit a `NUCLEUS_WL_MAIN_ACTOR` macro guarded on `__has_attribute(swift_attr)` and apply it to every
-function-pointer field of every `swift_wayland_<iface>_requests` struct. Emit first-party request
-structs for extension protocols as well as core Wayland; aliases to scanner-owned interface structs
-cannot carry the annotation required by phase 2.
+Emit a `NUCLEUS_WL_MAIN_ACTOR` macro guarded on `__has_attribute(swift_attr)` and place it in every
+callback field's function-pointer type declarator in every `swift_wayland_<iface>_requests` struct.
+Emit first-party request structs for extension protocols as well as core Wayland; aliases to
+scanner-owned interface structs cannot carry the annotation required by phase 2.
 
 The client side needs one structural addition. Client listeners currently install into
 `wl_<iface>_listener`, which is wayland-scanner's own type in libwayland's headers and cannot be
@@ -73,45 +74,49 @@ field-for-field in scanner declaration order with the annotation applied, and gu
 from `<iface>_add_listener` to a first-party façade over `wl_proxy_add_listener`, which takes
 `void (**)(void)` and is what the scanner inline does internally anyway.
 
-The generated Swift listener storage uses the mirror type and the new installation façade. Thunk
-isolation does not change in this phase; the existing non-isolated thunks continue to assign.
+The generated Swift listener storage uses the mirror type and the new installation façade. Its
+storage is `@MainActor` because the imported mirror initializer and callback fields are isolated.
 
 ## Phase 2 — Isolated server request trampolines
 
-Status: active
+Status: complete
 
-In the server emission path (`SwiftWaylandGenerator.swift:817-895`), emit each `<request>_impl` as
-`@MainActor @convention(c)`. Delete the `actorBoundaryBindingLines` helper
-(`SwiftWaylandGenerator.swift:644-663`) and every `MainActor.assumeIsolated` wrapper, calling the
-handler directly on the incoming parameters.
+In the server emission path, emit each `<request>_impl` as
+`@MainActor @Sendable @convention(c)`. Delete the `actorBoundaryBindingLines` helper and every
+`MainActor.assumeIsolated` wrapper, calling the handler directly on the incoming parameters.
 
 Vtable construction lands alongside. The current emission allocates raw bytes, zero-fills, and
 `bindMemory`s to the struct type. With the fields annotated, emit a typed
 `UnsafeMutablePointer<swift_wayland_<iface>_requests>.allocate(capacity: 1)` initialized with a
 fully populated struct value, which removes the raw-byte dance from all 184 dispatching interfaces.
 
-`ServerDispatchIsolationTests.swift:412` reaches into the vtable through `unsafeBitCast` to
-`swift_wayland_wl_surface_requests` and moves with this phase.
+The existing server isolation and loopback tests invoke the typed request tables and continue to
+exercise scalar, pointer, `new_id`, and destructor dispatch through the isolated trampolines.
 
 ## Phase 3 — Isolated client event trampolines
 
-Emit each client `<event>_impl` as `@MainActor @convention(c)` and install through the phase 1
-mirror structs. Drop the `isolatedArguments` laundering and the `assumeIsolated` wrapper from the
-client emission path (`SwiftWaylandGenerator.swift:1578-1656`).
+Status: complete
+
+Emit each client `<event>_impl` as `@MainActor @Sendable @convention(c)` and install through the
+phase 1 mirror structs. Drop the `isolatedArguments` laundering and the `assumeIsolated` wrapper
+from the client emission path.
 
 Together with phase 2 this retires all 530 `assumeIsolated` calls and all 1,559
 `nonisolated(unsafe)` bindings in generated code.
 
 ## Phase 4 — Typed handler box
 
+Status: complete
+
 `WaylandServerInterface` gains `associatedtype Requests`. Each generated `<Iface>Server` declares
 `typealias Requests = any <Iface>Requests`; the eight interfaces with no request protocol declare
 `AnyObject`.
 
 Add `WaylandDispatchBox<Interface: WaylandServerInterface>`, a `@MainActor final class` holding the
-owner and the handler resolved to `Interface.Requests`. It becomes the resource's `user_data` in
-place of the directly retained owner. The shared destroy callback releases it as `AnyObject`, which
-needs no knowledge of `Interface`.
+owner and the handler resolved to `Interface.Requests`. The stored handler is optional only for a
+destroy-only interface whose generated default implementation intentionally needs no policy
+object. The box becomes the resource's `user_data` in place of the directly retained owner. The
+shared destroy callback releases it as `AnyObject`, which needs no knowledge of `Interface`.
 
 `WaylandResource.create` (`WaylandResource.swift:190-207`) is the untyped overload and has two
 production callers — `WlNewId.swift:43` and `WaylandGlobalRegistration.swift:40` — plus 16 test
@@ -127,6 +132,8 @@ The per-interface `handler(_:)` helper (`SwiftWaylandGenerator.swift:808-815`) b
 existential casts leave the request path.
 
 ## Phase 5 — Retire the resource side table
+
+Status: complete
 
 Emit a request vtable for every interface, including the six event-only interfaces we create that
 currently have none — `wl_callback`, `wp_presentation_feedback`, `zwp_linux_buffer_release_v1`,
@@ -147,16 +154,19 @@ mutable resource state and its keying by an address the allocator may reuse.
 
 ## Phase 6 — Verification
 
-- `collider generate wayland` reproduces the committed generated tree with no diff beyond the
-  intended changes.
-- `collider build` over the workspace, and `collider test` for `WaylandServerTests`,
+Status: complete
+
+- `collider generate wayland` reproduces the generated tree deterministically. A forced second
+  generation produced the identical generated diff.
+- `collider build` passes over the workspace, and `collider test wayland` passes
+  `WaylandServerTests`,
   `WaylandClientTests`, `WaylandLoopbackTests`, `WaylandProtocolModelTests`,
   `SwiftWaylandGeneratorTests`, and `NucleusCompositorWaylandRuntimeTests`.
-- `ServerDispatchIsolationTests` extends to assert the new contract directly: a resource created
+- `ServerDispatchIsolationTests` asserts the new contract directly: a resource created
   with a non-conforming owner fails at creation, and an owner bound through the box receives
   requests without the runtime consulting any global table. These are runtime-behavior assertions,
   not declaration-shape assertions.
-- `WaylandResourceOwnershipTests` extends to cover identity rejection — a foreign resource, and a
+- `WaylandResourceOwnershipTests` covers identity rejection — a foreign resource, and a
   resource of a different interface, both resolve to `nil` through `owner(as:)`.
 
 ## Risk surface

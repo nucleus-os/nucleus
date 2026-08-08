@@ -13,50 +13,40 @@ package extension WlFixesRequests {
     }
 }
 package enum WlFixesServer: WaylandServerInterface {
+    package typealias Requests = any WlFixesRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_fixes_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_fixes_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_fixes_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.destroy_registry = destroyRegistry_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_fixes_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_fixes_requests(
+            destroy: destroy_impl,
+            destroy_registry: destroyRegistry_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_fixes(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlFixesRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlFixesRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlFixesRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlFixesServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlFixesServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlFixesServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let destroyRegistry_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, registry in
+    private static let destroyRegistry_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, registry in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_registry = unsafe registry
-        MainActor.assumeIsolated {
-            unsafe requestHandler.destroyRegistry(WaylandRequest<WlFixesServer>(requestResource), registry: WaylandBorrowedObject<WlRegistryServer>(_request_registry!))
-        }
+        unsafe h.destroyRegistry(WaylandRequest<WlFixesServer>(res), registry: WaylandBorrowedObject<WlRegistryServer>(registry!))
     }
 }
 package extension WlNewId where Interface == WlFixesServer {
@@ -67,7 +57,9 @@ package extension WlNewId where Interface == WlFixesServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlFixesServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlFixesServer {
@@ -78,12 +70,14 @@ package extension WlFixesServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlFixesServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlFixesServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -97,10 +91,12 @@ package extension WlFixesServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlFixesServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlFixesServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

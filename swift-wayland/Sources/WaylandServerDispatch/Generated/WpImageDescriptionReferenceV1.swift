@@ -12,35 +12,30 @@ package extension WpImageDescriptionReferenceV1Requests {
     }
 }
 package enum WpImageDescriptionReferenceV1Server: WaylandServerInterface {
+    package typealias Requests = any WpImageDescriptionReferenceV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_image_description_reference_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_image_description_reference_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_image_description_reference_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_image_description_reference_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_image_description_reference_v1_requests(
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_reference_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionReferenceV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionReferenceV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpImageDescriptionReferenceV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpImageDescriptionReferenceV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpImageDescriptionReferenceV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpImageDescriptionReferenceV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -54,7 +49,9 @@ package extension WlNewId where Interface == WpImageDescriptionReferenceV1Server
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpImageDescriptionReferenceV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any WpImageDescriptionReferenceV1Requests
+            }, installed: installed)
     }
 }
 package extension WpImageDescriptionReferenceV1Server {
@@ -65,12 +62,14 @@ package extension WpImageDescriptionReferenceV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpImageDescriptionReferenceV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionReferenceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any WpImageDescriptionReferenceV1Requests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -84,10 +83,12 @@ package extension WpImageDescriptionReferenceV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpImageDescriptionReferenceV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionReferenceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any WpImageDescriptionReferenceV1Requests
+            },
             installed: installed)
     }
 }

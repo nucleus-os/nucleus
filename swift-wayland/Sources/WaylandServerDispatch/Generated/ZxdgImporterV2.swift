@@ -13,51 +13,40 @@ package extension ZxdgImporterV2Requests {
     }
 }
 package enum ZxdgImporterV2Server: WaylandServerInterface {
+    package typealias Requests = any ZxdgImporterV2Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zxdg_importer_v2_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zxdg_importer_v2_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zxdg_importer_v2_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.import_toplevel = importToplevel_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zxdg_importer_v2_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zxdg_importer_v2_requests(
+            destroy: destroy_impl,
+            import_toplevel: importToplevel_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_importer_v2(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgImporterV2Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgImporterV2Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgImporterV2Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZxdgImporterV2Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZxdgImporterV2Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZxdgImporterV2Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let importToplevel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { client, res, id, handle in
+    private static let importToplevel_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { client, res, id, handle in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_handle = unsafe handle
-        MainActor.assumeIsolated {
-            unsafe requestHandler.importToplevel(WaylandRequest<ZxdgImporterV2Server>(requestResource), id: WlNewId<ZxdgImportedV2Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), handle: unsafe String(cString: _request_handle!))
-        }
+        unsafe h.importToplevel(WaylandRequest<ZxdgImporterV2Server>(res), id: WlNewId<ZxdgImportedV2Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), handle: unsafe String(cString: handle!))
     }
 }
 package extension WlNewId where Interface == ZxdgImporterV2Server {
@@ -68,7 +57,9 @@ package extension WlNewId where Interface == ZxdgImporterV2Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZxdgImporterV2Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZxdgImporterV2Server {
@@ -79,12 +70,14 @@ package extension ZxdgImporterV2Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZxdgImporterV2Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgImporterV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -98,10 +91,12 @@ package extension ZxdgImporterV2Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZxdgImporterV2Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgImporterV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

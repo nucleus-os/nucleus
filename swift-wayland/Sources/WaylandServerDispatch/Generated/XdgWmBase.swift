@@ -16,18 +16,17 @@ package extension XdgWmBaseRequests {
     }
 }
 package enum XdgWmBaseServer: WaylandServerInterface {
+    package typealias Requests = any XdgWmBaseRequests
     package nonisolated static let maximumVersion: Int32 = 7
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_xdg_wm_base_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_xdg_wm_base_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_xdg_wm_base_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.create_positioner = createPositioner_impl
-        unsafe vt.pointee.get_xdg_surface = getXdgSurface_impl
-        unsafe vt.pointee.pong = pong_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_xdg_wm_base_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_xdg_wm_base_requests(
+            destroy: destroy_impl,
+            create_positioner: createPositioner_impl,
+            get_xdg_surface: getXdgSurface_impl,
+            pong: pong_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_wm_base(),
@@ -35,58 +34,39 @@ package enum XdgWmBaseServer: WaylandServerInterface {
     package static func sendPing(_ target: UnsafeMutablePointer<wl_resource>, serial: UInt32) {
         unsafe xdg_wm_base_send_ping(target, serial)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgWmBaseRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgWmBaseRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgWmBaseRequests
+        return unsafe Unmanaged<WaylandDispatchBox<XdgWmBaseServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<XdgWmBaseServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<XdgWmBaseServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let createPositioner_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createPositioner_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createPositioner(WaylandRequest<XdgWmBaseServer>(requestResource), id: WlNewId<XdgPositionerServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(7))))
-        }
+        unsafe h.createPositioner(WaylandRequest<XdgWmBaseServer>(res), id: WlNewId<XdgPositionerServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7))))
     }
-    private static let getXdgSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getXdgSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getXdgSurface(WaylandRequest<XdgWmBaseServer>(requestResource), id: WlNewId<XdgSurfaceServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(7))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getXdgSurface(WaylandRequest<XdgWmBaseServer>(res), id: WlNewId<XdgSurfaceServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let pong_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
+    private static let pong_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.pong(WaylandRequest<XdgWmBaseServer>(requestResource), serial: serial)
-        }
+        unsafe h.pong(WaylandRequest<XdgWmBaseServer>(res), serial: serial)
     }
 }
 package extension WaylandResourceHandle where Interface == XdgWmBaseServer {
@@ -118,7 +98,9 @@ package extension WlNewId where Interface == XdgWmBaseServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: XdgWmBaseServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension XdgWmBaseServer {
@@ -129,12 +111,14 @@ package extension XdgWmBaseServer {
         installed: @escaping (Implementation, WaylandResourceHandle<XdgWmBaseServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgWmBaseServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -148,10 +132,12 @@ package extension XdgWmBaseServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<XdgWmBaseServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgWmBaseServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -4,10 +4,16 @@
 package import WaylandServerC
 package import WaylandServer
 package enum ZwpInputMethodV1Server: WaylandServerInterface {
+    package typealias Requests = AnyObject
     package nonisolated static let maximumVersion: Int32 = 1
+    nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
+        let vtable = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: 0)
+        return UnsafeRawPointer(vtable)
+    }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_method_v1(),
-        nativeRequestVtable: nil)
+        nativeRequestVtable: nativeRequestVtable)
     package static func sendActivate(_ target: UnsafeMutablePointer<wl_resource>, id: UnsafeMutablePointer<wl_resource>?) {
         unsafe zwp_input_method_v1_send_activate(target, id)
     }
@@ -40,6 +46,9 @@ package extension WaylandResourceHandle where Interface == ZwpInputMethodV1Serve
                 version ?? 1,
                 ZwpInputMethodContextV1Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendActivate(id: $0)
@@ -65,7 +74,9 @@ package extension WlNewId where Interface == ZwpInputMethodV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpInputMethodV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpInputMethodV1Server {
@@ -76,12 +87,14 @@ package extension ZwpInputMethodV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpInputMethodV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputMethodV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -95,10 +108,12 @@ package extension ZwpInputMethodV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpInputMethodV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputMethodV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

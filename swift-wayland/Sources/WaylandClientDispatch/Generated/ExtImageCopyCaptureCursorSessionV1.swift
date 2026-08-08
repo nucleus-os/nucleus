@@ -34,7 +34,7 @@ package protocol ExtImageCopyCaptureCursorSessionV1Events: AnyObject {
     func hotspot(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>, x: Int32, y: Int32)
 }
 package extension ExtImageCopyCaptureCursorSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_cursor_session_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_cursor_session_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_cursor_session_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_image_copy_capture_cursor_session_v1_events())
         unsafe p.pointee.enter = enter_impl
@@ -46,7 +46,7 @@ package extension ExtImageCopyCaptureCursorSessionV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtImageCopyCaptureCursorSessionV1Events? {
         context.owner as? any ExtImageCopyCaptureCursorSessionV1Events
     }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let enter_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -54,14 +54,9 @@ package extension ExtImageCopyCaptureCursorSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
-        }
+        unsafe h.enter(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(proxy))
     }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let leave_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -69,14 +64,9 @@ package extension ExtImageCopyCaptureCursorSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
-        }
+        unsafe h.leave(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(proxy))
     }
-    private static let position_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
+    private static let position_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -84,14 +74,9 @@ package extension ExtImageCopyCaptureCursorSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.position(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy), x: x, y: y)
-        }
+        unsafe h.position(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(proxy), x: x, y: y)
     }
-    private static let hotspot_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
+    private static let hotspot_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -99,12 +84,7 @@ package extension ExtImageCopyCaptureCursorSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.hotspot(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy), x: x, y: y)
-        }
+        unsafe h.hotspot(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(proxy), x: x, y: y)
     }
 }
 package extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessionV1Client {

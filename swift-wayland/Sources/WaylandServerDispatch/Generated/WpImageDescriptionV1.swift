@@ -14,16 +14,15 @@ package extension WpImageDescriptionV1Requests {
     }
 }
 package enum WpImageDescriptionV1Server: WaylandServerInterface {
+    package typealias Requests = any WpImageDescriptionV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_image_description_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_image_description_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_image_description_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.get_information = getInformation_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_image_description_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_image_description_v1_requests(
+            destroy: destroy_impl,
+            get_information: getInformation_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_v1(),
@@ -37,36 +36,27 @@ package enum WpImageDescriptionV1Server: WaylandServerInterface {
     package static func sendReady2(_ target: UnsafeMutablePointer<wl_resource>, identity_hi: UInt32, identity_lo: UInt32) {
         unsafe wp_image_description_v1_send_ready2(target, identity_hi, identity_lo)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpImageDescriptionV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpImageDescriptionV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpImageDescriptionV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpImageDescriptionV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let getInformation_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, information in
+    private static let getInformation_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, information in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getInformation(WaylandRequest<WpImageDescriptionV1Server>(requestResource), information: WlNewId<WpImageDescriptionInfoV1Server>(client: requestClient, id: information, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.getInformation(WaylandRequest<WpImageDescriptionV1Server>(res), information: WlNewId<WpImageDescriptionInfoV1Server>(client: client, id: information, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
 }
 package extension WaylandResourceHandle where Interface == WpImageDescriptionV1Server {
@@ -123,7 +113,9 @@ package extension WlNewId where Interface == WpImageDescriptionV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpImageDescriptionV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpImageDescriptionV1Server {
@@ -134,12 +126,14 @@ package extension WpImageDescriptionV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpImageDescriptionV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -153,10 +147,12 @@ package extension WpImageDescriptionV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpImageDescriptionV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

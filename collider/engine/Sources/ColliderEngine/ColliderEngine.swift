@@ -92,8 +92,8 @@ public struct ColliderEngine: Sendable {
             digestFile: planningInputs.digest(file:),
             digestTree: planningInputs.digest(tree:),
             digestSourceCheckout: planningInputs.digest(sourceCheckout:),
-            optionalSourceCheckoutDigest:
-                planningInputs.optionalSourceCheckoutDigest,
+            digestSourceCheckoutClosure:
+                planningInputs.digest(sourceCheckoutClosure:),
             semanticToolIdentity: planningInputs.semanticToolIdentity,
             taskState: state.lookup,
             validateOutputs: outputValidator.validate)

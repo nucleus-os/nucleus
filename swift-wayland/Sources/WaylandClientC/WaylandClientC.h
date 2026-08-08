@@ -5118,688 +5118,688 @@ static inline const struct wl_interface *swift_wayland_iface_zwp_xwayland_keyboa
 
 /* Event-listener vtables with Swift actor isolation. */
 struct swift_wayland_wl_display_events {
-    void (*error)(void *, struct wl_proxy *, struct wl_proxy *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*delete_id)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *error)(void *, struct wl_proxy *, struct wl_proxy *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *delete_id)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_display_events) == sizeof(struct wl_display_listener), "wl_display listener layout mismatch");
 struct swift_wayland_wl_registry_events {
-    void (*global)(void *, struct wl_proxy *, uint32_t, const char *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*global_remove)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *global)(void *, struct wl_proxy *, uint32_t, const char *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *global_remove)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_registry_events) == sizeof(struct wl_registry_listener), "wl_registry listener layout mismatch");
 struct swift_wayland_wl_callback_events {
-    void (*done)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_callback_events) == sizeof(struct wl_callback_listener), "wl_callback listener layout mismatch");
 struct swift_wayland_wl_shm_events {
-    void (*format)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *format)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_shm_events) == sizeof(struct wl_shm_listener), "wl_shm listener layout mismatch");
 struct swift_wayland_wl_buffer_events {
-    void (*release)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_buffer_events) == sizeof(struct wl_buffer_listener), "wl_buffer listener layout mismatch");
 struct swift_wayland_wl_data_offer_events {
-    void (*offer)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*source_actions)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*action)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *source_actions)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *action)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_data_offer_events) == sizeof(struct wl_data_offer_listener), "wl_data_offer listener layout mismatch");
 struct swift_wayland_wl_data_source_events {
-    void (*target)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*send)(void *, struct wl_proxy *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cancelled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*dnd_drop_performed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*dnd_finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*action)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *target)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *send)(void *, struct wl_proxy *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *cancelled)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *dnd_drop_performed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *dnd_finished)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *action)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_data_source_events) == sizeof(struct wl_data_source_listener), "wl_data_source listener layout mismatch");
 struct swift_wayland_wl_data_device_events {
-    void (*data_offer)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, wl_fixed_t, wl_fixed_t, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*motion)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*drop)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*selection)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *data_offer)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, wl_fixed_t, wl_fixed_t, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *drop)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *selection)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_data_device_events) == sizeof(struct wl_data_device_listener), "wl_data_device listener layout mismatch");
 struct swift_wayland_wl_shell_surface_events {
-    void (*ping)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*configure)(void *, struct wl_proxy *, uint32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*popup_done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *ping)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *popup_done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_shell_surface_events) == sizeof(struct wl_shell_surface_listener), "wl_shell_surface listener layout mismatch");
 struct swift_wayland_wl_surface_events {
-    void (*enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preferred_buffer_scale)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preferred_buffer_transform)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_buffer_scale)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_buffer_transform)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_surface_events) == sizeof(struct wl_surface_listener), "wl_surface listener layout mismatch");
 struct swift_wayland_wl_seat_events {
-    void (*capabilities)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *capabilities)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_seat_events) == sizeof(struct wl_seat_listener), "wl_seat listener layout mismatch");
 struct swift_wayland_wl_pointer_events {
-    void (*enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*motion)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis)(void *, struct wl_proxy *, uint32_t, uint32_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis_source)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis_stop)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis_discrete)(void *, struct wl_proxy *, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis_value120)(void *, struct wl_proxy *, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*axis_relative_direction)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis)(void *, struct wl_proxy *, uint32_t, uint32_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_source)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_stop)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_discrete)(void *, struct wl_proxy *, uint32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_value120)(void *, struct wl_proxy *, uint32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_relative_direction)(void *, struct wl_proxy *, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_pointer_events) == sizeof(struct wl_pointer_listener), "wl_pointer listener layout mismatch");
 struct swift_wayland_wl_keyboard_events {
-    void (*keymap)(void *, struct wl_proxy *, uint32_t, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*key)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modifiers)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*repeat_info)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *keymap)(void *, struct wl_proxy *, uint32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *key)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *repeat_info)(void *, struct wl_proxy *, int32_t, int32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_keyboard_events) == sizeof(struct wl_keyboard_listener), "wl_keyboard listener layout mismatch");
 struct swift_wayland_wl_touch_events {
-    void (*down)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, int32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*up)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*motion)(void *, struct wl_proxy *, uint32_t, int32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cancel)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*shape)(void *, struct wl_proxy *, int32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*orientation)(void *, struct wl_proxy *, int32_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *down)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, int32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *up)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(void *, struct wl_proxy *, uint32_t, int32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *cancel)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *shape)(void *, struct wl_proxy *, int32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *orientation)(void *, struct wl_proxy *, int32_t, wl_fixed_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_touch_events) == sizeof(struct wl_touch_listener), "wl_touch listener layout mismatch");
 struct swift_wayland_wl_output_events {
-    void (*geometry)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, const char *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*mode)(void *, struct wl_proxy *, uint32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*scale)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*description)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *geometry)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, const char *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *mode)(void *, struct wl_proxy *, uint32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *scale)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *description)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_output_events) == sizeof(struct wl_output_listener), "wl_output listener layout mismatch");
 struct swift_wayland_zwlr_foreign_toplevel_manager_v1_events {
-    void (*toplevel)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *toplevel)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_foreign_toplevel_manager_v1_events) == sizeof(struct zwlr_foreign_toplevel_manager_v1_listener), "zwlr_foreign_toplevel_manager_v1 listener layout mismatch");
 struct swift_wayland_zwlr_foreign_toplevel_handle_v1_events {
-    void (*title)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*app_id)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*output_enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*output_leave)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*state)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*closed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*parent)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *title)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *app_id)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *output_enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *output_leave)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *state)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *closed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *parent)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_foreign_toplevel_handle_v1_events) == sizeof(struct zwlr_foreign_toplevel_handle_v1_listener), "zwlr_foreign_toplevel_handle_v1 listener layout mismatch");
 struct swift_wayland_zwlr_gamma_control_v1_events {
-    void (*gamma_size)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*failed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *gamma_size)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_gamma_control_v1_events) == sizeof(struct zwlr_gamma_control_v1_listener), "zwlr_gamma_control_v1 listener layout mismatch");
 struct swift_wayland_zwlr_layer_surface_v1_events {
-    void (*configure)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*closed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *closed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_layer_surface_v1_events) == sizeof(struct zwlr_layer_surface_v1_listener), "zwlr_layer_surface_v1 listener layout mismatch");
 struct swift_wayland_zwlr_output_manager_v1_events {
-    void (*head)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *head)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_output_manager_v1_events) == sizeof(struct zwlr_output_manager_v1_listener), "zwlr_output_manager_v1 listener layout mismatch");
 struct swift_wayland_zwlr_output_head_v1_events {
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*description)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*physical_size)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*mode)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*enabled)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*current_mode)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*position)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*transform)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*scale)(void *, struct wl_proxy *, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*make)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*model)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*serial_number)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*adaptive_sync)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *description)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *physical_size)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *mode)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *enabled)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *current_mode)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *position)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *transform)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *scale)(void *, struct wl_proxy *, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *make)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *model)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *serial_number)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *adaptive_sync)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_output_head_v1_events) == sizeof(struct zwlr_output_head_v1_listener), "zwlr_output_head_v1 listener layout mismatch");
 struct swift_wayland_zwlr_output_mode_v1_events {
-    void (*size)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*refresh)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preferred)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *size)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *refresh)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_output_mode_v1_events) == sizeof(struct zwlr_output_mode_v1_listener), "zwlr_output_mode_v1 listener layout mismatch");
 struct swift_wayland_zwlr_output_configuration_v1_events {
-    void (*succeeded)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*failed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cancelled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *succeeded)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *cancelled)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_output_configuration_v1_events) == sizeof(struct zwlr_output_configuration_v1_listener), "zwlr_output_configuration_v1 listener layout mismatch");
 struct swift_wayland_zwlr_screencopy_frame_v1_events {
-    void (*buffer)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*flags)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ready)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*failed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*damage)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*linux_dmabuf)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*buffer_done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *buffer)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *flags)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *ready)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *damage)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *linux_dmabuf)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *buffer_done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwlr_screencopy_frame_v1_events) == sizeof(struct zwlr_screencopy_frame_v1_listener), "zwlr_screencopy_frame_v1 listener layout mismatch");
 struct swift_wayland_zwp_linux_dmabuf_v1_events {
-    void (*format)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modifier)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *format)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifier)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_linux_dmabuf_v1_events) == sizeof(struct zwp_linux_dmabuf_v1_listener), "zwp_linux_dmabuf_v1 listener layout mismatch");
 struct swift_wayland_zwp_linux_buffer_params_v1_events {
-    void (*created)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*failed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *created)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_linux_buffer_params_v1_events) == sizeof(struct zwp_linux_buffer_params_v1_listener), "zwp_linux_buffer_params_v1 listener layout mismatch");
 struct swift_wayland_zwp_linux_dmabuf_feedback_v1_events {
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*format_table)(void *, struct wl_proxy *, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*main_device)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tranche_done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tranche_target_device)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tranche_formats)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tranche_flags)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *format_table)(void *, struct wl_proxy *, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *main_device)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tranche_done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tranche_target_device)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tranche_formats)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tranche_flags)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_linux_dmabuf_feedback_v1_events) == sizeof(struct zwp_linux_dmabuf_feedback_v1_listener), "zwp_linux_dmabuf_feedback_v1 listener layout mismatch");
 struct swift_wayland_wp_presentation_events {
-    void (*clock_id)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *clock_id)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_presentation_events) == sizeof(struct wp_presentation_listener), "wp_presentation listener layout mismatch");
 struct swift_wayland_wp_presentation_feedback_events {
-    void (*sync_output)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*presented)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*discarded)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *sync_output)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *presented)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *discarded)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_presentation_feedback_events) == sizeof(struct wp_presentation_feedback_listener), "wp_presentation_feedback listener layout mismatch");
 struct swift_wayland_zwp_tablet_seat_v2_events {
-    void (*tablet_added)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tool_added)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*pad_added)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *tablet_added)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tool_added)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *pad_added)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_seat_v2_events) == sizeof(struct zwp_tablet_seat_v2_listener), "zwp_tablet_seat_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_tool_v2_events {
-    void (*type)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hardware_serial)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hardware_id_wacom)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*capability)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*proximity_in)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*proximity_out)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*down)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*up)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*motion)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*pressure)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*distance)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tilt)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*rotation)(void *, struct wl_proxy *, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*slider)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*wheel)(void *, struct wl_proxy *, wl_fixed_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *type)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *hardware_serial)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *hardware_id_wacom)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *capability)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *proximity_in)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *proximity_out)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *down)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *up)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *pressure)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *distance)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *tilt)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *rotation)(void *, struct wl_proxy *, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *slider)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *wheel)(void *, struct wl_proxy *, wl_fixed_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_tool_v2_events) == sizeof(struct zwp_tablet_tool_v2_listener), "zwp_tablet_tool_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_v2_events {
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*id)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*path)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*bustype)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *id)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *path)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *bustype)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_v2_events) == sizeof(struct zwp_tablet_v2_listener), "zwp_tablet_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_pad_ring_v2_events {
-    void (*source)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*angle)(void *, struct wl_proxy *, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*stop)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *source)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *angle)(void *, struct wl_proxy *, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_pad_ring_v2_events) == sizeof(struct zwp_tablet_pad_ring_v2_listener), "zwp_tablet_pad_ring_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_pad_strip_v2_events {
-    void (*source)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*position)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*stop)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *source)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *position)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_pad_strip_v2_events) == sizeof(struct zwp_tablet_pad_strip_v2_listener), "zwp_tablet_pad_strip_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_pad_group_v2_events {
-    void (*buttons)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ring)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*strip)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modes)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*mode_switch)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*dial)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *buttons)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ring)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *strip)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *modes)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *mode_switch)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *dial)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_pad_group_v2_events) == sizeof(struct zwp_tablet_pad_group_v2_listener), "zwp_tablet_pad_group_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_pad_v2_events {
-    void (*group)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*path)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*buttons)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *group)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *path)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *buttons)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_pad_v2_events) == sizeof(struct zwp_tablet_pad_v2_listener), "zwp_tablet_pad_v2 listener layout mismatch");
 struct swift_wayland_zwp_tablet_pad_dial_v2_events {
-    void (*delta)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *delta)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_pad_dial_v2_events) == sizeof(struct zwp_tablet_pad_dial_v2_listener), "zwp_tablet_pad_dial_v2 listener layout mismatch");
 struct swift_wayland_xdg_wm_base_events {
-    void (*ping)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *ping)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_wm_base_events) == sizeof(struct xdg_wm_base_listener), "xdg_wm_base listener layout mismatch");
 struct swift_wayland_xdg_surface_events {
-    void (*configure)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_surface_events) == sizeof(struct xdg_surface_listener), "xdg_surface listener layout mismatch");
 struct swift_wayland_xdg_toplevel_events {
-    void (*configure)(void *, struct wl_proxy *, int32_t, int32_t, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*close)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*configure_bounds)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*wm_capabilities)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, int32_t, int32_t, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *close)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *configure_bounds)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *wm_capabilities)(void *, struct wl_proxy *, struct wl_array *);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_toplevel_events) == sizeof(struct xdg_toplevel_listener), "xdg_toplevel listener layout mismatch");
 struct swift_wayland_xdg_popup_events {
-    void (*configure)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*popup_done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*repositioned)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *popup_done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *repositioned)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_popup_events) == sizeof(struct xdg_popup_listener), "xdg_popup listener layout mismatch");
 struct swift_wayland_wp_color_manager_v1_events {
-    void (*supported_intent)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*supported_feature)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*supported_tf_named)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*supported_primaries_named)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_intent)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_feature)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_tf_named)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_primaries_named)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_color_manager_v1_events) == sizeof(struct wp_color_manager_v1_listener), "wp_color_manager_v1 listener layout mismatch");
 struct swift_wayland_wp_color_management_output_v1_events {
-    void (*image_description_changed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *image_description_changed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_color_management_output_v1_events) == sizeof(struct wp_color_management_output_v1_listener), "wp_color_management_output_v1 listener layout mismatch");
 struct swift_wayland_wp_color_management_surface_feedback_v1_events {
-    void (*preferred_changed)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preferred_changed2)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_changed)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_changed2)(void *, struct wl_proxy *, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_color_management_surface_feedback_v1_events) == sizeof(struct wp_color_management_surface_feedback_v1_listener), "wp_color_management_surface_feedback_v1 listener layout mismatch");
 struct swift_wayland_wp_image_description_v1_events {
-    void (*failed)(void *, struct wl_proxy *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ready)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ready2)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ready)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *ready2)(void *, struct wl_proxy *, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_image_description_v1_events) == sizeof(struct wp_image_description_v1_listener), "wp_image_description_v1 listener layout mismatch");
 struct swift_wayland_wp_image_description_info_v1_events {
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*icc_file)(void *, struct wl_proxy *, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*primaries)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*primaries_named)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tf_power)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tf_named)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*luminances)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*target_primaries)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*target_luminance)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*target_max_cll)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*target_max_fall)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *icc_file)(void *, struct wl_proxy *, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *primaries)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *primaries_named)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *tf_power)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *tf_named)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *luminances)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *target_primaries)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *target_luminance)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *target_max_cll)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *target_max_fall)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_image_description_info_v1_events) == sizeof(struct wp_image_description_info_v1_listener), "wp_image_description_info_v1 listener layout mismatch");
 struct swift_wayland_wp_color_representation_manager_v1_events {
-    void (*supported_alpha_mode)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*supported_coefficients_and_ranges)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_alpha_mode)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *supported_coefficients_and_ranges)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_color_representation_manager_v1_events) == sizeof(struct wp_color_representation_manager_v1_listener), "wp_color_representation_manager_v1 listener layout mismatch");
 struct swift_wayland_wp_drm_lease_device_v1_events {
-    void (*drm_fd)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*connector)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*released)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *drm_fd)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *connector)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *released)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_drm_lease_device_v1_events) == sizeof(struct wp_drm_lease_device_v1_listener), "wp_drm_lease_device_v1 listener layout mismatch");
 struct swift_wayland_wp_drm_lease_connector_v1_events {
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*description)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*connector_id)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*withdrawn)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *description)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *connector_id)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *withdrawn)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_drm_lease_connector_v1_events) == sizeof(struct wp_drm_lease_connector_v1_listener), "wp_drm_lease_connector_v1 listener layout mismatch");
 struct swift_wayland_wp_drm_lease_v1_events {
-    void (*lease_fd)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *lease_fd)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_drm_lease_v1_events) == sizeof(struct wp_drm_lease_v1_listener), "wp_drm_lease_v1 listener layout mismatch");
 struct swift_wayland_ext_background_effect_manager_v1_events {
-    void (*capabilities)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *capabilities)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_background_effect_manager_v1_events) == sizeof(struct ext_background_effect_manager_v1_listener), "ext_background_effect_manager_v1 listener layout mismatch");
 struct swift_wayland_ext_data_control_device_v1_events {
-    void (*data_offer)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*selection)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*primary_selection)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *data_offer)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *selection)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *primary_selection)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_data_control_device_v1_events) == sizeof(struct ext_data_control_device_v1_listener), "ext_data_control_device_v1 listener layout mismatch");
 struct swift_wayland_ext_data_control_source_v1_events {
-    void (*send)(void *, struct wl_proxy *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cancelled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *send)(void *, struct wl_proxy *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *cancelled)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_data_control_source_v1_events) == sizeof(struct ext_data_control_source_v1_listener), "ext_data_control_source_v1 listener layout mismatch");
 struct swift_wayland_ext_data_control_offer_v1_events {
-    void (*offer)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_data_control_offer_v1_events) == sizeof(struct ext_data_control_offer_v1_listener), "ext_data_control_offer_v1 listener layout mismatch");
 struct swift_wayland_ext_foreign_toplevel_list_v1_events {
-    void (*toplevel)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *toplevel)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_foreign_toplevel_list_v1_events) == sizeof(struct ext_foreign_toplevel_list_v1_listener), "ext_foreign_toplevel_list_v1 listener layout mismatch");
 struct swift_wayland_ext_foreign_toplevel_handle_v1_events {
-    void (*closed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*title)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*app_id)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*identifier)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *closed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *title)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *app_id)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *identifier)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_foreign_toplevel_handle_v1_events) == sizeof(struct ext_foreign_toplevel_handle_v1_listener), "ext_foreign_toplevel_handle_v1 listener layout mismatch");
 struct swift_wayland_ext_idle_notification_v1_events {
-    void (*idled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*resumed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *idled)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *resumed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_idle_notification_v1_events) == sizeof(struct ext_idle_notification_v1_listener), "ext_idle_notification_v1 listener layout mismatch");
 struct swift_wayland_ext_image_copy_capture_session_v1_events {
-    void (*buffer_size)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*shm_format)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*dmabuf_device)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*dmabuf_format)(void *, struct wl_proxy *, uint32_t, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*stopped)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *buffer_size)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *shm_format)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *dmabuf_device)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *dmabuf_format)(void *, struct wl_proxy *, uint32_t, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *stopped)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_image_copy_capture_session_v1_events) == sizeof(struct ext_image_copy_capture_session_v1_listener), "ext_image_copy_capture_session_v1 listener layout mismatch");
 struct swift_wayland_ext_image_copy_capture_frame_v1_events {
-    void (*transform)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*damage)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*presentation_time)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ready)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*failed)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *transform)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *damage)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *presentation_time)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *ready)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *failed)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_image_copy_capture_frame_v1_events) == sizeof(struct ext_image_copy_capture_frame_v1_listener), "ext_image_copy_capture_frame_v1 listener layout mismatch");
 struct swift_wayland_ext_image_copy_capture_cursor_session_v1_events {
-    void (*enter)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*position)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hotspot)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *position)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *hotspot)(void *, struct wl_proxy *, int32_t, int32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_image_copy_capture_cursor_session_v1_events) == sizeof(struct ext_image_copy_capture_cursor_session_v1_listener), "ext_image_copy_capture_cursor_session_v1 listener layout mismatch");
 struct swift_wayland_ext_session_lock_v1_events {
-    void (*locked)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *locked)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_session_lock_v1_events) == sizeof(struct ext_session_lock_v1_listener), "ext_session_lock_v1 listener layout mismatch");
 struct swift_wayland_ext_session_lock_surface_v1_events {
-    void (*configure)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_session_lock_surface_v1_events) == sizeof(struct ext_session_lock_surface_v1_listener), "ext_session_lock_surface_v1 listener layout mismatch");
 struct swift_wayland_ext_transient_seat_v1_events {
-    void (*ready)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*denied)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *ready)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *denied)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_transient_seat_v1_events) == sizeof(struct ext_transient_seat_v1_listener), "ext_transient_seat_v1 listener layout mismatch");
 struct swift_wayland_ext_workspace_manager_v1_events {
-    void (*workspace_group)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*workspace)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finished)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *workspace_group)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *workspace)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_workspace_manager_v1_events) == sizeof(struct ext_workspace_manager_v1_listener), "ext_workspace_manager_v1 listener layout mismatch");
 struct swift_wayland_ext_workspace_group_handle_v1_events {
-    void (*capabilities)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*output_enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*output_leave)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*workspace_enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*workspace_leave)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *capabilities)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *output_enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *output_leave)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *workspace_enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *workspace_leave)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_workspace_group_handle_v1_events) == sizeof(struct ext_workspace_group_handle_v1_listener), "ext_workspace_group_handle_v1 listener layout mismatch");
 struct swift_wayland_ext_workspace_handle_v1_events {
-    void (*id)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*coordinates)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*state)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*capabilities)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *id)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *coordinates)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *state)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *capabilities)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_ext_workspace_handle_v1_events) == sizeof(struct ext_workspace_handle_v1_listener), "ext_workspace_handle_v1 listener layout mismatch");
 struct swift_wayland_wp_fractional_scale_v1_events {
-    void (*preferred_scale)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_scale)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wp_fractional_scale_v1_events) == sizeof(struct wp_fractional_scale_v1_listener), "wp_fractional_scale_v1 listener layout mismatch");
 struct swift_wayland_xdg_activation_token_v1_events {
-    void (*done)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_activation_token_v1_events) == sizeof(struct xdg_activation_token_v1_listener), "xdg_activation_token_v1 listener layout mismatch");
 struct swift_wayland_xdg_session_v1_events {
-    void (*created)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*restored)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*replaced)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *created)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *restored)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *replaced)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_session_v1_events) == sizeof(struct xdg_session_v1_listener), "xdg_session_v1 listener layout mismatch");
 struct swift_wayland_xdg_toplevel_session_v1_events {
-    void (*restored)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *restored)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_toplevel_session_v1_events) == sizeof(struct xdg_toplevel_session_v1_listener), "xdg_toplevel_session_v1 listener layout mismatch");
 struct swift_wayland_xdg_toplevel_icon_manager_v1_events {
-    void (*icon_size)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *icon_size)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_xdg_toplevel_icon_manager_v1_events) == sizeof(struct xdg_toplevel_icon_manager_v1_listener), "xdg_toplevel_icon_manager_v1 listener layout mismatch");
 struct swift_wayland_zwp_fullscreen_shell_v1_events {
-    void (*capability)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *capability)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_fullscreen_shell_v1_events) == sizeof(struct zwp_fullscreen_shell_v1_listener), "zwp_fullscreen_shell_v1 listener layout mismatch");
 struct swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events {
-    void (*mode_successful)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*mode_failed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*present_cancelled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *mode_successful)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *mode_failed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *present_cancelled)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events) == sizeof(struct zwp_fullscreen_shell_mode_feedback_v1_listener), "zwp_fullscreen_shell_mode_feedback_v1 listener layout mismatch");
 struct swift_wayland_zwp_input_method_context_v1_events {
-    void (*surrounding_text)(void *, struct wl_proxy *, const char *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*reset)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*content_type)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*invoke_action)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit_state)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preferred_language)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *surrounding_text)(void *, struct wl_proxy *, const char *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *reset)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *content_type)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *invoke_action)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_state)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preferred_language)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_input_method_context_v1_events) == sizeof(struct zwp_input_method_context_v1_listener), "zwp_input_method_context_v1 listener layout mismatch");
 struct swift_wayland_zwp_input_method_v1_events {
-    void (*activate)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*deactivate)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *deactivate)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_input_method_v1_events) == sizeof(struct zwp_input_method_v1_listener), "zwp_input_method_v1 listener layout mismatch");
 struct swift_wayland_zwp_input_timestamps_v1_events {
-    void (*timestamp)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *timestamp)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_input_timestamps_v1_events) == sizeof(struct zwp_input_timestamps_v1_listener), "zwp_input_timestamps_v1 listener layout mismatch");
 struct swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events {
-    void (*active)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*inactive)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *active)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *inactive)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events) == sizeof(struct zwp_keyboard_shortcuts_inhibitor_v1_listener), "zwp_keyboard_shortcuts_inhibitor_v1 listener layout mismatch");
 struct swift_wayland_zwp_linux_buffer_release_v1_events {
-    void (*fenced_release)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*immediate_release)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *fenced_release)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *immediate_release)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_linux_buffer_release_v1_events) == sizeof(struct zwp_linux_buffer_release_v1_listener), "zwp_linux_buffer_release_v1 listener layout mismatch");
 struct swift_wayland_zwp_locked_pointer_v1_events {
-    void (*locked)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unlocked)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *locked)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unlocked)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_locked_pointer_v1_events) == sizeof(struct zwp_locked_pointer_v1_listener), "zwp_locked_pointer_v1 listener layout mismatch");
 struct swift_wayland_zwp_confined_pointer_v1_events {
-    void (*confined)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unconfined)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *confined)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unconfined)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_confined_pointer_v1_events) == sizeof(struct zwp_confined_pointer_v1_listener), "zwp_confined_pointer_v1 listener layout mismatch");
 struct swift_wayland_zwp_pointer_gesture_swipe_v1_events {
-    void (*begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*update)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *update)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_pointer_gesture_swipe_v1_events) == sizeof(struct zwp_pointer_gesture_swipe_v1_listener), "zwp_pointer_gesture_swipe_v1 listener layout mismatch");
 struct swift_wayland_zwp_pointer_gesture_pinch_v1_events {
-    void (*begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*update)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *update)(void *, struct wl_proxy *, uint32_t, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_pointer_gesture_pinch_v1_events) == sizeof(struct zwp_pointer_gesture_pinch_v1_listener), "zwp_pointer_gesture_pinch_v1 listener layout mismatch");
 struct swift_wayland_zwp_pointer_gesture_hold_v1_events {
-    void (*begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *begin)(void *, struct wl_proxy *, uint32_t, uint32_t, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *end)(void *, struct wl_proxy *, uint32_t, uint32_t, int32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_pointer_gesture_hold_v1_events) == sizeof(struct zwp_pointer_gesture_hold_v1_listener), "zwp_pointer_gesture_hold_v1 listener layout mismatch");
 struct swift_wayland_zwp_primary_selection_device_v1_events {
-    void (*data_offer)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*selection)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *data_offer)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *selection)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_primary_selection_device_v1_events) == sizeof(struct zwp_primary_selection_device_v1_listener), "zwp_primary_selection_device_v1 listener layout mismatch");
 struct swift_wayland_zwp_primary_selection_offer_v1_events {
-    void (*offer)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_primary_selection_offer_v1_events) == sizeof(struct zwp_primary_selection_offer_v1_listener), "zwp_primary_selection_offer_v1 listener layout mismatch");
 struct swift_wayland_zwp_primary_selection_source_v1_events {
-    void (*send)(void *, struct wl_proxy *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cancelled)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *send)(void *, struct wl_proxy *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *cancelled)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_primary_selection_source_v1_events) == sizeof(struct zwp_primary_selection_source_v1_listener), "zwp_primary_selection_source_v1 listener layout mismatch");
 struct swift_wayland_zwp_relative_pointer_v1_events {
-    void (*relative_motion)(void *, struct wl_proxy *, uint32_t, uint32_t, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *relative_motion)(void *, struct wl_proxy *, uint32_t, uint32_t, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_relative_pointer_v1_events) == sizeof(struct zwp_relative_pointer_v1_listener), "zwp_relative_pointer_v1 listener layout mismatch");
 struct swift_wayland_zwp_tablet_seat_v1_events {
-    void (*tablet_added)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tool_added)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *tablet_added)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *tool_added)(void *, struct wl_proxy *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_seat_v1_events) == sizeof(struct zwp_tablet_seat_v1_listener), "zwp_tablet_seat_v1 listener layout mismatch");
 struct swift_wayland_zwp_tablet_tool_v1_events {
-    void (*type)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hardware_serial)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hardware_id_wacom)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*capability)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*proximity_in)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*proximity_out)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*down)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*up)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*motion)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*pressure)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*distance)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*tilt)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*rotation)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*slider)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*wheel)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *type)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *hardware_serial)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *hardware_id_wacom)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *capability)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *proximity_in)(void *, struct wl_proxy *, uint32_t, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *proximity_out)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *down)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *up)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *pressure)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *distance)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *tilt)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *rotation)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *slider)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *wheel)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *button)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_tool_v1_events) == sizeof(struct zwp_tablet_tool_v1_listener), "zwp_tablet_tool_v1 listener layout mismatch");
 struct swift_wayland_zwp_tablet_v1_events {
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*id)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*path)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*removed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *id)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *path)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *removed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_tablet_v1_events) == sizeof(struct zwp_tablet_v1_listener), "zwp_tablet_v1 listener layout mismatch");
 struct swift_wayland_zwp_text_input_v1_events {
-    void (*enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modifiers_map)(void *, struct wl_proxy *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*input_panel_state)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_string)(void *, struct wl_proxy *, uint32_t, const char *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_styling)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_cursor)(void *, struct wl_proxy *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit_string)(void *, struct wl_proxy *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cursor_position)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*delete_surrounding_text)(void *, struct wl_proxy *, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*keysym)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*language)(void *, struct wl_proxy *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*text_direction)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers_map)(void *, struct wl_proxy *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *input_panel_state)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_string)(void *, struct wl_proxy *, uint32_t, const char *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_styling)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_cursor)(void *, struct wl_proxy *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_string)(void *, struct wl_proxy *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *cursor_position)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *delete_surrounding_text)(void *, struct wl_proxy *, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *keysym)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *language)(void *, struct wl_proxy *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *text_direction)(void *, struct wl_proxy *, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_text_input_v1_events) == sizeof(struct zwp_text_input_v1_listener), "zwp_text_input_v1 listener layout mismatch");
 struct swift_wayland_zwp_text_input_v3_events {
-    void (*enter)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*leave)(void *, struct wl_proxy *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_string)(void *, struct wl_proxy *, const char *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit_string)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*delete_surrounding_text)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*action)(void *, struct wl_proxy *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*language)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_hint)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enter)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *leave)(void *, struct wl_proxy *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_string)(void *, struct wl_proxy *, const char *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_string)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *delete_surrounding_text)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *action)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *language)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_hint)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zwp_text_input_v3_events) == sizeof(struct zwp_text_input_v3_listener), "zwp_text_input_v3 listener layout mismatch");
 struct swift_wayland_zxdg_toplevel_decoration_v1_events {
-    void (*configure)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_toplevel_decoration_v1_events) == sizeof(struct zxdg_toplevel_decoration_v1_listener), "zxdg_toplevel_decoration_v1 listener layout mismatch");
 struct swift_wayland_zxdg_exported_v1_events {
-    void (*handle)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *handle)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_exported_v1_events) == sizeof(struct zxdg_exported_v1_listener), "zxdg_exported_v1 listener layout mismatch");
 struct swift_wayland_zxdg_imported_v1_events {
-    void (*destroyed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroyed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_imported_v1_events) == sizeof(struct zxdg_imported_v1_listener), "zxdg_imported_v1 listener layout mismatch");
 struct swift_wayland_zxdg_exported_v2_events {
-    void (*handle)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *handle)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_exported_v2_events) == sizeof(struct zxdg_exported_v2_listener), "zxdg_exported_v2 listener layout mismatch");
 struct swift_wayland_zxdg_imported_v2_events {
-    void (*destroyed)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroyed)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_imported_v2_events) == sizeof(struct zxdg_imported_v2_listener), "zxdg_imported_v2 listener layout mismatch");
 struct swift_wayland_zxdg_output_v1_events {
-    void (*logical_position)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*logical_size)(void *, struct wl_proxy *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*name)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*description)(void *, struct wl_proxy *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *logical_position)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *logical_size)(void *, struct wl_proxy *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *name)(void *, struct wl_proxy *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *description)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_output_v1_events) == sizeof(struct zxdg_output_v1_listener), "zxdg_output_v1 listener layout mismatch");
 struct swift_wayland_zxdg_shell_v6_events {
-    void (*ping)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *ping)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_shell_v6_events) == sizeof(struct zxdg_shell_v6_listener), "zxdg_shell_v6 listener layout mismatch");
 struct swift_wayland_zxdg_surface_v6_events {
-    void (*configure)(void *, struct wl_proxy *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, uint32_t);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_surface_v6_events) == sizeof(struct zxdg_surface_v6_listener), "zxdg_surface_v6 listener layout mismatch");
 struct swift_wayland_zxdg_toplevel_v6_events {
-    void (*configure)(void *, struct wl_proxy *, int32_t, int32_t, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*close)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, int32_t, int32_t, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *close)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_toplevel_v6_events) == sizeof(struct zxdg_toplevel_v6_listener), "zxdg_toplevel_v6 listener layout mismatch");
 struct swift_wayland_zxdg_popup_v6_events {
-    void (*configure)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*popup_done)(void *, struct wl_proxy *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *configure)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *popup_done)(void *, struct wl_proxy *);
 };
 _Static_assert(sizeof(struct swift_wayland_zxdg_popup_v6_events) == sizeof(struct zxdg_popup_v6_listener), "zxdg_popup_v6 listener layout mismatch");
 

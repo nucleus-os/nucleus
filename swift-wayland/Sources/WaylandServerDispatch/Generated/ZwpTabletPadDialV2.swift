@@ -13,16 +13,15 @@ package extension ZwpTabletPadDialV2Requests {
     }
 }
 package enum ZwpTabletPadDialV2Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTabletPadDialV2Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_tablet_pad_dial_v2_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_tablet_pad_dial_v2_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_tablet_pad_dial_v2_requests.self, capacity: 1)
-        unsafe vt.pointee.set_feedback = setFeedback_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_dial_v2_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_tablet_pad_dial_v2_requests(
+            set_feedback: setFeedback_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_pad_dial_v2(),
@@ -33,33 +32,24 @@ package enum ZwpTabletPadDialV2Server: WaylandServerInterface {
     package static func sendFrame(_ target: UnsafeMutablePointer<wl_resource>, time: UInt32) {
         unsafe zwp_tablet_pad_dial_v2_send_frame(target, time)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletPadDialV2Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletPadDialV2Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletPadDialV2Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTabletPadDialV2Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setFeedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, UInt32) -> Void = { _, res, description, serial in
+    private static let setFeedback_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, UInt32) -> Void = { _, res, description, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_description = unsafe description
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setFeedback(WaylandRequest<ZwpTabletPadDialV2Server>(requestResource), description: unsafe String(cString: _request_description!), serial: serial)
-        }
+        unsafe h.setFeedback(WaylandRequest<ZwpTabletPadDialV2Server>(res), description: unsafe String(cString: description!), serial: serial)
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpTabletPadDialV2Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpTabletPadDialV2Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -91,7 +81,9 @@ package extension WlNewId where Interface == ZwpTabletPadDialV2Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTabletPadDialV2Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpTabletPadDialV2Server {
@@ -102,12 +94,14 @@ package extension ZwpTabletPadDialV2Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTabletPadDialV2Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletPadDialV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -121,10 +115,12 @@ package extension ZwpTabletPadDialV2Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTabletPadDialV2Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletPadDialV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

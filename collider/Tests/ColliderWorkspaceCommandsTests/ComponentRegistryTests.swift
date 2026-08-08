@@ -535,7 +535,13 @@ private func fixtureReactNativeNodeModules(
     defer { try? FileManager.default.removeItem(at: workspace) }
     try FileManager.default.createDirectory(
         at: workspace, withIntermediateDirectories: true)
-    try Data("// swift-tools-version: 6.4\n".utf8).write(
+    try Data(
+        """
+        // swift-tools-version: 6.4
+        import PackageDescription
+        let package = Package(name: "Fixture")
+        """.utf8
+    ).write(
         to: workspace.appendingPathComponent("Package.swift"))
     let firstCompiler = workspace.appendingPathComponent("first-swiftc")
     let secondCompiler = workspace.appendingPathComponent("second-swiftc")

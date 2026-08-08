@@ -34,7 +34,7 @@ package protocol ZxdgToplevelDecorationV1Events: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>, mode: ZxdgToplevelDecorationV1Mode)
 }
 package extension ZxdgToplevelDecorationV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_toplevel_decoration_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_toplevel_decoration_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_toplevel_decoration_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_toplevel_decoration_v1_events())
         unsafe p.pointee.configure = configure_impl
@@ -43,7 +43,7 @@ package extension ZxdgToplevelDecorationV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgToplevelDecorationV1Events? {
         context.owner as? any ZxdgToplevelDecorationV1Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, mode in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, mode in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -51,12 +51,7 @@ package extension ZxdgToplevelDecorationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>(eventProxy), mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>(proxy), mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
     }
 }
 package extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client {

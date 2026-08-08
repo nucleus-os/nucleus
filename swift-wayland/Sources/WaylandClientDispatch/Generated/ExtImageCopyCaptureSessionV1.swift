@@ -37,7 +37,7 @@ package protocol ExtImageCopyCaptureSessionV1Events: AnyObject {
     func stopped(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>)
 }
 package extension ExtImageCopyCaptureSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_image_copy_capture_session_v1_events())
         unsafe p.pointee.buffer_size = bufferSize_impl
@@ -51,7 +51,7 @@ package extension ExtImageCopyCaptureSessionV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtImageCopyCaptureSessionV1Events? {
         context.owner as? any ExtImageCopyCaptureSessionV1Events
     }
-    private static let bufferSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, width, height in
+    private static let bufferSize_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -59,14 +59,9 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.bufferSize(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy), width: width, height: height)
-        }
+        unsafe h.bufferSize(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy), width: width, height: height)
     }
-    private static let shmFormat_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
+    private static let shmFormat_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -74,14 +69,9 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.shmFormat(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy), format: WlShmFormat(rawValue: format))
-        }
+        unsafe h.shmFormat(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy), format: WlShmFormat(rawValue: format))
     }
-    private static let dmabufDevice_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
+    private static let dmabufDevice_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, device in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -89,15 +79,9 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_device = unsafe device
-        MainActor.assumeIsolated {
-            unsafe eventHandler.dmabufDevice(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy), device: WaylandClientArrayView(_event_device!))
-        }
+        unsafe h.dmabufDevice(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy), device: WaylandClientArrayView(device!))
     }
-    private static let dmabufFormat_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, format, modifiers in
+    private static let dmabufFormat_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, format, modifiers in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -105,15 +89,9 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_modifiers = unsafe modifiers
-        MainActor.assumeIsolated {
-            unsafe eventHandler.dmabufFormat(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy), format: format, modifiers: WaylandClientArrayView(_event_modifiers!))
-        }
+        unsafe h.dmabufFormat(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy), format: format, modifiers: WaylandClientArrayView(modifiers!))
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -121,14 +99,9 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy))
     }
-    private static let stopped_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let stopped_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -136,12 +109,7 @@ package extension ExtImageCopyCaptureSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.stopped(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(eventProxy))
-        }
+        unsafe h.stopped(WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ExtImageCopyCaptureSessionV1Client {

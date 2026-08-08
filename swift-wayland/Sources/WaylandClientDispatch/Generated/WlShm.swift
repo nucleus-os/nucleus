@@ -41,7 +41,7 @@ package protocol WlShmEvents: AnyObject {
     func format(_ proxy: WaylandBorrowedProxy<WlShmClient>, format: WlShmFormat)
 }
 package extension WlShmClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_shm_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_shm_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_shm_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_shm_events())
         unsafe p.pointee.format = format_impl
@@ -50,7 +50,7 @@ package extension WlShmClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlShmEvents? {
         context.owner as? any WlShmEvents
     }
-    private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
+    private static let format_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -58,12 +58,7 @@ package extension WlShmClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.format(WaylandBorrowedProxy<WlShmClient>(eventProxy), format: WlShmFormat(rawValue: format))
-        }
+        unsafe h.format(WaylandBorrowedProxy<WlShmClient>(proxy), format: WlShmFormat(rawValue: format))
     }
 }
 package extension WaylandProxy where Interface == WlShmClient {

@@ -40,6 +40,28 @@ package import WaylandServerC
 /// native pointers are process-lifetime protocol metadata emitted by
 /// wayland-scanner, not resource instances.
 package protocol WaylandServerInterface {
+    associatedtype Requests
+
     static var descriptor: WaylandServerInterfaceDescriptor { get }
     static var maximumVersion: Int32 { get }
+}
+
+/// The one retained object installed as a resource's native user data.
+///
+/// The semantic owner remains available to ownership queries, while generated
+/// request dispatch reads the already-bound handler without repeating a
+/// protocol-conformance lookup for every request.
+@MainActor
+@safe
+package final class WaylandDispatchBox<Interface: WaylandServerInterface> {
+    package let owner: AnyObject
+    package let handler: Interface.Requests?
+
+    package init<Owner: AnyObject>(
+        owner: Owner,
+        handler: Interface.Requests?
+    ) {
+        self.owner = owner
+        self.handler = handler
+    }
 }

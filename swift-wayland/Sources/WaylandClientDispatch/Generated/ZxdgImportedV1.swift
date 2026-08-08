@@ -29,7 +29,7 @@ package protocol ZxdgImportedV1Events: AnyObject {
     func destroyed(_ proxy: WaylandBorrowedProxy<ZxdgImportedV1Client>)
 }
 package extension ZxdgImportedV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_imported_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_imported_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_imported_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_imported_v1_events())
         unsafe p.pointee.destroyed = destroyed_impl
@@ -38,7 +38,7 @@ package extension ZxdgImportedV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgImportedV1Events? {
         context.owner as? any ZxdgImportedV1Events
     }
-    private static let destroyed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let destroyed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -46,12 +46,7 @@ package extension ZxdgImportedV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.destroyed(WaylandBorrowedProxy<ZxdgImportedV1Client>(eventProxy))
-        }
+        unsafe h.destroyed(WaylandBorrowedProxy<ZxdgImportedV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZxdgImportedV1Client {

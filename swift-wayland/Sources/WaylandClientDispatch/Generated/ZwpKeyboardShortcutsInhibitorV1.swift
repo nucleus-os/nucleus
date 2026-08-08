@@ -24,7 +24,7 @@ package protocol ZwpKeyboardShortcutsInhibitorV1Events: AnyObject {
     func inactive(_ proxy: WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>)
 }
 package extension ZwpKeyboardShortcutsInhibitorV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events())
         unsafe p.pointee.active = active_impl
@@ -34,7 +34,7 @@ package extension ZwpKeyboardShortcutsInhibitorV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpKeyboardShortcutsInhibitorV1Events? {
         context.owner as? any ZwpKeyboardShortcutsInhibitorV1Events
     }
-    private static let active_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let active_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -42,14 +42,9 @@ package extension ZwpKeyboardShortcutsInhibitorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.active(WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>(eventProxy))
-        }
+        unsafe h.active(WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>(proxy))
     }
-    private static let inactive_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let inactive_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -57,12 +52,7 @@ package extension ZwpKeyboardShortcutsInhibitorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.inactive(WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>(eventProxy))
-        }
+        unsafe h.inactive(WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwpKeyboardShortcutsInhibitorV1Client {

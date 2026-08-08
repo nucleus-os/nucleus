@@ -78,7 +78,7 @@ package protocol WlShellSurfaceEvents: AnyObject {
     func popupDone(_ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>)
 }
 package extension WlShellSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_shell_surface_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_shell_surface_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_shell_surface_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_shell_surface_events())
         unsafe p.pointee.ping = ping_impl
@@ -89,7 +89,7 @@ package extension WlShellSurfaceClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlShellSurfaceEvents? {
         context.owner as? any WlShellSurfaceEvents
     }
-    private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let ping_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -97,14 +97,9 @@ package extension WlShellSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ping(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy), serial: serial)
-        }
+        unsafe h.ping(WaylandBorrowedProxy<WlShellSurfaceClient>(proxy), serial: serial)
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, Int32) -> Void = { data, proxy, edges, width, height in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, Int32) -> Void = { data, proxy, edges, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -112,14 +107,9 @@ package extension WlShellSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy), edges: WlShellSurfaceResize(rawValue: edges), width: width, height: height)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<WlShellSurfaceClient>(proxy), edges: WlShellSurfaceResize(rawValue: edges), width: width, height: height)
     }
-    private static let popupDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let popupDone_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -127,12 +117,7 @@ package extension WlShellSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.popupDone(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy))
-        }
+        unsafe h.popupDone(WaylandBorrowedProxy<WlShellSurfaceClient>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WlShellSurfaceClient {

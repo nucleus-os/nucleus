@@ -35,7 +35,7 @@ package protocol WpColorRepresentationManagerV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>)
 }
 package extension WpColorRepresentationManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_representation_manager_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_color_representation_manager_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_color_representation_manager_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_color_representation_manager_v1_events())
         unsafe p.pointee.supported_alpha_mode = supportedAlphaMode_impl
@@ -46,7 +46,7 @@ package extension WpColorRepresentationManagerV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpColorRepresentationManagerV1Events? {
         context.owner as? any WpColorRepresentationManagerV1Events
     }
-    private static let supportedAlphaMode_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, alpha_mode in
+    private static let supportedAlphaMode_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, alpha_mode in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -54,14 +54,9 @@ package extension WpColorRepresentationManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedAlphaMode(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(eventProxy), alpha_mode: WpColorRepresentationSurfaceV1AlphaMode(rawValue: alpha_mode))
-        }
+        unsafe h.supportedAlphaMode(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(proxy), alpha_mode: WpColorRepresentationSurfaceV1AlphaMode(rawValue: alpha_mode))
     }
-    private static let supportedCoefficientsAndRanges_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, coefficients, range in
+    private static let supportedCoefficientsAndRanges_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, coefficients, range in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -69,14 +64,9 @@ package extension WpColorRepresentationManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedCoefficientsAndRanges(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(eventProxy), coefficients: WpColorRepresentationSurfaceV1Coefficients(rawValue: coefficients), range: WpColorRepresentationSurfaceV1Range(rawValue: range))
-        }
+        unsafe h.supportedCoefficientsAndRanges(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(proxy), coefficients: WpColorRepresentationSurfaceV1Coefficients(rawValue: coefficients), range: WpColorRepresentationSurfaceV1Range(rawValue: range))
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -84,12 +74,7 @@ package extension WpColorRepresentationManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WpColorRepresentationManagerV1Client {

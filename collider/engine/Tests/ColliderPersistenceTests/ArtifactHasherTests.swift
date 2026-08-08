@@ -253,6 +253,34 @@ import Testing
     #expect(try sourceCheckoutDigest(sources) != baseline)
 }
 
+@Test func sourceCheckoutClosureTracksOnlySelectedTargetDirectories() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-closure-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let app = repository.appendingPathComponent("domains/app")
+    let shared = repository.appendingPathComponent("domains/shared")
+    let unrelated = repository.appendingPathComponent("domains/unrelated")
+    for directory in [app, shared, unrelated] {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        try Data("original\n".utf8).write(
+            to: directory.appendingPathComponent("value"))
+    }
+    try commitAll(repository)
+    let selected = [FilePath(app.path), FilePath(shared.path)]
+    let baseline = try sourceCheckoutClosureDigest(selected)
+
+    try Data("changed\n".utf8).write(
+        to: unrelated.appendingPathComponent("value"))
+    #expect(try sourceCheckoutClosureDigest(selected) == baseline)
+
+    try Data("changed\n".utf8).write(
+        to: shared.appendingPathComponent("value"))
+    #expect(try sourceCheckoutClosureDigest(selected) != baseline)
+}
+
 @Test func sourceCheckoutDigestIncludesDirtyNestedSubmodules() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-submodule-\(UUID().uuidString)")
@@ -281,6 +309,12 @@ import Testing
 private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
     try PlanningArtifactDigestCache().digest(
         sourceCheckout: FilePath(url.path))
+}
+
+private func sourceCheckoutClosureDigest(
+    _ paths: [FilePath]
+) throws -> ArtifactDigest {
+    try PlanningArtifactDigestCache().digest(sourceCheckoutClosure: paths)
 }
 
 private func initializeGitRepository(_ repository: URL) throws {

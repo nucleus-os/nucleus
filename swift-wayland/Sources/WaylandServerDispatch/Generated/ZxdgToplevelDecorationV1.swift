@@ -15,17 +15,16 @@ package extension ZxdgToplevelDecorationV1Requests {
     }
 }
 package enum ZxdgToplevelDecorationV1Server: WaylandServerInterface {
+    package typealias Requests = any ZxdgToplevelDecorationV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zxdg_toplevel_decoration_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zxdg_toplevel_decoration_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zxdg_toplevel_decoration_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_mode = setMode_impl
-        unsafe vt.pointee.unset_mode = unsetMode_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zxdg_toplevel_decoration_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zxdg_toplevel_decoration_v1_requests(
+            destroy: destroy_impl,
+            set_mode: setMode_impl,
+            unset_mode: unsetMode_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_toplevel_decoration_v1(),
@@ -33,45 +32,33 @@ package enum ZxdgToplevelDecorationV1Server: WaylandServerInterface {
     package static func sendConfigure(_ target: UnsafeMutablePointer<wl_resource>, mode: ZxdgToplevelDecorationV1Mode) {
         unsafe zxdg_toplevel_decoration_v1_send_configure(target, mode.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgToplevelDecorationV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgToplevelDecorationV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgToplevelDecorationV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZxdgToplevelDecorationV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZxdgToplevelDecorationV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZxdgToplevelDecorationV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setMode_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, mode in
+    private static let setMode_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, mode in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMode(WaylandRequest<ZxdgToplevelDecorationV1Server>(requestResource), mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
-        }
+        unsafe h.setMode(WaylandRequest<ZxdgToplevelDecorationV1Server>(res), mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
     }
-    private static let unsetMode_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let unsetMode_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.unsetMode(WaylandRequest<ZxdgToplevelDecorationV1Server>(requestResource))
-        }
+        unsafe h.unsetMode(WaylandRequest<ZxdgToplevelDecorationV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ZxdgToplevelDecorationV1Server {
@@ -103,7 +90,9 @@ package extension WlNewId where Interface == ZxdgToplevelDecorationV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZxdgToplevelDecorationV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZxdgToplevelDecorationV1Server {
@@ -114,12 +103,14 @@ package extension ZxdgToplevelDecorationV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZxdgToplevelDecorationV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgToplevelDecorationV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -133,10 +124,12 @@ package extension ZxdgToplevelDecorationV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZxdgToplevelDecorationV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgToplevelDecorationV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

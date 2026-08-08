@@ -13,16 +13,15 @@ package extension ZwpPrimarySelectionSourceV1Requests {
     }
 }
 package enum ZwpPrimarySelectionSourceV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpPrimarySelectionSourceV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_primary_selection_source_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_primary_selection_source_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_primary_selection_source_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.offer = offer_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_primary_selection_source_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_primary_selection_source_v1_requests(
+            offer: offer_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_primary_selection_source_v1(),
@@ -33,33 +32,24 @@ package enum ZwpPrimarySelectionSourceV1Server: WaylandServerInterface {
     package static func sendCancelled(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwp_primary_selection_source_v1_send_cancelled(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionSourceV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionSourceV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPrimarySelectionSourceV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpPrimarySelectionSourceV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let offer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, mime_type in
+    private static let offer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, mime_type in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe requestHandler.offer(WaylandRequest<ZwpPrimarySelectionSourceV1Server>(requestResource), mime_type: unsafe String(cString: _request_mime_type!))
-        }
+        unsafe h.offer(WaylandRequest<ZwpPrimarySelectionSourceV1Server>(res), mime_type: unsafe String(cString: mime_type!))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpPrimarySelectionSourceV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpPrimarySelectionSourceV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -93,7 +83,9 @@ package extension WlNewId where Interface == ZwpPrimarySelectionSourceV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpPrimarySelectionSourceV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpPrimarySelectionSourceV1Server {
@@ -104,12 +96,14 @@ package extension ZwpPrimarySelectionSourceV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpPrimarySelectionSourceV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionSourceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -123,10 +117,12 @@ package extension ZwpPrimarySelectionSourceV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpPrimarySelectionSourceV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionSourceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

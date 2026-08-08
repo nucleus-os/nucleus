@@ -21,24 +21,23 @@ package extension ZwlrForeignToplevelHandleV1Requests {
     }
 }
 package enum ZwlrForeignToplevelHandleV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwlrForeignToplevelHandleV1Requests
     package nonisolated static let maximumVersion: Int32 = 3
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwlr_foreign_toplevel_handle_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwlr_foreign_toplevel_handle_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwlr_foreign_toplevel_handle_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.set_maximized = setMaximized_impl
-        unsafe vt.pointee.unset_maximized = unsetMaximized_impl
-        unsafe vt.pointee.set_minimized = setMinimized_impl
-        unsafe vt.pointee.unset_minimized = unsetMinimized_impl
-        unsafe vt.pointee.activate = activate_impl
-        unsafe vt.pointee.close = close_impl
-        unsafe vt.pointee.set_rectangle = setRectangle_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_fullscreen = setFullscreen_impl
-        unsafe vt.pointee.unset_fullscreen = unsetFullscreen_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwlr_foreign_toplevel_handle_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwlr_foreign_toplevel_handle_v1_requests(
+            set_maximized: setMaximized_impl,
+            unset_maximized: unsetMaximized_impl,
+            set_minimized: setMinimized_impl,
+            unset_minimized: unsetMinimized_impl,
+            activate: activate_impl,
+            close: close_impl,
+            set_rectangle: setRectangle_impl,
+            destroy: destroy_impl,
+            set_fullscreen: setFullscreen_impl,
+            unset_fullscreen: unsetFullscreen_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_foreign_toplevel_handle_v1(),
@@ -67,118 +66,75 @@ package enum ZwlrForeignToplevelHandleV1Server: WaylandServerInterface {
     package static func sendParent(_ target: UnsafeMutablePointer<wl_resource>, parent: UnsafeMutablePointer<wl_resource>?) {
         unsafe zwlr_foreign_toplevel_handle_v1_send_parent(target, parent)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrForeignToplevelHandleV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrForeignToplevelHandleV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrForeignToplevelHandleV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwlrForeignToplevelHandleV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setMaximized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setMaximized_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMaximized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.setMaximized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
-    private static let unsetMaximized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let unsetMaximized_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.unsetMaximized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.unsetMaximized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
-    private static let setMinimized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setMinimized_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMinimized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.setMinimized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
-    private static let unsetMinimized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let unsetMinimized_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.unsetMinimized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.unsetMinimized(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
-    private static let activate_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, seat in
+    private static let activate_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, seat in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.activate(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!))
-        }
+        unsafe h.activate(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res), seat: WaylandBorrowedObject<WlSeatServer>(seat!))
     }
-    private static let close_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let close_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.close(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.close(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
-    private static let setRectangle_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, surface, x, y, width, height in
+    private static let setRectangle_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, surface, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setRectangle(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.setRectangle(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!), x: x, y: y, width: width, height: height)
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setFullscreen_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, output in
+    private static let setFullscreen_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, output in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setFullscreen(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource), output: _request_output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(_request_output!)))
-        }
+        unsafe h.setFullscreen(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res), output: output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(output!)))
     }
-    private static let unsetFullscreen_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let unsetFullscreen_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.unsetFullscreen(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(requestResource))
-        }
+        unsafe h.unsetFullscreen(WaylandRequest<ZwlrForeignToplevelHandleV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ZwlrForeignToplevelHandleV1Server {
@@ -283,7 +239,9 @@ package extension WlNewId where Interface == ZwlrForeignToplevelHandleV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwlrForeignToplevelHandleV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwlrForeignToplevelHandleV1Server {
@@ -294,12 +252,14 @@ package extension ZwlrForeignToplevelHandleV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwlrForeignToplevelHandleV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrForeignToplevelHandleV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -313,10 +273,12 @@ package extension ZwlrForeignToplevelHandleV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwlrForeignToplevelHandleV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrForeignToplevelHandleV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

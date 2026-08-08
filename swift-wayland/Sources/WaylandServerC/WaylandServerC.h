@@ -379,1072 +379,1072 @@ static inline const struct wl_interface *swift_wayland_iface_zwp_xwayland_keyboa
 
 /* Request-handler vtable typedefs (non-colliding names for Swift). */
 typedef struct swift_wayland_wl_display_requests {
-    void (*sync)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_registry)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *sync)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_registry)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wl_display_requests;
 typedef struct swift_wayland_wl_registry_requests {
-    void (*bind)(struct wl_client *, struct wl_resource *, uint32_t, const char *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *bind)(struct wl_client *, struct wl_resource *, uint32_t, const char *, uint32_t, uint32_t);
 } swift_wayland_wl_registry_requests;
 typedef struct swift_wayland_wl_compositor_requests {
-    void (*create_surface)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_region)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_surface)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_region)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_compositor_requests;
 typedef struct swift_wayland_wl_shm_pool_requests {
-    void (*create_buffer)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t, int32_t, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*resize)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_buffer)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t, int32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *resize)(struct wl_client *, struct wl_resource *, int32_t);
 } swift_wayland_wl_shm_pool_requests;
 typedef struct swift_wayland_wl_shm_requests {
-    void (*create_pool)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_pool)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_shm_requests;
 typedef struct swift_wayland_wl_buffer_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_buffer_requests;
 typedef struct swift_wayland_wl_data_offer_requests {
-    void (*accept)(struct wl_client *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*receive)(struct wl_client *, struct wl_resource *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*finish)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_actions)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *accept)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *receive)(struct wl_client *, struct wl_resource *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *finish)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_actions)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
 } swift_wayland_wl_data_offer_requests;
 typedef struct swift_wayland_wl_data_source_requests {
-    void (*offer)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_actions)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_actions)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wl_data_source_requests;
 typedef struct swift_wayland_wl_data_device_requests {
-    void (*start_drag)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *start_drag)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_data_device_requests;
 typedef struct swift_wayland_wl_data_device_manager_requests {
-    void (*create_data_source)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_data_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_data_source)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_data_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_data_device_manager_requests;
 typedef struct swift_wayland_wl_shell_requests {
-    void (*get_shell_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_shell_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wl_shell_requests;
 typedef struct swift_wayland_wl_shell_surface_requests {
-    void (*pong)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_toplevel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_transient)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_fullscreen)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_popup)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_maximized)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_title)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_class)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *pong)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_toplevel)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_transient)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_fullscreen)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_popup)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_maximized)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_title)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_class)(struct wl_client *, struct wl_resource *, const char *);
 } swift_wayland_wl_shell_surface_requests;
 typedef struct swift_wayland_wl_surface_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*attach)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*damage)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*frame)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_opaque_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_input_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_buffer_transform)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_buffer_scale)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_release)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *attach)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *damage)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_opaque_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_input_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_buffer_transform)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_buffer_scale)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_release)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wl_surface_requests;
 typedef struct swift_wayland_wl_seat_requests {
-    void (*get_pointer)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_keyboard)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_touch)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_pointer)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_keyboard)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_touch)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_seat_requests;
 typedef struct swift_wayland_wl_pointer_requests {
-    void (*set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_pointer_requests;
 typedef struct swift_wayland_wl_keyboard_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_keyboard_requests;
 typedef struct swift_wayland_wl_touch_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_touch_requests;
 typedef struct swift_wayland_wl_output_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_output_requests;
 typedef struct swift_wayland_wl_region_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*add)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*subtract)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *add)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *subtract)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
 } swift_wayland_wl_region_requests;
 typedef struct swift_wayland_wl_subcompositor_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_subsurface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_subsurface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
 } swift_wayland_wl_subcompositor_requests;
 typedef struct swift_wayland_wl_subsurface_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*place_above)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*place_below)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_sync)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_desync)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *place_above)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *place_below)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_sync)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_desync)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wl_subsurface_requests;
 typedef struct swift_wayland_wl_fixes_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy_registry)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy_registry)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_wl_fixes_requests;
 typedef struct swift_wayland_org_kde_kwin_blur_manager_requests {
-    void (*create)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_org_kde_kwin_blur_manager_requests;
 _Static_assert(sizeof(swift_wayland_org_kde_kwin_blur_manager_requests) == sizeof(struct org_kde_kwin_blur_manager_interface), "org_kde_kwin_blur_manager request layout mismatch");
 typedef struct swift_wayland_org_kde_kwin_blur_requests {
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_org_kde_kwin_blur_requests;
 _Static_assert(sizeof(swift_wayland_org_kde_kwin_blur_requests) == sizeof(struct org_kde_kwin_blur_interface), "org_kde_kwin_blur request layout mismatch");
 typedef struct swift_wayland_org_kde_kwin_appmenu_manager_requests {
-    void (*create)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_org_kde_kwin_appmenu_manager_requests;
 _Static_assert(sizeof(swift_wayland_org_kde_kwin_appmenu_manager_requests) == sizeof(struct org_kde_kwin_appmenu_manager_interface), "org_kde_kwin_appmenu_manager request layout mismatch");
 typedef struct swift_wayland_org_kde_kwin_appmenu_requests {
-    void (*set_address)(struct wl_client *, struct wl_resource *, const char *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_address)(struct wl_client *, struct wl_resource *, const char *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_org_kde_kwin_appmenu_requests;
 _Static_assert(sizeof(swift_wayland_org_kde_kwin_appmenu_requests) == sizeof(struct org_kde_kwin_appmenu_interface), "org_kde_kwin_appmenu request layout mismatch");
 typedef struct swift_wayland_zwlr_foreign_toplevel_manager_v1_requests {
-    void (*stop)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_foreign_toplevel_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_foreign_toplevel_manager_v1_requests) == sizeof(struct zwlr_foreign_toplevel_manager_v1_interface), "zwlr_foreign_toplevel_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_foreign_toplevel_handle_v1_requests {
-    void (*set_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_minimized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_minimized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*activate)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*close)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_rectangle)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_fullscreen)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_minimized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_minimized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *close)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_rectangle)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_fullscreen)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_foreign_toplevel_handle_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_foreign_toplevel_handle_v1_requests) == sizeof(struct zwlr_foreign_toplevel_handle_v1_interface), "zwlr_foreign_toplevel_handle_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_gamma_control_manager_v1_requests {
-    void (*get_gamma_control)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_gamma_control)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_gamma_control_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_gamma_control_manager_v1_requests) == sizeof(struct zwlr_gamma_control_manager_v1_interface), "zwlr_gamma_control_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_gamma_control_v1_requests {
-    void (*set_gamma)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_gamma)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_gamma_control_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_gamma_control_v1_requests) == sizeof(struct zwlr_gamma_control_v1_interface), "zwlr_gamma_control_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_layer_shell_v1_requests {
-    void (*get_layer_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_layer_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_layer_shell_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_layer_shell_v1_requests) == sizeof(struct zwlr_layer_shell_v1_interface), "zwlr_layer_shell_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_layer_surface_v1_requests {
-    void (*set_size)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_anchor)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_exclusive_zone)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_margin)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_keyboard_interactivity)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_popup)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ack_configure)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_layer)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_exclusive_edge)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_size)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_anchor)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_exclusive_zone)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_margin)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_keyboard_interactivity)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_popup)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ack_configure)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_layer)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_exclusive_edge)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zwlr_layer_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_layer_surface_v1_requests) == sizeof(struct zwlr_layer_surface_v1_interface), "zwlr_layer_surface_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_output_manager_v1_requests {
-    void (*create_configuration)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*stop)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_configuration)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_output_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_output_manager_v1_requests) == sizeof(struct zwlr_output_manager_v1_interface), "zwlr_output_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_output_head_v1_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_output_head_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_output_head_v1_requests) == sizeof(struct zwlr_output_head_v1_interface), "zwlr_output_head_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_output_mode_v1_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_output_mode_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_output_mode_v1_requests) == sizeof(struct zwlr_output_mode_v1_interface), "zwlr_output_mode_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_output_configuration_v1_requests {
-    void (*enable_head)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*disable_head)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*apply)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*test)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *enable_head)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *disable_head)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *apply)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *test)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_output_configuration_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_output_configuration_v1_requests) == sizeof(struct zwlr_output_configuration_v1_interface), "zwlr_output_configuration_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_output_configuration_head_v1_requests {
-    void (*set_mode)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_custom_mode)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_transform)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_scale)(struct wl_client *, struct wl_resource *, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_adaptive_sync)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_mode)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_custom_mode)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_transform)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_scale)(struct wl_client *, struct wl_resource *, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_adaptive_sync)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zwlr_output_configuration_head_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_output_configuration_head_v1_requests) == sizeof(struct zwlr_output_configuration_head_v1_interface), "zwlr_output_configuration_head_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_screencopy_manager_v1_requests {
-    void (*capture_output)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*capture_output_region)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *capture_output)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *capture_output_region)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_screencopy_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_screencopy_manager_v1_requests) == sizeof(struct zwlr_screencopy_manager_v1_interface), "zwlr_screencopy_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_screencopy_frame_v1_requests {
-    void (*copy)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*copy_with_damage)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *copy)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *copy_with_damage)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwlr_screencopy_frame_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_screencopy_frame_v1_requests) == sizeof(struct zwlr_screencopy_frame_v1_interface), "zwlr_screencopy_frame_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_dmabuf_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_params)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_default_feedback)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface_feedback)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_params)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_default_feedback)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface_feedback)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_linux_dmabuf_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_linux_dmabuf_v1_requests) == sizeof(struct zwp_linux_dmabuf_v1_interface), "zwp_linux_dmabuf_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_buffer_params_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*add)(struct wl_client *, struct wl_resource *, int32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create)(struct wl_client *, struct wl_resource *, int32_t, int32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_immed)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *add)(struct wl_client *, struct wl_resource *, int32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, int32_t, int32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_immed)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t, uint32_t, uint32_t);
 } swift_wayland_zwp_linux_buffer_params_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_linux_buffer_params_v1_requests) == sizeof(struct zwp_linux_buffer_params_v1_interface), "zwp_linux_buffer_params_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_dmabuf_feedback_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_linux_dmabuf_feedback_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_linux_dmabuf_feedback_v1_requests) == sizeof(struct zwp_linux_dmabuf_feedback_v1_interface), "zwp_linux_dmabuf_feedback_v1 request layout mismatch");
 typedef struct swift_wayland_wp_presentation_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*feedback)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *feedback)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_presentation_requests;
 _Static_assert(sizeof(swift_wayland_wp_presentation_requests) == sizeof(struct wp_presentation_interface), "wp_presentation request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_manager_v2_requests {
-    void (*get_tablet_seat)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_tablet_seat)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_manager_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_manager_v2_requests) == sizeof(struct zwp_tablet_manager_v2_interface), "zwp_tablet_manager_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_seat_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_seat_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_seat_v2_requests) == sizeof(struct zwp_tablet_seat_v2_interface), "zwp_tablet_seat_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_tool_v2_requests {
-    void (*set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_tool_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_tool_v2_requests) == sizeof(struct zwp_tablet_tool_v2_interface), "zwp_tablet_tool_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_v2_requests) == sizeof(struct zwp_tablet_v2_interface), "zwp_tablet_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_pad_ring_v2_requests {
-    void (*set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_pad_ring_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_pad_ring_v2_requests) == sizeof(struct zwp_tablet_pad_ring_v2_interface), "zwp_tablet_pad_ring_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_pad_strip_v2_requests {
-    void (*set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_pad_strip_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_pad_strip_v2_requests) == sizeof(struct zwp_tablet_pad_strip_v2_interface), "zwp_tablet_pad_strip_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_pad_group_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_pad_group_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_pad_group_v2_requests) == sizeof(struct zwp_tablet_pad_group_v2_interface), "zwp_tablet_pad_group_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_pad_v2_requests {
-    void (*set_feedback)(struct wl_client *, struct wl_resource *, uint32_t, const char *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_feedback)(struct wl_client *, struct wl_resource *, uint32_t, const char *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_pad_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_pad_v2_requests) == sizeof(struct zwp_tablet_pad_v2_interface), "zwp_tablet_pad_v2 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_pad_dial_v2_requests {
-    void (*set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_feedback)(struct wl_client *, struct wl_resource *, const char *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_pad_dial_v2_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_pad_dial_v2_requests) == sizeof(struct zwp_tablet_pad_dial_v2_interface), "zwp_tablet_pad_dial_v2 request layout mismatch");
 typedef struct swift_wayland_wp_viewporter_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_viewport)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_viewport)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_viewporter_requests;
 _Static_assert(sizeof(swift_wayland_wp_viewporter_requests) == sizeof(struct wp_viewporter_interface), "wp_viewporter request layout mismatch");
 typedef struct swift_wayland_wp_viewport_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_source)(struct wl_client *, struct wl_resource *, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_destination)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_source)(struct wl_client *, struct wl_resource *, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_destination)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
 } swift_wayland_wp_viewport_requests;
 _Static_assert(sizeof(swift_wayland_wp_viewport_requests) == sizeof(struct wp_viewport_interface), "wp_viewport request layout mismatch");
 typedef struct swift_wayland_xdg_wm_base_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_positioner)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xdg_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*pong)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_positioner)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xdg_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *pong)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_xdg_wm_base_requests;
 _Static_assert(sizeof(swift_wayland_xdg_wm_base_requests) == sizeof(struct xdg_wm_base_interface), "xdg_wm_base request layout mismatch");
 typedef struct swift_wayland_xdg_positioner_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_anchor_rect)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_anchor)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_gravity)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_constraint_adjustment)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_reactive)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent_configure)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_anchor_rect)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_anchor)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_gravity)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_constraint_adjustment)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_reactive)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent_configure)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_xdg_positioner_requests;
 _Static_assert(sizeof(swift_wayland_xdg_positioner_requests) == sizeof(struct xdg_positioner_interface), "xdg_positioner request layout mismatch");
 typedef struct swift_wayland_xdg_surface_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_toplevel)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_popup)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_window_geometry)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ack_configure)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_toplevel)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_popup)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_window_geometry)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *ack_configure)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_xdg_surface_requests;
 _Static_assert(sizeof(swift_wayland_xdg_surface_requests) == sizeof(struct xdg_surface_interface), "xdg_surface request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_title)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_app_id)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*show_window_menu)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_max_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_min_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_fullscreen)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_minimized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_title)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_app_id)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *show_window_menu)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_max_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_min_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_fullscreen)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_minimized)(struct wl_client *, struct wl_resource *);
 } swift_wayland_xdg_toplevel_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_requests) == sizeof(struct xdg_toplevel_interface), "xdg_toplevel request layout mismatch");
 typedef struct swift_wayland_xdg_popup_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*grab)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*reposition)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *grab)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *reposition)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
 } swift_wayland_xdg_popup_requests;
 _Static_assert(sizeof(swift_wayland_xdg_popup_requests) == sizeof(struct xdg_popup_interface), "xdg_popup request layout mismatch");
 typedef struct swift_wayland_wp_alpha_modifier_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_alpha_modifier_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_alpha_modifier_v1_requests) == sizeof(struct wp_alpha_modifier_v1_interface), "wp_alpha_modifier_v1 request layout mismatch");
 typedef struct swift_wayland_wp_alpha_modifier_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_multiplier)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_multiplier)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_alpha_modifier_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_alpha_modifier_surface_v1_requests) == sizeof(struct wp_alpha_modifier_surface_v1_interface), "wp_alpha_modifier_surface_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_output)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface_feedback)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_icc_creator)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_parametric_creator)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_windows_scrgb)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_image_description)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_output)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface_feedback)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_icc_creator)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_parametric_creator)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_windows_scrgb)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_image_description)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_color_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_manager_v1_requests) == sizeof(struct wp_color_manager_v1_interface), "wp_color_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_management_output_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_image_description)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_image_description)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_color_management_output_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_management_output_v1_requests) == sizeof(struct wp_color_management_output_v1_interface), "wp_color_management_output_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_management_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_image_description)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_image_description)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_image_description)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_image_description)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_color_management_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_management_surface_v1_requests) == sizeof(struct wp_color_management_surface_v1_interface), "wp_color_management_surface_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_management_surface_feedback_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_preferred)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_preferred_parametric)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_preferred)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_preferred_parametric)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_color_management_surface_feedback_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_management_surface_feedback_v1_requests) == sizeof(struct wp_color_management_surface_feedback_v1_interface), "wp_color_management_surface_feedback_v1 request layout mismatch");
 typedef struct swift_wayland_wp_image_description_creator_icc_v1_requests {
-    void (*create)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_icc_file)(struct wl_client *, struct wl_resource *, int32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_icc_file)(struct wl_client *, struct wl_resource *, int32_t, uint32_t, uint32_t);
 } swift_wayland_wp_image_description_creator_icc_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_image_description_creator_icc_v1_requests) == sizeof(struct wp_image_description_creator_icc_v1_interface), "wp_image_description_creator_icc_v1 request layout mismatch");
 typedef struct swift_wayland_wp_image_description_creator_params_v1_requests {
-    void (*create)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_tf_named)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_tf_power)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_primaries_named)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_primaries)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_luminances)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_mastering_display_primaries)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_mastering_luminance)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_max_cll)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_max_fall)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_tf_named)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_tf_power)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_primaries_named)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_primaries)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_luminances)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_mastering_display_primaries)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_mastering_luminance)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_max_cll)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_max_fall)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_image_description_creator_params_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_image_description_creator_params_v1_requests) == sizeof(struct wp_image_description_creator_params_v1_interface), "wp_image_description_creator_params_v1 request layout mismatch");
 typedef struct swift_wayland_wp_image_description_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_information)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_information)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_image_description_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_image_description_v1_requests) == sizeof(struct wp_image_description_v1_interface), "wp_image_description_v1 request layout mismatch");
 typedef struct swift_wayland_wp_image_description_reference_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_image_description_reference_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_image_description_reference_v1_requests) == sizeof(struct wp_image_description_reference_v1_interface), "wp_image_description_reference_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_representation_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_color_representation_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_representation_manager_v1_requests) == sizeof(struct wp_color_representation_manager_v1_interface), "wp_color_representation_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_color_representation_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_alpha_mode)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_coefficients_and_range)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_chroma_location)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_alpha_mode)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_coefficients_and_range)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_chroma_location)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_color_representation_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_color_representation_surface_v1_requests) == sizeof(struct wp_color_representation_surface_v1_interface), "wp_color_representation_surface_v1 request layout mismatch");
 typedef struct swift_wayland_wp_commit_timing_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_timer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_timer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_commit_timing_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_commit_timing_manager_v1_requests) == sizeof(struct wp_commit_timing_manager_v1_interface), "wp_commit_timing_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_commit_timer_v1_requests {
-    void (*set_timestamp)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_timestamp)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_commit_timer_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_commit_timer_v1_requests) == sizeof(struct wp_commit_timer_v1_interface), "wp_commit_timer_v1 request layout mismatch");
 typedef struct swift_wayland_wp_content_type_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface_content_type)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface_content_type)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_content_type_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_content_type_manager_v1_requests) == sizeof(struct wp_content_type_manager_v1_interface), "wp_content_type_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_content_type_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_content_type)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_content_type)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_content_type_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_content_type_v1_requests) == sizeof(struct wp_content_type_v1_interface), "wp_content_type_v1 request layout mismatch");
 typedef struct swift_wayland_wp_cursor_shape_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_tablet_tool_v2)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_tablet_tool_v2)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_cursor_shape_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_cursor_shape_manager_v1_requests) == sizeof(struct wp_cursor_shape_manager_v1_interface), "wp_cursor_shape_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_cursor_shape_device_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_shape)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_shape)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
 } swift_wayland_wp_cursor_shape_device_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_cursor_shape_device_v1_requests) == sizeof(struct wp_cursor_shape_device_v1_interface), "wp_cursor_shape_device_v1 request layout mismatch");
 typedef struct swift_wayland_wp_drm_lease_device_v1_requests {
-    void (*create_lease_request)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_lease_request)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_drm_lease_device_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_drm_lease_device_v1_requests) == sizeof(struct wp_drm_lease_device_v1_interface), "wp_drm_lease_device_v1 request layout mismatch");
 typedef struct swift_wayland_wp_drm_lease_connector_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_drm_lease_connector_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_drm_lease_connector_v1_requests) == sizeof(struct wp_drm_lease_connector_v1_interface), "wp_drm_lease_connector_v1 request layout mismatch");
 typedef struct swift_wayland_wp_drm_lease_request_v1_requests {
-    void (*request_connector)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*submit)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *request_connector)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *submit)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_wp_drm_lease_request_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_drm_lease_request_v1_requests) == sizeof(struct wp_drm_lease_request_v1_interface), "wp_drm_lease_request_v1 request layout mismatch");
 typedef struct swift_wayland_wp_drm_lease_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_drm_lease_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_drm_lease_v1_requests) == sizeof(struct wp_drm_lease_v1_interface), "wp_drm_lease_v1 request layout mismatch");
 typedef struct swift_wayland_ext_background_effect_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_background_effect)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_background_effect)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_ext_background_effect_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_background_effect_manager_v1_requests) == sizeof(struct ext_background_effect_manager_v1_interface), "ext_background_effect_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_background_effect_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_blur_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_blur_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_ext_background_effect_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_background_effect_surface_v1_requests) == sizeof(struct ext_background_effect_surface_v1_interface), "ext_background_effect_surface_v1 request layout mismatch");
 typedef struct swift_wayland_ext_data_control_manager_v1_requests {
-    void (*create_data_source)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_data_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_data_source)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_data_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_data_control_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_data_control_manager_v1_requests) == sizeof(struct ext_data_control_manager_v1_interface), "ext_data_control_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_data_control_device_v1_requests {
-    void (*set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_primary_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_primary_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_ext_data_control_device_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_data_control_device_v1_requests) == sizeof(struct ext_data_control_device_v1_interface), "ext_data_control_device_v1 request layout mismatch");
 typedef struct swift_wayland_ext_data_control_source_v1_requests {
-    void (*offer)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_data_control_source_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_data_control_source_v1_requests) == sizeof(struct ext_data_control_source_v1_interface), "ext_data_control_source_v1 request layout mismatch");
 typedef struct swift_wayland_ext_data_control_offer_v1_requests {
-    void (*receive)(struct wl_client *, struct wl_resource *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *receive)(struct wl_client *, struct wl_resource *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_data_control_offer_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_data_control_offer_v1_requests) == sizeof(struct ext_data_control_offer_v1_interface), "ext_data_control_offer_v1 request layout mismatch");
 typedef struct swift_wayland_ext_foreign_toplevel_list_v1_requests {
-    void (*stop)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_foreign_toplevel_list_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_foreign_toplevel_list_v1_requests) == sizeof(struct ext_foreign_toplevel_list_v1_interface), "ext_foreign_toplevel_list_v1 request layout mismatch");
 typedef struct swift_wayland_ext_foreign_toplevel_handle_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_foreign_toplevel_handle_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_foreign_toplevel_handle_v1_requests) == sizeof(struct ext_foreign_toplevel_handle_v1_interface), "ext_foreign_toplevel_handle_v1 request layout mismatch");
 typedef struct swift_wayland_ext_idle_notifier_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_idle_notification)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_input_idle_notification)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_idle_notification)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_input_idle_notification)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, struct wl_resource *);
 } swift_wayland_ext_idle_notifier_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_idle_notifier_v1_requests) == sizeof(struct ext_idle_notifier_v1_interface), "ext_idle_notifier_v1 request layout mismatch");
 typedef struct swift_wayland_ext_idle_notification_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_idle_notification_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_idle_notification_v1_requests) == sizeof(struct ext_idle_notification_v1_interface), "ext_idle_notification_v1 request layout mismatch");
 typedef struct swift_wayland_ext_image_capture_source_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_image_capture_source_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_image_capture_source_v1_requests) == sizeof(struct ext_image_capture_source_v1_interface), "ext_image_capture_source_v1 request layout mismatch");
 typedef struct swift_wayland_ext_output_image_capture_source_manager_v1_requests {
-    void (*create_source)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_source)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_output_image_capture_source_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_output_image_capture_source_manager_v1_requests) == sizeof(struct ext_output_image_capture_source_manager_v1_interface), "ext_output_image_capture_source_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_foreign_toplevel_image_capture_source_manager_v1_requests {
-    void (*create_source)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_source)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_foreign_toplevel_image_capture_source_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_foreign_toplevel_image_capture_source_manager_v1_requests) == sizeof(struct ext_foreign_toplevel_image_capture_source_manager_v1_interface), "ext_foreign_toplevel_image_capture_source_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_image_copy_capture_manager_v1_requests {
-    void (*create_session)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_pointer_cursor_session)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_session)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_pointer_cursor_session)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_image_copy_capture_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_image_copy_capture_manager_v1_requests) == sizeof(struct ext_image_copy_capture_manager_v1_interface), "ext_image_copy_capture_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_image_copy_capture_session_v1_requests {
-    void (*create_frame)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_frame)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_image_copy_capture_session_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_image_copy_capture_session_v1_requests) == sizeof(struct ext_image_copy_capture_session_v1_interface), "ext_image_copy_capture_session_v1 request layout mismatch");
 typedef struct swift_wayland_ext_image_copy_capture_frame_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*attach_buffer)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*capture)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *attach_buffer)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *damage_buffer)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *capture)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_image_copy_capture_frame_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_image_copy_capture_frame_v1_requests) == sizeof(struct ext_image_copy_capture_frame_v1_interface), "ext_image_copy_capture_frame_v1 request layout mismatch");
 typedef struct swift_wayland_ext_image_copy_capture_cursor_session_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_capture_session)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_capture_session)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_ext_image_copy_capture_cursor_session_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_image_copy_capture_cursor_session_v1_requests) == sizeof(struct ext_image_copy_capture_cursor_session_v1_interface), "ext_image_copy_capture_cursor_session_v1 request layout mismatch");
 typedef struct swift_wayland_ext_session_lock_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*lock)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *lock)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_ext_session_lock_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_session_lock_manager_v1_requests) == sizeof(struct ext_session_lock_manager_v1_interface), "ext_session_lock_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_session_lock_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_lock_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unlock_and_destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_lock_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unlock_and_destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_session_lock_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_session_lock_v1_requests) == sizeof(struct ext_session_lock_v1_interface), "ext_session_lock_v1 request layout mismatch");
 typedef struct swift_wayland_ext_session_lock_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ack_configure)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ack_configure)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_ext_session_lock_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_session_lock_surface_v1_requests) == sizeof(struct ext_session_lock_surface_v1_interface), "ext_session_lock_surface_v1 request layout mismatch");
 typedef struct swift_wayland_ext_transient_seat_manager_v1_requests {
-    void (*create)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_transient_seat_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_transient_seat_manager_v1_requests) == sizeof(struct ext_transient_seat_manager_v1_interface), "ext_transient_seat_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_transient_seat_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_transient_seat_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_transient_seat_v1_requests) == sizeof(struct ext_transient_seat_v1_interface), "ext_transient_seat_v1 request layout mismatch");
 typedef struct swift_wayland_ext_workspace_manager_v1_requests {
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*stop)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *stop)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_workspace_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_workspace_manager_v1_requests) == sizeof(struct ext_workspace_manager_v1_interface), "ext_workspace_manager_v1 request layout mismatch");
 typedef struct swift_wayland_ext_workspace_group_handle_v1_requests {
-    void (*create_workspace)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_workspace)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_workspace_group_handle_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_workspace_group_handle_v1_requests) == sizeof(struct ext_workspace_group_handle_v1_interface), "ext_workspace_group_handle_v1 request layout mismatch");
 typedef struct swift_wayland_ext_workspace_handle_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*activate)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*deactivate)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*assign)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*remove)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *deactivate)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *assign)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *remove)(struct wl_client *, struct wl_resource *);
 } swift_wayland_ext_workspace_handle_v1_requests;
 _Static_assert(sizeof(swift_wayland_ext_workspace_handle_v1_requests) == sizeof(struct ext_workspace_handle_v1_interface), "ext_workspace_handle_v1 request layout mismatch");
 typedef struct swift_wayland_wp_fifo_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_fifo)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_fifo)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_fifo_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_fifo_manager_v1_requests) == sizeof(struct wp_fifo_manager_v1_interface), "wp_fifo_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_fifo_v1_requests {
-    void (*set_barrier)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*wait_barrier)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_barrier)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *wait_barrier)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_fifo_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_fifo_v1_requests) == sizeof(struct wp_fifo_v1_interface), "wp_fifo_v1 request layout mismatch");
 typedef struct swift_wayland_wp_fractional_scale_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_fractional_scale)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_fractional_scale)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_fractional_scale_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_fractional_scale_manager_v1_requests) == sizeof(struct wp_fractional_scale_manager_v1_interface), "wp_fractional_scale_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_fractional_scale_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_fractional_scale_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_fractional_scale_v1_requests) == sizeof(struct wp_fractional_scale_v1_interface), "wp_fractional_scale_v1 request layout mismatch");
 typedef struct swift_wayland_wp_linux_drm_syncobj_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*import_timeline)(struct wl_client *, struct wl_resource *, uint32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *import_timeline)(struct wl_client *, struct wl_resource *, uint32_t, int32_t);
 } swift_wayland_wp_linux_drm_syncobj_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_linux_drm_syncobj_manager_v1_requests) == sizeof(struct wp_linux_drm_syncobj_manager_v1_interface), "wp_linux_drm_syncobj_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_linux_drm_syncobj_timeline_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_linux_drm_syncobj_timeline_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_linux_drm_syncobj_timeline_v1_requests) == sizeof(struct wp_linux_drm_syncobj_timeline_v1_interface), "wp_linux_drm_syncobj_timeline_v1 request layout mismatch");
 typedef struct swift_wayland_wp_linux_drm_syncobj_surface_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_acquire_point)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_release_point)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_acquire_point)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_release_point)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
 } swift_wayland_wp_linux_drm_syncobj_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_linux_drm_syncobj_surface_v1_requests) == sizeof(struct wp_linux_drm_syncobj_surface_v1_interface), "wp_linux_drm_syncobj_surface_v1 request layout mismatch");
 typedef struct swift_wayland_wp_pointer_warp_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*warp_pointer)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, wl_fixed_t, wl_fixed_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *warp_pointer)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, wl_fixed_t, wl_fixed_t, uint32_t);
 } swift_wayland_wp_pointer_warp_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_pointer_warp_v1_requests) == sizeof(struct wp_pointer_warp_v1_interface), "wp_pointer_warp_v1 request layout mismatch");
 typedef struct swift_wayland_wp_security_context_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_listener)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_listener)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, int32_t);
 } swift_wayland_wp_security_context_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_security_context_manager_v1_requests) == sizeof(struct wp_security_context_manager_v1_interface), "wp_security_context_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_security_context_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_sandbox_engine)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_app_id)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_instance_id)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_sandbox_engine)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_app_id)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_instance_id)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_security_context_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_security_context_v1_requests) == sizeof(struct wp_security_context_v1_interface), "wp_security_context_v1 request layout mismatch");
 typedef struct swift_wayland_wp_single_pixel_buffer_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_u32_rgba_buffer)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_u32_rgba_buffer)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 } swift_wayland_wp_single_pixel_buffer_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_single_pixel_buffer_manager_v1_requests) == sizeof(struct wp_single_pixel_buffer_manager_v1_interface), "wp_single_pixel_buffer_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_tearing_control_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_tearing_control)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_tearing_control)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_wp_tearing_control_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_tearing_control_manager_v1_requests) == sizeof(struct wp_tearing_control_manager_v1_interface), "wp_tearing_control_manager_v1 request layout mismatch");
 typedef struct swift_wayland_wp_tearing_control_v1_requests {
-    void (*set_presentation_hint)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_presentation_hint)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_wp_tearing_control_v1_requests;
 _Static_assert(sizeof(swift_wayland_wp_tearing_control_v1_requests) == sizeof(struct wp_tearing_control_v1_interface), "wp_tearing_control_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_activation_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_activation_token)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*activate)(struct wl_client *, struct wl_resource *, const char *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_activation_token)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(struct wl_client *, struct wl_resource *, const char *, struct wl_resource *);
 } swift_wayland_xdg_activation_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_activation_v1_requests) == sizeof(struct xdg_activation_v1_interface), "xdg_activation_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_activation_token_v1_requests {
-    void (*set_serial)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_app_id)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_surface)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_serial)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_app_id)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_surface)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_xdg_activation_token_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_activation_token_v1_requests) == sizeof(struct xdg_activation_token_v1_interface), "xdg_activation_token_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_wm_dialog_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xdg_dialog)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xdg_dialog)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_xdg_wm_dialog_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_wm_dialog_v1_requests) == sizeof(struct xdg_wm_dialog_v1_interface), "xdg_wm_dialog_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_dialog_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_modal)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_modal)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_modal)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_modal)(struct wl_client *, struct wl_resource *);
 } swift_wayland_xdg_dialog_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_dialog_v1_requests) == sizeof(struct xdg_dialog_v1_interface), "xdg_dialog_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_session_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_session)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_session)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, const char *);
 } swift_wayland_xdg_session_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_session_manager_v1_requests) == sizeof(struct xdg_session_manager_v1_interface), "xdg_session_manager_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_session_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*remove)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*add_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*restore_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*remove_toplevel)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *remove)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *add_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *restore_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *remove_toplevel)(struct wl_client *, struct wl_resource *, const char *);
 } swift_wayland_xdg_session_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_session_v1_requests) == sizeof(struct xdg_session_v1_interface), "xdg_session_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_session_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*rename)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *rename)(struct wl_client *, struct wl_resource *, const char *);
 } swift_wayland_xdg_toplevel_session_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_session_v1_requests) == sizeof(struct xdg_toplevel_session_v1_interface), "xdg_toplevel_session_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_system_bell_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ring)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ring)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_xdg_system_bell_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_system_bell_v1_requests) == sizeof(struct xdg_system_bell_v1_interface), "xdg_system_bell_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_drag_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xdg_toplevel_drag)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xdg_toplevel_drag)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_xdg_toplevel_drag_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_drag_manager_v1_requests) == sizeof(struct xdg_toplevel_drag_manager_v1_interface), "xdg_toplevel_drag_manager_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_drag_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*attach)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *attach)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t, int32_t);
 } swift_wayland_xdg_toplevel_drag_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_drag_v1_requests) == sizeof(struct xdg_toplevel_drag_v1_interface), "xdg_toplevel_drag_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_icon_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_icon)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_icon)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_icon)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_icon)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_xdg_toplevel_icon_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_icon_manager_v1_requests) == sizeof(struct xdg_toplevel_icon_manager_v1_interface), "xdg_toplevel_icon_manager_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_icon_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_name)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*add_buffer)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_name)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *add_buffer)(struct wl_client *, struct wl_resource *, struct wl_resource *, int32_t);
 } swift_wayland_xdg_toplevel_icon_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_icon_v1_requests) == sizeof(struct xdg_toplevel_icon_v1_interface), "xdg_toplevel_icon_v1 request layout mismatch");
 typedef struct swift_wayland_xdg_toplevel_tag_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_toplevel_tag)(struct wl_client *, struct wl_resource *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_toplevel_description)(struct wl_client *, struct wl_resource *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_toplevel_tag)(struct wl_client *, struct wl_resource *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_toplevel_description)(struct wl_client *, struct wl_resource *, struct wl_resource *, const char *);
 } swift_wayland_xdg_toplevel_tag_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_xdg_toplevel_tag_manager_v1_requests) == sizeof(struct xdg_toplevel_tag_manager_v1_interface), "xdg_toplevel_tag_manager_v1 request layout mismatch");
 typedef struct swift_wayland_xwayland_shell_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xwayland_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xwayland_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_xwayland_shell_v1_requests;
 _Static_assert(sizeof(swift_wayland_xwayland_shell_v1_requests) == sizeof(struct xwayland_shell_v1_interface), "xwayland_shell_v1 request layout mismatch");
 typedef struct swift_wayland_xwayland_surface_v1_requests {
-    void (*set_serial)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_serial)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_xwayland_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_xwayland_surface_v1_requests) == sizeof(struct xwayland_surface_v1_interface), "xwayland_surface_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_fullscreen_shell_v1_requests {
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*present_surface)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*present_surface_for_mode)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *present_surface)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *present_surface_for_mode)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, int32_t, uint32_t);
 } swift_wayland_zwp_fullscreen_shell_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_fullscreen_shell_v1_requests) == sizeof(struct zwp_fullscreen_shell_v1_interface), "zwp_fullscreen_shell_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_idle_inhibit_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_inhibitor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_inhibitor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_idle_inhibit_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_idle_inhibit_manager_v1_requests) == sizeof(struct zwp_idle_inhibit_manager_v1_interface), "zwp_idle_inhibit_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_idle_inhibitor_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_idle_inhibitor_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_idle_inhibitor_v1_requests) == sizeof(struct zwp_idle_inhibitor_v1_interface), "zwp_idle_inhibitor_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_input_method_context_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit_string)(struct wl_client *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_string)(struct wl_client *, struct wl_resource *, uint32_t, const char *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_styling)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*preedit_cursor)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*delete_surrounding_text)(struct wl_client *, struct wl_resource *, int32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*cursor_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modifiers_map)(struct wl_client *, struct wl_resource *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*keysym)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*grab_keyboard)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*key)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*modifiers)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*language)(struct wl_client *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*text_direction)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_string)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_string)(struct wl_client *, struct wl_resource *, uint32_t, const char *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_styling)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *preedit_cursor)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *delete_surrounding_text)(struct wl_client *, struct wl_resource *, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *cursor_position)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers_map)(struct wl_client *, struct wl_resource *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *keysym)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *grab_keyboard)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *key)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *language)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *text_direction)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
 } swift_wayland_zwp_input_method_context_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_input_method_context_v1_requests) == sizeof(struct zwp_input_method_context_v1_interface), "zwp_input_method_context_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_input_panel_v1_requests {
-    void (*get_input_panel_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_input_panel_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_input_panel_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_input_panel_v1_requests) == sizeof(struct zwp_input_panel_v1_interface), "zwp_input_panel_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_input_panel_surface_v1_requests {
-    void (*set_toplevel)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_overlay_panel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_toplevel)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_overlay_panel)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_input_panel_surface_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_input_panel_surface_v1_requests) == sizeof(struct zwp_input_panel_surface_v1_interface), "zwp_input_panel_surface_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_input_timestamps_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_keyboard_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_pointer_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_touch_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_keyboard_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_pointer_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_touch_timestamps)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_input_timestamps_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_input_timestamps_manager_v1_requests) == sizeof(struct zwp_input_timestamps_manager_v1_interface), "zwp_input_timestamps_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_input_timestamps_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_input_timestamps_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_input_timestamps_v1_requests) == sizeof(struct zwp_input_timestamps_v1_interface), "zwp_input_timestamps_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_keyboard_shortcuts_inhibit_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*inhibit_shortcuts)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *inhibit_shortcuts)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwp_keyboard_shortcuts_inhibit_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_keyboard_shortcuts_inhibit_manager_v1_requests) == sizeof(struct zwp_keyboard_shortcuts_inhibit_manager_v1_interface), "zwp_keyboard_shortcuts_inhibit_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_requests) == sizeof(struct zwp_keyboard_shortcuts_inhibitor_v1_interface), "zwp_keyboard_shortcuts_inhibitor_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_explicit_synchronization_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_synchronization)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_synchronization)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_linux_explicit_synchronization_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_linux_explicit_synchronization_v1_requests) == sizeof(struct zwp_linux_explicit_synchronization_v1_interface), "zwp_linux_explicit_synchronization_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_surface_synchronization_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_acquire_fence)(struct wl_client *, struct wl_resource *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_release)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_acquire_fence)(struct wl_client *, struct wl_resource *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_release)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zwp_linux_surface_synchronization_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_linux_surface_synchronization_v1_requests) == sizeof(struct zwp_linux_surface_synchronization_v1_interface), "zwp_linux_surface_synchronization_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_pointer_constraints_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*lock_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*confine_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *lock_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *confine_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t);
 } swift_wayland_zwp_pointer_constraints_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_pointer_constraints_v1_requests) == sizeof(struct zwp_pointer_constraints_v1_interface), "zwp_pointer_constraints_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_locked_pointer_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_cursor_position_hint)(struct wl_client *, struct wl_resource *, wl_fixed_t, wl_fixed_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor_position_hint)(struct wl_client *, struct wl_resource *, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwp_locked_pointer_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_locked_pointer_v1_requests) == sizeof(struct zwp_locked_pointer_v1_interface), "zwp_locked_pointer_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_confined_pointer_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_region)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwp_confined_pointer_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_confined_pointer_v1_requests) == sizeof(struct zwp_confined_pointer_v1_interface), "zwp_confined_pointer_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_pointer_gestures_v1_requests {
-    void (*get_swipe_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_pinch_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*release)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_hold_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_swipe_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_pinch_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_hold_gesture)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_pointer_gestures_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_pointer_gestures_v1_requests) == sizeof(struct zwp_pointer_gestures_v1_interface), "zwp_pointer_gestures_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_pointer_gesture_swipe_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_pointer_gesture_swipe_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_pointer_gesture_swipe_v1_requests) == sizeof(struct zwp_pointer_gesture_swipe_v1_interface), "zwp_pointer_gesture_swipe_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_pointer_gesture_pinch_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_pointer_gesture_pinch_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_pointer_gesture_pinch_v1_requests) == sizeof(struct zwp_pointer_gesture_pinch_v1_interface), "zwp_pointer_gesture_pinch_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_pointer_gesture_hold_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_pointer_gesture_hold_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_pointer_gesture_hold_v1_requests) == sizeof(struct zwp_pointer_gesture_hold_v1_interface), "zwp_pointer_gesture_hold_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_primary_selection_device_manager_v1_requests {
-    void (*create_source)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_source)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_device)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_primary_selection_device_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_primary_selection_device_manager_v1_requests) == sizeof(struct zwp_primary_selection_device_manager_v1_interface), "zwp_primary_selection_device_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_primary_selection_device_v1_requests {
-    void (*set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_selection)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_primary_selection_device_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_primary_selection_device_v1_requests) == sizeof(struct zwp_primary_selection_device_v1_interface), "zwp_primary_selection_device_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_primary_selection_offer_v1_requests {
-    void (*receive)(struct wl_client *, struct wl_resource *, const char *, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *receive)(struct wl_client *, struct wl_resource *, const char *, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_primary_selection_offer_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_primary_selection_offer_v1_requests) == sizeof(struct zwp_primary_selection_offer_v1_interface), "zwp_primary_selection_offer_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_primary_selection_source_v1_requests {
-    void (*offer)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *offer)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_primary_selection_source_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_primary_selection_source_v1_requests) == sizeof(struct zwp_primary_selection_source_v1_interface), "zwp_primary_selection_source_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_relative_pointer_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_relative_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_relative_pointer)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_relative_pointer_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_relative_pointer_manager_v1_requests) == sizeof(struct zwp_relative_pointer_manager_v1_interface), "zwp_relative_pointer_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_relative_pointer_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_relative_pointer_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_relative_pointer_v1_requests) == sizeof(struct zwp_relative_pointer_v1_interface), "zwp_relative_pointer_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_manager_v1_requests {
-    void (*get_tablet_seat)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *get_tablet_seat)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_manager_v1_requests) == sizeof(struct zwp_tablet_manager_v1_interface), "zwp_tablet_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_seat_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_seat_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_seat_v1_requests) == sizeof(struct zwp_tablet_seat_v1_interface), "zwp_tablet_seat_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_tool_v1_requests {
-    void (*set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_tool_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_tool_v1_requests) == sizeof(struct zwp_tablet_tool_v1_interface), "zwp_tablet_tool_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_tablet_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_tablet_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_tablet_v1_requests) == sizeof(struct zwp_tablet_v1_interface), "zwp_tablet_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_text_input_v1_requests {
-    void (*activate)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*deactivate)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*show_input_panel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hide_input_panel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*reset)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_surrounding_text)(struct wl_client *, struct wl_resource *, const char *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_content_type)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_cursor_rectangle)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_preferred_language)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit_state)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*invoke_action)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *deactivate)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *show_input_panel)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *hide_input_panel)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *reset)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_surrounding_text)(struct wl_client *, struct wl_resource *, const char *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_content_type)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor_rectangle)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_preferred_language)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_state)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *invoke_action)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
 } swift_wayland_zwp_text_input_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_text_input_v1_requests) == sizeof(struct zwp_text_input_v1_interface), "zwp_text_input_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_text_input_manager_v1_requests {
-    void (*create_text_input)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *create_text_input)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zwp_text_input_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_text_input_manager_v1_requests) == sizeof(struct zwp_text_input_manager_v1_interface), "zwp_text_input_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_text_input_v3_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*enable)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*disable)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_surrounding_text)(struct wl_client *, struct wl_resource *, const char *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_text_change_cause)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_content_type)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_cursor_rectangle)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*commit)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_available_actions)(struct wl_client *, struct wl_resource *, struct wl_array *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*show_input_panel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*hide_input_panel)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *enable)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *disable)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_surrounding_text)(struct wl_client *, struct wl_resource *, const char *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_text_change_cause)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_content_type)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_cursor_rectangle)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_available_actions)(struct wl_client *, struct wl_resource *, struct wl_array *);
+    void (NUCLEUS_WL_MAIN_ACTOR *show_input_panel)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *hide_input_panel)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_text_input_v3_requests;
 _Static_assert(sizeof(swift_wayland_zwp_text_input_v3_requests) == sizeof(struct zwp_text_input_v3_interface), "zwp_text_input_v3 request layout mismatch");
 typedef struct swift_wayland_zwp_text_input_manager_v3_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_text_input)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_text_input)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zwp_text_input_manager_v3_requests;
 _Static_assert(sizeof(swift_wayland_zwp_text_input_manager_v3_requests) == sizeof(struct zwp_text_input_manager_v3_interface), "zwp_text_input_manager_v3 request layout mismatch");
 typedef struct swift_wayland_zxdg_decoration_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_toplevel_decoration)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_toplevel_decoration)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zxdg_decoration_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_decoration_manager_v1_requests) == sizeof(struct zxdg_decoration_manager_v1_interface), "zxdg_decoration_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_toplevel_decoration_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_mode)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_mode)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_mode)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_mode)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zxdg_toplevel_decoration_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_toplevel_decoration_v1_requests) == sizeof(struct zxdg_toplevel_decoration_v1_interface), "zxdg_toplevel_decoration_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_exporter_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*swift_wayland_wl_kw_export)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *swift_wayland_wl_kw_export)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zxdg_exporter_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_exporter_v1_requests) == sizeof(struct zxdg_exporter_v1_interface), "zxdg_exporter_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_importer_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*swift_wayland_wl_kw_import)(struct wl_client *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *swift_wayland_wl_kw_import)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
 } swift_wayland_zxdg_importer_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_importer_v1_requests) == sizeof(struct zxdg_importer_v1_interface), "zxdg_importer_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_exported_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zxdg_exported_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_exported_v1_requests) == sizeof(struct zxdg_exported_v1_interface), "zxdg_exported_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_imported_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent_of)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent_of)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zxdg_imported_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_imported_v1_requests) == sizeof(struct zxdg_imported_v1_interface), "zxdg_imported_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_exporter_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*export_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *export_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zxdg_exporter_v2_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_exporter_v2_requests) == sizeof(struct zxdg_exporter_v2_interface), "zxdg_exporter_v2 request layout mismatch");
 typedef struct swift_wayland_zxdg_importer_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*import_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, const char *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *import_toplevel)(struct wl_client *, struct wl_resource *, uint32_t, const char *);
 } swift_wayland_zxdg_importer_v2_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_importer_v2_requests) == sizeof(struct zxdg_importer_v2_interface), "zxdg_importer_v2 request layout mismatch");
 typedef struct swift_wayland_zxdg_exported_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zxdg_exported_v2_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_exported_v2_requests) == sizeof(struct zxdg_exported_v2_interface), "zxdg_exported_v2 request layout mismatch");
 typedef struct swift_wayland_zxdg_imported_v2_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent_of)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent_of)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zxdg_imported_v2_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_imported_v2_requests) == sizeof(struct zxdg_imported_v2_interface), "zxdg_imported_v2 request layout mismatch");
 typedef struct swift_wayland_zxdg_output_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xdg_output)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xdg_output)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
 } swift_wayland_zxdg_output_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_output_manager_v1_requests) == sizeof(struct zxdg_output_manager_v1_interface), "zxdg_output_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_output_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zxdg_output_v1_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_output_v1_requests) == sizeof(struct zxdg_output_v1_interface), "zxdg_output_v1 request layout mismatch");
 typedef struct swift_wayland_zxdg_shell_v6_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*create_positioner)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_xdg_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*pong)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_positioner)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_xdg_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *pong)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zxdg_shell_v6_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_shell_v6_requests) == sizeof(struct zxdg_shell_v6_interface), "zxdg_shell_v6 request layout mismatch");
 typedef struct swift_wayland_zxdg_positioner_v6_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_anchor_rect)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_anchor)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_gravity)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_constraint_adjustment)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_anchor_rect)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_anchor)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_gravity)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_constraint_adjustment)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_offset)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
 } swift_wayland_zxdg_positioner_v6_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_positioner_v6_requests) == sizeof(struct zxdg_positioner_v6_interface), "zxdg_positioner_v6 request layout mismatch");
 typedef struct swift_wayland_zxdg_surface_v6_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_toplevel)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*get_popup)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_window_geometry)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*ack_configure)(struct wl_client *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_toplevel)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_popup)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_window_geometry)(struct wl_client *, struct wl_resource *, int32_t, int32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *ack_configure)(struct wl_client *, struct wl_resource *, uint32_t);
 } swift_wayland_zxdg_surface_v6_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_surface_v6_requests) == sizeof(struct zxdg_surface_v6_interface), "zxdg_surface_v6 request layout mismatch");
 typedef struct swift_wayland_zxdg_toplevel_v6_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_parent)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_title)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_app_id)(struct wl_client *, struct wl_resource *, const char *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*show_window_menu)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_max_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_min_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_maximized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*unset_fullscreen)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*set_minimized)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_parent)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_title)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_app_id)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *show_window_menu)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *move)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *resize)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_max_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_min_size)(struct wl_client *, struct wl_resource *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_maximized)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_fullscreen)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unset_fullscreen)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_minimized)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zxdg_toplevel_v6_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_toplevel_v6_requests) == sizeof(struct zxdg_toplevel_v6_interface), "zxdg_toplevel_v6 request layout mismatch");
 typedef struct swift_wayland_zxdg_popup_v6_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*grab)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *grab)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
 } swift_wayland_zxdg_popup_v6_requests;
 _Static_assert(sizeof(swift_wayland_zxdg_popup_v6_requests) == sizeof(struct zxdg_popup_v6_interface), "zxdg_popup_v6 request layout mismatch");
 typedef struct swift_wayland_zwp_xwayland_keyboard_grab_manager_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
-    void (*grab_keyboard)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *grab_keyboard)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwp_xwayland_keyboard_grab_manager_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_xwayland_keyboard_grab_manager_v1_requests) == sizeof(struct zwp_xwayland_keyboard_grab_manager_v1_interface), "zwp_xwayland_keyboard_grab_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_xwayland_keyboard_grab_v1_requests {
-    void (*destroy)(struct wl_client *, struct wl_resource *) NUCLEUS_WL_MAIN_ACTOR;
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwp_xwayland_keyboard_grab_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwp_xwayland_keyboard_grab_v1_requests) == sizeof(struct zwp_xwayland_keyboard_grab_v1_interface), "zwp_xwayland_keyboard_grab_v1 request layout mismatch");
 

@@ -18,6 +18,12 @@ private func requireSuccess(_ result: nucleus.react.RuntimeHostResult) throws {
     }
 }
 
+private nonisolated func makeJSWorkWake(
+    _ handler: @escaping @Sendable () -> Void
+) -> nucleus.react.ReactRuntimeHostFacade.JSWorkWake {
+    unsafe .init { handler() }
+}
+
 @MainActor
 @safe package final class RuntimeHost {
     private var facade: nucleus.react.ReactRuntimeHostFacade
@@ -131,7 +137,7 @@ private func requireSuccess(_ result: nucleus.react.RuntimeHostResult) throws {
         _ handler: @escaping @Sendable () -> Void
     ) throws {
         try requireSuccess(
-            unsafe facade.setJSWorkWakeHandler(.init { handler() }))
+            unsafe facade.setJSWorkWakeHandler(makeJSWorkWake(handler)))
     }
 
     /// Thread-safe. Schedules a JS-thread dispatch of a device event with the

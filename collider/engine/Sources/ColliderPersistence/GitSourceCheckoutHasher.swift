@@ -8,54 +8,103 @@ enum GitSourceCheckoutHasher {
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
         digestNestedCheckout: (FilePath) throws -> ArtifactDigest
     ) throws -> ArtifactDigest {
-        let checkout = checkout.normalizedForComparison()
+        try digest(
+            [checkout],
+            digestFile: digestFile,
+            digestNestedCheckout: digestNestedCheckout)
+    }
+
+    static func digest(
+        _ checkouts: [FilePath],
+        digestFile: (FilePath, Stat) throws -> ArtifactDigest,
+        digestNestedCheckout: (FilePath) throws -> ArtifactDigest
+    ) throws -> ArtifactDigest {
+        let checkouts = Array(Set(checkouts.map { $0.normalizedForComparison() }))
+            .sorted { $0.string < $1.string }
+        guard let first = checkouts.first else {
+            throw GitSourceCheckoutFailure("source closure is empty")
+        }
         let repository = FilePath(
             try git(
-                at: checkout,
+                at: first,
                 arguments: ["rev-parse", "--show-toplevel"]
             ).textOutput
         )
         .normalizedForComparison()
-        guard let relative = checkout.relativeSubpath(from: repository) else {
-            throw GitSourceCheckoutFailure(
-                "Git reported repository root outside source checkout: \(checkout)")
+        let relatives = try checkouts.map { checkout -> FilePath in
+            guard let relative = checkout.relativeSubpath(from: repository) else {
+                throw GitSourceCheckoutFailure(
+                    "Git reported repository root outside source closure: \(checkout)")
+            }
+            return relative
         }
-        let treeExpression =
-            relative.components.isEmpty
-            ? "HEAD^{tree}"
-            : "HEAD:\(relative.string)"
-        let baseTree = try git(
-            at: repository,
-            arguments: ["rev-parse", "--verify", treeExpression]
-        ).textOutput
-        let pathspec = relative.components.isEmpty ? "." : relative.string
+        var scopes: [FilePath] = []
+        for candidate in relatives.sorted(by: {
+            let leftCount = $0.components.count
+            let rightCount = $1.components.count
+            return leftCount == rightCount
+                ? $0.string < $1.string
+                : leftCount < rightCount
+        }) {
+            guard
+                !scopes.contains(where: {
+                    contains(candidate.string, in: $0.string)
+                })
+            else { continue }
+            scopes.append(candidate)
+        }
+        scopes.sort { $0.string < $1.string }
+        let scopeStrings = scopes.map(\.string)
+        let pathspecs = scopes.map {
+            $0.components.isEmpty ? "." : $0.string
+        }
         let status = try git(
             at: repository,
             arguments: [
                 "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                "--ignored=no", "--no-renames", "--", pathspec,
-            ])
+                "--ignored=no", "--no-renames", "--",
+            ] + pathspecs)
 
         var encoder = CanonicalDigestEncoder()
-        encoder.append(tag: 1, string: "git-source-checkout")
-        encoder.append(tag: 2, string: baseTree)
+        encoder.append(tag: 1, string: "git-source-checkout-closure")
+        let treeExpressions = scopes.map { scope in
+            scope.components.isEmpty
+                ? "HEAD^{tree}"
+                : "HEAD:\(scope.string)"
+        }
+        let baseTrees = try git(
+            at: repository,
+            arguments: ["rev-parse"] + treeExpressions
+        ).textOutput.split(separator: "\n").map(String.init)
+        guard baseTrees.count == scopes.count else {
+            throw GitSourceCheckoutFailure(
+                "Git returned \(baseTrees.count) trees for \(scopes.count) source scopes")
+        }
+        for (scope, baseTree) in zip(scopes, baseTrees) {
+            encoder.append(tag: 2, string: scope.string)
+            encoder.append(tag: 3, string: baseTree)
+        }
         let records = try status.output.split(separator: 0).map { record -> DirtyPath in
             guard record.count >= 4, record[record.startIndex + 2] == 0x20 else {
                 throw GitSourceCheckoutFailure(
-                    "Git returned malformed porcelain status for \(checkout)")
+                    "Git returned malformed porcelain status for \(first)")
             }
             let bytes = Data(record.dropFirst(3))
             guard let repositoryRelative = String(data: bytes, encoding: .utf8) else {
                 throw GitSourceCheckoutFailure(
-                    "source checkout contains a non-UTF-8 path: \(checkout)")
+                    "source checkout contains a non-UTF-8 path: \(first)")
             }
             let path = repository.appending(repositoryRelative)
-            guard let checkoutRelative = path.relativeSubpath(from: checkout) else {
+            guard
+                scopeStrings.contains(where: {
+                    contains(repositoryRelative, in: $0)
+                })
+            else {
                 throw GitSourceCheckoutFailure(
-                    "Git returned a path outside the requested source checkout: \(path)")
+                    "Git returned a path outside the requested source closure: \(path)")
             }
             return DirtyPath(
-                relative: checkoutRelative.string,
+                relative: repositoryRelative,
                 absolute: path)
         }.sorted {
             $0.relative.utf8.lexicographicallyPrecedes($1.relative.utf8)
@@ -100,10 +149,14 @@ enum GitSourceCheckoutHasher {
             } catch let error as Errno where error == .noSuchFileOrDirectory {
                 entry.append(tag: 3, string: "deleted")
             }
-            encoder.append(tag: 3, bytes: entry.bytes)
+            encoder.append(tag: 4, bytes: entry.bytes)
         }
         return ArtifactHasher.digest(bytes: encoder.bytes)
     }
+}
+
+private func contains(_ candidate: String, in parent: String) -> Bool {
+    parent.isEmpty || candidate == parent || candidate.hasPrefix(parent + "/")
 }
 
 private struct DirtyPath {

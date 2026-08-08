@@ -7,35 +7,29 @@ package import WaylandServer
     func createTextInput(_ request: WaylandRequest<ZwpTextInputManagerV1Server>, id: WlNewId<ZwpTextInputV1Server>)
 }
 package enum ZwpTextInputManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTextInputManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_text_input_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_text_input_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_text_input_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create_text_input = createTextInput_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_text_input_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_text_input_manager_v1_requests(
+            create_text_input: createTextInput_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_text_input_manager_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTextInputManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTextInputManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTextInputManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTextInputManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createTextInput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createTextInput_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createTextInput(WaylandRequest<ZwpTextInputManagerV1Server>(requestResource), id: WlNewId<ZwpTextInputV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createTextInput(WaylandRequest<ZwpTextInputManagerV1Server>(res), id: WlNewId<ZwpTextInputV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
 }
 package extension WlNewId where Interface == ZwpTextInputManagerV1Server {
@@ -46,7 +40,9 @@ package extension WlNewId where Interface == ZwpTextInputManagerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTextInputManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpTextInputManagerV1Server {
@@ -57,12 +53,14 @@ package extension ZwpTextInputManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTextInputManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTextInputManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -76,10 +74,12 @@ package extension ZwpTextInputManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTextInputManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTextInputManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

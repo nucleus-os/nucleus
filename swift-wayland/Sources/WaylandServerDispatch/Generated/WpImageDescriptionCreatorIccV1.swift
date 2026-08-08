@@ -9,47 +9,37 @@ package import WaylandProtocolTypes
     func setIccFile(_ request: WaylandRequest<WpImageDescriptionCreatorIccV1Server>, icc_profile: consuming WaylandOwnedFileDescriptor, offset: UInt32, length: UInt32)
 }
 package enum WpImageDescriptionCreatorIccV1Server: WaylandServerInterface {
+    package typealias Requests = any WpImageDescriptionCreatorIccV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_image_description_creator_icc_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_image_description_creator_icc_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_image_description_creator_icc_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create = create_impl
-        unsafe vt.pointee.set_icc_file = setIccFile_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_image_description_creator_icc_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_image_description_creator_icc_v1_requests(
+            create: create_impl,
+            set_icc_file: setIccFile_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_creator_icc_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionCreatorIccV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionCreatorIccV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpImageDescriptionCreatorIccV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpImageDescriptionCreatorIccV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
+    private static let create_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.create(WaylandRequest<WpImageDescriptionCreatorIccV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-            unsafe wl_resource_destroy(requestResource)
-        }
+        unsafe h.create(WaylandRequest<WpImageDescriptionCreatorIccV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))))
+        unsafe wl_resource_destroy(res)
     }
-    private static let setIccFile_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32, UInt32) -> Void = { _, res, icc_profile, offset, length in
+    private static let setIccFile_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32, UInt32) -> Void = { _, res, icc_profile, offset, length in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setIccFile(WaylandRequest<WpImageDescriptionCreatorIccV1Server>(requestResource), icc_profile: WaylandOwnedFileDescriptor(icc_profile), offset: offset, length: length)
-        }
+        unsafe h.setIccFile(WaylandRequest<WpImageDescriptionCreatorIccV1Server>(res), icc_profile: WaylandOwnedFileDescriptor(icc_profile), offset: offset, length: length)
     }
 }
 package extension WaylandRequest where Interface == WpImageDescriptionCreatorIccV1Server {
@@ -71,7 +61,9 @@ package extension WlNewId where Interface == WpImageDescriptionCreatorIccV1Serve
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpImageDescriptionCreatorIccV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpImageDescriptionCreatorIccV1Server {
@@ -82,12 +74,14 @@ package extension WpImageDescriptionCreatorIccV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpImageDescriptionCreatorIccV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionCreatorIccV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -101,10 +95,12 @@ package extension WpImageDescriptionCreatorIccV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpImageDescriptionCreatorIccV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionCreatorIccV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -14,17 +14,16 @@ package extension ZwpLockedPointerV1Requests {
     }
 }
 package enum ZwpLockedPointerV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpLockedPointerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_locked_pointer_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_locked_pointer_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_locked_pointer_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_cursor_position_hint = setCursorPositionHint_impl
-        unsafe vt.pointee.set_region = setRegion_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_locked_pointer_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_locked_pointer_v1_requests(
+            destroy: destroy_impl,
+            set_cursor_position_hint: setCursorPositionHint_impl,
+            set_region: setRegion_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_locked_pointer_v1(),
@@ -35,46 +34,33 @@ package enum ZwpLockedPointerV1Server: WaylandServerInterface {
     package static func sendUnlocked(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwp_locked_pointer_v1_send_unlocked(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLockedPointerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLockedPointerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpLockedPointerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpLockedPointerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpLockedPointerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpLockedPointerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setCursorPositionHint_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t, wl_fixed_t) -> Void = { _, res, surface_x, surface_y in
+    private static let setCursorPositionHint_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t, wl_fixed_t) -> Void = { _, res, surface_x, surface_y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setCursorPositionHint(WaylandRequest<ZwpLockedPointerV1Server>(requestResource), surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
-        }
+        unsafe h.setCursorPositionHint(WaylandRequest<ZwpLockedPointerV1Server>(res), surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
     }
-    private static let setRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
+    private static let setRegion_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_region = unsafe region
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setRegion(WaylandRequest<ZwpLockedPointerV1Server>(requestResource), region: _request_region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(_request_region!)))
-        }
+        unsafe h.setRegion(WaylandRequest<ZwpLockedPointerV1Server>(res), region: region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(region!)))
     }
 }
 package extension WaylandResourceHandle where Interface == ZwpLockedPointerV1Server {
@@ -103,7 +89,9 @@ package extension WlNewId where Interface == ZwpLockedPointerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpLockedPointerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpLockedPointerV1Server {
@@ -114,12 +102,14 @@ package extension ZwpLockedPointerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpLockedPointerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLockedPointerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -133,10 +123,12 @@ package extension ZwpLockedPointerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpLockedPointerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLockedPointerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

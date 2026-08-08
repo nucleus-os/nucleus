@@ -50,7 +50,7 @@ package protocol ZwlrOutputConfigurationV1Events: AnyObject {
     func cancelled(_ proxy: WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>)
 }
 package extension ZwlrOutputConfigurationV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_output_configuration_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwlr_output_configuration_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwlr_output_configuration_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwlr_output_configuration_v1_events())
         unsafe p.pointee.succeeded = succeeded_impl
@@ -61,7 +61,7 @@ package extension ZwlrOutputConfigurationV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrOutputConfigurationV1Events? {
         context.owner as? any ZwlrOutputConfigurationV1Events
     }
-    private static let succeeded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let succeeded_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -69,14 +69,9 @@ package extension ZwlrOutputConfigurationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.succeeded(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
-        }
+        unsafe h.succeeded(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
     }
-    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let failed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -84,14 +79,9 @@ package extension ZwlrOutputConfigurationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
-        }
+        unsafe h.failed(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
     }
-    private static let cancelled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let cancelled_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -99,12 +89,7 @@ package extension ZwlrOutputConfigurationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.cancelled(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(eventProxy))
-        }
+        unsafe h.cancelled(WaylandBorrowedProxy<ZwlrOutputConfigurationV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwlrOutputConfigurationV1Client {

@@ -16,18 +16,17 @@ package extension ZwpLinuxBufferParamsV1Requests {
     }
 }
 package enum ZwpLinuxBufferParamsV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpLinuxBufferParamsV1Requests
     package nonisolated static let maximumVersion: Int32 = 5
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_linux_buffer_params_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_linux_buffer_params_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_linux_buffer_params_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.add = add_impl
-        unsafe vt.pointee.create = create_impl
-        unsafe vt.pointee.create_immed = createImmed_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_linux_buffer_params_v1_requests(
+            destroy: destroy_impl,
+            add: add_impl,
+            create: create_impl,
+            create_immed: createImmed_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_buffer_params_v1(),
@@ -38,56 +37,39 @@ package enum ZwpLinuxBufferParamsV1Server: WaylandServerInterface {
     package static func sendFailed(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwp_linux_buffer_params_v1_send_failed(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLinuxBufferParamsV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLinuxBufferParamsV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpLinuxBufferParamsV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpLinuxBufferParamsV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpLinuxBufferParamsV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpLinuxBufferParamsV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let add_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, fd, plane_idx, offset, stride, modifier_hi, modifier_lo in
+    private static let add_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, fd, plane_idx, offset, stride, modifier_hi, modifier_lo in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.add(WaylandRequest<ZwpLinuxBufferParamsV1Server>(requestResource), fd: WaylandOwnedFileDescriptor(fd), plane_idx: plane_idx, offset: offset, stride: stride, modifier_hi: modifier_hi, modifier_lo: modifier_lo)
-        }
+        unsafe h.add(WaylandRequest<ZwpLinuxBufferParamsV1Server>(res), fd: WaylandOwnedFileDescriptor(fd), plane_idx: plane_idx, offset: offset, stride: stride, modifier_hi: modifier_hi, modifier_lo: modifier_lo)
     }
-    private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32, UInt32) -> Void = { _, res, width, height, format, flags in
+    private static let create_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32, UInt32) -> Void = { _, res, width, height, format, flags in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.create(WaylandRequest<ZwpLinuxBufferParamsV1Server>(requestResource), width: width, height: height, format: format, flags: ZwpLinuxBufferParamsV1Flags(rawValue: flags))
-        }
+        unsafe h.create(WaylandRequest<ZwpLinuxBufferParamsV1Server>(res), width: width, height: height, format: format, flags: ZwpLinuxBufferParamsV1Flags(rawValue: flags))
     }
-    private static let createImmed_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, UInt32, UInt32) -> Void = { client, res, buffer_id, width, height, format, flags in
+    private static let createImmed_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, UInt32, UInt32) -> Void = { client, res, buffer_id, width, height, format, flags in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createImmed(WaylandRequest<ZwpLinuxBufferParamsV1Server>(requestResource), buffer_id: WlNewId<WlBufferServer>(client: requestClient, id: buffer_id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), width: width, height: height, format: format, flags: ZwpLinuxBufferParamsV1Flags(rawValue: flags))
-        }
+        unsafe h.createImmed(WaylandRequest<ZwpLinuxBufferParamsV1Server>(res), buffer_id: WlNewId<WlBufferServer>(client: client, id: buffer_id, version: Swift::min(wl_resource_get_version(res), Int32(1))), width: width, height: height, format: format, flags: ZwpLinuxBufferParamsV1Flags(rawValue: flags))
     }
 }
 package extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV1Server {
@@ -115,6 +97,9 @@ package extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV
                 version ?? 1,
                 WlBufferServer.maximumVersion),
             owner: owner,
+            handler: {
+                $0 as? any WlBufferRequests
+            },
             installed: installed,
             publish: {
                 sendCreated(buffer: $0)
@@ -148,7 +133,9 @@ package extension WlNewId where Interface == ZwpLinuxBufferParamsV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpLinuxBufferParamsV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpLinuxBufferParamsV1Server {
@@ -159,12 +146,14 @@ package extension ZwpLinuxBufferParamsV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxBufferParamsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -178,10 +167,12 @@ package extension ZwpLinuxBufferParamsV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxBufferParamsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

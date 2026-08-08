@@ -25,7 +25,7 @@ package protocol ZwpTabletSeatV2Events: AnyObject {
     func padAdded(_ proxy: WaylandBorrowedProxy<ZwpTabletSeatV2Client>, id: WaylandProxy<ZwpTabletPadV2Client>)
 }
 package extension ZwpTabletSeatV2Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_seat_v2_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_seat_v2_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_tablet_seat_v2_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_tablet_seat_v2_events())
         unsafe p.pointee.tablet_added = tabletAdded_impl
@@ -36,7 +36,7 @@ package extension ZwpTabletSeatV2Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpTabletSeatV2Events? {
         context.owner as? any ZwpTabletSeatV2Events
     }
-    private static let tabletAdded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let tabletAdded_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -44,15 +44,9 @@ package extension ZwpTabletSeatV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.tabletAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(eventProxy), id: WaylandProxy<ZwpTabletV2Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.tabletAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(proxy), id: WaylandProxy<ZwpTabletV2Client>(adopting: id!, connectionLifetime: listenerContext.connectionLifetime))
     }
-    private static let toolAdded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let toolAdded_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -60,15 +54,9 @@ package extension ZwpTabletSeatV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.toolAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(eventProxy), id: WaylandProxy<ZwpTabletToolV2Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.toolAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(proxy), id: WaylandProxy<ZwpTabletToolV2Client>(adopting: id!, connectionLifetime: listenerContext.connectionLifetime))
     }
-    private static let padAdded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let padAdded_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -76,13 +64,7 @@ package extension ZwpTabletSeatV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.padAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(eventProxy), id: WaylandProxy<ZwpTabletPadV2Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.padAdded(WaylandBorrowedProxy<ZwpTabletSeatV2Client>(proxy), id: WaylandProxy<ZwpTabletPadV2Client>(adopting: id!, connectionLifetime: listenerContext.connectionLifetime))
     }
 }
 package extension WaylandProxy where Interface == ZwpTabletSeatV2Client {

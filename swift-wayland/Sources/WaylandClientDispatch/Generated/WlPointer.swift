@@ -44,7 +44,7 @@ package protocol WlPointerEvents: AnyObject {
     func axisRelativeDirection(_ proxy: WaylandBorrowedProxy<WlPointerClient>, axis: WlPointerAxis, direction: WlPointerAxisRelativeDirection)
 }
 package extension WlPointerClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_pointer_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_pointer_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_pointer_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_pointer_events())
         unsafe p.pointee.enter = enter_impl
@@ -63,7 +63,7 @@ package extension WlPointerClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlPointerEvents? {
         context.owner as? any WlPointerEvents
     }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, serial, surface, surface_x, surface_y in
+    private static let enter_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, serial, surface, surface_x, surface_y in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -71,15 +71,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<WlPointerClient>(eventProxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
-        }
+        unsafe h.enter(WaylandBorrowedProxy<WlPointerClient>(proxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(surface!), surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
     }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?) -> Void = { data, proxy, serial, surface in
+    private static let leave_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?) -> Void = { data, proxy, serial, surface in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -87,15 +81,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<WlPointerClient>(eventProxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-        }
+        unsafe h.leave(WaylandBorrowedProxy<WlPointerClient>(proxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(surface!))
     }
-    private static let motion_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, time, surface_x, surface_y in
+    private static let motion_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, time, surface_x, surface_y in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -103,14 +91,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.motion(WaylandBorrowedProxy<WlPointerClient>(eventProxy), time: time, surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
-        }
+        unsafe h.motion(WaylandBorrowedProxy<WlPointerClient>(proxy), time: time, surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
     }
-    private static let button_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, time, button, state in
+    private static let button_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, time, button, state in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -118,14 +101,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.button(WaylandBorrowedProxy<WlPointerClient>(eventProxy), serial: serial, time: time, button: button, state: WlPointerButtonState(rawValue: state))
-        }
+        unsafe h.button(WaylandBorrowedProxy<WlPointerClient>(proxy), serial: serial, time: time, button: button, state: WlPointerButtonState(rawValue: state))
     }
-    private static let axis_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, wl_fixed_t) -> Void = { data, proxy, time, axis, value in
+    private static let axis_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, wl_fixed_t) -> Void = { data, proxy, time, axis, value in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -133,14 +111,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axis(WaylandBorrowedProxy<WlPointerClient>(eventProxy), time: time, axis: WlPointerAxis(rawValue: axis), value: swift_wayland_fixed_to_double(value))
-        }
+        unsafe h.axis(WaylandBorrowedProxy<WlPointerClient>(proxy), time: time, axis: WlPointerAxis(rawValue: axis), value: swift_wayland_fixed_to_double(value))
     }
-    private static let frame_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let frame_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -148,14 +121,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.frame(WaylandBorrowedProxy<WlPointerClient>(eventProxy))
-        }
+        unsafe h.frame(WaylandBorrowedProxy<WlPointerClient>(proxy))
     }
-    private static let axisSource_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, axis_source in
+    private static let axisSource_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, axis_source in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -163,14 +131,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axisSource(WaylandBorrowedProxy<WlPointerClient>(eventProxy), axis_source: WlPointerAxisSource(rawValue: axis_source))
-        }
+        unsafe h.axisSource(WaylandBorrowedProxy<WlPointerClient>(proxy), axis_source: WlPointerAxisSource(rawValue: axis_source))
     }
-    private static let axisStop_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, time, axis in
+    private static let axisStop_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, time, axis in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -178,14 +141,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axisStop(WaylandBorrowedProxy<WlPointerClient>(eventProxy), time: time, axis: WlPointerAxis(rawValue: axis))
-        }
+        unsafe h.axisStop(WaylandBorrowedProxy<WlPointerClient>(proxy), time: time, axis: WlPointerAxis(rawValue: axis))
     }
-    private static let axisDiscrete_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32) -> Void = { data, proxy, axis, discrete in
+    private static let axisDiscrete_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32) -> Void = { data, proxy, axis, discrete in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -193,14 +151,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axisDiscrete(WaylandBorrowedProxy<WlPointerClient>(eventProxy), axis: WlPointerAxis(rawValue: axis), discrete: discrete)
-        }
+        unsafe h.axisDiscrete(WaylandBorrowedProxy<WlPointerClient>(proxy), axis: WlPointerAxis(rawValue: axis), discrete: discrete)
     }
-    private static let axisValue120_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32) -> Void = { data, proxy, axis, value120 in
+    private static let axisValue120_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32) -> Void = { data, proxy, axis, value120 in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -208,14 +161,9 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axisValue120(WaylandBorrowedProxy<WlPointerClient>(eventProxy), axis: WlPointerAxis(rawValue: axis), value120: value120)
-        }
+        unsafe h.axisValue120(WaylandBorrowedProxy<WlPointerClient>(proxy), axis: WlPointerAxis(rawValue: axis), value120: value120)
     }
-    private static let axisRelativeDirection_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, axis, direction in
+    private static let axisRelativeDirection_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, axis, direction in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -223,12 +171,7 @@ package extension WlPointerClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.axisRelativeDirection(WaylandBorrowedProxy<WlPointerClient>(eventProxy), axis: WlPointerAxis(rawValue: axis), direction: WlPointerAxisRelativeDirection(rawValue: direction))
-        }
+        unsafe h.axisRelativeDirection(WaylandBorrowedProxy<WlPointerClient>(proxy), axis: WlPointerAxis(rawValue: axis), direction: WlPointerAxisRelativeDirection(rawValue: direction))
     }
 }
 package extension WaylandProxy where Interface == WlPointerClient {

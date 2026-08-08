@@ -240,17 +240,20 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     public let scratchPath: FilePath
     public let swiftExecutable: CommandSpec.Executable
     public let dependencyLock: FilePath?
+    public let sourceGraph: SwiftPackageSourceGraph
 
     public init(
         context: SwiftBuildContext,
         scratchPath: FilePath,
         swiftExecutable: CommandSpec.Executable = .named("swift"),
-        dependencyLock: FilePath? = nil
+        dependencyLock: FilePath? = nil,
+        sourceGraph: SwiftPackageSourceGraph? = nil
     ) {
         self.context = context
         self.scratchPath = scratchPath
         self.swiftExecutable = swiftExecutable
         self.dependencyLock = dependencyLock
+        self.sourceGraph = sourceGraph ?? .packageWide(context.packageRoot)
     }
 
     /// Typed artifacts required to execute this invocation. Logical SwiftPM
@@ -300,20 +303,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) -> SwiftProductRequirement {
-        let inputs: [ArtifactInput]
-        switch context.execution {
-        case .host:
-            inputs = []
-        case .oci:
-            inputs =
-                [
-                    .file(context.packageRoot.appending("Package.swift")),
-                    .optionalSourceCheckout(
-                        packageRoot.appending("Sources"),
-                        fallback: Array("no-sources-directory".utf8)),
-                ]
-                + (dependencyLock.map { [.file($0)] } ?? [])
-        }
+        let inputs =
+            sourceGraph.inputs(forProduct: product)
+            + (dependencyLock.map { [.file($0)] } ?? [])
         return SwiftProductRequirement(
             package: package,
             product: product,
@@ -333,23 +325,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         arguments: [String] = [],
         expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
-        let inputs: [ArtifactInput]
-        switch context.execution {
-        case .host:
-            inputs = []
-        case .oci:
-            inputs =
-                [
-                    .file(context.packageRoot.appending("Package.swift")),
-                    .optionalSourceCheckout(
-                        packageRoot.appending("Sources"),
-                        fallback: Array("no-sources-directory".utf8)),
-                    .optionalSourceCheckout(
-                        packageRoot.appending("Tests"),
-                        fallback: Array("no-tests-directory".utf8)),
-                ]
-                + (dependencyLock.map { [.file($0)] } ?? [])
-        }
+        let inputs =
+            sourceGraph.testInputs
+            + (dependencyLock.map { [.file($0)] } ?? [])
         return SwiftTestRequirement(
             package: package,
             testProduct: testProduct,

@@ -14,7 +14,7 @@ package protocol ZwpFullscreenShellModeFeedbackV1Events: AnyObject {
     func presentCancelled(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>)
 }
 package extension ZwpFullscreenShellModeFeedbackV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_fullscreen_shell_mode_feedback_v1_events())
         unsafe p.pointee.mode_successful = modeSuccessful_impl
@@ -25,7 +25,7 @@ package extension ZwpFullscreenShellModeFeedbackV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpFullscreenShellModeFeedbackV1Events? {
         context.owner as? any ZwpFullscreenShellModeFeedbackV1Events
     }
-    private static let modeSuccessful_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let modeSuccessful_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -33,14 +33,9 @@ package extension ZwpFullscreenShellModeFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.modeSuccessful(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
-        }
+        unsafe h.modeSuccessful(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
     }
-    private static let modeFailed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let modeFailed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,14 +43,9 @@ package extension ZwpFullscreenShellModeFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.modeFailed(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
-        }
+        unsafe h.modeFailed(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
     }
-    private static let presentCancelled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let presentCancelled_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -63,12 +53,7 @@ package extension ZwpFullscreenShellModeFeedbackV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.presentCancelled(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(eventProxy))
-        }
+        unsafe h.presentCancelled(WaylandBorrowedProxy<ZwpFullscreenShellModeFeedbackV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwpFullscreenShellModeFeedbackV1Client {

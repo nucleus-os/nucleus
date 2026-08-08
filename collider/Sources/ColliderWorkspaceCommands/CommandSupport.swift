@@ -133,7 +133,10 @@ extension WorkspaceContext {
                 let lock = packageRoot.appending("Package.resolved")
                 return FileManager.default.fileExists(atPath: lock.string)
                     ? lock : nil
-            }())
+            }(),
+            sourceGraph: try swiftPackageGraphs.graph(
+                packageRoot: packageRoot,
+                swiftExecutable: graphSwiftPath()))
         let isDefaultContext =
             packageRoot == layout.root
             && configuration == .debug
@@ -184,6 +187,25 @@ extension WorkspaceContext {
 }
 
 extension WorkspaceContext {
+    fileprivate func graphSwiftPath() throws -> FilePath {
+        let hostEnvironment = ProcessInfo.processInfo.environment
+        if let toolchain = hostEnvironment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
+            let candidate = FilePath(toolchain).appending("bin/swift")
+            if FileManager.default.isExecutableFile(atPath: candidate.string) {
+                return candidate
+            }
+        }
+        let searchPath = hostEnvironment["PATH"] ?? ""
+        for directory in searchPath.split(separator: ":") {
+            let candidate = FilePath(String(directory)).appending("swift")
+            if FileManager.default.isExecutableFile(atPath: candidate.string) {
+                return candidate
+            }
+        }
+        throw WorkspaceFailure.message(
+            "unable to resolve host swift for SwiftPM graph materialization")
+    }
+
     fileprivate func swiftCompilerPath() throws -> FilePath {
         if let value = environment["SWIFTC"], !value.isEmpty {
             return FilePath(

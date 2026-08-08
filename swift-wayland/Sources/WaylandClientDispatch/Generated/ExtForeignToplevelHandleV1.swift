@@ -27,7 +27,7 @@ package protocol ExtForeignToplevelHandleV1Events: AnyObject {
     func identifier(_ proxy: WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>, identifier: String)
 }
 package extension ExtForeignToplevelHandleV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_foreign_toplevel_handle_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_foreign_toplevel_handle_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_foreign_toplevel_handle_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_foreign_toplevel_handle_v1_events())
         unsafe p.pointee.closed = closed_impl
@@ -40,7 +40,7 @@ package extension ExtForeignToplevelHandleV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtForeignToplevelHandleV1Events? {
         context.owner as? any ExtForeignToplevelHandleV1Events
     }
-    private static let closed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let closed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,14 +48,9 @@ package extension ExtForeignToplevelHandleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.closed(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(eventProxy))
-        }
+        unsafe h.closed(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(proxy))
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -63,14 +58,9 @@ package extension ExtForeignToplevelHandleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(proxy))
     }
-    private static let title_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, title in
+    private static let title_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, title in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -78,15 +68,9 @@ package extension ExtForeignToplevelHandleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_title = unsafe title
-        MainActor.assumeIsolated {
-            unsafe eventHandler.title(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(eventProxy), title: unsafe String(cString: _event_title!))
-        }
+        unsafe h.title(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(proxy), title: unsafe String(cString: title!))
     }
-    private static let appId_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, app_id in
+    private static let appId_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, app_id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -94,15 +78,9 @@ package extension ExtForeignToplevelHandleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_app_id = unsafe app_id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.appId(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(eventProxy), app_id: unsafe String(cString: _event_app_id!))
-        }
+        unsafe h.appId(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(proxy), app_id: unsafe String(cString: app_id!))
     }
-    private static let identifier_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, identifier in
+    private static let identifier_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, identifier in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -110,13 +88,7 @@ package extension ExtForeignToplevelHandleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_identifier = unsafe identifier
-        MainActor.assumeIsolated {
-            unsafe eventHandler.identifier(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(eventProxy), identifier: unsafe String(cString: _event_identifier!))
-        }
+        unsafe h.identifier(WaylandBorrowedProxy<ExtForeignToplevelHandleV1Client>(proxy), identifier: unsafe String(cString: identifier!))
     }
 }
 package extension WaylandProxy where Interface == ExtForeignToplevelHandleV1Client {

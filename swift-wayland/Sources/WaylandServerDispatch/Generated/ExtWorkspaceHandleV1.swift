@@ -17,19 +17,18 @@ package extension ExtWorkspaceHandleV1Requests {
     }
 }
 package enum ExtWorkspaceHandleV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtWorkspaceHandleV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_workspace_handle_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_workspace_handle_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_workspace_handle_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.activate = activate_impl
-        unsafe vt.pointee.deactivate = deactivate_impl
-        unsafe vt.pointee.assign = assign_impl
-        unsafe vt.pointee.remove = remove_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_workspace_handle_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_workspace_handle_v1_requests(
+            destroy: destroy_impl,
+            activate: activate_impl,
+            deactivate: deactivate_impl,
+            assign: assign_impl,
+            remove: remove_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_workspace_handle_v1(),
@@ -52,66 +51,45 @@ package enum ExtWorkspaceHandleV1Server: WaylandServerInterface {
     package static func sendRemoved(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe ext_workspace_handle_v1_send_removed(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtWorkspaceHandleV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtWorkspaceHandleV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtWorkspaceHandleV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtWorkspaceHandleV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ExtWorkspaceHandleV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ExtWorkspaceHandleV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let activate_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let activate_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.activate(WaylandRequest<ExtWorkspaceHandleV1Server>(requestResource))
-        }
+        unsafe h.activate(WaylandRequest<ExtWorkspaceHandleV1Server>(res))
     }
-    private static let deactivate_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let deactivate_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.deactivate(WaylandRequest<ExtWorkspaceHandleV1Server>(requestResource))
-        }
+        unsafe h.deactivate(WaylandRequest<ExtWorkspaceHandleV1Server>(res))
     }
-    private static let assign_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, workspace_group in
+    private static let assign_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, workspace_group in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_workspace_group = unsafe workspace_group
-        MainActor.assumeIsolated {
-            unsafe requestHandler.assign(WaylandRequest<ExtWorkspaceHandleV1Server>(requestResource), workspace_group: WaylandBorrowedObject<ExtWorkspaceGroupHandleV1Server>(_request_workspace_group!))
-        }
+        unsafe h.assign(WaylandRequest<ExtWorkspaceHandleV1Server>(res), workspace_group: WaylandBorrowedObject<ExtWorkspaceGroupHandleV1Server>(workspace_group!))
     }
-    private static let remove_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let remove_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.remove(WaylandRequest<ExtWorkspaceHandleV1Server>(requestResource))
-        }
+        unsafe h.remove(WaylandRequest<ExtWorkspaceHandleV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ExtWorkspaceHandleV1Server {
@@ -178,7 +156,9 @@ package extension WlNewId where Interface == ExtWorkspaceHandleV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtWorkspaceHandleV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtWorkspaceHandleV1Server {
@@ -189,12 +169,14 @@ package extension ExtWorkspaceHandleV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtWorkspaceHandleV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtWorkspaceHandleV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -208,10 +190,12 @@ package extension ExtWorkspaceHandleV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtWorkspaceHandleV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtWorkspaceHandleV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

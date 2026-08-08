@@ -15,77 +15,54 @@ package extension ZwpInputTimestampsManagerV1Requests {
     }
 }
 package enum ZwpInputTimestampsManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpInputTimestampsManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_input_timestamps_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_input_timestamps_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_input_timestamps_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.get_keyboard_timestamps = getKeyboardTimestamps_impl
-        unsafe vt.pointee.get_pointer_timestamps = getPointerTimestamps_impl
-        unsafe vt.pointee.get_touch_timestamps = getTouchTimestamps_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_input_timestamps_manager_v1_requests(
+            destroy: destroy_impl,
+            get_keyboard_timestamps: getKeyboardTimestamps_impl,
+            get_pointer_timestamps: getPointerTimestamps_impl,
+            get_touch_timestamps: getTouchTimestamps_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_timestamps_manager_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputTimestampsManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputTimestampsManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputTimestampsManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpInputTimestampsManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpInputTimestampsManagerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpInputTimestampsManagerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let getKeyboardTimestamps_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, keyboard in
+    private static let getKeyboardTimestamps_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, keyboard in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_keyboard = unsafe keyboard
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getKeyboardTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(requestResource), id: WlNewId<ZwpInputTimestampsV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), keyboard: WaylandBorrowedObject<WlKeyboardServer>(_request_keyboard!))
-        }
+        unsafe h.getKeyboardTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(res), id: WlNewId<ZwpInputTimestampsV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), keyboard: WaylandBorrowedObject<WlKeyboardServer>(keyboard!))
     }
-    private static let getPointerTimestamps_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
+    private static let getPointerTimestamps_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getPointerTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(requestResource), id: WlNewId<ZwpInputTimestampsV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!))
-        }
+        unsafe h.getPointerTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(res), id: WlNewId<ZwpInputTimestampsV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!))
     }
-    private static let getTouchTimestamps_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, touch in
+    private static let getTouchTimestamps_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, touch in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_touch = unsafe touch
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getTouchTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(requestResource), id: WlNewId<ZwpInputTimestampsV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), touch: WaylandBorrowedObject<WlTouchServer>(_request_touch!))
-        }
+        unsafe h.getTouchTimestamps(WaylandRequest<ZwpInputTimestampsManagerV1Server>(res), id: WlNewId<ZwpInputTimestampsV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), touch: WaylandBorrowedObject<WlTouchServer>(touch!))
     }
 }
 package extension WlNewId where Interface == ZwpInputTimestampsManagerV1Server {
@@ -96,7 +73,9 @@ package extension WlNewId where Interface == ZwpInputTimestampsManagerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpInputTimestampsManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpInputTimestampsManagerV1Server {
@@ -107,12 +86,14 @@ package extension ZwpInputTimestampsManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpInputTimestampsManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputTimestampsManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -126,10 +107,12 @@ package extension ZwpInputTimestampsManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpInputTimestampsManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputTimestampsManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

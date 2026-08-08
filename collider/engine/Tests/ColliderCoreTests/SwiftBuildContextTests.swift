@@ -308,9 +308,5 @@ private let fixturePackageRoot = FilePath("/workspace")
         packageRoot: fixturePackageRoot,
         environment: [:])
     #expect(product.inputs.contains(.file(fixturePackageRoot.appending("Package.swift"))))
-    #expect(
-        product.inputs.contains(
-            .optionalSourceCheckout(
-                fixturePackageRoot.appending("Sources"),
-                fallback: Array("no-sources-directory".utf8))))
+    #expect(product.inputs.contains(.tree(fixturePackageRoot)))
 }

@@ -12,15 +12,14 @@ package extension WlBufferRequests {
     }
 }
 package enum WlBufferServer: WaylandServerInterface {
+    package typealias Requests = any WlBufferRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_buffer_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_buffer_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_buffer_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_buffer_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_buffer_requests(
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_buffer(),
@@ -28,22 +27,18 @@ package enum WlBufferServer: WaylandServerInterface {
     package static func sendRelease(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe wl_buffer_send_release(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlBufferRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlBufferRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlBufferRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlBufferServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlBufferServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlBufferServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -67,7 +62,9 @@ package extension WlNewId where Interface == WlBufferServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlBufferServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any WlBufferRequests
+            }, installed: installed)
     }
 }
 package extension WlBufferServer {
@@ -78,12 +75,14 @@ package extension WlBufferServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlBufferServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlBufferServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any WlBufferRequests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -97,10 +96,12 @@ package extension WlBufferServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlBufferServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlBufferServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any WlBufferRequests
+            },
             installed: installed)
     }
 }

@@ -111,7 +111,7 @@ package protocol WlSurfaceEvents: AnyObject {
     func preferredBufferTransform(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, transform: WlOutputTransform)
 }
 package extension WlSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_surface_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_surface_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_surface_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_surface_events())
         unsafe p.pointee.enter = enter_impl
@@ -123,7 +123,7 @@ package extension WlSurfaceClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlSurfaceEvents? {
         context.owner as? any WlSurfaceEvents
     }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+    private static let enter_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -131,15 +131,9 @@ package extension WlSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-        }
+        unsafe h.enter(WaylandBorrowedProxy<WlSurfaceClient>(proxy), output: WaylandBorrowedProxy<WlOutputClient>(output!))
     }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+    private static let leave_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -147,15 +141,9 @@ package extension WlSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-        }
+        unsafe h.leave(WaylandBorrowedProxy<WlSurfaceClient>(proxy), output: WaylandBorrowedProxy<WlOutputClient>(output!))
     }
-    private static let preferredBufferScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, factor in
+    private static let preferredBufferScale_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, factor in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -163,14 +151,9 @@ package extension WlSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preferredBufferScale(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), factor: factor)
-        }
+        unsafe h.preferredBufferScale(WaylandBorrowedProxy<WlSurfaceClient>(proxy), factor: factor)
     }
-    private static let preferredBufferTransform_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, transform in
+    private static let preferredBufferTransform_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, transform in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -178,12 +161,7 @@ package extension WlSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preferredBufferTransform(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), transform: WlOutputTransform(rawValue: transform))
-        }
+        unsafe h.preferredBufferTransform(WaylandBorrowedProxy<WlSurfaceClient>(proxy), transform: WlOutputTransform(rawValue: transform))
     }
 }
 package extension WaylandProxy where Interface == WlSurfaceClient {

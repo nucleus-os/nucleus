@@ -17,85 +17,61 @@ package extension WpSecurityContextV1Requests {
     }
 }
 package enum WpSecurityContextV1Server: WaylandServerInterface {
+    package typealias Requests = any WpSecurityContextV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_security_context_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_security_context_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_security_context_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_sandbox_engine = setSandboxEngine_impl
-        unsafe vt.pointee.set_app_id = setAppId_impl
-        unsafe vt.pointee.set_instance_id = setInstanceId_impl
-        unsafe vt.pointee.commit = commit_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_security_context_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_security_context_v1_requests(
+            destroy: destroy_impl,
+            set_sandbox_engine: setSandboxEngine_impl,
+            set_app_id: setAppId_impl,
+            set_instance_id: setInstanceId_impl,
+            commit: commit_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_security_context_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpSecurityContextV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpSecurityContextV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpSecurityContextV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpSecurityContextV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpSecurityContextV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpSecurityContextV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setSandboxEngine_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, name in
+    private static let setSandboxEngine_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, name in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_name = unsafe name
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSandboxEngine(WaylandRequest<WpSecurityContextV1Server>(requestResource), name: unsafe String(cString: _request_name!))
-        }
+        unsafe h.setSandboxEngine(WaylandRequest<WpSecurityContextV1Server>(res), name: unsafe String(cString: name!))
     }
-    private static let setAppId_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, app_id in
+    private static let setAppId_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, app_id in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_app_id = unsafe app_id
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAppId(WaylandRequest<WpSecurityContextV1Server>(requestResource), app_id: unsafe String(cString: _request_app_id!))
-        }
+        unsafe h.setAppId(WaylandRequest<WpSecurityContextV1Server>(res), app_id: unsafe String(cString: app_id!))
     }
-    private static let setInstanceId_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, instance_id in
+    private static let setInstanceId_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, instance_id in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_instance_id = unsafe instance_id
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setInstanceId(WaylandRequest<WpSecurityContextV1Server>(requestResource), instance_id: unsafe String(cString: _request_instance_id!))
-        }
+        unsafe h.setInstanceId(WaylandRequest<WpSecurityContextV1Server>(res), instance_id: unsafe String(cString: instance_id!))
     }
-    private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let commit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commit(WaylandRequest<WpSecurityContextV1Server>(requestResource))
-        }
+        unsafe h.commit(WaylandRequest<WpSecurityContextV1Server>(res))
     }
 }
 package extension WaylandRequest where Interface == WpSecurityContextV1Server {
@@ -117,7 +93,9 @@ package extension WlNewId where Interface == WpSecurityContextV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpSecurityContextV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpSecurityContextV1Server {
@@ -128,12 +106,14 @@ package extension WpSecurityContextV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpSecurityContextV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpSecurityContextV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -147,10 +127,12 @@ package extension WpSecurityContextV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpSecurityContextV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpSecurityContextV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

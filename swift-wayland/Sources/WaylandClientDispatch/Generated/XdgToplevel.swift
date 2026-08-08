@@ -101,7 +101,7 @@ package protocol XdgToplevelEvents: AnyObject {
     func wmCapabilities(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>, capabilities: WaylandClientArrayView)
 }
 package extension XdgToplevelClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_toplevel_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_toplevel_events())
         unsafe p.pointee.configure = configure_impl
@@ -113,7 +113,7 @@ package extension XdgToplevelClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgToplevelEvents? {
         context.owner as? any XdgToplevelEvents
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -121,15 +121,9 @@ package extension XdgToplevelClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_states = unsafe states
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width, height: height, states: WaylandClientArrayView(_event_states!))
-        }
+        unsafe h.configure(WaylandBorrowedProxy<XdgToplevelClient>(proxy), width: width, height: height, states: WaylandClientArrayView(states!))
     }
-    private static let close_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let close_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -137,14 +131,9 @@ package extension XdgToplevelClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.close(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy))
-        }
+        unsafe h.close(WaylandBorrowedProxy<XdgToplevelClient>(proxy))
     }
-    private static let configureBounds_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
+    private static let configureBounds_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -152,14 +141,9 @@ package extension XdgToplevelClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configureBounds(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width, height: height)
-        }
+        unsafe h.configureBounds(WaylandBorrowedProxy<XdgToplevelClient>(proxy), width: width, height: height)
     }
-    private static let wmCapabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, capabilities in
+    private static let wmCapabilities_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, capabilities in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -167,13 +151,7 @@ package extension XdgToplevelClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_capabilities = unsafe capabilities
-        MainActor.assumeIsolated {
-            unsafe eventHandler.wmCapabilities(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), capabilities: WaylandClientArrayView(_event_capabilities!))
-        }
+        unsafe h.wmCapabilities(WaylandBorrowedProxy<XdgToplevelClient>(proxy), capabilities: WaylandClientArrayView(capabilities!))
     }
 }
 package extension WaylandProxy where Interface == XdgToplevelClient {

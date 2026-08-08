@@ -15,17 +15,16 @@ package extension WlDataDeviceRequests {
     }
 }
 package enum WlDataDeviceServer: WaylandServerInterface {
+    package typealias Requests = any WlDataDeviceRequests
     package nonisolated static let maximumVersion: Int32 = 4
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_data_device_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_data_device_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_data_device_requests.self, capacity: 1)
-        unsafe vt.pointee.start_drag = startDrag_impl
-        unsafe vt.pointee.set_selection = setSelection_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_data_device_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_data_device_requests(
+            start_drag: startDrag_impl,
+            set_selection: setSelection_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_data_device(),
@@ -48,46 +47,30 @@ package enum WlDataDeviceServer: WaylandServerInterface {
     package static func sendSelection(_ target: UnsafeMutablePointer<wl_resource>, id: UnsafeMutablePointer<wl_resource>?) {
         unsafe wl_data_device_send_selection(target, id)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlDataDeviceRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlDataDeviceRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlDataDeviceRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlDataDeviceServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let startDrag_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, source, origin, icon, serial in
+    private static let startDrag_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, source, origin, icon, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_source = unsafe source
-        nonisolated(unsafe) let _request_origin = unsafe origin
-        nonisolated(unsafe) let _request_icon = unsafe icon
-        MainActor.assumeIsolated {
-            unsafe requestHandler.startDrag(WaylandRequest<WlDataDeviceServer>(requestResource), source: _request_source == nil ? nil : .some(WaylandBorrowedObject<WlDataSourceServer>(_request_source!)), origin: WaylandBorrowedObject<WlSurfaceServer>(_request_origin!), icon: _request_icon == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(_request_icon!)), serial: serial)
-        }
+        unsafe h.startDrag(WaylandRequest<WlDataDeviceServer>(res), source: source == nil ? nil : .some(WaylandBorrowedObject<WlDataSourceServer>(source!)), origin: WaylandBorrowedObject<WlSurfaceServer>(origin!), icon: icon == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(icon!)), serial: serial)
     }
-    private static let setSelection_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, source, serial in
+    private static let setSelection_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, source, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_source = unsafe source
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSelection(WaylandRequest<WlDataDeviceServer>(requestResource), source: _request_source == nil ? nil : .some(WaylandBorrowedObject<WlDataSourceServer>(_request_source!)), serial: serial)
-        }
+        unsafe h.setSelection(WaylandRequest<WlDataDeviceServer>(res), source: source == nil ? nil : .some(WaylandBorrowedObject<WlDataSourceServer>(source!)), serial: serial)
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<WlDataDeviceServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<WlDataDeviceServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -118,6 +101,9 @@ package extension WaylandResourceHandle where Interface == WlDataDeviceServer {
                 version ?? 1,
                 WlDataOfferServer.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendDataOffer(id: $0)
@@ -204,7 +190,9 @@ package extension WlNewId where Interface == WlDataDeviceServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlDataDeviceServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlDataDeviceServer {
@@ -215,12 +203,14 @@ package extension WlDataDeviceServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlDataDeviceServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlDataDeviceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -234,10 +224,12 @@ package extension WlDataDeviceServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlDataDeviceServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlDataDeviceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

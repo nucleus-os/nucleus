@@ -24,7 +24,7 @@ package protocol ExtTransientSeatV1Events: AnyObject {
     func denied(_ proxy: WaylandBorrowedProxy<ExtTransientSeatV1Client>)
 }
 package extension ExtTransientSeatV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_transient_seat_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_transient_seat_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_transient_seat_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_transient_seat_v1_events())
         unsafe p.pointee.ready = ready_impl
@@ -34,7 +34,7 @@ package extension ExtTransientSeatV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtTransientSeatV1Events? {
         context.owner as? any ExtTransientSeatV1Events
     }
-    private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, global_name in
+    private static let ready_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, global_name in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -42,14 +42,9 @@ package extension ExtTransientSeatV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ready(WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy), global_name: global_name)
-        }
+        unsafe h.ready(WaylandBorrowedProxy<ExtTransientSeatV1Client>(proxy), global_name: global_name)
     }
-    private static let denied_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let denied_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -57,12 +52,7 @@ package extension ExtTransientSeatV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.denied(WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy))
-        }
+        unsafe h.denied(WaylandBorrowedProxy<ExtTransientSeatV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ExtTransientSeatV1Client {

@@ -57,7 +57,7 @@ package protocol ZwpLinuxDmabufV1Events: AnyObject {
     func modifier(_ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>, format: UInt32, modifier_hi: UInt32, modifier_lo: UInt32)
 }
 package extension ZwpLinuxDmabufV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_linux_dmabuf_v1_events())
         unsafe p.pointee.format = format_impl
@@ -67,7 +67,7 @@ package extension ZwpLinuxDmabufV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxDmabufV1Events? {
         context.owner as? any ZwpLinuxDmabufV1Events
     }
-    private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
+    private static let format_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -75,14 +75,9 @@ package extension ZwpLinuxDmabufV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.format(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format)
-        }
+        unsafe h.format(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(proxy), format: format)
     }
-    private static let modifier_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, format, modifier_hi, modifier_lo in
+    private static let modifier_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, format, modifier_hi, modifier_lo in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -90,12 +85,7 @@ package extension ZwpLinuxDmabufV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.modifier(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format, modifier_hi: modifier_hi, modifier_lo: modifier_lo)
-        }
+        unsafe h.modifier(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(proxy), format: format, modifier_hi: modifier_hi, modifier_lo: modifier_lo)
     }
 }
 package extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {

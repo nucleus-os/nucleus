@@ -1,15 +1,13 @@
 // Resource ownership: each resource created here has exactly one Swift owner object, retained
-// through the resource's user_data and released by libwayland's destroy callback. A checked
-// registry distinguishes these resources from foreign resources whose user_data belongs to
-// libwayland or another subsystem. libwayland owns the resource's wire/object mechanics; the
-// Swift owner holds the server-side semantic state for it.
+// through the resource's user_data and released by libwayland's destroy callback. Interface and
+// implementation identity distinguish these resources from foreign resources whose user_data
+// belongs to libwayland or another subsystem. libwayland owns the resource's wire/object
+// mechanics; the Swift owner holds the server-side semantic state for it.
 
 package import WaylandServerC
 
 @MainActor
 package enum WaylandResource {
-    private static var owners: [UInt: AnyObject] = [:]
-
     typealias ResourceFactory = (
         OpaquePointer,
         UnsafePointer<wl_interface>?,
@@ -17,27 +15,22 @@ package enum WaylandResource {
         UInt32
     ) -> UnsafeMutablePointer<wl_resource>?
 
-    /// Create a wl_resource and bind a Swift owner to it. The owner is retained
-    /// and stored as the resource's user_data; the shared destroy callback
-    /// releases that retain when libwayland destroys the resource, so the owner's
-    /// deinit runs the semantic teardown. `vtable` is a pointer to libwayland's
-    /// request-handler struct (e.g. a zero-initialized swift_wayland_<iface>_requests
-    /// with its handler fields assigned), or nil for resources that take no
-    /// requests.
-    package static func create(
+    /// Create a resource and bind an owner that conforms to the generated
+    /// request contract. Conformance is resolved once before native allocation;
+    /// a non-conforming owner fails creation rather than silently dropping every
+    /// request for the resource's lifetime.
+    package static func create<Interface: WaylandServerInterface>(
         client: OpaquePointer,
-        interface: UnsafePointer<wl_interface>?,
+        interface _: Interface.Type,
         version: Int32,
         id: UInt32,
-        vtable: UnsafeRawPointer?,
         owner: AnyObject
     ) -> UnsafeMutablePointer<wl_resource>? {
         unsafe create(
             client: client,
-            interface: interface,
+            interface: Interface.self,
             version: version,
             id: id,
-            vtable: vtable,
             owner: owner,
             using: wl_resource_create)
     }
@@ -52,8 +45,8 @@ package enum WaylandResource {
         interface _: Interface.Type,
         version: Int32,
         id: UInt32,
-        vtable: UnsafeRawPointer?,
         owner makeOwner: (WaylandResourceHandle<Interface>) -> Owner?,
+        handler bindHandler: (Owner) -> Interface.Requests?,
         installed: (Owner) -> Void
     ) -> Owner? {
         unsafe create(
@@ -61,8 +54,8 @@ package enum WaylandResource {
             interface: Interface.self,
             version: version,
             id: id,
-            vtable: vtable,
             owner: makeOwner,
+            handler: bindHandler,
             installed: installed,
             using: wl_resource_create)
     }
@@ -79,6 +72,7 @@ package enum WaylandResource {
         interface _: Child.Type,
         version: Int32,
         owner makeOwner: (WaylandResourceHandle<Child>) -> Owner?,
+        handler bindHandler: (Owner) -> Child.Requests?,
         installed: (Owner) -> Void,
         publish: (WaylandResourceHandle<Child>) -> Bool
     ) -> Owner? {
@@ -87,6 +81,7 @@ package enum WaylandResource {
             interface: Child.self,
             version: version,
             owner: makeOwner,
+            handler: bindHandler,
             installed: installed,
             publish: publish,
             using: wl_resource_create)
@@ -104,6 +99,7 @@ package enum WaylandResource {
         interface _: Child.Type,
         version: Int32,
         owner makeOwner: (WaylandResourceHandle<Child>) -> Owner?,
+        handler bindHandler: (Owner) -> Child.Requests?,
         installed: (Owner) -> Void,
         publish: (WaylandResourceHandle<Child>) -> Bool,
         using createResource: ResourceFactory
@@ -119,11 +115,11 @@ package enum WaylandResource {
             interface: Child.self,
             version: Swift.min(version, Child.maximumVersion),
             id: 0,
-            vtable: Child.descriptor.nativeRequestVtable,
             owner: { handle in
                 childHandle = handle
                 return makeOwner(handle)
             },
+            handler: bindHandler,
             installed: { childOwner in
                 guard let childHandle, publish(childHandle) else {
                     childHandle?.destroy()
@@ -155,8 +151,8 @@ package enum WaylandResource {
         interface _: Interface.Type,
         version: Int32,
         id: UInt32,
-        vtable: UnsafeRawPointer?,
         owner makeOwner: (WaylandResourceHandle<Interface>) -> Owner?,
+        handler bindHandler: (Owner) -> Interface.Requests?,
         installed: (Owner) -> Void,
         using createResource: ResourceFactory
     ) -> Owner? {
@@ -179,48 +175,82 @@ package enum WaylandResource {
             return nil
         }
 
-        let retained = unsafe Unmanaged.passRetained(owner).toOpaque()
-        owners[UInt(bitPattern: resource)] = owner
+        let box = WaylandDispatchBox<Interface>(
+            owner: owner,
+            handler: bindHandler(owner))
+        let retained = unsafe Unmanaged.passRetained(box).toOpaque()
         unsafe wl_resource_set_implementation(
-            resource, vtable, retained, swiftWaylandResourceDestroy)
+            resource, Interface.descriptor.nativeRequestVtable, retained,
+            swiftWaylandResourceDestroy)
         installed(owner)
         return owner
     }
 
     /// Internal injection point for deterministic allocation-failure coverage.
-    /// Ownership transfers only after the native resource exists.
-    static func create(
+    /// The generic path resolves the request conformance before allocating.
+    static func create<Interface: WaylandServerInterface>(
         client: OpaquePointer,
-        interface: UnsafePointer<wl_interface>?,
+        interface _: Interface.Type,
         version: Int32,
         id: UInt32,
-        vtable: UnsafeRawPointer?,
         owner: AnyObject,
         using createResource: ResourceFactory
     ) -> UnsafeMutablePointer<wl_resource>? {
+        guard let handler = owner as? Interface.Requests else { return nil }
         guard
             let resource = unsafe createResource(
-                client, interface, version, id)
+                client, Interface.descriptor.nativeInterface, version, id)
         else { return nil }
-        let retained = unsafe Unmanaged.passRetained(owner).toOpaque()
-        owners[UInt(bitPattern: resource)] = owner
+        let box = WaylandDispatchBox<Interface>(owner: owner, handler: handler)
+        let retained = unsafe Unmanaged.passRetained(box).toOpaque()
         unsafe wl_resource_set_implementation(
-            resource, vtable, retained, swiftWaylandResourceDestroy)
+            resource, Interface.descriptor.nativeRequestVtable, retained,
+            swiftWaylandResourceDestroy)
+        return unsafe resource
+    }
+
+    /// Explicit binding seam for destroy-only resources whose owner may choose
+    /// not to override the generated fallback handler.
+    package static func create<
+        Interface: WaylandServerInterface, Owner: AnyObject
+    >(
+        client: OpaquePointer,
+        interface _: Interface.Type,
+        version: Int32,
+        id: UInt32,
+        owner: Owner,
+        handler: Interface.Requests?
+    ) -> UnsafeMutablePointer<wl_resource>? {
+        guard
+            let resource = unsafe wl_resource_create(
+                client, Interface.descriptor.nativeInterface, version, id)
+        else { return nil }
+        let box = WaylandDispatchBox<Interface>(owner: owner, handler: handler)
+        let retained = unsafe Unmanaged.passRetained(box).toOpaque()
+        unsafe wl_resource_set_implementation(
+            resource, Interface.descriptor.nativeRequestVtable, retained,
+            swiftWaylandResourceDestroy)
         return unsafe resource
     }
 
     /// Borrow the Swift owner bound to a resource created by this runtime.
     /// Foreign resources return nil without interpreting their user data.
-    package static func owner<T: AnyObject>(
-        of resource: UnsafeMutablePointer<wl_resource>, as _: T.Type
-    ) -> T? {
-        owners[UInt(bitPattern: resource)] as? T
-    }
-
-    fileprivate static func resourceWasDestroyed(
-        _ resource: UnsafeMutablePointer<wl_resource>
-    ) {
-        owners.removeValue(forKey: UInt(bitPattern: resource))
+    package static func owner<
+        Interface: WaylandServerInterface, Owner: AnyObject
+    >(
+        of resource: UnsafeMutablePointer<wl_resource>,
+        interface _: Interface.Type,
+        as _: Owner.Type
+    ) -> Owner? {
+        guard let requestVtable = unsafe Interface.descriptor.nativeRequestVtable,
+            unsafe wl_resource_instance_of(
+                resource,
+                Interface.descriptor.nativeInterface,
+                requestVtable) != 0,
+            let userData = unsafe wl_resource_get_user_data(resource)
+        else { return nil }
+        return unsafe Unmanaged<WaylandDispatchBox<Interface>>
+            .fromOpaque(userData).takeUnretainedValue().owner as? Owner
     }
 }
 
@@ -379,9 +409,7 @@ let swiftWaylandResourceDestroy: @convention(c) (UnsafeMutablePointer<wl_resourc
         let ud = unsafe wl_resource_get_user_data(resource)
     else { return }
     nonisolated(unsafe) let actorOwner = unsafe ud
-    nonisolated(unsafe) let actorResource = unsafe resource
     MainActor.assumeIsolated {
-        unsafe WaylandResource.resourceWasDestroyed(actorResource)
         unsafe Unmanaged<AnyObject>.fromOpaque(actorOwner).release()
     }
 }

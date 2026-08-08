@@ -4,6 +4,7 @@
 import WaylandServerC
 package import WaylandServer
 package enum WlRegistryServer: WaylandServerInterface {
+    package typealias Requests = AnyObject
     package nonisolated static let maximumVersion: Int32 = 1
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_registry(),
@@ -17,7 +18,9 @@ package extension WlNewId where Interface == WlRegistryServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlRegistryServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlRegistryServer {
@@ -28,12 +31,14 @@ package extension WlRegistryServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlRegistryServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlRegistryServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -47,10 +52,12 @@ package extension WlRegistryServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlRegistryServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlRegistryServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

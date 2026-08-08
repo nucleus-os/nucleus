@@ -57,7 +57,6 @@ import Testing
             return digest
         },
         digestSourceCheckout: { _ in digest },
-        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },
@@ -257,7 +256,6 @@ private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServic
         digestFile: { _ in digest },
         digestTree: { _ in digest },
         digestSourceCheckout: { _ in digest },
-        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },
@@ -275,7 +273,6 @@ private func deterministicHashingServices(
         digestFile: { _ in digest },
         digestTree: { _ in digest },
         digestSourceCheckout: { _ in digest },
-        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },

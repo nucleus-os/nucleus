@@ -35,7 +35,7 @@ package protocol ExtDataControlOfferV1Events: AnyObject {
     func offer(_ proxy: WaylandBorrowedProxy<ExtDataControlOfferV1Client>, mime_type: String)
 }
 package extension ExtDataControlOfferV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_offer_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_offer_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_data_control_offer_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_data_control_offer_v1_events())
         unsafe p.pointee.offer = offer_impl
@@ -44,7 +44,7 @@ package extension ExtDataControlOfferV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtDataControlOfferV1Events? {
         context.owner as? any ExtDataControlOfferV1Events
     }
-    private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
+    private static let offer_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -52,13 +52,7 @@ package extension ExtDataControlOfferV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.offer(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
-        }
+        unsafe h.offer(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(proxy), mime_type: unsafe String(cString: mime_type!))
     }
 }
 package extension WaylandProxy where Interface == ExtDataControlOfferV1Client {

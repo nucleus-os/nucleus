@@ -14,16 +14,15 @@ package extension ExtImageCopyCaptureSessionV1Requests {
     }
 }
 package enum ExtImageCopyCaptureSessionV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtImageCopyCaptureSessionV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_image_copy_capture_session_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_image_copy_capture_session_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_image_copy_capture_session_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create_frame = createFrame_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_image_copy_capture_session_v1_requests(
+            create_frame: createFrame_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_session_v1(),
@@ -46,33 +45,24 @@ package enum ExtImageCopyCaptureSessionV1Server: WaylandServerInterface {
     package static func sendStopped(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe ext_image_copy_capture_session_v1_send_stopped(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureSessionV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureSessionV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureSessionV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtImageCopyCaptureSessionV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createFrame_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, frame in
+    private static let createFrame_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, frame in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createFrame(WaylandRequest<ExtImageCopyCaptureSessionV1Server>(requestResource), frame: WlNewId<ExtImageCopyCaptureFrameV1Server>(client: requestClient, id: frame, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createFrame(WaylandRequest<ExtImageCopyCaptureSessionV1Server>(res), frame: WlNewId<ExtImageCopyCaptureFrameV1Server>(client: client, id: frame, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ExtImageCopyCaptureSessionV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ExtImageCopyCaptureSessionV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -151,7 +141,9 @@ package extension WlNewId where Interface == ExtImageCopyCaptureSessionV1Server 
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtImageCopyCaptureSessionV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtImageCopyCaptureSessionV1Server {
@@ -162,12 +154,14 @@ package extension ExtImageCopyCaptureSessionV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtImageCopyCaptureSessionV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureSessionV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -181,10 +175,12 @@ package extension ExtImageCopyCaptureSessionV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtImageCopyCaptureSessionV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureSessionV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

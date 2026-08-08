@@ -23,25 +23,24 @@ package extension ZwpTextInputV3Requests {
     }
 }
 package enum ZwpTextInputV3Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTextInputV3Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_text_input_v3_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_text_input_v3_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_text_input_v3_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.enable = enable_impl
-        unsafe vt.pointee.disable = disable_impl
-        unsafe vt.pointee.set_surrounding_text = setSurroundingText_impl
-        unsafe vt.pointee.set_text_change_cause = setTextChangeCause_impl
-        unsafe vt.pointee.set_content_type = setContentType_impl
-        unsafe vt.pointee.set_cursor_rectangle = setCursorRectangle_impl
-        unsafe vt.pointee.commit = commit_impl
-        unsafe vt.pointee.set_available_actions = setAvailableActions_impl
-        unsafe vt.pointee.show_input_panel = showInputPanel_impl
-        unsafe vt.pointee.hide_input_panel = hideInputPanel_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_text_input_v3_requests(
+            destroy: destroy_impl,
+            enable: enable_impl,
+            disable: disable_impl,
+            set_surrounding_text: setSurroundingText_impl,
+            set_text_change_cause: setTextChangeCause_impl,
+            set_content_type: setContentType_impl,
+            set_cursor_rectangle: setCursorRectangle_impl,
+            commit: commit_impl,
+            set_available_actions: setAvailableActions_impl,
+            show_input_panel: showInputPanel_impl,
+            hide_input_panel: hideInputPanel_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_text_input_v3(),
@@ -73,127 +72,81 @@ package enum ZwpTextInputV3Server: WaylandServerInterface {
     package static func sendPreeditHint(_ target: UnsafeMutablePointer<wl_resource>, start: UInt32, end: UInt32, hint: ZwpTextInputV3PreeditHint) {
         unsafe zwp_text_input_v3_send_preedit_hint(target, start, end, hint.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTextInputV3Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTextInputV3Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTextInputV3Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTextInputV3Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpTextInputV3Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let enable_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let enable_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.enable(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-        }
+        unsafe h.enable(WaylandRequest<ZwpTextInputV3Server>(res))
     }
-    private static let disable_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let disable_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.disable(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-        }
+        unsafe h.disable(WaylandRequest<ZwpTextInputV3Server>(res))
     }
-    private static let setSurroundingText_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32, Int32) -> Void = { _, res, text, cursor, anchor in
+    private static let setSurroundingText_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32, Int32) -> Void = { _, res, text, cursor, anchor in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_text = unsafe text
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSurroundingText(WaylandRequest<ZwpTextInputV3Server>(requestResource), text: unsafe String(cString: _request_text!), cursor: cursor, anchor: anchor)
-        }
+        unsafe h.setSurroundingText(WaylandRequest<ZwpTextInputV3Server>(res), text: unsafe String(cString: text!), cursor: cursor, anchor: anchor)
     }
-    private static let setTextChangeCause_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, cause in
+    private static let setTextChangeCause_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, cause in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTextChangeCause(WaylandRequest<ZwpTextInputV3Server>(requestResource), cause: ZwpTextInputV3ChangeCause(rawValue: cause))
-        }
+        unsafe h.setTextChangeCause(WaylandRequest<ZwpTextInputV3Server>(res), cause: ZwpTextInputV3ChangeCause(rawValue: cause))
     }
-    private static let setContentType_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, hint, purpose in
+    private static let setContentType_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, hint, purpose in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setContentType(WaylandRequest<ZwpTextInputV3Server>(requestResource), hint: ZwpTextInputV3ContentHint(rawValue: hint), purpose: ZwpTextInputV3ContentPurpose(rawValue: purpose))
-        }
+        unsafe h.setContentType(WaylandRequest<ZwpTextInputV3Server>(res), hint: ZwpTextInputV3ContentHint(rawValue: hint), purpose: ZwpTextInputV3ContentPurpose(rawValue: purpose))
     }
-    private static let setCursorRectangle_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
+    private static let setCursorRectangle_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setCursorRectangle(WaylandRequest<ZwpTextInputV3Server>(requestResource), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.setCursorRectangle(WaylandRequest<ZwpTextInputV3Server>(res), x: x, y: y, width: width, height: height)
     }
-    private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let commit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commit(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-        }
+        unsafe h.commit(WaylandRequest<ZwpTextInputV3Server>(res))
     }
-    private static let setAvailableActions_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_array>?) -> Void = { _, res, available_actions in
+    private static let setAvailableActions_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_array>?) -> Void = { _, res, available_actions in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_available_actions = unsafe available_actions
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAvailableActions(WaylandRequest<ZwpTextInputV3Server>(requestResource), available_actions: WaylandArrayView(_request_available_actions!))
-        }
+        unsafe h.setAvailableActions(WaylandRequest<ZwpTextInputV3Server>(res), available_actions: WaylandArrayView(available_actions!))
     }
-    private static let showInputPanel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let showInputPanel_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.showInputPanel(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-        }
+        unsafe h.showInputPanel(WaylandRequest<ZwpTextInputV3Server>(res))
     }
-    private static let hideInputPanel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let hideInputPanel_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.hideInputPanel(WaylandRequest<ZwpTextInputV3Server>(requestResource))
-        }
+        unsafe h.hideInputPanel(WaylandRequest<ZwpTextInputV3Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ZwpTextInputV3Server {
@@ -322,7 +275,9 @@ package extension WlNewId where Interface == ZwpTextInputV3Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTextInputV3Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpTextInputV3Server {
@@ -333,12 +288,14 @@ package extension ZwpTextInputV3Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTextInputV3Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTextInputV3Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -352,10 +309,12 @@ package extension ZwpTextInputV3Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTextInputV3Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTextInputV3Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

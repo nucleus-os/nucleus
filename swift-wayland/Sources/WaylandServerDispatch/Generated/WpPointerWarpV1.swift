@@ -13,51 +13,40 @@ package extension WpPointerWarpV1Requests {
     }
 }
 package enum WpPointerWarpV1Server: WaylandServerInterface {
+    package typealias Requests = any WpPointerWarpV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_pointer_warp_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_pointer_warp_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_pointer_warp_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.warp_pointer = warpPointer_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_pointer_warp_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_pointer_warp_v1_requests(
+            destroy: destroy_impl,
+            warp_pointer: warpPointer_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_pointer_warp_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpPointerWarpV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpPointerWarpV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpPointerWarpV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpPointerWarpV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpPointerWarpV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpPointerWarpV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let warpPointer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t, wl_fixed_t, UInt32) -> Void = { _, res, surface, pointer, x, y, serial in
+    private static let warpPointer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t, wl_fixed_t, UInt32) -> Void = { _, res, surface, pointer, x, y, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.warpPointer(WaylandRequest<WpPointerWarpV1Server>(requestResource), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!), x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y), serial: serial)
-        }
+        unsafe h.warpPointer(WaylandRequest<WpPointerWarpV1Server>(res), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!), x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y), serial: serial)
     }
 }
 package extension WlNewId where Interface == WpPointerWarpV1Server {
@@ -68,7 +57,9 @@ package extension WlNewId where Interface == WpPointerWarpV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpPointerWarpV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpPointerWarpV1Server {
@@ -79,12 +70,14 @@ package extension WpPointerWarpV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpPointerWarpV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpPointerWarpV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -98,10 +91,12 @@ package extension WpPointerWarpV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpPointerWarpV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpPointerWarpV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -12,7 +12,7 @@ package protocol WlCallbackEvents: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WlCallbackClient>, callback_data: UInt32)
 }
 package extension WlCallbackClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_callback_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_callback_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_callback_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_callback_events())
         unsafe p.pointee.done = done_impl
@@ -21,7 +21,7 @@ package extension WlCallbackClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlCallbackEvents? {
         context.owner as? any WlCallbackEvents
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, callback_data in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, callback_data in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -29,12 +29,7 @@ package extension WlCallbackClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<WlCallbackClient>(eventProxy), callback_data: callback_data)
-        }
+        unsafe h.done(WaylandBorrowedProxy<WlCallbackClient>(proxy), callback_data: callback_data)
     }
 }
 package extension WaylandProxy where Interface == WlCallbackClient {

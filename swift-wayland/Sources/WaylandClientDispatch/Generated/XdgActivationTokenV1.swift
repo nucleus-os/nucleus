@@ -47,7 +47,7 @@ package protocol XdgActivationTokenV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<XdgActivationTokenV1Client>, token: String)
 }
 package extension XdgActivationTokenV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_activation_token_v1_events())
         unsafe p.pointee.done = done_impl
@@ -56,7 +56,7 @@ package extension XdgActivationTokenV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgActivationTokenV1Events? {
         context.owner as? any XdgActivationTokenV1Events
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, token in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, token in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -64,13 +64,7 @@ package extension XdgActivationTokenV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_token = unsafe token
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<XdgActivationTokenV1Client>(eventProxy), token: unsafe String(cString: _event_token!))
-        }
+        unsafe h.done(WaylandBorrowedProxy<XdgActivationTokenV1Client>(proxy), token: unsafe String(cString: token!))
     }
 }
 package extension WaylandProxy where Interface == XdgActivationTokenV1Client {

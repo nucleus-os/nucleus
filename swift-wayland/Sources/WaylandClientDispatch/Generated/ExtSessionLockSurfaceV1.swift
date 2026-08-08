@@ -28,7 +28,7 @@ package protocol ExtSessionLockSurfaceV1Events: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32)
 }
 package extension ExtSessionLockSurfaceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_session_lock_surface_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_session_lock_surface_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_session_lock_surface_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_session_lock_surface_v1_events())
         unsafe p.pointee.configure = configure_impl
@@ -37,7 +37,7 @@ package extension ExtSessionLockSurfaceV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtSessionLockSurfaceV1Events? {
         context.owner as? any ExtSessionLockSurfaceV1Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -45,12 +45,7 @@ package extension ExtSessionLockSurfaceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>(eventProxy), serial: serial, width: width, height: height)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>(proxy), serial: serial, width: width, height: height)
     }
 }
 package extension WaylandProxy where Interface == ExtSessionLockSurfaceV1Client {

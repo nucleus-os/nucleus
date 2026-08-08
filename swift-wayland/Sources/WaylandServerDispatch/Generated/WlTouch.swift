@@ -12,15 +12,14 @@ package extension WlTouchRequests {
     }
 }
 package enum WlTouchServer: WaylandServerInterface {
+    package typealias Requests = any WlTouchRequests
     package nonisolated static let maximumVersion: Int32 = 10
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_touch_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_touch_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_touch_requests.self, capacity: 1)
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_touch_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_touch_requests(
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_touch(),
@@ -46,22 +45,18 @@ package enum WlTouchServer: WaylandServerInterface {
     package static func sendOrientation(_ target: UnsafeMutablePointer<wl_resource>, id: Int32, orientation: Double) {
         unsafe wl_touch_send_orientation(target, id, swift_wayland_fixed_from_double(orientation))
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlTouchRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlTouchRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlTouchRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlTouchServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<WlTouchServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<WlTouchServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -150,7 +145,9 @@ package extension WlNewId where Interface == WlTouchServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlTouchServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any WlTouchRequests
+            }, installed: installed)
     }
 }
 package extension WlTouchServer {
@@ -161,12 +158,14 @@ package extension WlTouchServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlTouchServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlTouchServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any WlTouchRequests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -180,10 +179,12 @@ package extension WlTouchServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlTouchServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlTouchServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any WlTouchRequests
+            },
             installed: installed)
     }
 }

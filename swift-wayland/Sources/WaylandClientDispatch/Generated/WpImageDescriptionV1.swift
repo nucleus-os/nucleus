@@ -34,7 +34,7 @@ package protocol WpImageDescriptionV1Events: AnyObject {
     func ready2(_ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, identity_hi: UInt32, identity_lo: UInt32)
 }
 package extension WpImageDescriptionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_image_description_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_image_description_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_image_description_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_image_description_v1_events())
         unsafe p.pointee.failed = failed_impl
@@ -45,7 +45,7 @@ package extension WpImageDescriptionV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpImageDescriptionV1Events? {
         context.owner as? any WpImageDescriptionV1Events
     }
-    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?) -> Void = { data, proxy, cause, msg in
+    private static let failed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?) -> Void = { data, proxy, cause, msg in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -53,15 +53,9 @@ package extension WpImageDescriptionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_msg = unsafe msg
-        MainActor.assumeIsolated {
-            unsafe eventHandler.failed(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), cause: WpImageDescriptionV1Cause(rawValue: cause), msg: unsafe String(cString: _event_msg!))
-        }
+        unsafe h.failed(WaylandBorrowedProxy<WpImageDescriptionV1Client>(proxy), cause: WpImageDescriptionV1Cause(rawValue: cause), msg: unsafe String(cString: msg!))
     }
-    private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, identity in
+    private static let ready_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, identity in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -69,14 +63,9 @@ package extension WpImageDescriptionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ready(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), identity: identity)
-        }
+        unsafe h.ready(WaylandBorrowedProxy<WpImageDescriptionV1Client>(proxy), identity: identity)
     }
-    private static let ready2_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, identity_hi, identity_lo in
+    private static let ready2_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, identity_hi, identity_lo in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -84,12 +73,7 @@ package extension WpImageDescriptionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ready2(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), identity_hi: identity_hi, identity_lo: identity_lo)
-        }
+        unsafe h.ready2(WaylandBorrowedProxy<WpImageDescriptionV1Client>(proxy), identity_hi: identity_hi, identity_lo: identity_lo)
     }
 }
 package extension WaylandProxy where Interface == WpImageDescriptionV1Client {

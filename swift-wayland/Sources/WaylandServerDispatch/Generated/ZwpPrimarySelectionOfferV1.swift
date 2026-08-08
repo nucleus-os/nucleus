@@ -13,16 +13,15 @@ package extension ZwpPrimarySelectionOfferV1Requests {
     }
 }
 package enum ZwpPrimarySelectionOfferV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpPrimarySelectionOfferV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_primary_selection_offer_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_primary_selection_offer_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_primary_selection_offer_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.receive = receive_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_primary_selection_offer_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_primary_selection_offer_v1_requests(
+            receive: receive_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_primary_selection_offer_v1(),
@@ -30,33 +29,24 @@ package enum ZwpPrimarySelectionOfferV1Server: WaylandServerInterface {
     package static func sendOffer(_ target: UnsafeMutablePointer<wl_resource>, mime_type: UnsafePointer<CChar>?) {
         unsafe zwp_primary_selection_offer_v1_send_offer(target, mime_type)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionOfferV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionOfferV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPrimarySelectionOfferV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpPrimarySelectionOfferV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let receive_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32) -> Void = { _, res, mime_type, fd in
+    private static let receive_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32) -> Void = { _, res, mime_type, fd in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe requestHandler.receive(WaylandRequest<ZwpPrimarySelectionOfferV1Server>(requestResource), mime_type: unsafe String(cString: _request_mime_type!), fd: WaylandOwnedFileDescriptor(fd))
-        }
+        unsafe h.receive(WaylandRequest<ZwpPrimarySelectionOfferV1Server>(res), mime_type: unsafe String(cString: mime_type!), fd: WaylandOwnedFileDescriptor(fd))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpPrimarySelectionOfferV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpPrimarySelectionOfferV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -82,7 +72,9 @@ package extension WlNewId where Interface == ZwpPrimarySelectionOfferV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpPrimarySelectionOfferV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpPrimarySelectionOfferV1Server {
@@ -93,12 +85,14 @@ package extension ZwpPrimarySelectionOfferV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpPrimarySelectionOfferV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionOfferV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -112,10 +106,12 @@ package extension ZwpPrimarySelectionOfferV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpPrimarySelectionOfferV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionOfferV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

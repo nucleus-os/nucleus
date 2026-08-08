@@ -27,7 +27,7 @@ package protocol ZxdgOutputV1Events: AnyObject {
     func description(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>, description: String)
 }
 package extension ZxdgOutputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_output_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_output_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_output_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_output_v1_events())
         unsafe p.pointee.logical_position = logicalPosition_impl
@@ -40,7 +40,7 @@ package extension ZxdgOutputV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgOutputV1Events? {
         context.owner as? any ZxdgOutputV1Events
     }
-    private static let logicalPosition_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
+    private static let logicalPosition_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,14 +48,9 @@ package extension ZxdgOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.logicalPosition(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), x: x, y: y)
-        }
+        unsafe h.logicalPosition(WaylandBorrowedProxy<ZxdgOutputV1Client>(proxy), x: x, y: y)
     }
-    private static let logicalSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
+    private static let logicalSize_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -63,14 +58,9 @@ package extension ZxdgOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.logicalSize(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), width: width, height: height)
-        }
+        unsafe h.logicalSize(WaylandBorrowedProxy<ZxdgOutputV1Client>(proxy), width: width, height: height)
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -78,14 +68,9 @@ package extension ZxdgOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<ZxdgOutputV1Client>(proxy))
     }
-    private static let name_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
+    private static let name_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -93,15 +78,9 @@ package extension ZxdgOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_name = unsafe name
-        MainActor.assumeIsolated {
-            unsafe eventHandler.name(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), name: unsafe String(cString: _event_name!))
-        }
+        unsafe h.name(WaylandBorrowedProxy<ZxdgOutputV1Client>(proxy), name: unsafe String(cString: name!))
     }
-    private static let description_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, description in
+    private static let description_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, description in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -109,13 +88,7 @@ package extension ZxdgOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_description = unsafe description
-        MainActor.assumeIsolated {
-            unsafe eventHandler.description(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), description: unsafe String(cString: _event_description!))
-        }
+        unsafe h.description(WaylandBorrowedProxy<ZxdgOutputV1Client>(proxy), description: unsafe String(cString: description!))
     }
 }
 package extension WaylandProxy where Interface == ZxdgOutputV1Client {

@@ -17,19 +17,18 @@ package extension XdgActivationTokenV1Requests {
     }
 }
 package enum XdgActivationTokenV1Server: WaylandServerInterface {
+    package typealias Requests = any XdgActivationTokenV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_xdg_activation_token_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_xdg_activation_token_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_xdg_activation_token_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.set_serial = setSerial_impl
-        unsafe vt.pointee.set_app_id = setAppId_impl
-        unsafe vt.pointee.set_surface = setSurface_impl
-        unsafe vt.pointee.commit = commit_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_xdg_activation_token_v1_requests(
+            set_serial: setSerial_impl,
+            set_app_id: setAppId_impl,
+            set_surface: setSurface_impl,
+            commit: commit_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_activation_token_v1(),
@@ -37,65 +36,42 @@ package enum XdgActivationTokenV1Server: WaylandServerInterface {
     package static func sendDone(_ target: UnsafeMutablePointer<wl_resource>, token: UnsafePointer<CChar>?) {
         unsafe xdg_activation_token_v1_send_done(target, token)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgActivationTokenV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgActivationTokenV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgActivationTokenV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<XdgActivationTokenV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setSerial_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, serial, seat in
+    private static let setSerial_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, serial, seat in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSerial(WaylandRequest<XdgActivationTokenV1Server>(requestResource), serial: serial, seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!))
-        }
+        unsafe h.setSerial(WaylandRequest<XdgActivationTokenV1Server>(res), serial: serial, seat: WaylandBorrowedObject<WlSeatServer>(seat!))
     }
-    private static let setAppId_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, app_id in
+    private static let setAppId_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, app_id in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_app_id = unsafe app_id
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAppId(WaylandRequest<XdgActivationTokenV1Server>(requestResource), app_id: unsafe String(cString: _request_app_id!))
-        }
+        unsafe h.setAppId(WaylandRequest<XdgActivationTokenV1Server>(res), app_id: unsafe String(cString: app_id!))
     }
-    private static let setSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface in
+    private static let setSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSurface(WaylandRequest<XdgActivationTokenV1Server>(requestResource), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.setSurface(WaylandRequest<XdgActivationTokenV1Server>(res), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let commit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commit(WaylandRequest<XdgActivationTokenV1Server>(requestResource))
-        }
+        unsafe h.commit(WaylandRequest<XdgActivationTokenV1Server>(res))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<XdgActivationTokenV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<XdgActivationTokenV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -132,7 +108,9 @@ package extension WlNewId where Interface == XdgActivationTokenV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: XdgActivationTokenV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension XdgActivationTokenV1Server {
@@ -143,12 +121,14 @@ package extension XdgActivationTokenV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<XdgActivationTokenV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgActivationTokenV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -162,10 +142,12 @@ package extension XdgActivationTokenV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<XdgActivationTokenV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgActivationTokenV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -17,135 +17,93 @@ package import WaylandProtocolTypes
     func setMaxFall(_ request: WaylandRequest<WpImageDescriptionCreatorParamsV1Server>, max_fall: UInt32)
 }
 package enum WpImageDescriptionCreatorParamsV1Server: WaylandServerInterface {
+    package typealias Requests = any WpImageDescriptionCreatorParamsV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_image_description_creator_params_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_image_description_creator_params_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_image_description_creator_params_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create = create_impl
-        unsafe vt.pointee.set_tf_named = setTfNamed_impl
-        unsafe vt.pointee.set_tf_power = setTfPower_impl
-        unsafe vt.pointee.set_primaries_named = setPrimariesNamed_impl
-        unsafe vt.pointee.set_primaries = setPrimaries_impl
-        unsafe vt.pointee.set_luminances = setLuminances_impl
-        unsafe vt.pointee.set_mastering_display_primaries = setMasteringDisplayPrimaries_impl
-        unsafe vt.pointee.set_mastering_luminance = setMasteringLuminance_impl
-        unsafe vt.pointee.set_max_cll = setMaxCll_impl
-        unsafe vt.pointee.set_max_fall = setMaxFall_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_image_description_creator_params_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_image_description_creator_params_v1_requests(
+            create: create_impl,
+            set_tf_named: setTfNamed_impl,
+            set_tf_power: setTfPower_impl,
+            set_primaries_named: setPrimariesNamed_impl,
+            set_primaries: setPrimaries_impl,
+            set_luminances: setLuminances_impl,
+            set_mastering_display_primaries: setMasteringDisplayPrimaries_impl,
+            set_mastering_luminance: setMasteringLuminance_impl,
+            set_max_cll: setMaxCll_impl,
+            set_max_fall: setMaxFall_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_creator_params_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionCreatorParamsV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpImageDescriptionCreatorParamsV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpImageDescriptionCreatorParamsV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpImageDescriptionCreatorParamsV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
+    private static let create_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.create(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-            unsafe wl_resource_destroy(requestResource)
-        }
+        unsafe h.create(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))))
+        unsafe wl_resource_destroy(res)
     }
-    private static let setTfNamed_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, tf in
+    private static let setTfNamed_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, tf in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTfNamed(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), tf: WpColorManagerV1TransferFunction(rawValue: tf))
-        }
+        unsafe h.setTfNamed(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), tf: WpColorManagerV1TransferFunction(rawValue: tf))
     }
-    private static let setTfPower_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, eexp in
+    private static let setTfPower_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, eexp in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTfPower(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), eexp: eexp)
-        }
+        unsafe h.setTfPower(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), eexp: eexp)
     }
-    private static let setPrimariesNamed_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, primaries in
+    private static let setPrimariesNamed_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, primaries in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setPrimariesNamed(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), primaries: WpColorManagerV1Primaries(rawValue: primaries))
-        }
+        unsafe h.setPrimariesNamed(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), primaries: WpColorManagerV1Primaries(rawValue: primaries))
     }
-    private static let setPrimaries_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { _, res, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
+    private static let setPrimaries_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { _, res, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setPrimaries(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
-        }
+        unsafe h.setPrimaries(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
     }
-    private static let setLuminances_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32) -> Void = { _, res, min_lum, max_lum, reference_lum in
+    private static let setLuminances_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32) -> Void = { _, res, min_lum, max_lum, reference_lum in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setLuminances(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), min_lum: min_lum, max_lum: max_lum, reference_lum: reference_lum)
-        }
+        unsafe h.setLuminances(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), min_lum: min_lum, max_lum: max_lum, reference_lum: reference_lum)
     }
-    private static let setMasteringDisplayPrimaries_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { _, res, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
+    private static let setMasteringDisplayPrimaries_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32) -> Void = { _, res, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMasteringDisplayPrimaries(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
-        }
+        unsafe h.setMasteringDisplayPrimaries(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), r_x: r_x, r_y: r_y, g_x: g_x, g_y: g_y, b_x: b_x, b_y: b_y, w_x: w_x, w_y: w_y)
     }
-    private static let setMasteringLuminance_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, min_lum, max_lum in
+    private static let setMasteringLuminance_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, min_lum, max_lum in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMasteringLuminance(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), min_lum: min_lum, max_lum: max_lum)
-        }
+        unsafe h.setMasteringLuminance(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), min_lum: min_lum, max_lum: max_lum)
     }
-    private static let setMaxCll_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, max_cll in
+    private static let setMaxCll_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, max_cll in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMaxCll(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), max_cll: max_cll)
-        }
+        unsafe h.setMaxCll(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), max_cll: max_cll)
     }
-    private static let setMaxFall_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, max_fall in
+    private static let setMaxFall_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, max_fall in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMaxFall(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(requestResource), max_fall: max_fall)
-        }
+        unsafe h.setMaxFall(WaylandRequest<WpImageDescriptionCreatorParamsV1Server>(res), max_fall: max_fall)
     }
 }
 package extension WaylandRequest where Interface == WpImageDescriptionCreatorParamsV1Server {
@@ -167,7 +125,9 @@ package extension WlNewId where Interface == WpImageDescriptionCreatorParamsV1Se
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpImageDescriptionCreatorParamsV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpImageDescriptionCreatorParamsV1Server {
@@ -178,12 +138,14 @@ package extension WpImageDescriptionCreatorParamsV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpImageDescriptionCreatorParamsV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionCreatorParamsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -197,10 +159,12 @@ package extension WpImageDescriptionCreatorParamsV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpImageDescriptionCreatorParamsV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpImageDescriptionCreatorParamsV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

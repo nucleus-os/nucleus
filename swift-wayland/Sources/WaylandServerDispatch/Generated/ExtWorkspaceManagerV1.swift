@@ -8,16 +8,15 @@ package import WaylandServer
     func stop(_ request: WaylandRequest<ExtWorkspaceManagerV1Server>)
 }
 package enum ExtWorkspaceManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtWorkspaceManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_workspace_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_workspace_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_workspace_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.commit = commit_impl
-        unsafe vt.pointee.stop = stop_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_workspace_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_workspace_manager_v1_requests(
+            commit: commit_impl,
+            stop: stop_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_workspace_manager_v1(),
@@ -34,31 +33,23 @@ package enum ExtWorkspaceManagerV1Server: WaylandServerInterface {
     package static func sendFinished(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe ext_workspace_manager_v1_send_finished(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtWorkspaceManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtWorkspaceManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtWorkspaceManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtWorkspaceManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let commit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commit(WaylandRequest<ExtWorkspaceManagerV1Server>(requestResource))
-        }
+        unsafe h.commit(WaylandRequest<ExtWorkspaceManagerV1Server>(res))
     }
-    private static let stop_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let stop_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.stop(WaylandRequest<ExtWorkspaceManagerV1Server>(requestResource))
-        }
+        unsafe h.stop(WaylandRequest<ExtWorkspaceManagerV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1Server {
@@ -86,6 +77,9 @@ package extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1
                 version ?? 1,
                 ExtWorkspaceGroupHandleV1Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendWorkspaceGroup(workspace_group: $0)
@@ -115,6 +109,9 @@ package extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1
                 version ?? 1,
                 ExtWorkspaceHandleV1Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendWorkspace(workspace: $0)
@@ -145,7 +142,9 @@ package extension WlNewId where Interface == ExtWorkspaceManagerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtWorkspaceManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtWorkspaceManagerV1Server {
@@ -156,12 +155,14 @@ package extension ExtWorkspaceManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtWorkspaceManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtWorkspaceManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -175,10 +176,12 @@ package extension ExtWorkspaceManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtWorkspaceManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtWorkspaceManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

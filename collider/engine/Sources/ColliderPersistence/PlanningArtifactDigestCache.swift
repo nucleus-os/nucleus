@@ -44,6 +44,7 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
     private var files: [String: FileEntry]
     private var trees: [TreeKey: ArtifactDigest] = [:]
     private var sourceCheckouts: [FilePath: ArtifactDigest] = [:]
+    private var sourceCheckoutClosures: [[FilePath]: ArtifactDigest] = [:]
     private var persistentStateChanged = false
     private var measurementDepth = 0
     package private(set) var fileMissCount = 0
@@ -145,6 +146,21 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
             digestNestedCheckout: { try self.digestSourceCheckout($0) })
         sourceCheckouts[path] = digest
         return digest
+    }
+
+    package func digest(
+        sourceCheckoutClosure paths: [FilePath]
+    ) throws -> ArtifactDigest {
+        try measured {
+            let paths = paths.sorted { $0.string < $1.string }
+            if let digest = sourceCheckoutClosures[paths] { return digest }
+            let digest = try GitSourceCheckoutHasher.digest(
+                paths,
+                digestFile: { try self.digestFile($0, metadata: $1) },
+                digestNestedCheckout: { try self.digestSourceCheckout($0) })
+            sourceCheckoutClosures[paths] = digest
+            return digest
+        }
     }
 
     private func measured<Result>(

@@ -15,62 +15,44 @@ package extension ExtImageCopyCaptureManagerV1Requests {
     }
 }
 package enum ExtImageCopyCaptureManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtImageCopyCaptureManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_image_copy_capture_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_image_copy_capture_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_image_copy_capture_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create_session = createSession_impl
-        unsafe vt.pointee.create_pointer_cursor_session = createPointerCursorSession_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_image_copy_capture_manager_v1_requests(
+            create_session: createSession_impl,
+            create_pointer_cursor_session: createPointerCursorSession_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_manager_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtImageCopyCaptureManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createSession_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, session, source, options in
+    private static let createSession_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, session, source, options in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_source = unsafe source
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createSession(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(requestResource), session: WlNewId<ExtImageCopyCaptureSessionV1Server>(client: requestClient, id: session, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), source: WaylandBorrowedObject<ExtImageCaptureSourceV1Server>(_request_source!), options: ExtImageCopyCaptureManagerV1Options(rawValue: options))
-        }
+        unsafe h.createSession(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(res), session: WlNewId<ExtImageCopyCaptureSessionV1Server>(client: client, id: session, version: Swift::min(wl_resource_get_version(res), Int32(1))), source: WaylandBorrowedObject<ExtImageCaptureSourceV1Server>(source!), options: ExtImageCopyCaptureManagerV1Options(rawValue: options))
     }
-    private static let createPointerCursorSession_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, session, source, pointer in
+    private static let createPointerCursorSession_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, session, source, pointer in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_source = unsafe source
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createPointerCursorSession(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(requestResource), session: WlNewId<ExtImageCopyCaptureCursorSessionV1Server>(client: requestClient, id: session, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), source: WaylandBorrowedObject<ExtImageCaptureSourceV1Server>(_request_source!), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!))
-        }
+        unsafe h.createPointerCursorSession(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(res), session: WlNewId<ExtImageCopyCaptureCursorSessionV1Server>(client: client, id: session, version: Swift::min(wl_resource_get_version(res), Int32(1))), source: WaylandBorrowedObject<ExtImageCaptureSourceV1Server>(source!), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ExtImageCopyCaptureManagerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -95,7 +77,9 @@ package extension WlNewId where Interface == ExtImageCopyCaptureManagerV1Server 
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtImageCopyCaptureManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtImageCopyCaptureManagerV1Server {
@@ -106,12 +90,14 @@ package extension ExtImageCopyCaptureManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtImageCopyCaptureManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -125,10 +111,12 @@ package extension ExtImageCopyCaptureManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtImageCopyCaptureManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -16,18 +16,17 @@ package extension ZxdgShellV6Requests {
     }
 }
 package enum ZxdgShellV6Server: WaylandServerInterface {
+    package typealias Requests = any ZxdgShellV6Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zxdg_shell_v6_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zxdg_shell_v6_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zxdg_shell_v6_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.create_positioner = createPositioner_impl
-        unsafe vt.pointee.get_xdg_surface = getXdgSurface_impl
-        unsafe vt.pointee.pong = pong_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zxdg_shell_v6_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zxdg_shell_v6_requests(
+            destroy: destroy_impl,
+            create_positioner: createPositioner_impl,
+            get_xdg_surface: getXdgSurface_impl,
+            pong: pong_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_shell_v6(),
@@ -35,58 +34,39 @@ package enum ZxdgShellV6Server: WaylandServerInterface {
     package static func sendPing(_ target: UnsafeMutablePointer<wl_resource>, serial: UInt32) {
         unsafe zxdg_shell_v6_send_ping(target, serial)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgShellV6Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgShellV6Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgShellV6Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZxdgShellV6Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZxdgShellV6Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZxdgShellV6Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let createPositioner_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createPositioner_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createPositioner(WaylandRequest<ZxdgShellV6Server>(requestResource), id: WlNewId<ZxdgPositionerV6Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createPositioner(WaylandRequest<ZxdgShellV6Server>(res), id: WlNewId<ZxdgPositionerV6Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let getXdgSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getXdgSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getXdgSurface(WaylandRequest<ZxdgShellV6Server>(requestResource), id: WlNewId<ZxdgSurfaceV6Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getXdgSurface(WaylandRequest<ZxdgShellV6Server>(res), id: WlNewId<ZxdgSurfaceV6Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let pong_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
+    private static let pong_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.pong(WaylandRequest<ZxdgShellV6Server>(requestResource), serial: serial)
-        }
+        unsafe h.pong(WaylandRequest<ZxdgShellV6Server>(res), serial: serial)
     }
 }
 package extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
@@ -118,7 +98,9 @@ package extension WlNewId where Interface == ZxdgShellV6Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZxdgShellV6Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZxdgShellV6Server {
@@ -129,12 +111,14 @@ package extension ZxdgShellV6Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZxdgShellV6Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgShellV6Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -148,10 +132,12 @@ package extension ZxdgShellV6Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZxdgShellV6Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgShellV6Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

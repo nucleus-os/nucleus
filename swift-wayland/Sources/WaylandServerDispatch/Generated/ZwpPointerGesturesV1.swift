@@ -15,77 +15,54 @@ package extension ZwpPointerGesturesV1Requests {
     }
 }
 package enum ZwpPointerGesturesV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpPointerGesturesV1Requests
     package nonisolated static let maximumVersion: Int32 = 3
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_pointer_gestures_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_pointer_gestures_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_pointer_gestures_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.get_swipe_gesture = getSwipeGesture_impl
-        unsafe vt.pointee.get_pinch_gesture = getPinchGesture_impl
-        unsafe vt.pointee.release = release_impl
-        unsafe vt.pointee.get_hold_gesture = getHoldGesture_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_pointer_gestures_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_pointer_gestures_v1_requests(
+            get_swipe_gesture: getSwipeGesture_impl,
+            get_pinch_gesture: getPinchGesture_impl,
+            release: release_impl,
+            get_hold_gesture: getHoldGesture_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_pointer_gestures_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPointerGesturesV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPointerGesturesV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPointerGesturesV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpPointerGesturesV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let getSwipeGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
+    private static let getSwipeGesture_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getSwipeGesture(WaylandRequest<ZwpPointerGesturesV1Server>(requestResource), id: WlNewId<ZwpPointerGestureSwipeV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!))
-        }
+        unsafe h.getSwipeGesture(WaylandRequest<ZwpPointerGesturesV1Server>(res), id: WlNewId<ZwpPointerGestureSwipeV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!))
     }
-    private static let getPinchGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
+    private static let getPinchGesture_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getPinchGesture(WaylandRequest<ZwpPointerGesturesV1Server>(requestResource), id: WlNewId<ZwpPointerGesturePinchV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!))
-        }
+        unsafe h.getPinchGesture(WaylandRequest<ZwpPointerGesturesV1Server>(res), id: WlNewId<ZwpPointerGesturePinchV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!))
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<ZwpPointerGesturesV1Server>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<ZwpPointerGesturesV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let getHoldGesture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
+    private static let getHoldGesture_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, pointer in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_pointer = unsafe pointer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getHoldGesture(WaylandRequest<ZwpPointerGesturesV1Server>(requestResource), id: WlNewId<ZwpPointerGestureHoldV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(_request_pointer!))
-        }
+        unsafe h.getHoldGesture(WaylandRequest<ZwpPointerGesturesV1Server>(res), id: WlNewId<ZwpPointerGestureHoldV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3))), pointer: WaylandBorrowedObject<WlPointerServer>(pointer!))
     }
 }
 package extension WlNewId where Interface == ZwpPointerGesturesV1Server {
@@ -96,7 +73,9 @@ package extension WlNewId where Interface == ZwpPointerGesturesV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpPointerGesturesV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpPointerGesturesV1Server {
@@ -107,12 +86,14 @@ package extension ZwpPointerGesturesV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpPointerGesturesV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPointerGesturesV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -126,10 +107,12 @@ package extension ZwpPointerGesturesV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpPointerGesturesV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPointerGesturesV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

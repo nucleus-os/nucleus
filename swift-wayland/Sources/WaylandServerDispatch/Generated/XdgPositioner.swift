@@ -22,137 +22,96 @@ package extension XdgPositionerRequests {
     }
 }
 package enum XdgPositionerServer: WaylandServerInterface {
+    package typealias Requests = any XdgPositionerRequests
     package nonisolated static let maximumVersion: Int32 = 7
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_xdg_positioner_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_xdg_positioner_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_xdg_positioner_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_size = setSize_impl
-        unsafe vt.pointee.set_anchor_rect = setAnchorRect_impl
-        unsafe vt.pointee.set_anchor = setAnchor_impl
-        unsafe vt.pointee.set_gravity = setGravity_impl
-        unsafe vt.pointee.set_constraint_adjustment = setConstraintAdjustment_impl
-        unsafe vt.pointee.set_offset = setOffset_impl
-        unsafe vt.pointee.set_reactive = setReactive_impl
-        unsafe vt.pointee.set_parent_size = setParentSize_impl
-        unsafe vt.pointee.set_parent_configure = setParentConfigure_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_xdg_positioner_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_xdg_positioner_requests(
+            destroy: destroy_impl,
+            set_size: setSize_impl,
+            set_anchor_rect: setAnchorRect_impl,
+            set_anchor: setAnchor_impl,
+            set_gravity: setGravity_impl,
+            set_constraint_adjustment: setConstraintAdjustment_impl,
+            set_offset: setOffset_impl,
+            set_reactive: setReactive_impl,
+            set_parent_size: setParentSize_impl,
+            set_parent_configure: setParentConfigure_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_positioner(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgPositionerRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgPositionerRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgPositionerRequests
+        return unsafe Unmanaged<WaylandDispatchBox<XdgPositionerServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<XdgPositionerServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<XdgPositionerServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setSize_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, width, height in
+    private static let setSize_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSize(WaylandRequest<XdgPositionerServer>(requestResource), width: width, height: height)
-        }
+        unsafe h.setSize(WaylandRequest<XdgPositionerServer>(res), width: width, height: height)
     }
-    private static let setAnchorRect_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
+    private static let setAnchorRect_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAnchorRect(WaylandRequest<XdgPositionerServer>(requestResource), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.setAnchorRect(WaylandRequest<XdgPositionerServer>(res), x: x, y: y, width: width, height: height)
     }
-    private static let setAnchor_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, anchor in
+    private static let setAnchor_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, anchor in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAnchor(WaylandRequest<XdgPositionerServer>(requestResource), anchor: XdgPositionerAnchor(rawValue: anchor))
-        }
+        unsafe h.setAnchor(WaylandRequest<XdgPositionerServer>(res), anchor: XdgPositionerAnchor(rawValue: anchor))
     }
-    private static let setGravity_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, gravity in
+    private static let setGravity_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, gravity in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setGravity(WaylandRequest<XdgPositionerServer>(requestResource), gravity: XdgPositionerGravity(rawValue: gravity))
-        }
+        unsafe h.setGravity(WaylandRequest<XdgPositionerServer>(res), gravity: XdgPositionerGravity(rawValue: gravity))
     }
-    private static let setConstraintAdjustment_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, constraint_adjustment in
+    private static let setConstraintAdjustment_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, constraint_adjustment in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setConstraintAdjustment(WaylandRequest<XdgPositionerServer>(requestResource), constraint_adjustment: XdgPositionerConstraintAdjustment(rawValue: constraint_adjustment))
-        }
+        unsafe h.setConstraintAdjustment(WaylandRequest<XdgPositionerServer>(res), constraint_adjustment: XdgPositionerConstraintAdjustment(rawValue: constraint_adjustment))
     }
-    private static let setOffset_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
+    private static let setOffset_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setOffset(WaylandRequest<XdgPositionerServer>(requestResource), x: x, y: y)
-        }
+        unsafe h.setOffset(WaylandRequest<XdgPositionerServer>(res), x: x, y: y)
     }
-    private static let setReactive_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setReactive_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setReactive(WaylandRequest<XdgPositionerServer>(requestResource))
-        }
+        unsafe h.setReactive(WaylandRequest<XdgPositionerServer>(res))
     }
-    private static let setParentSize_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, parent_width, parent_height in
+    private static let setParentSize_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, parent_width, parent_height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setParentSize(WaylandRequest<XdgPositionerServer>(requestResource), parent_width: parent_width, parent_height: parent_height)
-        }
+        unsafe h.setParentSize(WaylandRequest<XdgPositionerServer>(res), parent_width: parent_width, parent_height: parent_height)
     }
-    private static let setParentConfigure_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
+    private static let setParentConfigure_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setParentConfigure(WaylandRequest<XdgPositionerServer>(requestResource), serial: serial)
-        }
+        unsafe h.setParentConfigure(WaylandRequest<XdgPositionerServer>(res), serial: serial)
     }
 }
 package extension WaylandRequest where Interface == XdgPositionerServer {
@@ -174,7 +133,9 @@ package extension WlNewId where Interface == XdgPositionerServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: XdgPositionerServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension XdgPositionerServer {
@@ -185,12 +146,14 @@ package extension XdgPositionerServer {
         installed: @escaping (Implementation, WaylandResourceHandle<XdgPositionerServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgPositionerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -204,10 +167,12 @@ package extension XdgPositionerServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<XdgPositionerServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgPositionerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -9,48 +9,37 @@ package import WaylandProtocolTypes
     func submit(_ request: WaylandRequest<WpDrmLeaseRequestV1Server>, id: WlNewId<WpDrmLeaseV1Server>)
 }
 package enum WpDrmLeaseRequestV1Server: WaylandServerInterface {
+    package typealias Requests = any WpDrmLeaseRequestV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_drm_lease_request_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_drm_lease_request_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_drm_lease_request_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.request_connector = requestConnector_impl
-        unsafe vt.pointee.submit = submit_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_drm_lease_request_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_drm_lease_request_v1_requests(
+            request_connector: requestConnector_impl,
+            submit: submit_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_drm_lease_request_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpDrmLeaseRequestV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpDrmLeaseRequestV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpDrmLeaseRequestV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpDrmLeaseRequestV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let requestConnector_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, connector in
+    private static let requestConnector_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, connector in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_connector = unsafe connector
-        MainActor.assumeIsolated {
-            unsafe requestHandler.requestConnector(WaylandRequest<WpDrmLeaseRequestV1Server>(requestResource), connector: WaylandBorrowedObject<WpDrmLeaseConnectorV1Server>(_request_connector!))
-        }
+        unsafe h.requestConnector(WaylandRequest<WpDrmLeaseRequestV1Server>(res), connector: WaylandBorrowedObject<WpDrmLeaseConnectorV1Server>(connector!))
     }
-    private static let submit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let submit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.submit(WaylandRequest<WpDrmLeaseRequestV1Server>(requestResource), id: WlNewId<WpDrmLeaseV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-            unsafe wl_resource_destroy(requestResource)
-        }
+        unsafe h.submit(WaylandRequest<WpDrmLeaseRequestV1Server>(res), id: WlNewId<WpDrmLeaseV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
+        unsafe wl_resource_destroy(res)
     }
 }
 package extension WaylandRequest where Interface == WpDrmLeaseRequestV1Server {
@@ -72,7 +61,9 @@ package extension WlNewId where Interface == WpDrmLeaseRequestV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpDrmLeaseRequestV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpDrmLeaseRequestV1Server {
@@ -83,12 +74,14 @@ package extension WpDrmLeaseRequestV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpDrmLeaseRequestV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpDrmLeaseRequestV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -102,10 +95,12 @@ package extension WpDrmLeaseRequestV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpDrmLeaseRequestV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpDrmLeaseRequestV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -14,49 +14,40 @@ package extension WpContentTypeV1Requests {
     }
 }
 package enum WpContentTypeV1Server: WaylandServerInterface {
+    package typealias Requests = any WpContentTypeV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_content_type_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_content_type_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_content_type_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_content_type = setContentType_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_content_type_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_content_type_v1_requests(
+            destroy: destroy_impl,
+            set_content_type: setContentType_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_content_type_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpContentTypeV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpContentTypeV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpContentTypeV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpContentTypeV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpContentTypeV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpContentTypeV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setContentType_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, content_type in
+    private static let setContentType_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, content_type in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setContentType(WaylandRequest<WpContentTypeV1Server>(requestResource), content_type: WpContentTypeV1Type(rawValue: content_type))
-        }
+        unsafe h.setContentType(WaylandRequest<WpContentTypeV1Server>(res), content_type: WpContentTypeV1Type(rawValue: content_type))
     }
 }
 package extension WlNewId where Interface == WpContentTypeV1Server {
@@ -67,7 +58,9 @@ package extension WlNewId where Interface == WpContentTypeV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpContentTypeV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpContentTypeV1Server {
@@ -78,12 +71,14 @@ package extension WpContentTypeV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpContentTypeV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpContentTypeV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -97,10 +92,12 @@ package extension WpContentTypeV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpContentTypeV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpContentTypeV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

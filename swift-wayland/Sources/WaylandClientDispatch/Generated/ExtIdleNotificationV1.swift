@@ -24,7 +24,7 @@ package protocol ExtIdleNotificationV1Events: AnyObject {
     func resumed(_ proxy: WaylandBorrowedProxy<ExtIdleNotificationV1Client>)
 }
 package extension ExtIdleNotificationV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_idle_notification_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_idle_notification_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_idle_notification_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_idle_notification_v1_events())
         unsafe p.pointee.idled = idled_impl
@@ -34,7 +34,7 @@ package extension ExtIdleNotificationV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtIdleNotificationV1Events? {
         context.owner as? any ExtIdleNotificationV1Events
     }
-    private static let idled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let idled_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -42,14 +42,9 @@ package extension ExtIdleNotificationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.idled(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
-        }
+        unsafe h.idled(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(proxy))
     }
-    private static let resumed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let resumed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -57,12 +52,7 @@ package extension ExtIdleNotificationV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.resumed(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
-        }
+        unsafe h.resumed(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ExtIdleNotificationV1Client {

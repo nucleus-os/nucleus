@@ -23,7 +23,7 @@ package protocol WpFractionalScaleV1Events: AnyObject {
     func preferredScale(_ proxy: WaylandBorrowedProxy<WpFractionalScaleV1Client>, scale: UInt32)
 }
 package extension WpFractionalScaleV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_fractional_scale_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_fractional_scale_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_fractional_scale_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_fractional_scale_v1_events())
         unsafe p.pointee.preferred_scale = preferredScale_impl
@@ -32,7 +32,7 @@ package extension WpFractionalScaleV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpFractionalScaleV1Events? {
         context.owner as? any WpFractionalScaleV1Events
     }
-    private static let preferredScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, scale in
+    private static let preferredScale_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, scale in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -40,12 +40,7 @@ package extension WpFractionalScaleV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preferredScale(WaylandBorrowedProxy<WpFractionalScaleV1Client>(eventProxy), scale: scale)
-        }
+        unsafe h.preferredScale(WaylandBorrowedProxy<WpFractionalScaleV1Client>(proxy), scale: scale)
     }
 }
 package extension WaylandProxy where Interface == WpFractionalScaleV1Client {

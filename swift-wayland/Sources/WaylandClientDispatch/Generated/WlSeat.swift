@@ -53,7 +53,7 @@ package protocol WlSeatEvents: AnyObject {
     func name(_ proxy: WaylandBorrowedProxy<WlSeatClient>, name: String)
 }
 package extension WlSeatClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_seat_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_seat_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_seat_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_seat_events())
         unsafe p.pointee.capabilities = capabilities_impl
@@ -63,7 +63,7 @@ package extension WlSeatClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlSeatEvents? {
         context.owner as? any WlSeatEvents
     }
-    private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capabilities in
+    private static let capabilities_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capabilities in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -71,14 +71,9 @@ package extension WlSeatClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.capabilities(WaylandBorrowedProxy<WlSeatClient>(eventProxy), capabilities: WlSeatCapability(rawValue: capabilities))
-        }
+        unsafe h.capabilities(WaylandBorrowedProxy<WlSeatClient>(proxy), capabilities: WlSeatCapability(rawValue: capabilities))
     }
-    private static let name_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
+    private static let name_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -86,13 +81,7 @@ package extension WlSeatClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_name = unsafe name
-        MainActor.assumeIsolated {
-            unsafe eventHandler.name(WaylandBorrowedProxy<WlSeatClient>(eventProxy), name: unsafe String(cString: _event_name!))
-        }
+        unsafe h.name(WaylandBorrowedProxy<WlSeatClient>(proxy), name: unsafe String(cString: name!))
     }
 }
 package extension WaylandProxy where Interface == WlSeatClient {

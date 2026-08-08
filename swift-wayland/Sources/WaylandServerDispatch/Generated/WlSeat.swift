@@ -16,18 +16,17 @@ package extension WlSeatRequests {
     }
 }
 package enum WlSeatServer: WaylandServerInterface {
+    package typealias Requests = any WlSeatRequests
     package nonisolated static let maximumVersion: Int32 = 10
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_seat_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_seat_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_seat_requests.self, capacity: 1)
-        unsafe vt.pointee.get_pointer = getPointer_impl
-        unsafe vt.pointee.get_keyboard = getKeyboard_impl
-        unsafe vt.pointee.get_touch = getTouch_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_seat_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_seat_requests(
+            get_pointer: getPointer_impl,
+            get_keyboard: getKeyboard_impl,
+            get_touch: getTouch_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_seat(),
@@ -38,55 +37,36 @@ package enum WlSeatServer: WaylandServerInterface {
     package static func sendName(_ target: UnsafeMutablePointer<wl_resource>, name: UnsafePointer<CChar>?) {
         unsafe wl_seat_send_name(target, name)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSeatRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSeatRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlSeatRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlSeatServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let getPointer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let getPointer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getPointer(WaylandRequest<WlSeatServer>(requestResource), id: WlNewId<WlPointerServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(10))))
-        }
+        unsafe h.getPointer(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlPointerServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
     }
-    private static let getKeyboard_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let getKeyboard_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getKeyboard(WaylandRequest<WlSeatServer>(requestResource), id: WlNewId<WlKeyboardServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(10))))
-        }
+        unsafe h.getKeyboard(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlKeyboardServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
     }
-    private static let getTouch_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let getTouch_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getTouch(WaylandRequest<WlSeatServer>(requestResource), id: WlNewId<WlTouchServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(10))))
-        }
+        unsafe h.getTouch(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlTouchServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<WlSeatServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<WlSeatServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -138,7 +118,9 @@ package extension WlNewId where Interface == WlSeatServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlSeatServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlSeatServer {
@@ -149,12 +131,14 @@ package extension WlSeatServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlSeatServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSeatServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -168,10 +152,12 @@ package extension WlSeatServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlSeatServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSeatServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

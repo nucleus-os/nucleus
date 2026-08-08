@@ -34,7 +34,7 @@ package protocol ZwlrGammaControlV1Events: AnyObject {
     func failed(_ proxy: WaylandBorrowedProxy<ZwlrGammaControlV1Client>)
 }
 package extension ZwlrGammaControlV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwlr_gamma_control_v1_events())
         unsafe p.pointee.gamma_size = gammaSize_impl
@@ -44,7 +44,7 @@ package extension ZwlrGammaControlV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrGammaControlV1Events? {
         context.owner as? any ZwlrGammaControlV1Events
     }
-    private static let gammaSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, size in
+    private static let gammaSize_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, size in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -52,14 +52,9 @@ package extension ZwlrGammaControlV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.gammaSize(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy), size: size)
-        }
+        unsafe h.gammaSize(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(proxy), size: size)
     }
-    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let failed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -67,12 +62,7 @@ package extension ZwlrGammaControlV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy))
-        }
+        unsafe h.failed(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwlrGammaControlV1Client {

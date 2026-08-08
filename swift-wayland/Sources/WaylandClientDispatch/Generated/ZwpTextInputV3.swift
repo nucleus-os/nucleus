@@ -98,7 +98,7 @@ package protocol ZwpTextInputV3Events: AnyObject {
     func preeditHint(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, start: UInt32, end: UInt32, hint: ZwpTextInputV3PreeditHint)
 }
 package extension ZwpTextInputV3Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_text_input_v3_events())
         unsafe p.pointee.enter = enter_impl
@@ -115,7 +115,7 @@ package extension ZwpTextInputV3Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpTextInputV3Events? {
         context.owner as? any ZwpTextInputV3Events
     }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
+    private static let enter_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -123,15 +123,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-        }
+        unsafe h.enter(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(surface!))
     }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
+    private static let leave_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -139,15 +133,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-        }
+        unsafe h.leave(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(surface!))
     }
-    private static let preeditString_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32, Int32) -> Void = { data, proxy, text, cursor_begin, cursor_end in
+    private static let preeditString_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32, Int32) -> Void = { data, proxy, text, cursor_begin, cursor_end in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -155,17 +143,11 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_text = unsafe text
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preeditString(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), text: _event_text.map {
-                    unsafe String(cString: $0)
-                }, cursor_begin: cursor_begin, cursor_end: cursor_end)
-        }
+        unsafe h.preeditString(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), text: text.map {
+                unsafe String(cString: $0)
+            }, cursor_begin: cursor_begin, cursor_end: cursor_end)
     }
-    private static let commitString_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, text in
+    private static let commitString_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, text in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -173,17 +155,11 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_text = unsafe text
-        MainActor.assumeIsolated {
-            unsafe eventHandler.commitString(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), text: _event_text.map {
-                    unsafe String(cString: $0)
-                })
-        }
+        unsafe h.commitString(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), text: text.map {
+                unsafe String(cString: $0)
+            })
     }
-    private static let deleteSurroundingText_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, before_length, after_length in
+    private static let deleteSurroundingText_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, before_length, after_length in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -191,14 +167,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.deleteSurroundingText(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), before_length: before_length, after_length: after_length)
-        }
+        unsafe h.deleteSurroundingText(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), before_length: before_length, after_length: after_length)
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -206,14 +177,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), serial: serial)
-        }
+        unsafe h.done(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), serial: serial)
     }
-    private static let action_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, action, serial in
+    private static let action_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, action, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -221,14 +187,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.action(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), action: ZwpTextInputV3Action(rawValue: action), serial: serial)
-        }
+        unsafe h.action(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), action: ZwpTextInputV3Action(rawValue: action), serial: serial)
     }
-    private static let language_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, language in
+    private static let language_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, language in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -236,15 +197,9 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_language = unsafe language
-        MainActor.assumeIsolated {
-            unsafe eventHandler.language(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), language: unsafe String(cString: _event_language!))
-        }
+        unsafe h.language(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), language: unsafe String(cString: language!))
     }
-    private static let preeditHint_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, start, end, hint in
+    private static let preeditHint_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, start, end, hint in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -252,12 +207,7 @@ package extension ZwpTextInputV3Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preeditHint(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), start: start, end: end, hint: ZwpTextInputV3PreeditHint(rawValue: hint))
-        }
+        unsafe h.preeditHint(WaylandBorrowedProxy<ZwpTextInputV3Client>(proxy), start: start, end: end, hint: ZwpTextInputV3PreeditHint(rawValue: hint))
     }
 }
 package extension WaylandProxy where Interface == ZwpTextInputV3Client {

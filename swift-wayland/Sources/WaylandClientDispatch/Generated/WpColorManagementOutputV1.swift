@@ -31,7 +31,7 @@ package protocol WpColorManagementOutputV1Events: AnyObject {
     func imageDescriptionChanged(_ proxy: WaylandBorrowedProxy<WpColorManagementOutputV1Client>)
 }
 package extension WpColorManagementOutputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_management_output_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_color_management_output_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_color_management_output_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_color_management_output_v1_events())
         unsafe p.pointee.image_description_changed = imageDescriptionChanged_impl
@@ -40,7 +40,7 @@ package extension WpColorManagementOutputV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpColorManagementOutputV1Events? {
         context.owner as? any WpColorManagementOutputV1Events
     }
-    private static let imageDescriptionChanged_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let imageDescriptionChanged_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,12 +48,7 @@ package extension WpColorManagementOutputV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.imageDescriptionChanged(WaylandBorrowedProxy<WpColorManagementOutputV1Client>(eventProxy))
-        }
+        unsafe h.imageDescriptionChanged(WaylandBorrowedProxy<WpColorManagementOutputV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WpColorManagementOutputV1Client {

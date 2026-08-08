@@ -14,16 +14,15 @@ package extension ZwpTabletPadV2Requests {
     }
 }
 package enum ZwpTabletPadV2Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTabletPadV2Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_tablet_pad_v2_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_tablet_pad_v2_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_tablet_pad_v2_requests.self, capacity: 1)
-        unsafe vt.pointee.set_feedback = setFeedback_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_v2_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_tablet_pad_v2_requests(
+            set_feedback: setFeedback_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_pad_v2(),
@@ -52,33 +51,24 @@ package enum ZwpTabletPadV2Server: WaylandServerInterface {
     package static func sendRemoved(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwp_tablet_pad_v2_send_removed(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletPadV2Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletPadV2Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletPadV2Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTabletPadV2Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setFeedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { _, res, button, description, serial in
+    private static let setFeedback_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { _, res, button, description, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_description = unsafe description
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setFeedback(WaylandRequest<ZwpTabletPadV2Server>(requestResource), button: button, description: unsafe String(cString: _request_description!), serial: serial)
-        }
+        unsafe h.setFeedback(WaylandRequest<ZwpTabletPadV2Server>(res), button: button, description: unsafe String(cString: description!), serial: serial)
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpTabletPadV2Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpTabletPadV2Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -109,6 +99,9 @@ package extension WaylandResourceHandle where Interface == ZwpTabletPadV2Server 
                 version ?? 1,
                 ZwpTabletPadGroupV2Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0 as? any ZwpTabletPadGroupV2Requests
+            },
             installed: installed,
             publish: {
                 sendGroup(pad_group: $0)
@@ -190,7 +183,9 @@ package extension WlNewId where Interface == ZwpTabletPadV2Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTabletPadV2Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpTabletPadV2Server {
@@ -201,12 +196,14 @@ package extension ZwpTabletPadV2Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTabletPadV2Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletPadV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -220,10 +217,12 @@ package extension ZwpTabletPadV2Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTabletPadV2Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletPadV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

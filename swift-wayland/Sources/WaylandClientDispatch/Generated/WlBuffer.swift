@@ -23,7 +23,7 @@ package protocol WlBufferEvents: AnyObject {
     func release(_ proxy: WaylandBorrowedProxy<WlBufferClient>)
 }
 package extension WlBufferClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_buffer_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_buffer_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_buffer_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_buffer_events())
         unsafe p.pointee.release = release_impl
@@ -32,7 +32,7 @@ package extension WlBufferClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlBufferEvents? {
         context.owner as? any WlBufferEvents
     }
-    private static let release_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let release_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -40,12 +40,7 @@ package extension WlBufferClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.release(WaylandBorrowedProxy<WlBufferClient>(eventProxy))
-        }
+        unsafe h.release(WaylandBorrowedProxy<WlBufferClient>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WlBufferClient {

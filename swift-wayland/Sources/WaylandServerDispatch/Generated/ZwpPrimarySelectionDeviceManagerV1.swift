@@ -14,60 +14,44 @@ package extension ZwpPrimarySelectionDeviceManagerV1Requests {
     }
 }
 package enum ZwpPrimarySelectionDeviceManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpPrimarySelectionDeviceManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_primary_selection_device_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_primary_selection_device_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_primary_selection_device_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create_source = createSource_impl
-        unsafe vt.pointee.get_device = getDevice_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_primary_selection_device_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_primary_selection_device_manager_v1_requests(
+            create_source: createSource_impl,
+            get_device: getDevice_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_primary_selection_device_manager_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionDeviceManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpPrimarySelectionDeviceManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpPrimarySelectionDeviceManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpPrimarySelectionDeviceManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createSource_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createSource_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createSource(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(requestResource), id: WlNewId<ZwpPrimarySelectionSourceV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createSource(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(res), id: WlNewId<ZwpPrimarySelectionSourceV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let getDevice_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, seat in
+    private static let getDevice_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, seat in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getDevice(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(requestResource), id: WlNewId<ZwpPrimarySelectionDeviceV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!))
-        }
+        unsafe h.getDevice(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(res), id: WlNewId<ZwpPrimarySelectionDeviceV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), seat: WaylandBorrowedObject<WlSeatServer>(seat!))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -81,7 +65,9 @@ package extension WlNewId where Interface == ZwpPrimarySelectionDeviceManagerV1S
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpPrimarySelectionDeviceManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpPrimarySelectionDeviceManagerV1Server {
@@ -92,12 +78,14 @@ package extension ZwpPrimarySelectionDeviceManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpPrimarySelectionDeviceManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionDeviceManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -111,10 +99,12 @@ package extension ZwpPrimarySelectionDeviceManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpPrimarySelectionDeviceManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpPrimarySelectionDeviceManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

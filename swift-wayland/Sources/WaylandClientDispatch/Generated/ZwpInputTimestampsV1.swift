@@ -23,7 +23,7 @@ package protocol ZwpInputTimestampsV1Events: AnyObject {
     func timestamp(_ proxy: WaylandBorrowedProxy<ZwpInputTimestampsV1Client>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32)
 }
 package extension ZwpInputTimestampsV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_input_timestamps_v1_events())
         unsafe p.pointee.timestamp = timestamp_impl
@@ -32,7 +32,7 @@ package extension ZwpInputTimestampsV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpInputTimestampsV1Events? {
         context.owner as? any ZwpInputTimestampsV1Events
     }
-    private static let timestamp_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec in
+    private static let timestamp_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -40,12 +40,7 @@ package extension ZwpInputTimestampsV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.timestamp(WaylandBorrowedProxy<ZwpInputTimestampsV1Client>(eventProxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
-        }
+        unsafe h.timestamp(WaylandBorrowedProxy<ZwpInputTimestampsV1Client>(proxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec)
     }
 }
 package extension WaylandProxy where Interface == ZwpInputTimestampsV1Client {

@@ -3,8 +3,8 @@
 // every *_manager create/get) delivers one; the consumer materializes it into a live wl_resource
 // with the owner + request vtable of its choosing — the one thing the generator cannot know.
 //
-//   * create(vtable:owner:) — an object that carries server-side state and/or handles requests
-//     (the owner is retained via the resource and released on destroy, as in WaylandResource.create).
+//   * create(owner:) — an object that carries server-side state and/or handles requests; the
+//     generated interface fixes its request table and binds its handler once during creation.
 //   * createBare()          — a pure-notification object with no owner and no requests (wl_callback):
 //     the server only ever sends it an event and destroys it.
 //
@@ -36,8 +36,8 @@ import WaylandServerC
     @discardableResult
     @MainActor
     package func _create<Owner: AnyObject>(
-        vtable: UnsafeRawPointer?,
         owner: (WaylandResourceHandle<Interface>) -> Owner?,
+        handler: (Owner) -> Interface.Requests?,
         installed: (Owner) -> Void
     ) -> Owner? {
         unsafe WaylandResource.create(
@@ -45,8 +45,8 @@ import WaylandServerC
             interface: Interface.self,
             version: version,
             id: id,
-            vtable: vtable,
             owner: owner,
+            handler: handler,
             installed: installed)
     }
 

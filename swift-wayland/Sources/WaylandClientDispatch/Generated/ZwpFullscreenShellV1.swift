@@ -41,7 +41,7 @@ package protocol ZwpFullscreenShellV1Events: AnyObject {
     func capability(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellV1Client>, capability: ZwpFullscreenShellV1Capability)
 }
 package extension ZwpFullscreenShellV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_fullscreen_shell_v1_events())
         unsafe p.pointee.capability = capability_impl
@@ -50,7 +50,7 @@ package extension ZwpFullscreenShellV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpFullscreenShellV1Events? {
         context.owner as? any ZwpFullscreenShellV1Events
     }
-    private static let capability_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capability in
+    private static let capability_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capability in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -58,12 +58,7 @@ package extension ZwpFullscreenShellV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.capability(WaylandBorrowedProxy<ZwpFullscreenShellV1Client>(eventProxy), capability: ZwpFullscreenShellV1Capability(rawValue: capability))
-        }
+        unsafe h.capability(WaylandBorrowedProxy<ZwpFullscreenShellV1Client>(proxy), capability: ZwpFullscreenShellV1Capability(rawValue: capability))
     }
 }
 package extension WaylandProxy where Interface == ZwpFullscreenShellV1Client {

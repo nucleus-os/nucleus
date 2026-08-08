@@ -45,7 +45,7 @@ package protocol XdgWmBaseEvents: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32)
 }
 package extension XdgWmBaseClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_wm_base_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_wm_base_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_wm_base_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_wm_base_events())
         unsafe p.pointee.ping = ping_impl
@@ -54,7 +54,7 @@ package extension XdgWmBaseClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgWmBaseEvents? {
         context.owner as? any XdgWmBaseEvents
     }
-    private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let ping_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -62,12 +62,7 @@ package extension XdgWmBaseClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ping(WaylandBorrowedProxy<XdgWmBaseClient>(eventProxy), serial: serial)
-        }
+        unsafe h.ping(WaylandBorrowedProxy<XdgWmBaseClient>(proxy), serial: serial)
     }
 }
 package extension WaylandProxy where Interface == XdgWmBaseClient {

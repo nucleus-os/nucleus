@@ -15,7 +15,7 @@ package protocol WpPresentationFeedbackEvents: AnyObject {
     func discarded(_ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>)
 }
 package extension WpPresentationFeedbackClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_feedback_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_feedback_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_presentation_feedback_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_presentation_feedback_events())
         unsafe p.pointee.sync_output = syncOutput_impl
@@ -26,7 +26,7 @@ package extension WpPresentationFeedbackClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpPresentationFeedbackEvents? {
         context.owner as? any WpPresentationFeedbackEvents
     }
-    private static let syncOutput_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+    private static let syncOutput_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -34,15 +34,9 @@ package extension WpPresentationFeedbackClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe eventHandler.syncOutput(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-        }
+        unsafe h.syncOutput(WaylandBorrowedProxy<WpPresentationFeedbackClient>(proxy), output: WaylandBorrowedProxy<WlOutputClient>(output!))
     }
-    private static let presented_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec, refresh, seq_hi, seq_lo, flags in
+    private static let presented_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec, refresh, seq_hi, seq_lo, flags in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -50,14 +44,9 @@ package extension WpPresentationFeedbackClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.presented(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec, refresh: refresh, seq_hi: seq_hi, seq_lo: seq_lo, flags: WpPresentationFeedbackKind(rawValue: flags))
-        }
+        unsafe h.presented(WaylandBorrowedProxy<WpPresentationFeedbackClient>(proxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec, refresh: refresh, seq_hi: seq_hi, seq_lo: seq_lo, flags: WpPresentationFeedbackKind(rawValue: flags))
     }
-    private static let discarded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let discarded_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -65,12 +54,7 @@ package extension WpPresentationFeedbackClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.discarded(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy))
-        }
+        unsafe h.discarded(WaylandBorrowedProxy<WpPresentationFeedbackClient>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WpPresentationFeedbackClient {

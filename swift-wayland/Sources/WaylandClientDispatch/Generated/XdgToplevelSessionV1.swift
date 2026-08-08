@@ -30,7 +30,7 @@ package protocol XdgToplevelSessionV1Events: AnyObject {
     func restored(_ proxy: WaylandBorrowedProxy<XdgToplevelSessionV1Client>)
 }
 package extension XdgToplevelSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_session_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_session_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_toplevel_session_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_toplevel_session_v1_events())
         unsafe p.pointee.restored = restored_impl
@@ -39,7 +39,7 @@ package extension XdgToplevelSessionV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgToplevelSessionV1Events? {
         context.owner as? any XdgToplevelSessionV1Events
     }
-    private static let restored_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let restored_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -47,12 +47,7 @@ package extension XdgToplevelSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.restored(WaylandBorrowedProxy<XdgToplevelSessionV1Client>(eventProxy))
-        }
+        unsafe h.restored(WaylandBorrowedProxy<XdgToplevelSessionV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == XdgToplevelSessionV1Client {

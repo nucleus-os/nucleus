@@ -11,9 +11,10 @@ public enum ArtifactInput: Hashable, Sendable {
     /// Identifies Git-owned source from its committed tree plus the scoped
     /// working-copy overlay. Ignored files are not source inputs.
     case sourceCheckout(FilePath)
-    /// Uses source-checkout identity when the path exists and the supplied
-    /// fallback when that source directory is absent.
-    case optionalSourceCheckout(FilePath, fallback: [UInt8])
+    /// Identifies several target directories in one Git-owned package closure.
+    /// The paths are assessed together so one package graph does not launch a
+    /// separate Git process for every target.
+    case sourceCheckoutClosure([FilePath])
     case tool(CommandSpec.Executable)
 }
 

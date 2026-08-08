@@ -24,26 +24,25 @@ package extension WlSurfaceRequests {
     }
 }
 package enum WlSurfaceServer: WaylandServerInterface {
+    package typealias Requests = any WlSurfaceRequests
     package nonisolated static let maximumVersion: Int32 = 7
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_surface_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_surface_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_surface_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.attach = attach_impl
-        unsafe vt.pointee.damage = damage_impl
-        unsafe vt.pointee.frame = frame_impl
-        unsafe vt.pointee.set_opaque_region = setOpaqueRegion_impl
-        unsafe vt.pointee.set_input_region = setInputRegion_impl
-        unsafe vt.pointee.commit = commit_impl
-        unsafe vt.pointee.set_buffer_transform = setBufferTransform_impl
-        unsafe vt.pointee.set_buffer_scale = setBufferScale_impl
-        unsafe vt.pointee.damage_buffer = damageBuffer_impl
-        unsafe vt.pointee.offset = offset_impl
-        unsafe vt.pointee.get_release = getRelease_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_surface_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_surface_requests(
+            destroy: destroy_impl,
+            attach: attach_impl,
+            damage: damage_impl,
+            frame: frame_impl,
+            set_opaque_region: setOpaqueRegion_impl,
+            set_input_region: setInputRegion_impl,
+            commit: commit_impl,
+            set_buffer_transform: setBufferTransform_impl,
+            set_buffer_scale: setBufferScale_impl,
+            damage_buffer: damageBuffer_impl,
+            offset: offset_impl,
+            get_release: getRelease_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_surface(),
@@ -60,140 +59,87 @@ package enum WlSurfaceServer: WaylandServerInterface {
     package static func sendPreferredBufferTransform(_ target: UnsafeMutablePointer<wl_resource>, transform: WlOutputTransform) {
         unsafe wl_surface_send_preferred_buffer_transform(target, transform.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSurfaceRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSurfaceRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlSurfaceRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlSurfaceServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlSurfaceServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlSurfaceServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let attach_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, buffer, x, y in
+    private static let attach_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, buffer, x, y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_buffer = unsafe buffer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.attach(WaylandRequest<WlSurfaceServer>(requestResource), buffer: _request_buffer == nil ? nil : .some(WaylandBorrowedObject<WlBufferServer>(_request_buffer!)), x: x, y: y)
-        }
+        unsafe h.attach(WaylandRequest<WlSurfaceServer>(res), buffer: buffer == nil ? nil : .some(WaylandBorrowedObject<WlBufferServer>(buffer!)), x: x, y: y)
     }
-    private static let damage_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
+    private static let damage_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.damage(WaylandRequest<WlSurfaceServer>(requestResource), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.damage(WaylandRequest<WlSurfaceServer>(res), x: x, y: y, width: width, height: height)
     }
-    private static let frame_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
+    private static let frame_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.frame(WaylandRequest<WlSurfaceServer>(requestResource), callback: WlNewId<WlCallbackServer>(client: requestClient, id: callback, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.frame(WaylandRequest<WlSurfaceServer>(res), callback: WlNewId<WlCallbackServer>(client: client, id: callback, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let setOpaqueRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
+    private static let setOpaqueRegion_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_region = unsafe region
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setOpaqueRegion(WaylandRequest<WlSurfaceServer>(requestResource), region: _request_region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(_request_region!)))
-        }
+        unsafe h.setOpaqueRegion(WaylandRequest<WlSurfaceServer>(res), region: region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(region!)))
     }
-    private static let setInputRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
+    private static let setInputRegion_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, region in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_region = unsafe region
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setInputRegion(WaylandRequest<WlSurfaceServer>(requestResource), region: _request_region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(_request_region!)))
-        }
+        unsafe h.setInputRegion(WaylandRequest<WlSurfaceServer>(res), region: region == nil ? nil : .some(WaylandBorrowedObject<WlRegionServer>(region!)))
     }
-    private static let commit_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let commit_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.commit(WaylandRequest<WlSurfaceServer>(requestResource))
-        }
+        unsafe h.commit(WaylandRequest<WlSurfaceServer>(res))
     }
-    private static let setBufferTransform_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, transform in
+    private static let setBufferTransform_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, transform in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setBufferTransform(WaylandRequest<WlSurfaceServer>(requestResource), transform: WlOutputTransform(rawValue: UInt32(bitPattern: transform)))
-        }
+        unsafe h.setBufferTransform(WaylandRequest<WlSurfaceServer>(res), transform: WlOutputTransform(rawValue: UInt32(bitPattern: transform)))
     }
-    private static let setBufferScale_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, scale in
+    private static let setBufferScale_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, scale in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setBufferScale(WaylandRequest<WlSurfaceServer>(requestResource), scale: scale)
-        }
+        unsafe h.setBufferScale(WaylandRequest<WlSurfaceServer>(res), scale: scale)
     }
-    private static let damageBuffer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
+    private static let damageBuffer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.damageBuffer(WaylandRequest<WlSurfaceServer>(requestResource), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.damageBuffer(WaylandRequest<WlSurfaceServer>(res), x: x, y: y, width: width, height: height)
     }
-    private static let offset_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
+    private static let offset_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.offset(WaylandRequest<WlSurfaceServer>(requestResource), x: x, y: y)
-        }
+        unsafe h.offset(WaylandRequest<WlSurfaceServer>(res), x: x, y: y)
     }
-    private static let getRelease_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
+    private static let getRelease_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, callback in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getRelease(WaylandRequest<WlSurfaceServer>(requestResource), callback: WlNewId<WlCallbackServer>(client: requestClient, id: callback, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.getRelease(WaylandRequest<WlSurfaceServer>(res), callback: WlNewId<WlCallbackServer>(client: client, id: callback, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
 }
 package extension WaylandResourceHandle where Interface == WlSurfaceServer {
@@ -269,7 +215,9 @@ package extension WlNewId where Interface == WlSurfaceServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlSurfaceServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlSurfaceServer {
@@ -280,12 +228,14 @@ package extension WlSurfaceServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlSurfaceServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -299,10 +249,12 @@ package extension WlSurfaceServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlSurfaceServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

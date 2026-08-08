@@ -225,7 +225,6 @@ private func plan(
             digestFile: { _ in digest },
             digestTree: { _ in digest },
             digestSourceCheckout: { _ in digest },
-            optionalSourceCheckoutDigest: { _ in nil },
             semanticToolIdentity: { _, _ in
                 ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
             },

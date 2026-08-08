@@ -14,16 +14,15 @@ package extension ZxdgPopupV6Requests {
     }
 }
 package enum ZxdgPopupV6Server: WaylandServerInterface {
+    package typealias Requests = any ZxdgPopupV6Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zxdg_popup_v6_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zxdg_popup_v6_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zxdg_popup_v6_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.grab = grab_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zxdg_popup_v6_requests(
+            destroy: destroy_impl,
+            grab: grab_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_popup_v6(),
@@ -34,36 +33,27 @@ package enum ZxdgPopupV6Server: WaylandServerInterface {
     package static func sendPopupDone(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zxdg_popup_v6_send_popup_done(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgPopupV6Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZxdgPopupV6Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZxdgPopupV6Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZxdgPopupV6Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZxdgPopupV6Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZxdgPopupV6Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let grab_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, seat, serial in
+    private static let grab_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, seat, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.grab(WaylandRequest<ZxdgPopupV6Server>(requestResource), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!), serial: serial)
-        }
+        unsafe h.grab(WaylandRequest<ZxdgPopupV6Server>(res), seat: WaylandBorrowedObject<WlSeatServer>(seat!), serial: serial)
     }
 }
 package extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
@@ -103,7 +93,9 @@ package extension WlNewId where Interface == ZxdgPopupV6Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZxdgPopupV6Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZxdgPopupV6Server {
@@ -114,12 +106,14 @@ package extension ZxdgPopupV6Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZxdgPopupV6Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgPopupV6Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -133,10 +127,12 @@ package extension ZxdgPopupV6Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZxdgPopupV6Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZxdgPopupV6Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

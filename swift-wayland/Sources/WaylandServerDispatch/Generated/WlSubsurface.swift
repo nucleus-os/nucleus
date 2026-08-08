@@ -18,95 +18,68 @@ package extension WlSubsurfaceRequests {
     }
 }
 package enum WlSubsurfaceServer: WaylandServerInterface {
+    package typealias Requests = any WlSubsurfaceRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_subsurface_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_subsurface_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_subsurface_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_position = setPosition_impl
-        unsafe vt.pointee.place_above = placeAbove_impl
-        unsafe vt.pointee.place_below = placeBelow_impl
-        unsafe vt.pointee.set_sync = setSync_impl
-        unsafe vt.pointee.set_desync = setDesync_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_subsurface_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_subsurface_requests(
+            destroy: destroy_impl,
+            set_position: setPosition_impl,
+            place_above: placeAbove_impl,
+            place_below: placeBelow_impl,
+            set_sync: setSync_impl,
+            set_desync: setDesync_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_subsurface(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSubsurfaceRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlSubsurfaceRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlSubsurfaceRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlSubsurfaceServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlSubsurfaceServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlSubsurfaceServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setPosition_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
+    private static let setPosition_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setPosition(WaylandRequest<WlSubsurfaceServer>(requestResource), x: x, y: y)
-        }
+        unsafe h.setPosition(WaylandRequest<WlSubsurfaceServer>(res), x: x, y: y)
     }
-    private static let placeAbove_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, sibling in
+    private static let placeAbove_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, sibling in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_sibling = unsafe sibling
-        MainActor.assumeIsolated {
-            unsafe requestHandler.placeAbove(WaylandRequest<WlSubsurfaceServer>(requestResource), sibling: WaylandBorrowedObject<WlSurfaceServer>(_request_sibling!))
-        }
+        unsafe h.placeAbove(WaylandRequest<WlSubsurfaceServer>(res), sibling: WaylandBorrowedObject<WlSurfaceServer>(sibling!))
     }
-    private static let placeBelow_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, sibling in
+    private static let placeBelow_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, sibling in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_sibling = unsafe sibling
-        MainActor.assumeIsolated {
-            unsafe requestHandler.placeBelow(WaylandRequest<WlSubsurfaceServer>(requestResource), sibling: WaylandBorrowedObject<WlSurfaceServer>(_request_sibling!))
-        }
+        unsafe h.placeBelow(WaylandRequest<WlSubsurfaceServer>(res), sibling: WaylandBorrowedObject<WlSurfaceServer>(sibling!))
     }
-    private static let setSync_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setSync_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setSync(WaylandRequest<WlSubsurfaceServer>(requestResource))
-        }
+        unsafe h.setSync(WaylandRequest<WlSubsurfaceServer>(res))
     }
-    private static let setDesync_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setDesync_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setDesync(WaylandRequest<WlSubsurfaceServer>(requestResource))
-        }
+        unsafe h.setDesync(WaylandRequest<WlSubsurfaceServer>(res))
     }
 }
 package extension WaylandRequest where Interface == WlSubsurfaceServer {
@@ -128,7 +101,9 @@ package extension WlNewId where Interface == WlSubsurfaceServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlSubsurfaceServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlSubsurfaceServer {
@@ -139,12 +114,14 @@ package extension WlSubsurfaceServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlSubsurfaceServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSubsurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -158,10 +135,12 @@ package extension WlSubsurfaceServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlSubsurfaceServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlSubsurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

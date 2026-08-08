@@ -55,215 +55,213 @@ private func mountTestContext(
         environment: ReactSurfaceEnvironment())
 }
 
-func verifyMountTransactionBatching() -> Int32 {
-    return MainActor.assumeIsolated { () -> Int32 in
-        let uiContext = UIContext(services: .inMemory())
-        return uiContext.construct {
-            let scheduler = MountTestDrainScheduler()
-            let consumer = MountConsumer(
-                scheduleDrain: scheduler.schedule)
-            var appliedOrder: [Int] = []
-            let surfaceIDs = Array(100..<124)
-            for surfaceID in surfaceIDs {
-                let context = mountTestContext(
-                    surfaceID: surfaceID)
-                context.onMaterialize = { _ in
-                    appliedOrder.append(surfaceID)
-                }
-                consumer.registerContext(context)
+@MainActor
+private func verifyMountTransactionBatching() -> Int32 {
+    let uiContext = UIContext(services: .inMemory())
+    return uiContext.construct {
+        let scheduler = MountTestDrainScheduler()
+        let consumer = MountConsumer(
+            scheduleDrain: scheduler.schedule)
+        var appliedOrder: [Int] = []
+        let surfaceIDs = Array(100..<124)
+        for surfaceID in surfaceIDs {
+            let context = mountTestContext(
+                surfaceID: surfaceID)
+            context.onMaterialize = { _ in
+                appliedOrder.append(surfaceID)
             }
-            defer {
-                for surfaceID in surfaceIDs {
-                    consumer.unregisterContext(surfaceID: surfaceID)
-                }
-            }
-            appliedOrder.removeAll(keepingCapacity: true)
-
-            DispatchQueue.concurrentPerform(
-                iterations: surfaceIDs.count
-            ) { index in
-                consumer.didFinishTransaction(
-                    surfaceID: Int32(surfaceIDs[index]))
-            }
-            let acceptedOrder =
-                consumer.queuedBatchSurfaceIDs()
-            guard acceptedOrder.count == surfaceIDs.count
-            else { return 1 }
-            guard scheduler.pendingCount == 1
-            else { return 2 }
-            guard scheduler.runNext()
-            else { return 3 }
-            guard appliedOrder == acceptedOrder
-            else { return 4 }
-            var metrics = consumer.metricsSnapshot()
-            guard
-                metrics.completedBatchesQueued
-                    == UInt64(surfaceIDs.count),
-                metrics.drainTasksScheduled == 1,
-                metrics.batchesDrained
-                    == UInt64(surfaceIDs.count),
-                metrics.lastBatchesDrainedPerTask
-                    == UInt64(surfaceIDs.count)
-            else { return 5 }
-
-            let finishingScheduler =
-                MountTestDrainScheduler()
-            let finishingConsumer = MountConsumer(
-                scheduleDrain: finishingScheduler.schedule)
-            let first = mountTestContext(surfaceID: 301)
-            let second = mountTestContext(surfaceID: 302)
-            finishingConsumer.registerContext(first)
-            finishingConsumer.registerContext(second)
-            defer {
-                first.onMaterialize = nil
-                second.onMaterialize = nil
-                finishingConsumer.unregisterContext(surfaceID: 301)
-                finishingConsumer.unregisterContext(surfaceID: 302)
-            }
-            var finishingOrder: [Int] = []
-            var appendedDuringDrain = false
-            first.onMaterialize = { _ in
-                finishingOrder.append(301)
-                guard !appendedDuringDrain else { return }
-                appendedDuringDrain = true
-                finishingConsumer.didFinishTransaction(
-                    surfaceID: 302)
-            }
-            second.onMaterialize = { _ in
-                finishingOrder.append(302)
-            }
-            finishingConsumer.didFinishTransaction(
-                surfaceID: 301)
-            guard finishingScheduler.pendingCount == 1
-            else { return 6 }
-            guard finishingScheduler.runNext()
-            else { return 7 }
-            guard finishingOrder == [301, 302]
-            else { return 8 }
-            metrics = finishingConsumer.metricsSnapshot()
-            guard
-                metrics.drainTasksScheduled == 1,
-                metrics.batchesDrained == 2,
-                metrics.lastBatchesDrainedPerTask == 2,
-                finishingScheduler.pendingCount == 0
-            else { return 9 }
-            return 0
+            consumer.registerContext(context)
         }
+        defer {
+            for surfaceID in surfaceIDs {
+                consumer.unregisterContext(surfaceID: surfaceID)
+            }
+        }
+        appliedOrder.removeAll(keepingCapacity: true)
+
+        DispatchQueue.concurrentPerform(
+            iterations: surfaceIDs.count
+        ) { index in
+            consumer.didFinishTransaction(
+                surfaceID: Int32(surfaceIDs[index]))
+        }
+        let acceptedOrder =
+            consumer.queuedBatchSurfaceIDs()
+        guard acceptedOrder.count == surfaceIDs.count
+        else { return 1 }
+        guard scheduler.pendingCount == 1
+        else { return 2 }
+        guard scheduler.runNext()
+        else { return 3 }
+        guard appliedOrder == acceptedOrder
+        else { return 4 }
+        var metrics = consumer.metricsSnapshot()
+        guard
+            metrics.completedBatchesQueued
+                == UInt64(surfaceIDs.count),
+            metrics.drainTasksScheduled == 1,
+            metrics.batchesDrained
+                == UInt64(surfaceIDs.count),
+            metrics.lastBatchesDrainedPerTask
+                == UInt64(surfaceIDs.count)
+        else { return 5 }
+
+        let finishingScheduler =
+            MountTestDrainScheduler()
+        let finishingConsumer = MountConsumer(
+            scheduleDrain: finishingScheduler.schedule)
+        let first = mountTestContext(surfaceID: 301)
+        let second = mountTestContext(surfaceID: 302)
+        finishingConsumer.registerContext(first)
+        finishingConsumer.registerContext(second)
+        defer {
+            first.onMaterialize = nil
+            second.onMaterialize = nil
+            finishingConsumer.unregisterContext(surfaceID: 301)
+            finishingConsumer.unregisterContext(surfaceID: 302)
+        }
+        var finishingOrder: [Int] = []
+        var appendedDuringDrain = false
+        first.onMaterialize = { _ in
+            finishingOrder.append(301)
+            guard !appendedDuringDrain else { return }
+            appendedDuringDrain = true
+            finishingConsumer.didFinishTransaction(
+                surfaceID: 302)
+        }
+        second.onMaterialize = { _ in
+            finishingOrder.append(302)
+        }
+        finishingConsumer.didFinishTransaction(
+            surfaceID: 301)
+        guard finishingScheduler.pendingCount == 1
+        else { return 6 }
+        guard finishingScheduler.runNext()
+        else { return 7 }
+        guard finishingOrder == [301, 302]
+        else { return 8 }
+        metrics = finishingConsumer.metricsSnapshot()
+        guard
+            metrics.drainTasksScheduled == 1,
+            metrics.batchesDrained == 2,
+            metrics.lastBatchesDrainedPerTask == 2,
+            finishingScheduler.pendingCount == 0
+        else { return 9 }
+        return 0
     }
 }
 
-func verifyMountLifecycle() -> Int32 {
-    return MainActor.assumeIsolated { () -> Int32 in
-        let uiContext = UIContext(services: .inMemory())
-        return uiContext.construct {
-            let scheduler = MountTestDrainScheduler()
-            let consumer = MountConsumer(
-                scheduleDrain: scheduler.schedule)
-            let surfaceID = 401
-            let original = mountTestContext(
-                surfaceID: surfaceID)
-            consumer.registerContext(original)
-            consumer.enqueue(
-                .create(
-                    surfaceID: surfaceID,
-                    tag: 410,
-                    componentName: "View",
-                    component: .view(
-                        MountViewSnapshot(
-                            nativeID: "old",
-                            frame: Rect(
-                                x: 0, y: 0,
-                                width: 10, height: 10)),
-                        backgroundColor: nil)))
-            consumer.didFinishTransaction(
-                surfaceID: Int32(surfaceID))
-            consumer.unregisterContext(
-                surfaceID: surfaceID)
-            consumer.enqueue(
-                .create(
-                    surfaceID: surfaceID,
-                    tag: 499,
-                    componentName: "View",
-                    component: .view(
-                        MountViewSnapshot(
-                            nativeID: "stale",
-                            frame: Rect(
-                                x: 0, y: 0,
-                                width: 1, height: 1)),
-                        backgroundColor: nil)))
+@MainActor
+private func verifyMountLifecycle() -> Int32 {
+    let uiContext = UIContext(services: .inMemory())
+    return uiContext.construct {
+        let scheduler = MountTestDrainScheduler()
+        let consumer = MountConsumer(
+            scheduleDrain: scheduler.schedule)
+        let surfaceID = 401
+        let original = mountTestContext(
+            surfaceID: surfaceID)
+        consumer.registerContext(original)
+        consumer.enqueue(
+            .create(
+                surfaceID: surfaceID,
+                tag: 410,
+                componentName: "View",
+                component: .view(
+                    MountViewSnapshot(
+                        nativeID: "old",
+                        frame: Rect(
+                            x: 0, y: 0,
+                            width: 10, height: 10)),
+                    backgroundColor: nil)))
+        consumer.didFinishTransaction(
+            surfaceID: Int32(surfaceID))
+        consumer.unregisterContext(
+            surfaceID: surfaceID)
+        consumer.enqueue(
+            .create(
+                surfaceID: surfaceID,
+                tag: 499,
+                componentName: "View",
+                component: .view(
+                    MountViewSnapshot(
+                        nativeID: "stale",
+                        frame: Rect(
+                            x: 0, y: 0,
+                            width: 1, height: 1)),
+                    backgroundColor: nil)))
 
-            let replacement = mountTestContext(
-                surfaceID: surfaceID)
-            consumer.registerContext(replacement)
+        let replacement = mountTestContext(
+            surfaceID: surfaceID)
+        consumer.registerContext(replacement)
+        guard scheduler.runNext()
+        else { return 1 }
+        guard
+            replacement.registry.component(
+                for: 410) == nil,
+            consumer.metricsSnapshot()
+                .staleBatchesRejected == 1,
+            consumer.metricsSnapshot()
+                .staleMutationsRejected == 1
+        else { return 2 }
+
+        consumer.enqueue(
+            .create(
+                surfaceID: surfaceID,
+                tag: 411,
+                componentName: "View",
+                component: .view(
+                    MountViewSnapshot(
+                        nativeID: "new",
+                        frame: Rect(
+                            x: 1, y: 2,
+                            width: 30, height: 40)),
+                    backgroundColor: nil)))
+        consumer.didFinishTransaction(
+            surfaceID: Int32(surfaceID))
+        guard scheduler.runNext()
+        else { return 3 }
+        guard
+            replacement.registry.component(
+                for: 411)?.nativeID == "new"
+        else { return 4 }
+
+        consumer.unregisterContext(
+            surfaceID: surfaceID)
+        let baseline = consumer.bookkeepingCounts()
+        guard
+            baseline
+                == MountBookkeepingCounts(
+                    queuedBatches: 0,
+                    generations: 0,
+                    retiredSurfaces: 0,
+                    inFlightSurfaces: 0)
+        else { return 5 }
+
+        consumer.enqueue(
+            .delete(
+                surfaceID: surfaceID,
+                tag: 411))
+        consumer.didFinishTransaction(
+            surfaceID: Int32(surfaceID))
+        guard
+            scheduler.pendingCount == 0,
+            consumer.bookkeepingCounts() == baseline
+        else { return 6 }
+
+        for cycle in 0..<64 {
+            let id = 500 + cycle
+            consumer.registerContext(
+                mountTestContext(surfaceID: id))
+            consumer.didFinishTransaction(
+                surfaceID: Int32(id))
             guard scheduler.runNext()
-            else { return 1 }
-            guard
-                replacement.registry.component(
-                    for: 410) == nil,
-                consumer.metricsSnapshot()
-                    .staleBatchesRejected == 1,
-                consumer.metricsSnapshot()
-                    .staleMutationsRejected == 1
-            else { return 2 }
-
-            consumer.enqueue(
-                .create(
-                    surfaceID: surfaceID,
-                    tag: 411,
-                    componentName: "View",
-                    component: .view(
-                        MountViewSnapshot(
-                            nativeID: "new",
-                            frame: Rect(
-                                x: 1, y: 2,
-                                width: 30, height: 40)),
-                        backgroundColor: nil)))
-            consumer.didFinishTransaction(
-                surfaceID: Int32(surfaceID))
-            guard scheduler.runNext()
-            else { return 3 }
-            guard
-                replacement.registry.component(
-                    for: 411)?.nativeID == "new"
-            else { return 4 }
-
-            consumer.unregisterContext(
-                surfaceID: surfaceID)
-            let baseline = consumer.bookkeepingCounts()
-            guard
-                baseline
-                    == MountBookkeepingCounts(
-                        queuedBatches: 0,
-                        generations: 0,
-                        retiredSurfaces: 0,
-                        inFlightSurfaces: 0)
-            else { return 5 }
-
-            consumer.enqueue(
-                .delete(
-                    surfaceID: surfaceID,
-                    tag: 411))
-            consumer.didFinishTransaction(
-                surfaceID: Int32(surfaceID))
-            guard
-                scheduler.pendingCount == 0,
-                consumer.bookkeepingCounts() == baseline
-            else { return 6 }
-
-            for cycle in 0..<64 {
-                let id = 500 + cycle
-                consumer.registerContext(
-                    mountTestContext(surfaceID: id))
-                consumer.didFinishTransaction(
-                    surfaceID: Int32(id))
-                guard scheduler.runNext()
-                else { return 7 }
-                consumer.unregisterContext(surfaceID: id)
-            }
-            guard consumer.bookkeepingCounts() == baseline
-            else { return 8 }
-            return 0
+            else { return 7 }
+            consumer.unregisterContext(surfaceID: id)
         }
+        guard consumer.bookkeepingCounts() == baseline
+        else { return 8 }
+        return 0
     }
 }
 
@@ -503,12 +501,11 @@ private func verifyMountEventPayload() -> Int32 {
     return 0
 }
 
-func verifyMountEventPayloadRetention() -> Int32 {
-    MainActor.assumeIsolated {
-        let uiContext = UIContext(services: .inMemory())
-        return uiContext.construct {
-            verifyMountEventPayload()
-        }
+@MainActor
+private func verifyMountEventPayloadRetention() -> Int32 {
+    let uiContext = UIContext(services: .inMemory())
+    return uiContext.construct {
+        verifyMountEventPayload()
     }
 }
 

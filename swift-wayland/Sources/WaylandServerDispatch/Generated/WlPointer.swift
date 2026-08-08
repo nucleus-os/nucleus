@@ -14,16 +14,15 @@ package extension WlPointerRequests {
     }
 }
 package enum WlPointerServer: WaylandServerInterface {
+    package typealias Requests = any WlPointerRequests
     package nonisolated static let maximumVersion: Int32 = 10
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_pointer_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_pointer_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_pointer_requests.self, capacity: 1)
-        unsafe vt.pointee.set_cursor = setCursor_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_pointer_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_pointer_requests(
+            set_cursor: setCursor_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_pointer(),
@@ -61,33 +60,24 @@ package enum WlPointerServer: WaylandServerInterface {
     package static func sendAxisRelativeDirection(_ target: UnsafeMutablePointer<wl_resource>, axis: WlPointerAxis, direction: WlPointerAxisRelativeDirection) {
         unsafe wl_pointer_send_axis_relative_direction(target, axis.rawValue, direction.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlPointerRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlPointerRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlPointerRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlPointerServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setCursor_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, serial, surface, hotspot_x, hotspot_y in
+    private static let setCursor_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, serial, surface, hotspot_x, hotspot_y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setCursor(WaylandRequest<WlPointerServer>(requestResource), serial: serial, surface: _request_surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(_request_surface!)), hotspot_x: hotspot_x, hotspot_y: hotspot_y)
-        }
+        unsafe h.setCursor(WaylandRequest<WlPointerServer>(res), serial: serial, surface: surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(surface!)), hotspot_x: hotspot_x, hotspot_y: hotspot_y)
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<WlPointerServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<WlPointerServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -250,7 +240,9 @@ package extension WlNewId where Interface == WlPointerServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlPointerServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlPointerServer {
@@ -261,12 +253,14 @@ package extension WlPointerServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlPointerServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlPointerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -280,10 +274,12 @@ package extension WlPointerServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlPointerServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlPointerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

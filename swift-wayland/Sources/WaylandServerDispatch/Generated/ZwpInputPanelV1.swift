@@ -7,36 +7,29 @@ package import WaylandServer
     func getInputPanelSurface(_ request: WaylandRequest<ZwpInputPanelV1Server>, id: WlNewId<ZwpInputPanelSurfaceV1Server>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
 package enum ZwpInputPanelV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpInputPanelV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_input_panel_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_input_panel_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_input_panel_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.get_input_panel_surface = getInputPanelSurface_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_input_panel_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_input_panel_v1_requests(
+            get_input_panel_surface: getInputPanelSurface_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_panel_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputPanelV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpInputPanelV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpInputPanelV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpInputPanelV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let getInputPanelSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getInputPanelSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getInputPanelSurface(WaylandRequest<ZwpInputPanelV1Server>(requestResource), id: WlNewId<ZwpInputPanelSurfaceV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getInputPanelSurface(WaylandRequest<ZwpInputPanelV1Server>(res), id: WlNewId<ZwpInputPanelSurfaceV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
 }
 package extension WlNewId where Interface == ZwpInputPanelV1Server {
@@ -47,7 +40,9 @@ package extension WlNewId where Interface == ZwpInputPanelV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpInputPanelV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpInputPanelV1Server {
@@ -58,12 +53,14 @@ package extension ZwpInputPanelV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpInputPanelV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputPanelV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -77,10 +74,12 @@ package extension ZwpInputPanelV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpInputPanelV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpInputPanelV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

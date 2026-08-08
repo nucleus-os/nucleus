@@ -30,7 +30,7 @@ package protocol ZwpConfinedPointerV1Events: AnyObject {
     func unconfined(_ proxy: WaylandBorrowedProxy<ZwpConfinedPointerV1Client>)
 }
 package extension ZwpConfinedPointerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_confined_pointer_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_confined_pointer_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_confined_pointer_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_confined_pointer_v1_events())
         unsafe p.pointee.confined = confined_impl
@@ -40,7 +40,7 @@ package extension ZwpConfinedPointerV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpConfinedPointerV1Events? {
         context.owner as? any ZwpConfinedPointerV1Events
     }
-    private static let confined_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let confined_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,14 +48,9 @@ package extension ZwpConfinedPointerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.confined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
-        }
+        unsafe h.confined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(proxy))
     }
-    private static let unconfined_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let unconfined_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -63,12 +58,7 @@ package extension ZwpConfinedPointerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.unconfined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
-        }
+        unsafe h.unconfined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {

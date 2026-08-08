@@ -51,7 +51,7 @@ package protocol XdgSurfaceEvents: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32)
 }
 package extension XdgSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_surface_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_surface_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_surface_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_surface_events())
         unsafe p.pointee.configure = configure_impl
@@ -60,7 +60,7 @@ package extension XdgSurfaceClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgSurfaceEvents? {
         context.owner as? any XdgSurfaceEvents
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -68,12 +68,7 @@ package extension XdgSurfaceClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<XdgSurfaceClient>(eventProxy), serial: serial)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<XdgSurfaceClient>(proxy), serial: serial)
     }
 }
 package extension WaylandProxy where Interface == XdgSurfaceClient {

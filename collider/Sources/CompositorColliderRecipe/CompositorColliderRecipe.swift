@@ -68,9 +68,7 @@ private func testTask(
         dependencies: dependencies,
         swiftTests: [testRequirement],
         inputs: [
-            .sourceCheckout(root.appending("Sources")),
-            .sourceCheckout(root.appending("Tests")),
-            swiftPM.identityInput,
+            swiftPM.identityInput
         ],
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("compositor-core")],

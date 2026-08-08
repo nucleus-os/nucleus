@@ -30,7 +30,7 @@ package protocol ZxdgPopupV6Events: AnyObject {
     func popupDone(_ proxy: WaylandBorrowedProxy<ZxdgPopupV6Client>)
 }
 package extension ZxdgPopupV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_popup_v6_events())
         unsafe p.pointee.configure = configure_impl
@@ -40,7 +40,7 @@ package extension ZxdgPopupV6Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgPopupV6Events? {
         context.owner as? any ZxdgPopupV6Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) -> Void = { data, proxy, x, y, width, height in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) -> Void = { data, proxy, x, y, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,14 +48,9 @@ package extension ZxdgPopupV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ZxdgPopupV6Client>(proxy), x: x, y: y, width: width, height: height)
     }
-    private static let popupDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let popupDone_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -63,12 +58,7 @@ package extension ZxdgPopupV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.popupDone(WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy))
-        }
+        unsafe h.popupDone(WaylandBorrowedProxy<ZxdgPopupV6Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZxdgPopupV6Client {

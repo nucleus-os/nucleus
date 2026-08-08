@@ -14,49 +14,40 @@ package extension WpCursorShapeDeviceV1Requests {
     }
 }
 package enum WpCursorShapeDeviceV1Server: WaylandServerInterface {
+    package typealias Requests = any WpCursorShapeDeviceV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_cursor_shape_device_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_cursor_shape_device_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_cursor_shape_device_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.set_shape = setShape_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_cursor_shape_device_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_cursor_shape_device_v1_requests(
+            destroy: destroy_impl,
+            set_shape: setShape_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_cursor_shape_device_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpCursorShapeDeviceV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpCursorShapeDeviceV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpCursorShapeDeviceV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpCursorShapeDeviceV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpCursorShapeDeviceV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpCursorShapeDeviceV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let setShape_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, serial, shape in
+    private static let setShape_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, serial, shape in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setShape(WaylandRequest<WpCursorShapeDeviceV1Server>(requestResource), serial: serial, shape: WpCursorShapeDeviceV1Shape(rawValue: shape))
-        }
+        unsafe h.setShape(WaylandRequest<WpCursorShapeDeviceV1Server>(res), serial: serial, shape: WpCursorShapeDeviceV1Shape(rawValue: shape))
     }
 }
 package extension WaylandRequest where Interface == WpCursorShapeDeviceV1Server {
@@ -78,7 +69,9 @@ package extension WlNewId where Interface == WpCursorShapeDeviceV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpCursorShapeDeviceV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpCursorShapeDeviceV1Server {
@@ -89,12 +82,14 @@ package extension WpCursorShapeDeviceV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpCursorShapeDeviceV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpCursorShapeDeviceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -108,10 +103,12 @@ package extension WpCursorShapeDeviceV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpCursorShapeDeviceV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpCursorShapeDeviceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

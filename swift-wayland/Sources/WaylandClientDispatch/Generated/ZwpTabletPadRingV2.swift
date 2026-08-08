@@ -34,7 +34,7 @@ package protocol ZwpTabletPadRingV2Events: AnyObject {
     func frame(_ proxy: WaylandBorrowedProxy<ZwpTabletPadRingV2Client>, time: UInt32)
 }
 package extension ZwpTabletPadRingV2Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_ring_v2_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_ring_v2_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_ring_v2_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_tablet_pad_ring_v2_events())
         unsafe p.pointee.source = source_impl
@@ -46,7 +46,7 @@ package extension ZwpTabletPadRingV2Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpTabletPadRingV2Events? {
         context.owner as? any ZwpTabletPadRingV2Events
     }
-    private static let source_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, source in
+    private static let source_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, source in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -54,14 +54,9 @@ package extension ZwpTabletPadRingV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.source(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(eventProxy), source: ZwpTabletPadRingV2Source(rawValue: source))
-        }
+        unsafe h.source(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(proxy), source: ZwpTabletPadRingV2Source(rawValue: source))
     }
-    private static let angle_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, wl_fixed_t) -> Void = { data, proxy, degrees in
+    private static let angle_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, wl_fixed_t) -> Void = { data, proxy, degrees in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -69,14 +64,9 @@ package extension ZwpTabletPadRingV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.angle(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(eventProxy), degrees: swift_wayland_fixed_to_double(degrees))
-        }
+        unsafe h.angle(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(proxy), degrees: swift_wayland_fixed_to_double(degrees))
     }
-    private static let stop_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let stop_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -84,14 +74,9 @@ package extension ZwpTabletPadRingV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.stop(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(eventProxy))
-        }
+        unsafe h.stop(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(proxy))
     }
-    private static let frame_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, time in
+    private static let frame_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, time in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -99,12 +84,7 @@ package extension ZwpTabletPadRingV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.frame(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(eventProxy), time: time)
-        }
+        unsafe h.frame(WaylandBorrowedProxy<ZwpTabletPadRingV2Client>(proxy), time: time)
     }
 }
 package extension WaylandProxy where Interface == ZwpTabletPadRingV2Client {

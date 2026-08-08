@@ -14,59 +14,44 @@ package extension WlCompositorRequests {
     }
 }
 package enum WlCompositorServer: WaylandServerInterface {
+    package typealias Requests = any WlCompositorRequests
     package nonisolated static let maximumVersion: Int32 = 7
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_compositor_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_compositor_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_compositor_requests.self, capacity: 1)
-        unsafe vt.pointee.create_surface = createSurface_impl
-        unsafe vt.pointee.create_region = createRegion_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_compositor_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_compositor_requests(
+            create_surface: createSurface_impl,
+            create_region: createRegion_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_compositor(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlCompositorRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlCompositorRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlCompositorRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlCompositorServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createSurface(WaylandRequest<WlCompositorServer>(requestResource), id: WlNewId<WlSurfaceServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(7))))
-        }
+        unsafe h.createSurface(WaylandRequest<WlCompositorServer>(res), id: WlNewId<WlSurfaceServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7))))
     }
-    private static let createRegion_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createRegion_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createRegion(WaylandRequest<WlCompositorServer>(requestResource), id: WlNewId<WlRegionServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(7))))
-        }
+        unsafe h.createRegion(WaylandRequest<WlCompositorServer>(res), id: WlNewId<WlRegionServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(7))))
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<WlCompositorServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<WlCompositorServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -80,7 +65,9 @@ package extension WlNewId where Interface == WlCompositorServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlCompositorServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlCompositorServer {
@@ -91,12 +78,14 @@ package extension WlCompositorServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlCompositorServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlCompositorServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -110,10 +99,12 @@ package extension WlCompositorServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlCompositorServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlCompositorServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

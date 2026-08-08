@@ -20,22 +20,21 @@ package extension WpColorManagerV1Requests {
     }
 }
 package enum WpColorManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any WpColorManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_color_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_color_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_color_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.get_output = getOutput_impl
-        unsafe vt.pointee.get_surface = getSurface_impl
-        unsafe vt.pointee.get_surface_feedback = getSurfaceFeedback_impl
-        unsafe vt.pointee.create_icc_creator = createIccCreator_impl
-        unsafe vt.pointee.create_parametric_creator = createParametricCreator_impl
-        unsafe vt.pointee.create_windows_scrgb = createWindowsScrgb_impl
-        unsafe vt.pointee.get_image_description = getImageDescription_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_color_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_color_manager_v1_requests(
+            destroy: destroy_impl,
+            get_output: getOutput_impl,
+            get_surface: getSurface_impl,
+            get_surface_feedback: getSurfaceFeedback_impl,
+            create_icc_creator: createIccCreator_impl,
+            create_parametric_creator: createParametricCreator_impl,
+            create_windows_scrgb: createWindowsScrgb_impl,
+            get_image_description: getImageDescription_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_color_manager_v1(),
@@ -55,106 +54,63 @@ package enum WpColorManagerV1Server: WaylandServerInterface {
     package static func sendDone(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe wp_color_manager_v1_send_done(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpColorManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpColorManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpColorManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpColorManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpColorManagerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpColorManagerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let getOutput_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, output in
+    private static let getOutput_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, output in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getOutput(WaylandRequest<WpColorManagerV1Server>(requestResource), id: WlNewId<WpColorManagementOutputV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))), output: WaylandBorrowedObject<WlOutputServer>(_request_output!))
-        }
+        unsafe h.getOutput(WaylandRequest<WpColorManagerV1Server>(res), id: WlNewId<WpColorManagementOutputV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2))), output: WaylandBorrowedObject<WlOutputServer>(output!))
     }
-    private static let getSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getSurface(WaylandRequest<WpColorManagerV1Server>(requestResource), id: WlNewId<WpColorManagementSurfaceV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getSurface(WaylandRequest<WpColorManagerV1Server>(res), id: WlNewId<WpColorManagementSurfaceV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let getSurfaceFeedback_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let getSurfaceFeedback_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getSurfaceFeedback(WaylandRequest<WpColorManagerV1Server>(requestResource), id: WlNewId<WpColorManagementSurfaceFeedbackV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.getSurfaceFeedback(WaylandRequest<WpColorManagerV1Server>(res), id: WlNewId<WpColorManagementSurfaceFeedbackV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let createIccCreator_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
+    private static let createIccCreator_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createIccCreator(WaylandRequest<WpColorManagerV1Server>(requestResource), obj: WlNewId<WpImageDescriptionCreatorIccV1Server>(client: requestClient, id: obj, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.createIccCreator(WaylandRequest<WpColorManagerV1Server>(res), obj: WlNewId<WpImageDescriptionCreatorIccV1Server>(client: client, id: obj, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
-    private static let createParametricCreator_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
+    private static let createParametricCreator_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, obj in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createParametricCreator(WaylandRequest<WpColorManagerV1Server>(requestResource), obj: WlNewId<WpImageDescriptionCreatorParamsV1Server>(client: requestClient, id: obj, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.createParametricCreator(WaylandRequest<WpColorManagerV1Server>(res), obj: WlNewId<WpImageDescriptionCreatorParamsV1Server>(client: client, id: obj, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
-    private static let createWindowsScrgb_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
+    private static let createWindowsScrgb_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createWindowsScrgb(WaylandRequest<WpColorManagerV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.createWindowsScrgb(WaylandRequest<WpColorManagerV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
-    private static let getImageDescription_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, image_description, reference in
+    private static let getImageDescription_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, image_description, reference in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_reference = unsafe reference
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getImageDescription(WaylandRequest<WpColorManagerV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))), reference: WaylandBorrowedObject<WpImageDescriptionReferenceV1Server>(_request_reference!))
-        }
+        unsafe h.getImageDescription(WaylandRequest<WpColorManagerV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))), reference: WaylandBorrowedObject<WpImageDescriptionReferenceV1Server>(reference!))
     }
 }
 package extension WaylandResourceHandle where Interface == WpColorManagerV1Server {
@@ -218,7 +174,9 @@ package extension WlNewId where Interface == WpColorManagerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpColorManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpColorManagerV1Server {
@@ -229,12 +187,14 @@ package extension WpColorManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpColorManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpColorManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -248,10 +208,12 @@ package extension WpColorManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpColorManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpColorManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

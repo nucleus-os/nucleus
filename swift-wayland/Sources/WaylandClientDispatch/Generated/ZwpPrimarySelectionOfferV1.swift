@@ -35,7 +35,7 @@ package protocol ZwpPrimarySelectionOfferV1Events: AnyObject {
     func offer(_ proxy: WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>, mime_type: String)
 }
 package extension ZwpPrimarySelectionOfferV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_primary_selection_offer_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_primary_selection_offer_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_primary_selection_offer_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_primary_selection_offer_v1_events())
         unsafe p.pointee.offer = offer_impl
@@ -44,7 +44,7 @@ package extension ZwpPrimarySelectionOfferV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpPrimarySelectionOfferV1Events? {
         context.owner as? any ZwpPrimarySelectionOfferV1Events
     }
-    private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
+    private static let offer_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -52,13 +52,7 @@ package extension ZwpPrimarySelectionOfferV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.offer(WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
-        }
+        unsafe h.offer(WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(proxy), mime_type: unsafe String(cString: mime_type!))
     }
 }
 package extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {

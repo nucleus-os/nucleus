@@ -14,17 +14,16 @@ package extension XdgToplevelIconManagerV1Requests {
     }
 }
 package enum XdgToplevelIconManagerV1Server: WaylandServerInterface {
+    package typealias Requests = any XdgToplevelIconManagerV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_xdg_toplevel_icon_manager_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_xdg_toplevel_icon_manager_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_xdg_toplevel_icon_manager_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.create_icon = createIcon_impl
-        unsafe vt.pointee.set_icon = setIcon_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_xdg_toplevel_icon_manager_v1_requests(
+            destroy: destroy_impl,
+            create_icon: createIcon_impl,
+            set_icon: setIcon_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_icon_manager_v1(),
@@ -35,48 +34,33 @@ package enum XdgToplevelIconManagerV1Server: WaylandServerInterface {
     package static func sendDone(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe xdg_toplevel_icon_manager_v1_send_done(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgToplevelIconManagerV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any XdgToplevelIconManagerV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any XdgToplevelIconManagerV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<XdgToplevelIconManagerV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<XdgToplevelIconManagerV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<XdgToplevelIconManagerV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let createIcon_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createIcon_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createIcon(WaylandRequest<XdgToplevelIconManagerV1Server>(requestResource), id: WlNewId<XdgToplevelIconV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createIcon(WaylandRequest<XdgToplevelIconManagerV1Server>(res), id: WlNewId<XdgToplevelIconV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let setIcon_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, toplevel, icon in
+    private static let setIcon_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, toplevel, icon in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_toplevel = unsafe toplevel
-        nonisolated(unsafe) let _request_icon = unsafe icon
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setIcon(WaylandRequest<XdgToplevelIconManagerV1Server>(requestResource), toplevel: WaylandBorrowedObject<XdgToplevelServer>(_request_toplevel!), icon: _request_icon == nil ? nil : .some(WaylandBorrowedObject<XdgToplevelIconV1Server>(_request_icon!)))
-        }
+        unsafe h.setIcon(WaylandRequest<XdgToplevelIconManagerV1Server>(res), toplevel: WaylandBorrowedObject<XdgToplevelServer>(toplevel!), icon: icon == nil ? nil : .some(WaylandBorrowedObject<XdgToplevelIconV1Server>(icon!)))
     }
 }
 package extension WaylandResourceHandle where Interface == XdgToplevelIconManagerV1Server {
@@ -105,7 +89,9 @@ package extension WlNewId where Interface == XdgToplevelIconManagerV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: XdgToplevelIconManagerV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension XdgToplevelIconManagerV1Server {
@@ -116,12 +102,14 @@ package extension XdgToplevelIconManagerV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<XdgToplevelIconManagerV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgToplevelIconManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -135,10 +123,12 @@ package extension XdgToplevelIconManagerV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<XdgToplevelIconManagerV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<XdgToplevelIconManagerV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

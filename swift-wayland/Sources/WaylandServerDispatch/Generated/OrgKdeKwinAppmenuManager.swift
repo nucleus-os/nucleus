@@ -13,48 +13,37 @@ package extension OrgKdeKwinAppmenuManagerRequests {
     }
 }
 package enum OrgKdeKwinAppmenuManagerServer: WaylandServerInterface {
+    package typealias Requests = any OrgKdeKwinAppmenuManagerRequests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_org_kde_kwin_appmenu_manager_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_org_kde_kwin_appmenu_manager_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_org_kde_kwin_appmenu_manager_requests.self, capacity: 1)
-        unsafe vt.pointee.create = create_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_org_kde_kwin_appmenu_manager_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_org_kde_kwin_appmenu_manager_requests(
+            create: create_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_appmenu_manager(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any OrgKdeKwinAppmenuManagerRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any OrgKdeKwinAppmenuManagerRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any OrgKdeKwinAppmenuManagerRequests
+        return unsafe Unmanaged<WaylandDispatchBox<OrgKdeKwinAppmenuManagerServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let create_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.create(WaylandRequest<OrgKdeKwinAppmenuManagerServer>(requestResource), id: WlNewId<OrgKdeKwinAppmenuServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.create(WaylandRequest<OrgKdeKwinAppmenuManagerServer>(res), id: WlNewId<OrgKdeKwinAppmenuServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<OrgKdeKwinAppmenuManagerServer>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<OrgKdeKwinAppmenuManagerServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -68,7 +57,9 @@ package extension WlNewId where Interface == OrgKdeKwinAppmenuManagerServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: OrgKdeKwinAppmenuManagerServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension OrgKdeKwinAppmenuManagerServer {
@@ -79,12 +70,14 @@ package extension OrgKdeKwinAppmenuManagerServer {
         installed: @escaping (Implementation, WaylandResourceHandle<OrgKdeKwinAppmenuManagerServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<OrgKdeKwinAppmenuManagerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -98,10 +91,12 @@ package extension OrgKdeKwinAppmenuManagerServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<OrgKdeKwinAppmenuManagerServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<OrgKdeKwinAppmenuManagerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

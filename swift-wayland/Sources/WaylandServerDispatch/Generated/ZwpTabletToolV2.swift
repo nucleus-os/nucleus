@@ -14,16 +14,15 @@ package extension ZwpTabletToolV2Requests {
     }
 }
 package enum ZwpTabletToolV2Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTabletToolV2Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_tablet_tool_v2_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_tablet_tool_v2_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_tablet_tool_v2_requests.self, capacity: 1)
-        unsafe vt.pointee.set_cursor = setCursor_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_tablet_tool_v2_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_tablet_tool_v2_requests(
+            set_cursor: setCursor_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_tool_v2(),
@@ -85,33 +84,24 @@ package enum ZwpTabletToolV2Server: WaylandServerInterface {
     package static func sendFrame(_ target: UnsafeMutablePointer<wl_resource>, time: UInt32) {
         unsafe zwp_tablet_tool_v2_send_frame(target, time)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletToolV2Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletToolV2Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletToolV2Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTabletToolV2Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setCursor_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, serial, surface, hotspot_x, hotspot_y in
+    private static let setCursor_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, serial, surface, hotspot_x, hotspot_y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setCursor(WaylandRequest<ZwpTabletToolV2Server>(requestResource), serial: serial, surface: _request_surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(_request_surface!)), hotspot_x: hotspot_x, hotspot_y: hotspot_y)
-        }
+        unsafe h.setCursor(WaylandRequest<ZwpTabletToolV2Server>(res), serial: serial, surface: surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(surface!)), hotspot_x: hotspot_x, hotspot_y: hotspot_y)
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpTabletToolV2Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpTabletToolV2Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -296,7 +286,9 @@ package extension WlNewId where Interface == ZwpTabletToolV2Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTabletToolV2Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpTabletToolV2Server {
@@ -307,12 +299,14 @@ package extension ZwpTabletToolV2Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTabletToolV2Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletToolV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -326,10 +320,12 @@ package extension ZwpTabletToolV2Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTabletToolV2Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletToolV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

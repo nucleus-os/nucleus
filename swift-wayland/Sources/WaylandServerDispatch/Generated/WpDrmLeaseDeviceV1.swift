@@ -8,16 +8,15 @@ package import WaylandServer
     func release(_ request: WaylandRequest<WpDrmLeaseDeviceV1Server>)
 }
 package enum WpDrmLeaseDeviceV1Server: WaylandServerInterface {
+    package typealias Requests = any WpDrmLeaseDeviceV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_drm_lease_device_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_drm_lease_device_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_drm_lease_device_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.create_lease_request = createLeaseRequest_impl
-        unsafe vt.pointee.release = release_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_drm_lease_device_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_drm_lease_device_v1_requests(
+            create_lease_request: createLeaseRequest_impl,
+            release: release_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_drm_lease_device_v1(),
@@ -34,32 +33,23 @@ package enum WpDrmLeaseDeviceV1Server: WaylandServerInterface {
     package static func sendReleased(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe wp_drm_lease_device_v1_send_released(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpDrmLeaseDeviceV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpDrmLeaseDeviceV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpDrmLeaseDeviceV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpDrmLeaseDeviceV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createLeaseRequest_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
+    private static let createLeaseRequest_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createLeaseRequest(WaylandRequest<WpDrmLeaseDeviceV1Server>(requestResource), id: WlNewId<WpDrmLeaseRequestV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.createLeaseRequest(WaylandRequest<WpDrmLeaseDeviceV1Server>(res), id: WlNewId<WpDrmLeaseRequestV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.release(WaylandRequest<WpDrmLeaseDeviceV1Server>(requestResource))
-        }
+        unsafe h.release(WaylandRequest<WpDrmLeaseDeviceV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == WpDrmLeaseDeviceV1Server {
@@ -95,6 +85,9 @@ package extension WaylandResourceHandle where Interface == WpDrmLeaseDeviceV1Ser
                 version ?? 1,
                 WpDrmLeaseConnectorV1Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0 as? any WpDrmLeaseConnectorV1Requests
+            },
             installed: installed,
             publish: {
                 sendConnector(id: $0)
@@ -125,7 +118,9 @@ package extension WlNewId where Interface == WpDrmLeaseDeviceV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpDrmLeaseDeviceV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpDrmLeaseDeviceV1Server {
@@ -136,12 +131,14 @@ package extension WpDrmLeaseDeviceV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpDrmLeaseDeviceV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpDrmLeaseDeviceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -155,10 +152,12 @@ package extension WpDrmLeaseDeviceV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpDrmLeaseDeviceV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpDrmLeaseDeviceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

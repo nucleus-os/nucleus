@@ -15,17 +15,16 @@ package extension ZwpFullscreenShellV1Requests {
     }
 }
 package enum ZwpFullscreenShellV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpFullscreenShellV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_fullscreen_shell_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_fullscreen_shell_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_fullscreen_shell_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.release = release_impl
-        unsafe vt.pointee.present_surface = presentSurface_impl
-        unsafe vt.pointee.present_surface_for_mode = presentSurfaceForMode_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_fullscreen_shell_v1_requests(
+            release: release_impl,
+            present_surface: presentSurface_impl,
+            present_surface_for_mode: presentSurfaceForMode_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_fullscreen_shell_v1(),
@@ -33,50 +32,33 @@ package enum ZwpFullscreenShellV1Server: WaylandServerInterface {
     package static func sendCapability(_ target: UnsafeMutablePointer<wl_resource>, capability: ZwpFullscreenShellV1Capability) {
         unsafe zwp_fullscreen_shell_v1_send_capability(target, capability.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpFullscreenShellV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpFullscreenShellV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpFullscreenShellV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpFullscreenShellV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let release_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.release(WaylandRequest<ZwpFullscreenShellV1Server>(requestResource))
-            }
+            unsafe h.release(WaylandRequest<ZwpFullscreenShellV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let presentSurface_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface, method, output in
+    private static let presentSurface_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface, method, output in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.presentSurface(WaylandRequest<ZwpFullscreenShellV1Server>(requestResource), surface: _request_surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(_request_surface!)), method: ZwpFullscreenShellV1PresentMethod(rawValue: method), output: _request_output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(_request_output!)))
-        }
+        unsafe h.presentSurface(WaylandRequest<ZwpFullscreenShellV1Server>(res), surface: surface == nil ? nil : .some(WaylandBorrowedObject<WlSurfaceServer>(surface!)), method: ZwpFullscreenShellV1PresentMethod(rawValue: method), output: output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(output!)))
     }
-    private static let presentSurfaceForMode_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32) -> Void = { client, res, surface, output, framerate, feedback in
+    private static let presentSurfaceForMode_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, UInt32) -> Void = { client, res, surface, output, framerate, feedback in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.presentSurfaceForMode(WaylandRequest<ZwpFullscreenShellV1Server>(requestResource), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!), output: WaylandBorrowedObject<WlOutputServer>(_request_output!), framerate: framerate, feedback: WlNewId<ZwpFullscreenShellModeFeedbackV1Server>(client: requestClient, id: feedback, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))))
-        }
+        unsafe h.presentSurfaceForMode(WaylandRequest<ZwpFullscreenShellV1Server>(res), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!), output: WaylandBorrowedObject<WlOutputServer>(output!), framerate: framerate, feedback: WlNewId<ZwpFullscreenShellModeFeedbackV1Server>(client: client, id: feedback, version: Swift::min(wl_resource_get_version(res), Int32(1))))
     }
 }
 package extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1Server {
@@ -108,7 +90,9 @@ package extension WlNewId where Interface == ZwpFullscreenShellV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpFullscreenShellV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwpFullscreenShellV1Server {
@@ -119,12 +103,14 @@ package extension ZwpFullscreenShellV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpFullscreenShellV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpFullscreenShellV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -138,10 +124,12 @@ package extension ZwpFullscreenShellV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpFullscreenShellV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpFullscreenShellV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

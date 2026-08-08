@@ -33,7 +33,7 @@ package protocol ExtBackgroundEffectManagerV1Events: AnyObject {
     func capabilities(_ proxy: WaylandBorrowedProxy<ExtBackgroundEffectManagerV1Client>, flags: ExtBackgroundEffectManagerV1Capability)
 }
 package extension ExtBackgroundEffectManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_background_effect_manager_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_background_effect_manager_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_background_effect_manager_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_background_effect_manager_v1_events())
         unsafe p.pointee.capabilities = capabilities_impl
@@ -42,7 +42,7 @@ package extension ExtBackgroundEffectManagerV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtBackgroundEffectManagerV1Events? {
         context.owner as? any ExtBackgroundEffectManagerV1Events
     }
-    private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in
+    private static let capabilities_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, flags in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -50,12 +50,7 @@ package extension ExtBackgroundEffectManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.capabilities(WaylandBorrowedProxy<ExtBackgroundEffectManagerV1Client>(eventProxy), flags: ExtBackgroundEffectManagerV1Capability(rawValue: flags))
-        }
+        unsafe h.capabilities(WaylandBorrowedProxy<ExtBackgroundEffectManagerV1Client>(proxy), flags: ExtBackgroundEffectManagerV1Capability(rawValue: flags))
     }
 }
 package extension WaylandProxy where Interface == ExtBackgroundEffectManagerV1Client {

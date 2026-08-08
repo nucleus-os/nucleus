@@ -13,7 +13,7 @@ package protocol ZwpLinuxBufferReleaseV1Events: AnyObject {
     func immediateRelease(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>)
 }
 package extension ZwpLinuxBufferReleaseV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_release_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_release_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_release_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_linux_buffer_release_v1_events())
         unsafe p.pointee.fenced_release = fencedRelease_impl
@@ -23,7 +23,7 @@ package extension ZwpLinuxBufferReleaseV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxBufferReleaseV1Events? {
         context.owner as? any ZwpLinuxBufferReleaseV1Events
     }
-    private static let fencedRelease_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, fence in
+    private static let fencedRelease_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, fence in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -31,14 +31,9 @@ package extension ZwpLinuxBufferReleaseV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.fencedRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(eventProxy), fence: WaylandClientOwnedFileDescriptor(fence))
-        }
+        unsafe h.fencedRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(proxy), fence: WaylandClientOwnedFileDescriptor(fence))
     }
-    private static let immediateRelease_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let immediateRelease_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -46,12 +41,7 @@ package extension ZwpLinuxBufferReleaseV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.immediateRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(eventProxy))
-        }
+        unsafe h.immediateRelease(WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwpLinuxBufferReleaseV1Client {

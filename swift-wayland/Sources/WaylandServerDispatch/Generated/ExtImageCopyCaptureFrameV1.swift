@@ -16,18 +16,17 @@ package extension ExtImageCopyCaptureFrameV1Requests {
     }
 }
 package enum ExtImageCopyCaptureFrameV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtImageCopyCaptureFrameV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_image_copy_capture_frame_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_image_copy_capture_frame_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_image_copy_capture_frame_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.attach_buffer = attachBuffer_impl
-        unsafe vt.pointee.damage_buffer = damageBuffer_impl
-        unsafe vt.pointee.capture = capture_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_frame_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_image_copy_capture_frame_v1_requests(
+            destroy: destroy_impl,
+            attach_buffer: attachBuffer_impl,
+            damage_buffer: damageBuffer_impl,
+            capture: capture_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_frame_v1(),
@@ -47,56 +46,39 @@ package enum ExtImageCopyCaptureFrameV1Server: WaylandServerInterface {
     package static func sendFailed(_ target: UnsafeMutablePointer<wl_resource>, reason: ExtImageCopyCaptureFrameV1FailureReason) {
         unsafe ext_image_copy_capture_frame_v1_send_failed(target, reason.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureFrameV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtImageCopyCaptureFrameV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtImageCopyCaptureFrameV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtImageCopyCaptureFrameV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let attachBuffer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, buffer in
+    private static let attachBuffer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, buffer in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_buffer = unsafe buffer
-        MainActor.assumeIsolated {
-            unsafe requestHandler.attachBuffer(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(requestResource), buffer: WaylandBorrowedObject<WlBufferServer>(_request_buffer!))
-        }
+        unsafe h.attachBuffer(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(res), buffer: WaylandBorrowedObject<WlBufferServer>(buffer!))
     }
-    private static let damageBuffer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
+    private static let damageBuffer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32, Int32) -> Void = { _, res, x, y, width, height in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.damageBuffer(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(requestResource), x: x, y: y, width: width, height: height)
-        }
+        unsafe h.damageBuffer(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(res), x: x, y: y, width: width, height: height)
     }
-    private static let capture_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let capture_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.capture(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(requestResource))
-        }
+        unsafe h.capture(WaylandRequest<ExtImageCopyCaptureFrameV1Server>(res))
     }
 }
 package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFrameV1Server {
@@ -160,7 +142,9 @@ package extension WlNewId where Interface == ExtImageCopyCaptureFrameV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtImageCopyCaptureFrameV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtImageCopyCaptureFrameV1Server {
@@ -171,12 +155,14 @@ package extension ExtImageCopyCaptureFrameV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtImageCopyCaptureFrameV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureFrameV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -190,10 +176,12 @@ package extension ExtImageCopyCaptureFrameV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtImageCopyCaptureFrameV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtImageCopyCaptureFrameV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

@@ -45,7 +45,7 @@ package protocol ZxdgShellV6Events: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<ZxdgShellV6Client>, serial: UInt32)
 }
 package extension ZxdgShellV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_shell_v6_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_shell_v6_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_shell_v6_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_shell_v6_events())
         unsafe p.pointee.ping = ping_impl
@@ -54,7 +54,7 @@ package extension ZxdgShellV6Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgShellV6Events? {
         context.owner as? any ZxdgShellV6Events
     }
-    private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let ping_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -62,12 +62,7 @@ package extension ZxdgShellV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ping(WaylandBorrowedProxy<ZxdgShellV6Client>(eventProxy), serial: serial)
-        }
+        unsafe h.ping(WaylandBorrowedProxy<ZxdgShellV6Client>(proxy), serial: serial)
     }
 }
 package extension WaylandProxy where Interface == ZxdgShellV6Client {

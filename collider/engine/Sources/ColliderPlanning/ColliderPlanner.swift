@@ -312,9 +312,10 @@ public struct ColliderPlanner {
 
     private func rawInputPath(_ input: ArtifactInput) -> FilePath? {
         switch input {
-        case .file(let path), .tree(let path), .sourceCheckout(let path),
-            .optionalSourceCheckout(let path, _):
+        case .file(let path), .tree(let path), .sourceCheckout(let path):
             path
+        case .sourceCheckoutClosure:
+            nil
         case .tool(.taskOutput(let path)), .tool(.path(let path)):
             path
         case .tool(.artifact):

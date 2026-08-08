@@ -159,16 +159,17 @@ struct TaskIdentityBuilder {
                         path,
                         services: services
                     ).bytes)
-            case .optionalSourceCheckout(let path, let fallback):
-                encoder.append(tag: 79, string: path.string)
-                if let digest = try resolutions.optionalSourceCheckoutDigest(
-                    path,
-                    services: services)
-                {
-                    encoder.append(tag: 80, bytes: digest.bytes)
-                } else {
-                    encoder.append(tag: 81, bytes: fallback)
-                }
+            case .sourceCheckoutClosure(let paths):
+                encoder.append(
+                    tag: 249,
+                    bytes: paths.sorted(by: { $0.string < $1.string })
+                        .flatMap { Array($0.string.utf8) + [0] })
+                encoder.append(
+                    tag: 250,
+                    bytes: try resolutions.sourceCheckoutClosureDigest(
+                        paths,
+                        services: services
+                    ).bytes)
             case .tool(let executable):
                 let environment =
                     task.swiftProducts.first?.environment
@@ -290,11 +291,6 @@ struct TaskIdentityBuilder {
 }
 
 private struct TaskIdentityResolutions {
-    private enum OptionalDigestResolution {
-        case missing
-        case digest(ArtifactDigest)
-    }
-
     private struct EnvironmentEntry: Hashable {
         let name: String
         let value: String
@@ -308,7 +304,7 @@ private struct TaskIdentityResolutions {
     private var fileDigests: [FilePath: ArtifactDigest] = [:]
     private var treeDigests: [FilePath: ArtifactDigest] = [:]
     private var sourceCheckoutDigests: [FilePath: ArtifactDigest] = [:]
-    private var optionalSourceCheckoutDigests: [FilePath: OptionalDigestResolution] = [:]
+    private var sourceCheckoutClosureDigests: [[FilePath]: ArtifactDigest] = [:]
     private var semanticTools: [SemanticToolKey: ToolIdentitySnapshot] = [:]
 
     mutating func fileDigest(
@@ -341,19 +337,14 @@ private struct TaskIdentityResolutions {
         return digest
     }
 
-    mutating func optionalSourceCheckoutDigest(
-        _ path: FilePath,
+    mutating func sourceCheckoutClosureDigest(
+        _ paths: [FilePath],
         services: TaskPlanningServices
-    ) throws -> ArtifactDigest? {
-        if let resolution = optionalSourceCheckoutDigests[path] {
-            switch resolution {
-            case .missing: return nil
-            case .digest(let digest): return digest
-            }
-        }
-        let digest = try services.optionalSourceCheckoutDigest(path)
-        optionalSourceCheckoutDigests[path] =
-            digest.map(OptionalDigestResolution.digest) ?? .missing
+    ) throws -> ArtifactDigest {
+        let paths = paths.sorted { $0.string < $1.string }
+        if let digest = sourceCheckoutClosureDigests[paths] { return digest }
+        let digest = try services.digestSourceCheckoutClosure(paths)
+        sourceCheckoutClosureDigests[paths] = digest
         return digest
     }
 

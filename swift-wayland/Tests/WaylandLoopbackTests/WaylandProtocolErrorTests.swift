@@ -1,9 +1,10 @@
 import Glibc
 import Testing
 import WaylandProtocolTypes
-@testable import WaylandServer
 import WaylandServerC
 import WaylandServerDispatch
+
+@testable import WaylandServer
 
 private struct PostedProtocolError: Equatable {
     let objectID: UInt32
@@ -126,6 +127,7 @@ struct WaylandProtocolErrorTests {
                 interface: WlCallbackServer.self,
                 version: 1,
                 owner: { _ in NoMemoryChildOwner() },
+                handler: { $0 },
                 installed: { _ in },
                 publish: { _ in true },
                 using: { _, _, _, _ in nil })
@@ -159,9 +161,11 @@ struct WaylandProtocolErrorTests {
                 message: "invalid surface scale")
         }
 
-        #expect(posted == PostedProtocolError(
-            objectID: 2,
-            code: WlSurfaceError.invalidScale.rawValue))
+        #expect(
+            posted
+                == PostedProtocolError(
+                    objectID: 2,
+                    code: WlSurfaceError.invalidScale.rawValue))
     }
 
     @Test
@@ -176,10 +180,12 @@ struct WaylandProtocolErrorTests {
                 message: "decoration already exists")
         }
 
-        #expect(posted == PostedProtocolError(
-            objectID: 2,
-            code: ZxdgToplevelDecorationV1Error
-                .alreadyConstructed.rawValue))
+        #expect(
+            posted
+                == PostedProtocolError(
+                    objectID: 2,
+                    code: ZxdgToplevelDecorationV1Error
+                        .alreadyConstructed.rawValue))
     }
 
     @Test
@@ -194,9 +200,11 @@ struct WaylandProtocolErrorTests {
                 message: "layer is out of range")
         }
 
-        #expect(posted == PostedProtocolError(
-            objectID: 2,
-            code: ZwlrLayerShellV1Error.invalidLayer.rawValue))
+        #expect(
+            posted
+                == PostedProtocolError(
+                    objectID: 2,
+                    code: ZwlrLayerShellV1Error.invalidLayer.rawValue))
     }
 
     @Test
@@ -236,9 +244,10 @@ struct WaylandProtocolErrorTests {
         try #require(createdDecoration != nil)
         let decoration = createdDecoration!
         unsafe wl_resource_destroy(decorationResource)
-        #expect(!decoration
-            .postToplevelDecorationAlreadyConstructedError(
-                message: "must not post"))
+        #expect(
+            !decoration
+                .postToplevelDecorationAlreadyConstructedError(
+                    message: "must not post"))
 
         let createdLayerResource =
             unsafe wl_resource_create(
@@ -255,16 +264,18 @@ struct WaylandProtocolErrorTests {
         try #require(createdLayer != nil)
         let layer = createdLayer!
         unsafe wl_resource_destroy(layerResource)
-        #expect(!layer.postLayerShellInvalidLayerError(
-            message: "must not post"))
+        #expect(
+            !layer.postLayerShellInvalidLayerError(
+                message: "must not post"))
 
         display.flushClients()
         var byte: UInt8 = 0
-        #expect(unsafe recv(
-            sockets[1],
-            &byte,
-            1,
-            Int32(MSG_DONTWAIT)) == -1)
+        #expect(
+            unsafe recv(
+                sockets[1],
+                &byte,
+                1,
+                Int32(MSG_DONTWAIT)) == -1)
         #expect(errno == EAGAIN || errno == EWOULDBLOCK)
     }
 }

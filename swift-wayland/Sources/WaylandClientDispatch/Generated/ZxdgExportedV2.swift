@@ -23,7 +23,7 @@ package protocol ZxdgExportedV2Events: AnyObject {
     func handle(_ proxy: WaylandBorrowedProxy<ZxdgExportedV2Client>, handle: String)
 }
 package extension ZxdgExportedV2Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_exported_v2_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_exported_v2_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_exported_v2_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_exported_v2_events())
         unsafe p.pointee.handle = handle_impl
@@ -32,7 +32,7 @@ package extension ZxdgExportedV2Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgExportedV2Events? {
         context.owner as? any ZxdgExportedV2Events
     }
-    private static let handle_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, handle in
+    private static let handle_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, handle in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -40,13 +40,7 @@ package extension ZxdgExportedV2Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_handle = unsafe handle
-        MainActor.assumeIsolated {
-            unsafe eventHandler.handle(WaylandBorrowedProxy<ZxdgExportedV2Client>(eventProxy), handle: unsafe String(cString: _event_handle!))
-        }
+        unsafe h.handle(WaylandBorrowedProxy<ZxdgExportedV2Client>(proxy), handle: unsafe String(cString: handle!))
     }
 }
 package extension WaylandProxy where Interface == ZxdgExportedV2Client {

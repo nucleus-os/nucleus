@@ -3,17 +3,21 @@ import PackageDescription
 
 var packageDependencies: [Package.Dependency] = [
     .package(path: "engine"),
+    .package(name: "Nucleus", path: ".."),
     .package(path: "../third-party/swift-argument-parser"),
 ]
-var nucleusSessionDependencies: [Target.Dependency] = []
-var nucleusAndroidRuntimeDependencies: [Target.Dependency] = []
-#if os(Linux)
-packageDependencies.append(.package(name: "Nucleus", path: ".."))
-nucleusSessionDependencies.append(
-    .product(name: "NucleusSessionProtocol", package: "Nucleus"))
-nucleusAndroidRuntimeDependencies.append(
-    .product(name: "NucleusAndroidRuntimeCore", package: "Nucleus"))
-#endif
+let nucleusSessionDependencies: [Target.Dependency] = [
+    .product(
+        name: "NucleusSessionProtocol",
+        package: "Nucleus",
+        condition: .when(platforms: [.linux]))
+]
+let nucleusAndroidRuntimeDependencies: [Target.Dependency] = [
+    .product(
+        name: "NucleusAndroidRuntimeCore",
+        package: "Nucleus",
+        condition: .when(platforms: [.linux]))
+]
 
 let package = Package(
     name: "collider-cli",

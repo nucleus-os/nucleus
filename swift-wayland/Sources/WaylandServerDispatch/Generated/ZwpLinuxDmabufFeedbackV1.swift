@@ -13,15 +13,14 @@ package extension ZwpLinuxDmabufFeedbackV1Requests {
     }
 }
 package enum ZwpLinuxDmabufFeedbackV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwpLinuxDmabufFeedbackV1Requests
     package nonisolated static let maximumVersion: Int32 = 5
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_linux_dmabuf_feedback_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_linux_dmabuf_feedback_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_linux_dmabuf_feedback_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_linux_dmabuf_feedback_v1_requests(
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_dmabuf_feedback_v1(),
@@ -47,22 +46,18 @@ package enum ZwpLinuxDmabufFeedbackV1Server: WaylandServerInterface {
     package static func sendTrancheFlags(_ target: UnsafeMutablePointer<wl_resource>, flags: ZwpLinuxDmabufFeedbackV1TrancheFlags) {
         unsafe zwp_linux_dmabuf_feedback_v1_send_tranche_flags(target, flags.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLinuxDmabufFeedbackV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpLinuxDmabufFeedbackV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpLinuxDmabufFeedbackV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpLinuxDmabufFeedbackV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpLinuxDmabufFeedbackV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpLinuxDmabufFeedbackV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -140,7 +135,9 @@ package extension WlNewId where Interface == ZwpLinuxDmabufFeedbackV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpLinuxDmabufFeedbackV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any ZwpLinuxDmabufFeedbackV1Requests
+            }, installed: installed)
     }
 }
 package extension ZwpLinuxDmabufFeedbackV1Server {
@@ -151,12 +148,14 @@ package extension ZwpLinuxDmabufFeedbackV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpLinuxDmabufFeedbackV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxDmabufFeedbackV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any ZwpLinuxDmabufFeedbackV1Requests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -170,10 +169,12 @@ package extension ZwpLinuxDmabufFeedbackV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpLinuxDmabufFeedbackV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpLinuxDmabufFeedbackV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any ZwpLinuxDmabufFeedbackV1Requests
+            },
             installed: installed)
     }
 }

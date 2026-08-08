@@ -32,7 +32,7 @@ package protocol WpPresentationEvents: AnyObject {
     func clockId(_ proxy: WaylandBorrowedProxy<WpPresentationClient>, clk_id: UInt32)
 }
 package extension WpPresentationClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_presentation_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_presentation_events())
         unsafe p.pointee.clock_id = clockId_impl
@@ -41,7 +41,7 @@ package extension WpPresentationClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpPresentationEvents? {
         context.owner as? any WpPresentationEvents
     }
-    private static let clockId_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, clk_id in
+    private static let clockId_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, clk_id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -49,12 +49,7 @@ package extension WpPresentationClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.clockId(WaylandBorrowedProxy<WpPresentationClient>(eventProxy), clk_id: clk_id)
-        }
+        unsafe h.clockId(WaylandBorrowedProxy<WpPresentationClient>(proxy), clk_id: clk_id)
     }
 }
 package extension WaylandProxy where Interface == WpPresentationClient {

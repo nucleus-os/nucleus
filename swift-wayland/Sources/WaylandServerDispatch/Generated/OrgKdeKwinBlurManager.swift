@@ -8,48 +8,36 @@ package import WaylandServer
     func unset(_ request: WaylandRequest<OrgKdeKwinBlurManagerServer>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
 package enum OrgKdeKwinBlurManagerServer: WaylandServerInterface {
+    package typealias Requests = any OrgKdeKwinBlurManagerRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_org_kde_kwin_blur_manager_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_org_kde_kwin_blur_manager_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_org_kde_kwin_blur_manager_requests.self, capacity: 1)
-        unsafe vt.pointee.create = create_impl
-        unsafe vt.pointee.unset = unset_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_org_kde_kwin_blur_manager_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_org_kde_kwin_blur_manager_requests(
+            create: create_impl,
+            unset: unset_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_blur_manager(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any OrgKdeKwinBlurManagerRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any OrgKdeKwinBlurManagerRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any OrgKdeKwinBlurManagerRequests
+        return unsafe Unmanaged<WaylandDispatchBox<OrgKdeKwinBlurManagerServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let create_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
+    private static let create_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, surface in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.create(WaylandRequest<OrgKdeKwinBlurManagerServer>(requestResource), id: WlNewId<OrgKdeKwinBlurServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.create(WaylandRequest<OrgKdeKwinBlurManagerServer>(res), id: WlNewId<OrgKdeKwinBlurServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
-    private static let unset_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface in
+    private static let unset_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, surface in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe requestHandler.unset(WaylandRequest<OrgKdeKwinBlurManagerServer>(requestResource), surface: WaylandBorrowedObject<WlSurfaceServer>(_request_surface!))
-        }
+        unsafe h.unset(WaylandRequest<OrgKdeKwinBlurManagerServer>(res), surface: WaylandBorrowedObject<WlSurfaceServer>(surface!))
     }
 }
 package extension WlNewId where Interface == OrgKdeKwinBlurManagerServer {
@@ -60,7 +48,9 @@ package extension WlNewId where Interface == OrgKdeKwinBlurManagerServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: OrgKdeKwinBlurManagerServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension OrgKdeKwinBlurManagerServer {
@@ -71,12 +61,14 @@ package extension OrgKdeKwinBlurManagerServer {
         installed: @escaping (Implementation, WaylandResourceHandle<OrgKdeKwinBlurManagerServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<OrgKdeKwinBlurManagerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -90,10 +82,12 @@ package extension OrgKdeKwinBlurManagerServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<OrgKdeKwinBlurManagerServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<OrgKdeKwinBlurManagerServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

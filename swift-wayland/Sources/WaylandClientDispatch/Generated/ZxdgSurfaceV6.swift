@@ -51,7 +51,7 @@ package protocol ZxdgSurfaceV6Events: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<ZxdgSurfaceV6Client>, serial: UInt32)
 }
 package extension ZxdgSurfaceV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_surface_v6_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_surface_v6_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_surface_v6_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_surface_v6_events())
         unsafe p.pointee.configure = configure_impl
@@ -60,7 +60,7 @@ package extension ZxdgSurfaceV6Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgSurfaceV6Events? {
         context.owner as? any ZxdgSurfaceV6Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -68,12 +68,7 @@ package extension ZxdgSurfaceV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgSurfaceV6Client>(eventProxy), serial: serial)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ZxdgSurfaceV6Client>(proxy), serial: serial)
     }
 }
 package extension WaylandProxy where Interface == ZxdgSurfaceV6Client {

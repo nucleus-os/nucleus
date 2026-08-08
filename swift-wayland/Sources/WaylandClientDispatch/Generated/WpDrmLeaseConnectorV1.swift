@@ -27,7 +27,7 @@ package protocol WpDrmLeaseConnectorV1Events: AnyObject {
     func withdrawn(_ proxy: WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>)
 }
 package extension WpDrmLeaseConnectorV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_drm_lease_connector_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wp_drm_lease_connector_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wp_drm_lease_connector_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wp_drm_lease_connector_v1_events())
         unsafe p.pointee.name = name_impl
@@ -40,7 +40,7 @@ package extension WpDrmLeaseConnectorV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any WpDrmLeaseConnectorV1Events? {
         context.owner as? any WpDrmLeaseConnectorV1Events
     }
-    private static let name_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
+    private static let name_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,15 +48,9 @@ package extension WpDrmLeaseConnectorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_name = unsafe name
-        MainActor.assumeIsolated {
-            unsafe eventHandler.name(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(eventProxy), name: unsafe String(cString: _event_name!))
-        }
+        unsafe h.name(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(proxy), name: unsafe String(cString: name!))
     }
-    private static let description_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, description in
+    private static let description_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, description in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -64,15 +58,9 @@ package extension WpDrmLeaseConnectorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_description = unsafe description
-        MainActor.assumeIsolated {
-            unsafe eventHandler.description(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(eventProxy), description: unsafe String(cString: _event_description!))
-        }
+        unsafe h.description(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(proxy), description: unsafe String(cString: description!))
     }
-    private static let connectorId_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, connector_id in
+    private static let connectorId_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, connector_id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -80,14 +68,9 @@ package extension WpDrmLeaseConnectorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.connectorId(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(eventProxy), connector_id: connector_id)
-        }
+        unsafe h.connectorId(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(proxy), connector_id: connector_id)
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -95,14 +78,9 @@ package extension WpDrmLeaseConnectorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(proxy))
     }
-    private static let withdrawn_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let withdrawn_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -110,12 +88,7 @@ package extension WpDrmLeaseConnectorV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.withdrawn(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(eventProxy))
-        }
+        unsafe h.withdrawn(WaylandBorrowedProxy<WpDrmLeaseConnectorV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == WpDrmLeaseConnectorV1Client {

@@ -15,17 +15,16 @@ package extension WpColorManagementSurfaceFeedbackV1Requests {
     }
 }
 package enum WpColorManagementSurfaceFeedbackV1Server: WaylandServerInterface {
+    package typealias Requests = any WpColorManagementSurfaceFeedbackV1Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wp_color_management_surface_feedback_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wp_color_management_surface_feedback_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wp_color_management_surface_feedback_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.get_preferred = getPreferred_impl
-        unsafe vt.pointee.get_preferred_parametric = getPreferredParametric_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wp_color_management_surface_feedback_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wp_color_management_surface_feedback_v1_requests(
+            destroy: destroy_impl,
+            get_preferred: getPreferred_impl,
+            get_preferred_parametric: getPreferredParametric_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_color_management_surface_feedback_v1(),
@@ -36,47 +35,33 @@ package enum WpColorManagementSurfaceFeedbackV1Server: WaylandServerInterface {
     package static func sendPreferredChanged2(_ target: UnsafeMutablePointer<wl_resource>, identity_hi: UInt32, identity_lo: UInt32) {
         unsafe wp_color_management_surface_feedback_v1_send_preferred_changed2(target, identity_hi, identity_lo)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpColorManagementSurfaceFeedbackV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WpColorManagementSurfaceFeedbackV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WpColorManagementSurfaceFeedbackV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<WpColorManagementSurfaceFeedbackV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let getPreferred_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
+    private static let getPreferred_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getPreferred(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.getPreferred(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
-    private static let getPreferredParametric_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
+    private static let getPreferredParametric_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, image_description in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.getPreferredParametric(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(requestResource), image_description: WlNewId<WpImageDescriptionV1Server>(client: requestClient, id: image_description, version: Swift::min(wl_resource_get_version(requestResource), Int32(2))))
-        }
+        unsafe h.getPreferredParametric(WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>(res), image_description: WlNewId<WpImageDescriptionV1Server>(client: client, id: image_description, version: Swift::min(wl_resource_get_version(res), Int32(2))))
     }
 }
 package extension WaylandResourceHandle where Interface == WpColorManagementSurfaceFeedbackV1Server {
@@ -123,7 +108,9 @@ package extension WlNewId where Interface == WpColorManagementSurfaceFeedbackV1S
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpColorManagementSurfaceFeedbackV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WpColorManagementSurfaceFeedbackV1Server {
@@ -134,12 +121,14 @@ package extension WpColorManagementSurfaceFeedbackV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<WpColorManagementSurfaceFeedbackV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpColorManagementSurfaceFeedbackV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -153,10 +142,12 @@ package extension WpColorManagementSurfaceFeedbackV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpColorManagementSurfaceFeedbackV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpColorManagementSurfaceFeedbackV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

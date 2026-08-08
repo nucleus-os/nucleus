@@ -39,7 +39,7 @@ package protocol XdgToplevelIconManagerV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>)
 }
 package extension XdgToplevelIconManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_toplevel_icon_manager_v1_events())
         unsafe p.pointee.icon_size = iconSize_impl
@@ -49,7 +49,7 @@ package extension XdgToplevelIconManagerV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgToplevelIconManagerV1Events? {
         context.owner as? any XdgToplevelIconManagerV1Events
     }
-    private static let iconSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, size in
+    private static let iconSize_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, size in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -57,14 +57,9 @@ package extension XdgToplevelIconManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.iconSize(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy), size: size)
-        }
+        unsafe h.iconSize(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(proxy), size: size)
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -72,12 +67,7 @@ package extension XdgToplevelIconManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy))
-        }
+        unsafe h.done(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {

@@ -79,7 +79,7 @@ package protocol ZwlrLayerSurfaceV1Events: AnyObject {
     func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>)
 }
 package extension ZwlrLayerSurfaceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_layer_surface_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwlr_layer_surface_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwlr_layer_surface_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwlr_layer_surface_v1_events())
         unsafe p.pointee.configure = configure_impl
@@ -89,7 +89,7 @@ package extension ZwlrLayerSurfaceV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrLayerSurfaceV1Events? {
         context.owner as? any ZwlrLayerSurfaceV1Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -97,14 +97,9 @@ package extension ZwlrLayerSurfaceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy), serial: serial, width: width, height: height)
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(proxy), serial: serial, width: width, height: height)
     }
-    private static let closed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let closed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -112,12 +107,7 @@ package extension ZwlrLayerSurfaceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.closed(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy))
-        }
+        unsafe h.closed(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {

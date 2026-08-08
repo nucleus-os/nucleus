@@ -5,10 +5,16 @@ package import WaylandServerC
 package import WaylandServer
 package import WaylandProtocolTypes
 package enum WpPresentationFeedbackServer: WaylandServerInterface {
+    package typealias Requests = AnyObject
     package nonisolated static let maximumVersion: Int32 = 2
+    nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
+        let vtable = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: 0)
+        return UnsafeRawPointer(vtable)
+    }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_presentation_feedback(),
-        nativeRequestVtable: nil)
+        nativeRequestVtable: nativeRequestVtable)
     package static func sendSyncOutput(_ target: UnsafeMutablePointer<wl_resource>, output: UnsafeMutablePointer<wl_resource>?) {
         unsafe wp_presentation_feedback_send_sync_output(target, output)
     }
@@ -56,7 +62,9 @@ package extension WlNewId where Interface == WpPresentationFeedbackServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WpPresentationFeedbackServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
     @discardableResult
     @MainActor
@@ -72,12 +80,14 @@ package extension WpPresentationFeedbackServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WpPresentationFeedbackServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WpPresentationFeedbackServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -91,10 +101,12 @@ package extension WpPresentationFeedbackServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WpPresentationFeedbackServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WpPresentationFeedbackServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

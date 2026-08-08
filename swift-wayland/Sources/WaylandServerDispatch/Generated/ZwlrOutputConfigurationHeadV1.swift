@@ -13,90 +13,64 @@ package import WaylandProtocolTypes
     func setAdaptiveSync(_ request: WaylandRequest<ZwlrOutputConfigurationHeadV1Server>, state: ZwlrOutputHeadV1AdaptiveSyncState)
 }
 package enum ZwlrOutputConfigurationHeadV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwlrOutputConfigurationHeadV1Requests
     package nonisolated static let maximumVersion: Int32 = 4
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwlr_output_configuration_head_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwlr_output_configuration_head_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwlr_output_configuration_head_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.set_mode = setMode_impl
-        unsafe vt.pointee.set_custom_mode = setCustomMode_impl
-        unsafe vt.pointee.set_position = setPosition_impl
-        unsafe vt.pointee.set_transform = setTransform_impl
-        unsafe vt.pointee.set_scale = setScale_impl
-        unsafe vt.pointee.set_adaptive_sync = setAdaptiveSync_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwlr_output_configuration_head_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwlr_output_configuration_head_v1_requests(
+            set_mode: setMode_impl,
+            set_custom_mode: setCustomMode_impl,
+            set_position: setPosition_impl,
+            set_transform: setTransform_impl,
+            set_scale: setScale_impl,
+            set_adaptive_sync: setAdaptiveSync_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_output_configuration_head_v1(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrOutputConfigurationHeadV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrOutputConfigurationHeadV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrOutputConfigurationHeadV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwlrOutputConfigurationHeadV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setMode_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, mode in
+    private static let setMode_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, mode in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_mode = unsafe mode
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMode(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), mode: WaylandBorrowedObject<ZwlrOutputModeV1Server>(_request_mode!))
-        }
+        unsafe h.setMode(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), mode: WaylandBorrowedObject<ZwlrOutputModeV1Server>(mode!))
     }
-    private static let setCustomMode_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32) -> Void = { _, res, width, height, refresh in
+    private static let setCustomMode_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, Int32) -> Void = { _, res, width, height, refresh in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setCustomMode(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), width: width, height: height, refresh: refresh)
-        }
+        unsafe h.setCustomMode(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), width: width, height: height, refresh: refresh)
     }
-    private static let setPosition_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
+    private static let setPosition_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32, Int32) -> Void = { _, res, x, y in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setPosition(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), x: x, y: y)
-        }
+        unsafe h.setPosition(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), x: x, y: y)
     }
-    private static let setTransform_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, transform in
+    private static let setTransform_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, transform in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTransform(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), transform: WlOutputTransform(rawValue: UInt32(bitPattern: transform)))
-        }
+        unsafe h.setTransform(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), transform: WlOutputTransform(rawValue: UInt32(bitPattern: transform)))
     }
-    private static let setScale_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t) -> Void = { _, res, scale in
+    private static let setScale_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, wl_fixed_t) -> Void = { _, res, scale in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setScale(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), scale: swift_wayland_fixed_to_double(scale))
-        }
+        unsafe h.setScale(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), scale: swift_wayland_fixed_to_double(scale))
     }
-    private static let setAdaptiveSync_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, state in
+    private static let setAdaptiveSync_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, state in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setAdaptiveSync(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(requestResource), state: ZwlrOutputHeadV1AdaptiveSyncState(rawValue: state))
-        }
+        unsafe h.setAdaptiveSync(WaylandRequest<ZwlrOutputConfigurationHeadV1Server>(res), state: ZwlrOutputHeadV1AdaptiveSyncState(rawValue: state))
     }
 }
 package extension WaylandRequest where Interface == ZwlrOutputConfigurationHeadV1Server {
@@ -118,7 +92,9 @@ package extension WlNewId where Interface == ZwlrOutputConfigurationHeadV1Server
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwlrOutputConfigurationHeadV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwlrOutputConfigurationHeadV1Server {
@@ -129,12 +105,14 @@ package extension ZwlrOutputConfigurationHeadV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwlrOutputConfigurationHeadV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrOutputConfigurationHeadV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -148,10 +126,12 @@ package extension ZwlrOutputConfigurationHeadV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwlrOutputConfigurationHeadV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrOutputConfigurationHeadV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

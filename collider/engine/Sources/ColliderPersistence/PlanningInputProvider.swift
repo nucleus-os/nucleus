@@ -33,11 +33,8 @@ package final class PlanningInputProvider: @unchecked Sendable {
         try digests.digest(sourceCheckout: path)
     }
 
-    package func optionalSourceCheckoutDigest(
-        _ path: FilePath
-    ) throws -> ArtifactDigest? {
-        guard FileManager.default.fileExists(atPath: path.string) else { return nil }
-        return try digests.digest(sourceCheckout: path)
+    package func digest(sourceCheckoutClosure paths: [FilePath]) throws -> ArtifactDigest {
+        try digests.digest(sourceCheckoutClosure: paths)
     }
 
     package func semanticToolIdentity(

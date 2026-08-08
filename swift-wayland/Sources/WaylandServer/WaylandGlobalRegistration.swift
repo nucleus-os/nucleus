@@ -22,12 +22,12 @@ package struct WaylandGlobalSpecification<
     package init<Implementation: AnyObject, Owner: AnyObject>(
         implementation: Implementation,
         advertisedVersion: Int32,
-        vtable: UnsafeRawPointer?,
         owner:
             @escaping (
                 Implementation,
                 WaylandResourceHandle<Interface>
             ) -> Owner?,
+        handler: @escaping (Owner) -> Interface.Requests?,
         installed:
             @escaping (
                 Implementation,
@@ -45,11 +45,11 @@ package struct WaylandGlobalSpecification<
                 interface: Interface.self,
                 version: version,
                 id: id,
-                vtable: vtable,
                 owner: { handle in
                     installedHandle = handle
                     return owner(implementation, handle)
                 },
+                handler: handler,
                 installed: { resourceOwner in
                     guard let installedHandle else { return }
                     installed(

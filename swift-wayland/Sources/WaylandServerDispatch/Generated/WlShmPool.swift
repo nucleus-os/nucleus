@@ -15,61 +15,47 @@ package extension WlShmPoolRequests {
     }
 }
 package enum WlShmPoolServer: WaylandServerInterface {
+    package typealias Requests = any WlShmPoolRequests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_shm_pool_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_shm_pool_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_shm_pool_requests.self, capacity: 1)
-        unsafe vt.pointee.create_buffer = createBuffer_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.resize = resize_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_shm_pool_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_shm_pool_requests(
+            create_buffer: createBuffer_impl,
+            destroy: destroy_impl,
+            resize: resize_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shm_pool(),
         nativeRequestVtable: nativeRequestVtable)
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShmPoolRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShmPoolRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlShmPoolRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlShmPoolServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let createBuffer_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, Int32, Int32, UInt32) -> Void = { client, res, id, offset, width, height, stride, format in
+    private static let createBuffer_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, Int32, Int32, Int32, Int32, UInt32) -> Void = { client, res, id, offset, width, height, stride, format in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        MainActor.assumeIsolated {
-            unsafe requestHandler.createBuffer(WaylandRequest<WlShmPoolServer>(requestResource), id: WlNewId<WlBufferServer>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(1))), offset: offset, width: width, height: height, stride: stride, format: WlShmFormat(rawValue: format))
-        }
+        unsafe h.createBuffer(WaylandRequest<WlShmPoolServer>(res), id: WlNewId<WlBufferServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(1))), offset: offset, width: width, height: height, stride: stride, format: WlShmFormat(rawValue: format))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlShmPoolServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlShmPoolServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let resize_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, size in
+    private static let resize_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, size in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.resize(WaylandRequest<WlShmPoolServer>(requestResource), size: size)
-        }
+        unsafe h.resize(WaylandRequest<WlShmPoolServer>(res), size: size)
     }
 }
 package extension WlNewId where Interface == WlShmPoolServer {
@@ -80,7 +66,9 @@ package extension WlNewId where Interface == WlShmPoolServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlShmPoolServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlShmPoolServer {
@@ -91,12 +79,14 @@ package extension WlShmPoolServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlShmPoolServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShmPoolServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -110,10 +100,12 @@ package extension WlShmPoolServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlShmPoolServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShmPoolServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

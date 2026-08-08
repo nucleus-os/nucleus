@@ -17,19 +17,18 @@ package extension ZwlrOutputConfigurationV1Requests {
     }
 }
 package enum ZwlrOutputConfigurationV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwlrOutputConfigurationV1Requests
     package nonisolated static let maximumVersion: Int32 = 4
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwlr_output_configuration_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwlr_output_configuration_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwlr_output_configuration_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.enable_head = enableHead_impl
-        unsafe vt.pointee.disable_head = disableHead_impl
-        unsafe vt.pointee.apply = apply_impl
-        unsafe vt.pointee.test = test_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwlr_output_configuration_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwlr_output_configuration_v1_requests(
+            enable_head: enableHead_impl,
+            disable_head: disableHead_impl,
+            apply: apply_impl,
+            test: test_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_output_configuration_v1(),
@@ -43,65 +42,42 @@ package enum ZwlrOutputConfigurationV1Server: WaylandServerInterface {
     package static func sendCancelled(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwlr_output_configuration_v1_send_cancelled(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrOutputConfigurationV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrOutputConfigurationV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrOutputConfigurationV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwlrOutputConfigurationV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let enableHead_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, head in
+    private static let enableHead_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { client, res, id, head in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let requestClient = unsafe client
-        nonisolated(unsafe) let _request_head = unsafe head
-        MainActor.assumeIsolated {
-            unsafe requestHandler.enableHead(WaylandRequest<ZwlrOutputConfigurationV1Server>(requestResource), id: WlNewId<ZwlrOutputConfigurationHeadV1Server>(client: requestClient, id: id, version: Swift::min(wl_resource_get_version(requestResource), Int32(4))), head: WaylandBorrowedObject<ZwlrOutputHeadV1Server>(_request_head!))
-        }
+        unsafe h.enableHead(WaylandRequest<ZwlrOutputConfigurationV1Server>(res), id: WlNewId<ZwlrOutputConfigurationHeadV1Server>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(4))), head: WaylandBorrowedObject<ZwlrOutputHeadV1Server>(head!))
     }
-    private static let disableHead_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, head in
+    private static let disableHead_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, head in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_head = unsafe head
-        MainActor.assumeIsolated {
-            unsafe requestHandler.disableHead(WaylandRequest<ZwlrOutputConfigurationV1Server>(requestResource), head: WaylandBorrowedObject<ZwlrOutputHeadV1Server>(_request_head!))
-        }
+        unsafe h.disableHead(WaylandRequest<ZwlrOutputConfigurationV1Server>(res), head: WaylandBorrowedObject<ZwlrOutputHeadV1Server>(head!))
     }
-    private static let apply_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let apply_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.apply(WaylandRequest<ZwlrOutputConfigurationV1Server>(requestResource))
-        }
+        unsafe h.apply(WaylandRequest<ZwlrOutputConfigurationV1Server>(res))
     }
-    private static let test_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let test_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.test(WaylandRequest<ZwlrOutputConfigurationV1Server>(requestResource))
-        }
+        unsafe h.test(WaylandRequest<ZwlrOutputConfigurationV1Server>(res))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwlrOutputConfigurationV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwlrOutputConfigurationV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -152,7 +128,9 @@ package extension WlNewId where Interface == ZwlrOutputConfigurationV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwlrOutputConfigurationV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwlrOutputConfigurationV1Server {
@@ -163,12 +141,14 @@ package extension ZwlrOutputConfigurationV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwlrOutputConfigurationV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrOutputConfigurationV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -182,10 +162,12 @@ package extension ZwlrOutputConfigurationV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwlrOutputConfigurationV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrOutputConfigurationV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

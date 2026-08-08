@@ -12,15 +12,14 @@ package extension ZwpTabletSeatV2Requests {
     }
 }
 package enum ZwpTabletSeatV2Server: WaylandServerInterface {
+    package typealias Requests = any ZwpTabletSeatV2Requests
     package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwp_tablet_seat_v2_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwp_tablet_seat_v2_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwp_tablet_seat_v2_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwp_tablet_seat_v2_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwp_tablet_seat_v2_requests(
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_seat_v2(),
@@ -34,22 +33,18 @@ package enum ZwpTabletSeatV2Server: WaylandServerInterface {
     package static func sendPadAdded(_ target: UnsafeMutablePointer<wl_resource>, id: UnsafeMutablePointer<wl_resource>?) {
         unsafe zwp_tablet_seat_v2_send_pad_added(target, id)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletSeatV2Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwpTabletSeatV2Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwpTabletSeatV2Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwpTabletSeatV2Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwpTabletSeatV2Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwpTabletSeatV2Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -80,6 +75,9 @@ package extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server
                 version ?? 1,
                 ZwpTabletV2Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0 as? any ZwpTabletV2Requests
+            },
             installed: installed,
             publish: {
                 sendTabletAdded(id: $0)
@@ -109,6 +107,9 @@ package extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server
                 version ?? 1,
                 ZwpTabletToolV2Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendToolAdded(id: $0)
@@ -138,6 +139,9 @@ package extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server
                 version ?? 1,
                 ZwpTabletPadV2Server.maximumVersion),
             owner: owner,
+            handler: {
+                $0
+            },
             installed: installed,
             publish: {
                 sendPadAdded(id: $0)
@@ -152,7 +156,9 @@ package extension WlNewId where Interface == ZwpTabletSeatV2Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwpTabletSeatV2Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0 as? any ZwpTabletSeatV2Requests
+            }, installed: installed)
     }
 }
 package extension ZwpTabletSeatV2Server {
@@ -163,12 +169,14 @@ package extension ZwpTabletSeatV2Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwpTabletSeatV2Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletSeatV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0 as? any ZwpTabletSeatV2Requests
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -182,10 +190,12 @@ package extension ZwpTabletSeatV2Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwpTabletSeatV2Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwpTabletSeatV2Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0 as? any ZwpTabletSeatV2Requests
+            },
             installed: installed)
     }
 }

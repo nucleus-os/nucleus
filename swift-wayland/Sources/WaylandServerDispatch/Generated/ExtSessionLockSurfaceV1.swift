@@ -14,16 +14,15 @@ package extension ExtSessionLockSurfaceV1Requests {
     }
 }
 package enum ExtSessionLockSurfaceV1Server: WaylandServerInterface {
+    package typealias Requests = any ExtSessionLockSurfaceV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_ext_session_lock_surface_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_ext_session_lock_surface_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_ext_session_lock_surface_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.ack_configure = ackConfigure_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_ext_session_lock_surface_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_ext_session_lock_surface_v1_requests(
+            destroy: destroy_impl,
+            ack_configure: ackConfigure_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_session_lock_surface_v1(),
@@ -31,35 +30,27 @@ package enum ExtSessionLockSurfaceV1Server: WaylandServerInterface {
     package static func sendConfigure(_ target: UnsafeMutablePointer<wl_resource>, serial: UInt32, width: UInt32, height: UInt32) {
         unsafe ext_session_lock_surface_v1_send_configure(target, serial, width, height)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtSessionLockSurfaceV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ExtSessionLockSurfaceV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ExtSessionLockSurfaceV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ExtSessionLockSurfaceV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ExtSessionLockSurfaceV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ExtSessionLockSurfaceV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let ackConfigure_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
+    private static let ackConfigure_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.ackConfigure(WaylandRequest<ExtSessionLockSurfaceV1Server>(requestResource), serial: serial)
-        }
+        unsafe h.ackConfigure(WaylandRequest<ExtSessionLockSurfaceV1Server>(res), serial: serial)
     }
 }
 package extension WaylandResourceHandle where Interface == ExtSessionLockSurfaceV1Server {
@@ -91,7 +82,9 @@ package extension WlNewId where Interface == ExtSessionLockSurfaceV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ExtSessionLockSurfaceV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ExtSessionLockSurfaceV1Server {
@@ -102,12 +95,14 @@ package extension ExtSessionLockSurfaceV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ExtSessionLockSurfaceV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtSessionLockSurfaceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -121,10 +116,12 @@ package extension ExtSessionLockSurfaceV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ExtSessionLockSurfaceV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ExtSessionLockSurfaceV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

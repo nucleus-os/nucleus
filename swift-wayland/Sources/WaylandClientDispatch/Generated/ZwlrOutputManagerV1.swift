@@ -29,7 +29,7 @@ package protocol ZwlrOutputManagerV1Events: AnyObject {
     func finished(_ proxy: WaylandBorrowedProxy<ZwlrOutputManagerV1Client>)
 }
 package extension ZwlrOutputManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_output_manager_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwlr_output_manager_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwlr_output_manager_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwlr_output_manager_v1_events())
         unsafe p.pointee.head = head_impl
@@ -40,7 +40,7 @@ package extension ZwlrOutputManagerV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrOutputManagerV1Events? {
         context.owner as? any ZwlrOutputManagerV1Events
     }
-    private static let head_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, head in
+    private static let head_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, head in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -48,15 +48,9 @@ package extension ZwlrOutputManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_head = unsafe head
-        MainActor.assumeIsolated {
-            unsafe eventHandler.head(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(eventProxy), head: WaylandProxy<ZwlrOutputHeadV1Client>(adopting: _event_head!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.head(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(proxy), head: WaylandProxy<ZwlrOutputHeadV1Client>(adopting: head!, connectionLifetime: listenerContext.connectionLifetime))
     }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+    private static let done_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -64,14 +58,9 @@ package extension ZwlrOutputManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(eventProxy), serial: serial)
-        }
+        unsafe h.done(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(proxy), serial: serial)
     }
-    private static let finished_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let finished_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -79,12 +68,7 @@ package extension ZwlrOutputManagerV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.finished(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(eventProxy))
-        }
+        unsafe h.finished(WaylandBorrowedProxy<ZwlrOutputManagerV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwlrOutputManagerV1Client {

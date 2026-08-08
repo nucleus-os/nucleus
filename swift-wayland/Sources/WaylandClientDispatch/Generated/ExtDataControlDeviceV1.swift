@@ -38,7 +38,7 @@ package protocol ExtDataControlDeviceV1Events: AnyObject {
     func primarySelection(_ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>, id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?)
 }
 package extension ExtDataControlDeviceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_device_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_device_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_ext_data_control_device_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_ext_data_control_device_v1_events())
         unsafe p.pointee.data_offer = dataOffer_impl
@@ -50,7 +50,7 @@ package extension ExtDataControlDeviceV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ExtDataControlDeviceV1Events? {
         context.owner as? any ExtDataControlDeviceV1Events
     }
-    private static let dataOffer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let dataOffer_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -58,15 +58,9 @@ package extension ExtDataControlDeviceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.dataOffer(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(eventProxy), id: WaylandProxy<ExtDataControlOfferV1Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.dataOffer(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(proxy), id: WaylandProxy<ExtDataControlOfferV1Client>(adopting: id!, connectionLifetime: listenerContext.connectionLifetime))
     }
-    private static let selection_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let selection_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -74,15 +68,9 @@ package extension ExtDataControlDeviceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.selection(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(eventProxy), id: _event_id == nil ? nil : .some(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(_event_id!)))
-        }
+        unsafe h.selection(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(proxy), id: id == nil ? nil : .some(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(id!)))
     }
-    private static let finished_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let finished_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -90,14 +78,9 @@ package extension ExtDataControlDeviceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.finished(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(eventProxy))
-        }
+        unsafe h.finished(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(proxy))
     }
-    private static let primarySelection_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+    private static let primarySelection_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -105,13 +88,7 @@ package extension ExtDataControlDeviceV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.primarySelection(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(eventProxy), id: _event_id == nil ? nil : .some(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(_event_id!)))
-        }
+        unsafe h.primarySelection(WaylandBorrowedProxy<ExtDataControlDeviceV1Client>(proxy), id: id == nil ? nil : .some(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(id!)))
     }
 }
 package extension WaylandProxy where Interface == ExtDataControlDeviceV1Client {

@@ -417,12 +417,12 @@ package enum SwiftWaylandGenerator {
                 for iface in proto.interfaces where iface.requestCount > 0 {
                     // Generate every table from the selected XML. This keeps core protocols
                     // independent of the distribution header version and gives extension
-                    // protocols first-party callback fields that carry Swift isolation.
+                    // protocols first-party callback types that carry Swift isolation.
                     out += "typedef struct swift_wayland_\(iface.name)_requests {\n"
                     for request in iface.requests {
                         let parameters = serverRequestParameters(request)
                         out +=
-                            "    void (*\(callbackFieldName(request.name)))(\(parameters.joined(separator: ", "))) NUCLEUS_WL_MAIN_ACTOR;\n"
+                            "    void (NUCLEUS_WL_MAIN_ACTOR *\(callbackFieldName(request.name)))(\(parameters.joined(separator: ", ")));\n"
                     }
                     out += "} swift_wayland_\(iface.name)_requests;\n"
                     if proto.name != "wayland" {
@@ -439,7 +439,7 @@ package enum SwiftWaylandGenerator {
                     for event in iface.events {
                         let parameters = clientEventParameters(event)
                         out +=
-                            "    void (*\(callbackFieldName(event.name)))(\(parameters.joined(separator: ", "))) NUCLEUS_WL_MAIN_ACTOR;\n"
+                            "    void (NUCLEUS_WL_MAIN_ACTOR *\(callbackFieldName(event.name)))(\(parameters.joined(separator: ", ")));\n"
                     }
                     out += "};\n"
                     out +=
@@ -557,10 +557,7 @@ package enum SwiftWaylandGenerator {
         }
 
         func requestArgumentExpression(_ argument: WArg, in interface: Iface) -> String {
-            let raw =
-                ["object", "string", "array"].contains(argument.type)
-                ? "_request_\(argument.name)"
-                : esc(argument.name)
+            let raw = esc(argument.name)
             let label = esc(argument.name)
             switch argument.type {
             case "int" where argument.enumName != nil:
@@ -737,31 +734,6 @@ package enum SwiftWaylandGenerator {
             func isPureDestructor(_ m: WMsg) -> Bool {
                 m.isDestructor && !m.args.contains { $0.type == "new_id" }
             }
-            func actorArgumentName(_ argument: WArg) -> String {
-                ["object", "string", "array"].contains(argument.type)
-                    ? "_request_\(argument.name)"
-                    : esc(argument.name)
-            }
-            func actorBoundaryBindingLines(
-                for request: WMsg,
-                includeClient: Bool
-            ) -> [String] {
-                var bindings = [
-                    "nonisolated(unsafe) let requestHandler = h",
-                    "nonisolated(unsafe) let requestResource = unsafe res",
-                ]
-                if includeClient {
-                    bindings.append(
-                        "nonisolated(unsafe) let requestClient = unsafe client")
-                }
-                for argument in request.args
-                where ["object", "string", "array"].contains(argument.type) {
-                    let name = esc(argument.name)
-                    bindings.append(
-                        "nonisolated(unsafe) let \(actorArgumentName(argument)) = unsafe \(name)")
-                }
-                return bindings
-            }
             func declaration(_ lines: [String]) -> DeclSyntax {
                 DeclSyntax(stringLiteral: lines.joined(separator: "\n"))
             }
@@ -786,6 +758,7 @@ package enum SwiftWaylandGenerator {
                     }
                     let dispatchesRequests =
                         !isLibwaylandBootstrap && !hasUntypedNewID && !iface.requests.isEmpty
+                    let hasRuntimeOwnedVtable = !isLibwaylandBootstrap
                     let emitsEvents = !isLibwaylandBootstrap && !iface.events.isEmpty
                     let P = upperCamel(iface.name)
                     var source = SwiftSourceFileBuilder()
@@ -855,39 +828,49 @@ package enum SwiftWaylandGenerator {
 
                     var serverMembers: [DeclSyntax] = [
                         declaration([
+                            "package typealias Requests = \(dispatchesRequests ? "any \(P)Requests" : "AnyObject")"
+                        ]),
+                        declaration([
                             "package nonisolated static let maximumVersion: Int32 = \(iface.version)"
-                        ])
+                        ]),
                     ]
                     if dispatchesRequests {
                         var vtableLines = [
                             "nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {",
-                            "    let size = MemoryLayout<swift_wayland_\(iface.name)_requests>.stride",
-                            "    let raw = UnsafeMutableRawPointer.allocate(",
-                            "        byteCount: size, alignment: MemoryLayout<swift_wayland_\(iface.name)_requests>.alignment)",
-                            "    unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)",
-                            "    let vt = unsafe raw.bindMemory(to: swift_wayland_\(iface.name)_requests.self, capacity: 1)",
+                            "    let vtable = UnsafeMutablePointer<swift_wayland_\(iface.name)_requests>.allocate(capacity: 1)",
+                            "    unsafe vtable.initialize(to: swift_wayland_\(iface.name)_requests(",
                         ]
-                        for r in iface.requests {
+                        for (index, r) in iface.requests.enumerated() {
                             let field =
                                 cxxKeywordIdentifiers.contains(r.name)
                                 ? "swift_wayland_wl_kw_\(r.name)" : r.name
                             // Escape the COMPOSED impl name (`import_impl`, not `` `import` ``+`_impl`) so a
                             // request whose name is a Swift keyword yields a valid identifier.
                             vtableLines.append(
-                                "    unsafe vt.pointee.\(field) = \(esc(lowerCamel(r.name) + "_impl"))"
+                                "        \(field): \(esc(lowerCamel(r.name) + "_impl"))\(index == iface.requests.count - 1 ? "" : ",")"
                             )
                         }
                         vtableLines.append(contentsOf: [
-                            "    return UnsafeRawPointer(raw)",
+                            "    ))",
+                            "    return UnsafeRawPointer(vtable)",
                             "}()",
                         ])
                         serverMembers.append(declaration(vtableLines))
+                    } else if hasRuntimeOwnedVtable {
+                        serverMembers.append(
+                            declaration([
+                                "nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {",
+                                "    let vtable = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)",
+                                "    unsafe vtable.initialize(to: 0)",
+                                "    return UnsafeRawPointer(vtable)",
+                                "}()",
+                            ]))
                     }
                     serverMembers.append(
                         declaration([
                             "package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(",
                             "    nativeInterface: swift_wayland_iface_\(iface.name)(),",
-                            "    nativeRequestVtable: \(dispatchesRequests ? "nativeRequestVtable" : "nil"))",
+                            "    nativeRequestVtable: \(hasRuntimeOwnedVtable ? "nativeRequestVtable" : "nil"))",
                         ]))
 
                     for e in emitsEvents ? iface.events : [] {
@@ -918,9 +901,9 @@ package enum SwiftWaylandGenerator {
                     if dispatchesRequests {
                         serverMembers.append(
                             declaration([
-                                "private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any \(P)Requests? {",
+                                "@MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any \(P)Requests? {",
                                 "    guard let ud = unsafe wl_resource_get_user_data(res) else { return nil }",
-                                "    return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any \(P)Requests",
+                                "    return unsafe Unmanaged<WaylandDispatchBox<\(P)Server>>.fromOpaque(ud).takeUnretainedValue().handler",
                                 "}",
                             ]))
                     }
@@ -940,16 +923,12 @@ package enum SwiftWaylandGenerator {
                             let dcp = (["_", "res"] + r.args.map { esc($0.name) }).joined(
                                 separator: ", ")
                             var lines = [
-                                "private static let \(vname): @convention(c) (\(cparams)) -> Void = { \(dcp) in",
+                                "private static let \(vname): @MainActor @Sendable @convention(c) (\(cparams)) -> Void = { \(dcp) in",
                                 "    guard let res = unsafe res else { return }",
                                 "    if let h = unsafe handler(res) {",
                             ]
-                            lines.append(
-                                contentsOf: actorBoundaryBindingLines(
-                                    for: r, includeClient: false
-                                ).map { "        \($0)" })
                             lines.append(contentsOf: [
-                                "        MainActor.assumeIsolated { unsafe requestHandler.\(esc(lowerCamel(r.name)))(WaylandRequest<\(P)Server>(requestResource)\(extra)) }",
+                                "        unsafe h.\(esc(lowerCamel(r.name)))(WaylandRequest<\(P)Server>(res)\(extra))",
                                 "    } else {",
                                 "        unsafe wl_resource_destroy(res)",
                                 "    }",
@@ -962,7 +941,7 @@ package enum SwiftWaylandGenerator {
                         let cp = ([hasNewId ? "client" : "_", "res"] + r.args.map { esc($0.name) })
                             .joined(separator: ", ")
                         var lines = [
-                            "private static let \(vname): @convention(c) (\(cparams)) -> Void = { \(cp) in"
+                            "private static let \(vname): @MainActor @Sendable @convention(c) (\(cparams)) -> Void = { \(cp) in"
                         ]
                         if hasNewId {
                             // A new_id request arg becomes a WlNewId (client + wire id + resolved version +
@@ -974,47 +953,35 @@ package enum SwiftWaylandGenerator {
                                 case "new_id":
                                     let t = a.interface ?? ""
                                     call.append(
-                                        "\(esc(a.name)): WlNewId<\(upperCamel(t))Server>(client: requestClient, id: \(esc(a.name)), version: Swift::min(wl_resource_get_version(requestResource), Int32(\(ifaceVersion[t] ?? 1))))"
+                                        "\(esc(a.name)): WlNewId<\(upperCamel(t))Server>(client: client, id: \(esc(a.name)), version: Swift::min(wl_resource_get_version(res), Int32(\(ifaceVersion[t] ?? 1))))"
                                     )
                                 default:
                                     call.append(requestArgumentExpression(a, in: iface))
                                 }
                             }
-                            let args = (["WaylandRequest<\(P)Server>(requestResource)"] + call)
+                            let args = (["WaylandRequest<\(P)Server>(res)"] + call)
                                 .joined(separator: ", ")
                             lines.append(
                                 "    guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else { return }"
                             )
-                            lines.append(
-                                contentsOf: actorBoundaryBindingLines(
-                                    for: r, includeClient: true
-                                ).map { "    \($0)" })
                             lines.append(contentsOf: [
-                                "    MainActor.assumeIsolated {",
-                                "        unsafe requestHandler.\(esc(lowerCamel(r.name)))(\(args))",
+                                "    unsafe h.\(esc(lowerCamel(r.name)))(\(args))"
                             ])
                             // A destructor that creates an object: tear the request resource down after the
                             // handler has taken the new id (mirrors the client-side destructor semantics).
                             if r.isDestructor {
                                 lines.append(
-                                    "        unsafe wl_resource_destroy(requestResource)")
+                                    "    unsafe wl_resource_destroy(res)")
                             }
-                            lines.append("    }")
                         } else {
                             let call = r.args.map { requestArgumentExpression($0, in: iface) }
-                            let args = (["WaylandRequest<\(P)Server>(requestResource)"] + call)
+                            let args = (["WaylandRequest<\(P)Server>(res)"] + call)
                                 .joined(separator: ", ")
                             lines.append(
                                 "    guard let res = unsafe res, let h = unsafe handler(res) else { return }"
                             )
-                            lines.append(
-                                contentsOf: actorBoundaryBindingLines(
-                                    for: r, includeClient: false
-                                ).map { "    \($0)" })
                             lines.append(contentsOf: [
-                                "    MainActor.assumeIsolated {",
-                                "        unsafe requestHandler.\(esc(lowerCamel(r.name)))(\(args))",
-                                "    }",
+                                "    unsafe h.\(esc(lowerCamel(r.name)))(\(args))"
                             ])
                         }
                         lines.append("}")
@@ -1159,14 +1126,30 @@ package enum SwiftWaylandGenerator {
                                     })
                             {
                                 let child = upperCamel(createdInterfaceName)
+                                let childDispatchesRequests =
+                                    createdInterface.name != "wl_display"
+                                    && createdInterface.name != "wl_registry"
+                                    && !createdInterface.requests.contains {
+                                        $0.args.contains {
+                                            $0.type == "new_id" && $0.interface == nil
+                                        }
+                                    }
+                                    && !createdInterface.requests.isEmpty
                                 let childRequiresPolicyOwner =
-                                    createdInterface.requests.contains {
+                                    childDispatchesRequests
+                                    && createdInterface.requests.contains {
                                         !isPureDestructor($0)
                                     }
                                 let childOwnerConstraint =
                                     childRequiresPolicyOwner
                                     ? "\(child)Requests"
                                     : "AnyObject"
+                                let childHandler =
+                                    childDispatchesRequests
+                                    ? (childRequiresPolicyOwner
+                                        ? "{ $0 }"
+                                        : "{ $0 as? any \(child)Requests }")
+                                    : "{ $0 }"
                                 let argumentName =
                                     esc(createdArguments[0].name)
                                 eventMembers.append(
@@ -1183,6 +1166,7 @@ package enum SwiftWaylandGenerator {
                                         "            version ?? 1,",
                                         "            \(child)Server.maximumVersion),",
                                         "        owner: owner,",
+                                        "        handler: \(childHandler),",
                                         "        installed: installed,",
                                         "        publish: {",
                                         "            send\(upperCamel(event.name))(\(argumentName): $0)",
@@ -1238,6 +1222,12 @@ package enum SwiftWaylandGenerator {
                         requiresPolicyOwner
                         ? "\(P)Requests"
                         : "AnyObject"
+                    let handlerBinding =
+                        dispatchesRequests
+                        ? (requiresPolicyOwner
+                            ? "{ $0 }"
+                            : "{ $0 as? any \(P)Requests }")
+                        : "{ $0 }"
                     var newIDMembers = [
                         declaration([
                             "@discardableResult",
@@ -1246,7 +1236,7 @@ package enum SwiftWaylandGenerator {
                             "    owner: (WaylandResourceHandle<\(P)Server>) -> Owner?,",
                             "    installed: (Owner) -> Void = { _ in }",
                             ") -> Owner? {",
-                            "    unsafe _create(vtable: \(P)Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)",
+                            "    _create(owner: owner, handler: \(handlerBinding), installed: installed)",
                             "}",
                         ])
                     ]
@@ -1281,11 +1271,11 @@ package enum SwiftWaylandGenerator {
                             "    advertisedVersion: Int32 = maximumVersion,",
                             "    installed: @escaping (Implementation, WaylandResourceHandle<\(P)Server>) -> Void = { _, _ in }",
                             ") -> WaylandGlobalSpecification<\(P)Server> {",
-                            "    unsafe WaylandGlobalSpecification(",
+                            "    WaylandGlobalSpecification(",
                             "        implementation: implementation,",
                             "        advertisedVersion: advertisedVersion,",
-                            "        vtable: descriptor.nativeRequestVtable,",
                             "        owner: { implementation, _ in implementation },",
+                            "        handler: \(handlerBinding),",
                             "        installed: { implementation, _, handle in",
                             "            installed(implementation, handle)",
                             "        })",
@@ -1299,10 +1289,10 @@ package enum SwiftWaylandGenerator {
                             "    owner: @escaping (Implementation, WaylandResourceHandle<\(P)Server>) -> Owner?,",
                             "    installed: @escaping (Implementation, Owner, WaylandResourceHandle<\(P)Server>) -> Void = { _, _, _ in }",
                             ") -> WaylandGlobalSpecification<\(P)Server> {",
-                            "    unsafe WaylandGlobalSpecification(",
+                            "    WaylandGlobalSpecification(",
                             "        implementation: implementation,",
                             "        advertisedVersion: advertisedVersion,",
-                            "        vtable: descriptor.nativeRequestVtable, owner: owner,",
+                            "        owner: owner, handler: \(handlerBinding),",
                             "        installed: installed)",
                             "}",
                         ])
@@ -1707,7 +1697,7 @@ package enum SwiftWaylandGenerator {
                             ] + eventMembers + ["}"]))
 
                     var listenerLines = [
-                        "nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_\(iface.name)_events> = {",
+                        "@MainActor static let listener: UnsafeMutablePointer<swift_wayland_\(iface.name)_events> = {",
                         "    let p = UnsafeMutablePointer<swift_wayland_\(iface.name)_events>.allocate(capacity: 1)",
                         "    unsafe p.initialize(to: swift_wayland_\(iface.name)_events())",
                     ]
@@ -1740,13 +1730,7 @@ package enum SwiftWaylandGenerator {
                             separator: ", ")
                         let call = e.args.map { argument in
                             let label = esc(argument.name)
-                            let needsUnsafeAlias = [
-                                "string", "array", "object", "new_id",
-                            ].contains(argument.type)
-                            let name =
-                                needsUnsafeAlias
-                                ? "_event_\(label)"
-                                : label
+                            let name = label
                             let value: String
                             if let enumeration = resolvedEnumerationName(
                                 argument, in: iface)
@@ -1790,35 +1774,16 @@ package enum SwiftWaylandGenerator {
                             return "\(label): \(value)"
                         }
                         let args =
-                            ([
-                                "WaylandBorrowedProxy<\(P)Client>(eventProxy)"
-                            ] + call)
+                            (["WaylandBorrowedProxy<\(P)Client>(proxy)"] + call)
                             .joined(separator: ", ")
-                        let isolatedArguments: [String] = e.args.compactMap {
-                            guard
-                                [
-                                    "string", "array", "object", "new_id",
-                                ].contains($0.type)
-                            else {
-                                return nil
-                            }
-                            return
-                                "    nonisolated(unsafe) let _event_\(esc($0.name)) = unsafe \(esc($0.name))"
-                        }
                         clientMembers.append(
                             clientDeclaration(
                                 [
-                                    "private static let \(vname): @convention(c) (\(cparams)) -> Void = { \(cp) in",
+                                    "private static let \(vname): @MainActor @Sendable @convention(c) (\(cparams)) -> Void = { \(cp) in",
                                     "    guard let data = unsafe data, let proxy = unsafe proxy else { return }",
                                     "    let listenerContext = unsafe WaylandClientListenerContext.recover(data)",
                                     "    guard let h = handler(listenerContext) else { return }",
-                                    "    nonisolated(unsafe) let eventHandler = h",
-                                    "    nonisolated(unsafe) let eventProxy = unsafe proxy",
-                                    "    nonisolated(unsafe) let eventContext = listenerContext",
-                                ] + isolatedArguments + [
-                                    "    MainActor.assumeIsolated {",
-                                    "        unsafe eventHandler.\(esc(lowerCamel(e.name)))(\(args.replacingOccurrences(of: "listenerContext", with: "eventContext")))",
-                                    "    }",
+                                    "    unsafe h.\(esc(lowerCamel(e.name)))(\(args))",
                                     "}",
                                 ]))
                     }

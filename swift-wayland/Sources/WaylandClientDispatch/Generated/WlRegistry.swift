@@ -34,7 +34,7 @@ package protocol WlRegistryEvents: AnyObject {
     func globalRemove(_ proxy: WaylandBorrowedProxy<WlRegistryClient>, name: UInt32)
 }
 package extension WlRegistryClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_registry_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_registry_events> = {
         let p = UnsafeMutablePointer<swift_wayland_wl_registry_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_wl_registry_events())
         unsafe p.pointee.global = global_impl
@@ -44,7 +44,7 @@ package extension WlRegistryClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlRegistryEvents? {
         context.owner as? any WlRegistryEvents
     }
-    private static let global_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { data, proxy, name, interface, version in
+    private static let global_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?, UInt32) -> Void = { data, proxy, name, interface, version in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -52,15 +52,9 @@ package extension WlRegistryClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_interface = unsafe interface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.global(WaylandBorrowedProxy<WlRegistryClient>(eventProxy), name: name, interface: unsafe String(cString: _event_interface!), version: version)
-        }
+        unsafe h.global(WaylandBorrowedProxy<WlRegistryClient>(proxy), name: name, interface: unsafe String(cString: interface!), version: version)
     }
-    private static let globalRemove_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, name in
+    private static let globalRemove_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, name in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -68,12 +62,7 @@ package extension WlRegistryClient {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.globalRemove(WaylandBorrowedProxy<WlRegistryClient>(eventProxy), name: name)
-        }
+        unsafe h.globalRemove(WaylandBorrowedProxy<WlRegistryClient>(proxy), name: name)
     }
 }
 package extension WaylandProxy where Interface == WlRegistryClient {

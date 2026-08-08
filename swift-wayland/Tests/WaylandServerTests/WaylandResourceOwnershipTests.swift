@@ -1,12 +1,50 @@
 import Glibc
 import Testing
 import WaylandServerC
+
 @testable import WaylandServer
 
 private enum TestCallbackServer: WaylandServerInterface {
+    typealias Requests = AnyObject
+
+    nonisolated(unsafe) static let nativeRequestVtable: UnsafeRawPointer = {
+        let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe storage.initialize(to: 0)
+        return UnsafeRawPointer(storage)
+    }()
     nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_callback(),
-        nativeRequestVtable: nil)
+        nativeRequestVtable: nativeRequestVtable)
+    nonisolated static let maximumVersion: Int32 = 1
+}
+
+private protocol TestRequestHandler: AnyObject {}
+
+private enum TestDispatchingCallbackServer: WaylandServerInterface {
+    typealias Requests = any TestRequestHandler
+
+    nonisolated(unsafe) static let nativeRequestVtable: UnsafeRawPointer = {
+        let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe storage.initialize(to: 0)
+        return UnsafeRawPointer(storage)
+    }()
+    nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
+        nativeInterface: swift_wayland_iface_wl_callback(),
+        nativeRequestVtable: nativeRequestVtable)
+    nonisolated static let maximumVersion: Int32 = 1
+}
+
+private enum TestSurfaceServer: WaylandServerInterface {
+    typealias Requests = AnyObject
+
+    nonisolated(unsafe) static let nativeRequestVtable: UnsafeRawPointer = {
+        let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe storage.initialize(to: 0)
+        return UnsafeRawPointer(storage)
+    }()
+    nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
+        nativeInterface: swift_wayland_iface_wl_surface(),
+        nativeRequestVtable: nativeRequestVtable)
     nonisolated static let maximumVersion: Int32 = 1
 }
 
@@ -30,18 +68,90 @@ struct WaylandResourceOwnershipTests {
     }
 
     @Test
+    func nonconformingOwnerFailsBeforeNativeAllocation() {
+        var attemptedNativeAllocation = false
+
+        let resourceWasCreated =
+            unsafe WaylandResource.create(
+                client: OpaquePointer(bitPattern: 1)!,
+                interface: TestDispatchingCallbackServer.self,
+                version: 1,
+                id: 1,
+                owner: Owner(),
+                using: { _, _, _, _ in
+                    attemptedNativeAllocation = true
+                    return nil
+                }) != nil
+
+        #expect(!resourceWasCreated)
+        #expect(!attemptedNativeAllocation)
+    }
+
+    @Test
+    func ownerRecoveryRequiresExactInterfaceAndImplementationIdentity() throws {
+        let display = try #require(WaylandDisplay(), "wl_display_create")
+        var sockets: [Int32] = [0, 0]
+        try #require(
+            unsafe socketpair(
+                AF_UNIX, Int32(SOCK_STREAM.rawValue), 0, &sockets) == 0,
+            "socketpair")
+        defer { _ = close(sockets[1]) }
+        let createdClient = unsafe display.createClient(fd: sockets[0])
+        try #require(unsafe createdClient != nil, "wl_client_create")
+        let client = unsafe createdClient!
+
+        let owner = Owner()
+        let createdOwnedResource = unsafe WaylandResource.create(
+            client: client,
+            interface: TestCallbackServer.self,
+            version: 1,
+            id: 2,
+            owner: owner)
+        try #require(
+            unsafe createdOwnedResource != nil,
+            "WaylandResource.create")
+        let ownedResource = unsafe createdOwnedResource!
+        let ownedObject = unsafe WaylandBorrowedObject<TestCallbackServer>(
+            ownedResource)
+        #expect(ownedObject.owner(as: Owner.self) === owner)
+
+        let wrongInterfaceObject = unsafe WaylandBorrowedObject<TestSurfaceServer>(
+            ownedResource)
+        #expect(wrongInterfaceObject.owner(as: Owner.self) == nil)
+
+        let createdForeignResource = unsafe wl_resource_create(
+            client,
+            TestCallbackServer.descriptor.nativeInterface,
+            1,
+            3)
+        try #require(
+            unsafe createdForeignResource != nil,
+            "wl_resource_create")
+        let foreignResource = unsafe createdForeignResource!
+        unsafe wl_resource_set_user_data(
+            foreignResource,
+            UnsafeMutableRawPointer(bitPattern: 1))
+        let foreignObject = unsafe WaylandBorrowedObject<TestCallbackServer>(
+            foreignResource)
+        #expect(foreignObject.owner(as: Owner.self) == nil)
+
+        unsafe wl_resource_destroy(foreignResource)
+        unsafe wl_resource_destroy(ownedResource)
+    }
+
+    @Test
     func failedNativeCreationDoesNotConsumeTheSwiftOwner() throws {
         var owner: Owner? = Owner()
         weak let observedOwner = owner
 
-        let resourceWasCreated = unsafe WaylandResource.create(
-            client: OpaquePointer(bitPattern: 1)!,
-            interface: nil,
-            version: 1,
-            id: 1,
-            vtable: nil,
-            owner: owner!,
-            using: { _, _, _, _ in nil }) != nil
+        let resourceWasCreated =
+            unsafe WaylandResource.create(
+                client: OpaquePointer(bitPattern: 1)!,
+                interface: TestCallbackServer.self,
+                version: 1,
+                id: 1,
+                owner: owner!,
+                using: { _, _, _, _ in nil }) != nil
 
         #expect(!resourceWasCreated)
         #expect(observedOwner === owner)
@@ -59,11 +169,11 @@ struct WaylandResourceOwnershipTests {
             interface: TestCallbackServer.self,
             version: 1,
             id: 1,
-            vtable: nil,
             owner: { handle in
                 constructed = true
                 return TypedOwner(resource: handle)
             },
+            handler: { $0 },
             installed: { _ in installed = true },
             using: { _, _, _, _ in nil })
 
@@ -84,8 +194,7 @@ struct WaylandResourceOwnershipTests {
         let createdClient = unsafe display.createClient(fd: sockets[0])
         try #require(unsafe createdClient != nil, "wl_client_create")
         let client = unsafe createdClient!
-        var observedHandle:
-            WaylandResourceHandle<TestCallbackServer>?
+        var observedHandle: WaylandResourceHandle<TestCallbackServer>?
         var installed = false
 
         let owner: TypedOwner? = unsafe WaylandResource.create(
@@ -93,11 +202,11 @@ struct WaylandResourceOwnershipTests {
             interface: TestCallbackServer.self,
             version: 1,
             id: 2,
-            vtable: nil,
             owner: { handle in
                 observedHandle = handle
                 return nil
             },
+            handler: { $0 },
             installed: { _ in installed = true },
             using: wl_resource_create)
 
@@ -125,11 +234,11 @@ struct WaylandResourceOwnershipTests {
             interface: TestCallbackServer.self,
             version: 1,
             id: 2,
-            vtable: nil,
             owner: { resource in
                 handle = resource
                 return TypedOwner(resource: resource)
             },
+            handler: { $0 },
             installed: { _ in installed = true },
             using: wl_resource_create)
         weak let observedOwner = owner
@@ -197,10 +306,9 @@ struct WaylandResourceOwnershipTests {
         let resource = unsafe createdResource!
         var owner: Owner? = Owner()
         weak let observedOwner = owner
-        var reference:
-            WaylandResourceReference<TestCallbackServer>? =
-                unsafe WaylandResourceReference(
-                    resource, retaining: owner)
+        var reference: WaylandResourceReference<TestCallbackServer>? =
+            unsafe WaylandResourceReference(
+                resource, retaining: owner)
         try #require(reference != nil, "WaylandResourceReference")
 
         owner = nil
@@ -268,6 +376,7 @@ struct WaylandResourceOwnershipTests {
                 order.append("owner")
                 return ChildOwner(resource: $0)
             },
+            handler: { $0 },
             installed: { _ in order.append("installed") },
             publish: {
                 order.append("publish")
@@ -282,8 +391,7 @@ struct WaylandResourceOwnershipTests {
         #expect(liveChild.resource.objectID != nil)
         #expect(liveChild.resource.destroy())
 
-        var ownerFailureHandle:
-            WaylandResourceHandle<TestCallbackServer>?
+        var ownerFailureHandle: WaylandResourceHandle<TestCallbackServer>?
         let ownerFailure: ChildOwner? =
             unsafe WaylandResource.createChild(
                 parent: parent,
@@ -293,6 +401,7 @@ struct WaylandResourceOwnershipTests {
                     ownerFailureHandle = $0
                     return nil
                 },
+                handler: { $0 },
                 installed: { _ in
                     Issue.record("owner failure installed a child")
                 },
@@ -304,8 +413,7 @@ struct WaylandResourceOwnershipTests {
         #expect(ownerFailure == nil)
         #expect(ownerFailureHandle?.isLive == false)
 
-        var publicationFailureHandle:
-            WaylandResourceHandle<TestCallbackServer>?
+        var publicationFailureHandle: WaylandResourceHandle<TestCallbackServer>?
         weak var publicationFailureOwner: ChildOwner?
         var publicationFailureInstalled = false
         let publicationFailure: ChildOwner? =
@@ -319,6 +427,7 @@ struct WaylandResourceOwnershipTests {
                     publicationFailureOwner = owner
                     return owner
                 },
+                handler: { $0 },
                 installed: { _ in
                     publicationFailureInstalled = true
                 },
@@ -339,6 +448,7 @@ struct WaylandResourceOwnershipTests {
                     allocationConstructedOwner = true
                     return ChildOwner(resource: $0)
                 },
+                handler: { $0 },
                 installed: { _ in },
                 publish: { _ in true },
                 using: { _, _, _, _ in nil })
@@ -353,6 +463,7 @@ struct WaylandResourceOwnershipTests {
                 interface: TestCallbackServer.self,
                 version: 1,
                 owner: { ChildOwner(resource: $0) },
+                handler: { $0 },
                 installed: { _ in },
                 publish: { _ in true },
                 using: { _, _, _, _ in

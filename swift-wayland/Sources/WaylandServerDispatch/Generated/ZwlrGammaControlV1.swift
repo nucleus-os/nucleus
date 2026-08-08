@@ -14,16 +14,15 @@ package extension ZwlrGammaControlV1Requests {
     }
 }
 package enum ZwlrGammaControlV1Server: WaylandServerInterface {
+    package typealias Requests = any ZwlrGammaControlV1Requests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_zwlr_gamma_control_v1_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_zwlr_gamma_control_v1_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_zwlr_gamma_control_v1_requests.self, capacity: 1)
-        unsafe vt.pointee.set_gamma = setGamma_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_zwlr_gamma_control_v1_requests(
+            set_gamma: setGamma_impl,
+            destroy: destroy_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_gamma_control_v1(),
@@ -34,32 +33,24 @@ package enum ZwlrGammaControlV1Server: WaylandServerInterface {
     package static func sendFailed(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe zwlr_gamma_control_v1_send_failed(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrGammaControlV1Requests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any ZwlrGammaControlV1Requests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any ZwlrGammaControlV1Requests
+        return unsafe Unmanaged<WaylandDispatchBox<ZwlrGammaControlV1Server>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let setGamma_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, fd in
+    private static let setGamma_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, Int32) -> Void = { _, res, fd in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setGamma(WaylandRequest<ZwlrGammaControlV1Server>(requestResource), fd: WaylandOwnedFileDescriptor(fd))
-        }
+        unsafe h.setGamma(WaylandRequest<ZwlrGammaControlV1Server>(res), fd: WaylandOwnedFileDescriptor(fd))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<ZwlrGammaControlV1Server>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<ZwlrGammaControlV1Server>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
@@ -102,7 +93,9 @@ package extension WlNewId where Interface == ZwlrGammaControlV1Server {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: ZwlrGammaControlV1Server.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension ZwlrGammaControlV1Server {
@@ -113,12 +106,14 @@ package extension ZwlrGammaControlV1Server {
         installed: @escaping (Implementation, WaylandResourceHandle<ZwlrGammaControlV1Server>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrGammaControlV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -132,10 +127,12 @@ package extension ZwlrGammaControlV1Server {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<ZwlrGammaControlV1Server>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<ZwlrGammaControlV1Server> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

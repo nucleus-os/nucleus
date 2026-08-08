@@ -4,10 +4,16 @@
 package import WaylandServerC
 package import WaylandServer
 package enum WlCallbackServer: WaylandServerInterface {
+    package typealias Requests = AnyObject
     package nonisolated static let maximumVersion: Int32 = 1
+    nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
+        let vtable = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: 0)
+        return UnsafeRawPointer(vtable)
+    }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_callback(),
-        nativeRequestVtable: nil)
+        nativeRequestVtable: nativeRequestVtable)
     package static func sendDone(_ target: UnsafeMutablePointer<wl_resource>, callback_data: UInt32) {
         unsafe wl_callback_send_done(target, callback_data)
     }
@@ -30,7 +36,9 @@ package extension WlNewId where Interface == WlCallbackServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlCallbackServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
     @discardableResult
     @MainActor
@@ -46,12 +54,14 @@ package extension WlCallbackServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlCallbackServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlCallbackServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -65,10 +75,12 @@ package extension WlCallbackServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlCallbackServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlCallbackServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

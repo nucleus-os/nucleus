@@ -150,7 +150,7 @@ public struct TaskPlanningServices {
     public let digestFile: (FilePath) throws -> ArtifactDigest
     public let digestTree: (FilePath) throws -> ArtifactDigest
     public let digestSourceCheckout: (FilePath) throws -> ArtifactDigest
-    public let optionalSourceCheckoutDigest: (FilePath) throws -> ArtifactDigest?
+    public let digestSourceCheckoutClosure: ([FilePath]) throws -> ArtifactDigest
     public let semanticToolIdentity:
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
@@ -163,7 +163,8 @@ public struct TaskPlanningServices {
         digestFile: @escaping (FilePath) throws -> ArtifactDigest,
         digestTree: @escaping (FilePath) throws -> ArtifactDigest,
         digestSourceCheckout: @escaping (FilePath) throws -> ArtifactDigest,
-        optionalSourceCheckoutDigest: @escaping (FilePath) throws -> ArtifactDigest?,
+        digestSourceCheckoutClosure:
+            (([FilePath]) throws -> ArtifactDigest)? = nil,
         semanticToolIdentity:
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
@@ -175,7 +176,17 @@ public struct TaskPlanningServices {
         self.digestFile = digestFile
         self.digestTree = digestTree
         self.digestSourceCheckout = digestSourceCheckout
-        self.optionalSourceCheckoutDigest = optionalSourceCheckoutDigest
+        self.digestSourceCheckoutClosure =
+            digestSourceCheckoutClosure ?? { paths in
+                var encoder = CanonicalDigestEncoder()
+                for path in paths.sorted(by: { $0.string < $1.string }) {
+                    encoder.append(tag: 1, string: path.string)
+                    encoder.append(
+                        tag: 2,
+                        bytes: try digestSourceCheckout(path).bytes)
+                }
+                return digestBytes(encoder.bytes)
+            }
         self.semanticToolIdentity = semanticToolIdentity
         self.taskState = taskState
         self.validateOutputs = validateOutputs

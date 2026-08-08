@@ -17,19 +17,18 @@ package extension WlDataOfferRequests {
     }
 }
 package enum WlDataOfferServer: WaylandServerInterface {
+    package typealias Requests = any WlDataOfferRequests
     package nonisolated static let maximumVersion: Int32 = 4
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_data_offer_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_data_offer_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_data_offer_requests.self, capacity: 1)
-        unsafe vt.pointee.accept = accept_impl
-        unsafe vt.pointee.receive = receive_impl
-        unsafe vt.pointee.destroy = destroy_impl
-        unsafe vt.pointee.finish = finish_impl
-        unsafe vt.pointee.set_actions = setActions_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_data_offer_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_data_offer_requests(
+            accept: accept_impl,
+            receive: receive_impl,
+            destroy: destroy_impl,
+            finish: finish_impl,
+            set_actions: setActions_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_data_offer(),
@@ -43,69 +42,47 @@ package enum WlDataOfferServer: WaylandServerInterface {
     package static func sendAction(_ target: UnsafeMutablePointer<wl_resource>, dnd_action: WlDataDeviceManagerDndAction) {
         unsafe wl_data_offer_send_action(target, dnd_action.rawValue)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlDataOfferRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlDataOfferRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlDataOfferRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlDataOfferServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let accept_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, mime_type in
+    private static let accept_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafePointer<CChar>?) -> Void = { _, res, serial, mime_type in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe requestHandler.accept(WaylandRequest<WlDataOfferServer>(requestResource), serial: serial, mime_type: _request_mime_type.map {
-                    unsafe String(cString: $0)
-                })
-        }
+        unsafe h.accept(WaylandRequest<WlDataOfferServer>(res), serial: serial, mime_type: mime_type.map {
+                unsafe String(cString: $0)
+            })
     }
-    private static let receive_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32) -> Void = { _, res, mime_type, fd in
+    private static let receive_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?, Int32) -> Void = { _, res, mime_type, fd in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe requestHandler.receive(WaylandRequest<WlDataOfferServer>(requestResource), mime_type: unsafe String(cString: _request_mime_type!), fd: WaylandOwnedFileDescriptor(fd))
-        }
+        unsafe h.receive(WaylandRequest<WlDataOfferServer>(res), mime_type: unsafe String(cString: mime_type!), fd: WaylandOwnedFileDescriptor(fd))
     }
-    private static let destroy_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let destroy_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {
             return
         }
         if let h = unsafe handler(res) {
-            nonisolated(unsafe) let requestHandler = h
-            nonisolated(unsafe) let requestResource = unsafe res
-            MainActor.assumeIsolated {
-                unsafe requestHandler.destroy(WaylandRequest<WlDataOfferServer>(requestResource))
-            }
+            unsafe h.destroy(WaylandRequest<WlDataOfferServer>(res))
         } else {
             unsafe wl_resource_destroy(res)
         }
     }
-    private static let finish_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let finish_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.finish(WaylandRequest<WlDataOfferServer>(requestResource))
-        }
+        unsafe h.finish(WaylandRequest<WlDataOfferServer>(res))
     }
-    private static let setActions_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, dnd_actions, preferred_action in
+    private static let setActions_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, dnd_actions, preferred_action in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setActions(WaylandRequest<WlDataOfferServer>(requestResource), dnd_actions: WlDataDeviceManagerDndAction(rawValue: dnd_actions), preferred_action: WlDataDeviceManagerDndAction(rawValue: preferred_action))
-        }
+        unsafe h.setActions(WaylandRequest<WlDataOfferServer>(res), dnd_actions: WlDataDeviceManagerDndAction(rawValue: dnd_actions), preferred_action: WlDataDeviceManagerDndAction(rawValue: preferred_action))
     }
 }
 package extension WaylandResourceHandle where Interface == WlDataOfferServer {
@@ -169,7 +146,9 @@ package extension WlNewId where Interface == WlDataOfferServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlDataOfferServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlDataOfferServer {
@@ -180,12 +159,14 @@ package extension WlDataOfferServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlDataOfferServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlDataOfferServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -199,10 +180,12 @@ package extension WlDataOfferServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlDataOfferServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlDataOfferServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

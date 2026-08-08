@@ -63,7 +63,7 @@ package protocol XdgSessionV1Events: AnyObject {
     func replaced(_ proxy: WaylandBorrowedProxy<XdgSessionV1Client>)
 }
 package extension XdgSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_session_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_xdg_session_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_xdg_session_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_xdg_session_v1_events())
         unsafe p.pointee.created = created_impl
@@ -74,7 +74,7 @@ package extension XdgSessionV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgSessionV1Events? {
         context.owner as? any XdgSessionV1Events
     }
-    private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, session_id in
+    private static let created_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, session_id in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -82,15 +82,9 @@ package extension XdgSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_session_id = unsafe session_id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.created(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy), session_id: unsafe String(cString: _event_session_id!))
-        }
+        unsafe h.created(WaylandBorrowedProxy<XdgSessionV1Client>(proxy), session_id: unsafe String(cString: session_id!))
     }
-    private static let restored_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let restored_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -98,14 +92,9 @@ package extension XdgSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.restored(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
-        }
+        unsafe h.restored(WaylandBorrowedProxy<XdgSessionV1Client>(proxy))
     }
-    private static let replaced_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let replaced_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -113,12 +102,7 @@ package extension XdgSessionV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.replaced(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
-        }
+        unsafe h.replaced(WaylandBorrowedProxy<XdgSessionV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == XdgSessionV1Client {

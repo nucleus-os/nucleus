@@ -39,6 +39,7 @@ package struct WorkspaceContext: Sendable {
     package let nativeSDKRoot: FilePath
     package let runtime: ColliderRuntime
     package let ociConfiguration: OCIRuntimeConfiguration
+    let swiftPackageGraphs: SwiftPackageGraphResolver
 
     package init(
         root: FilePath,
@@ -62,6 +63,9 @@ package struct WorkspaceContext: Sendable {
         self.nativeSDKRoot = resolvedNativeSDKRoot
         self.runtime = runtime
         self.ociConfiguration = ociConfiguration
+        swiftPackageGraphs = SwiftPackageGraphResolver(
+            cacheRoot: root.appending(".nucleus/swift-package-graphs"),
+            environment: normalizedEnvironment)
     }
 
     func repository(_ name: String) -> FilePath { root.appending(name) }

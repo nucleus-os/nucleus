@@ -17,24 +17,23 @@ package import WaylandProtocolTypes
     func setClass(_ request: WaylandRequest<WlShellSurfaceServer>, class_: String)
 }
 package enum WlShellSurfaceServer: WaylandServerInterface {
+    package typealias Requests = any WlShellSurfaceRequests
     package nonisolated static let maximumVersion: Int32 = 1
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
-        let size = MemoryLayout<swift_wayland_wl_shell_surface_requests>.stride
-        let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: size, alignment: MemoryLayout<swift_wayland_wl_shell_surface_requests>.alignment)
-        unsafe raw.initializeMemory(as: UInt8.self, repeating: 0, count: size)
-        let vt = unsafe raw.bindMemory(to: swift_wayland_wl_shell_surface_requests.self, capacity: 1)
-        unsafe vt.pointee.pong = pong_impl
-        unsafe vt.pointee.move = move_impl
-        unsafe vt.pointee.resize = resize_impl
-        unsafe vt.pointee.set_toplevel = setToplevel_impl
-        unsafe vt.pointee.set_transient = setTransient_impl
-        unsafe vt.pointee.set_fullscreen = setFullscreen_impl
-        unsafe vt.pointee.set_popup = setPopup_impl
-        unsafe vt.pointee.set_maximized = setMaximized_impl
-        unsafe vt.pointee.set_title = setTitle_impl
-        unsafe vt.pointee.set_class = setClass_impl
-        return UnsafeRawPointer(raw)
+        let vtable = UnsafeMutablePointer<swift_wayland_wl_shell_surface_requests>.allocate(capacity: 1)
+        unsafe vtable.initialize(to: swift_wayland_wl_shell_surface_requests(
+            pong: pong_impl,
+            move: move_impl,
+            resize: resize_impl,
+            set_toplevel: setToplevel_impl,
+            set_transient: setTransient_impl,
+            set_fullscreen: setFullscreen_impl,
+            set_popup: setPopup_impl,
+            set_maximized: setMaximized_impl,
+            set_title: setTitle_impl,
+            set_class: setClass_impl
+        ))
+        return UnsafeRawPointer(vtable)
     }()
     package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shell_surface(),
@@ -48,120 +47,71 @@ package enum WlShellSurfaceServer: WaylandServerInterface {
     package static func sendPopupDone(_ target: UnsafeMutablePointer<wl_resource>) {
         unsafe wl_shell_surface_send_popup_done(target)
     }
-    private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShellSurfaceRequests? {
+    @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlShellSurfaceRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
             return nil
         }
-        return unsafe Unmanaged<AnyObject>.fromOpaque(ud).takeUnretainedValue() as? any WlShellSurfaceRequests
+        return unsafe Unmanaged<WaylandDispatchBox<WlShellSurfaceServer>>.fromOpaque(ud).takeUnretainedValue().handler
     }
-    private static let pong_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
+    private static let pong_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.pong(WaylandRequest<WlShellSurfaceServer>(requestResource), serial: serial)
-        }
+        unsafe h.pong(WaylandRequest<WlShellSurfaceServer>(res), serial: serial)
     }
-    private static let move_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, seat, serial in
+    private static let move_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, seat, serial in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.move(WaylandRequest<WlShellSurfaceServer>(requestResource), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!), serial: serial)
-        }
+        unsafe h.move(WaylandRequest<WlShellSurfaceServer>(res), seat: WaylandBorrowedObject<WlSeatServer>(seat!), serial: serial)
     }
-    private static let resize_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, seat, serial, edges in
+    private static let resize_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32) -> Void = { _, res, seat, serial, edges in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        MainActor.assumeIsolated {
-            unsafe requestHandler.resize(WaylandRequest<WlShellSurfaceServer>(requestResource), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!), serial: serial, edges: WlShellSurfaceResize(rawValue: edges))
-        }
+        unsafe h.resize(WaylandRequest<WlShellSurfaceServer>(res), seat: WaylandBorrowedObject<WlSeatServer>(seat!), serial: serial, edges: WlShellSurfaceResize(rawValue: edges))
     }
-    private static let setToplevel_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
+    private static let setToplevel_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setToplevel(WaylandRequest<WlShellSurfaceServer>(requestResource))
-        }
+        unsafe h.setToplevel(WaylandRequest<WlShellSurfaceServer>(res))
     }
-    private static let setTransient_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32) -> Void = { _, res, parent, x, y, flags in
+    private static let setTransient_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32) -> Void = { _, res, parent, x, y, flags in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_parent = unsafe parent
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTransient(WaylandRequest<WlShellSurfaceServer>(requestResource), parent: WaylandBorrowedObject<WlSurfaceServer>(_request_parent!), x: x, y: y, flags: WlShellSurfaceTransient(rawValue: flags))
-        }
+        unsafe h.setTransient(WaylandRequest<WlShellSurfaceServer>(res), parent: WaylandBorrowedObject<WlSurfaceServer>(parent!), x: x, y: y, flags: WlShellSurfaceTransient(rawValue: flags))
     }
-    private static let setFullscreen_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, method, framerate, output in
+    private static let setFullscreen_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, method, framerate, output in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setFullscreen(WaylandRequest<WlShellSurfaceServer>(requestResource), method: WlShellSurfaceFullscreenMethod(rawValue: method), framerate: framerate, output: _request_output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(_request_output!)))
-        }
+        unsafe h.setFullscreen(WaylandRequest<WlShellSurfaceServer>(res), method: WlShellSurfaceFullscreenMethod(rawValue: method), framerate: framerate, output: output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(output!)))
     }
-    private static let setPopup_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32) -> Void = { _, res, seat, serial, parent, x, y, flags in
+    private static let setPopup_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?, Int32, Int32, UInt32) -> Void = { _, res, seat, serial, parent, x, y, flags in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_seat = unsafe seat
-        nonisolated(unsafe) let _request_parent = unsafe parent
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setPopup(WaylandRequest<WlShellSurfaceServer>(requestResource), seat: WaylandBorrowedObject<WlSeatServer>(_request_seat!), serial: serial, parent: WaylandBorrowedObject<WlSurfaceServer>(_request_parent!), x: x, y: y, flags: WlShellSurfaceTransient(rawValue: flags))
-        }
+        unsafe h.setPopup(WaylandRequest<WlShellSurfaceServer>(res), seat: WaylandBorrowedObject<WlSeatServer>(seat!), serial: serial, parent: WaylandBorrowedObject<WlSurfaceServer>(parent!), x: x, y: y, flags: WlShellSurfaceTransient(rawValue: flags))
     }
-    private static let setMaximized_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, output in
+    private static let setMaximized_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res, output in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_output = unsafe output
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setMaximized(WaylandRequest<WlShellSurfaceServer>(requestResource), output: _request_output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(_request_output!)))
-        }
+        unsafe h.setMaximized(WaylandRequest<WlShellSurfaceServer>(res), output: output == nil ? nil : .some(WaylandBorrowedObject<WlOutputServer>(output!)))
     }
-    private static let setTitle_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, title in
+    private static let setTitle_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, title in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_title = unsafe title
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setTitle(WaylandRequest<WlShellSurfaceServer>(requestResource), title: unsafe String(cString: _request_title!))
-        }
+        unsafe h.setTitle(WaylandRequest<WlShellSurfaceServer>(res), title: unsafe String(cString: title!))
     }
-    private static let setClass_impl: @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, class_ in
+    private static let setClass_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, res, class_ in
         guard let res = unsafe res, let h = unsafe handler(res) else {
             return
         }
-        nonisolated(unsafe) let requestHandler = h
-        nonisolated(unsafe) let requestResource = unsafe res
-        nonisolated(unsafe) let _request_class_ = unsafe class_
-        MainActor.assumeIsolated {
-            unsafe requestHandler.setClass(WaylandRequest<WlShellSurfaceServer>(requestResource), class_: unsafe String(cString: _request_class_!))
-        }
+        unsafe h.setClass(WaylandRequest<WlShellSurfaceServer>(res), class_: unsafe String(cString: class_!))
     }
 }
 package extension WaylandResourceHandle where Interface == WlShellSurfaceServer {
@@ -198,7 +148,9 @@ package extension WlNewId where Interface == WlShellSurfaceServer {
         installed: (Owner) -> Void = { _ in
         }
     ) -> Owner? {
-        unsafe _create(vtable: WlShellSurfaceServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
+        _create(owner: owner, handler: {
+                $0
+            }, installed: installed)
     }
 }
 package extension WlShellSurfaceServer {
@@ -209,12 +161,14 @@ package extension WlShellSurfaceServer {
         installed: @escaping (Implementation, WaylandResourceHandle<WlShellSurfaceServer>) -> Void = { _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShellSurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable,
             owner: { implementation, _ in
                 implementation
+            },
+            handler: {
+                $0
             },
             installed: { implementation, _, handle in
                 installed(implementation, handle)
@@ -228,10 +182,12 @@ package extension WlShellSurfaceServer {
         installed: @escaping (Implementation, Owner, WaylandResourceHandle<WlShellSurfaceServer>) -> Void = { _, _, _ in
         }
     ) -> WaylandGlobalSpecification<WlShellSurfaceServer> {
-        unsafe WaylandGlobalSpecification(
+        WaylandGlobalSpecification(
             implementation: implementation,
             advertisedVersion: advertisedVersion,
-            vtable: descriptor.nativeRequestVtable, owner: owner,
+            owner: owner, handler: {
+                $0
+            },
             installed: installed)
     }
 }

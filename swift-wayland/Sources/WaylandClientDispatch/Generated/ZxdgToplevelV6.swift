@@ -98,7 +98,7 @@ package protocol ZxdgToplevelV6Events: AnyObject {
     func close(_ proxy: WaylandBorrowedProxy<ZxdgToplevelV6Client>)
 }
 package extension ZxdgToplevelV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_toplevel_v6_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zxdg_toplevel_v6_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zxdg_toplevel_v6_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zxdg_toplevel_v6_events())
         unsafe p.pointee.configure = configure_impl
@@ -108,7 +108,7 @@ package extension ZxdgToplevelV6Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgToplevelV6Events? {
         context.owner as? any ZxdgToplevelV6Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in
+    private static let configure_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -116,15 +116,9 @@ package extension ZxdgToplevelV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_states = unsafe states
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgToplevelV6Client>(eventProxy), width: width, height: height, states: WaylandClientArrayView(_event_states!))
-        }
+        unsafe h.configure(WaylandBorrowedProxy<ZxdgToplevelV6Client>(proxy), width: width, height: height, states: WaylandClientArrayView(states!))
     }
-    private static let close_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let close_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -132,12 +126,7 @@ package extension ZxdgToplevelV6Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.close(WaylandBorrowedProxy<ZxdgToplevelV6Client>(eventProxy))
-        }
+        unsafe h.close(WaylandBorrowedProxy<ZxdgToplevelV6Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZxdgToplevelV6Client {

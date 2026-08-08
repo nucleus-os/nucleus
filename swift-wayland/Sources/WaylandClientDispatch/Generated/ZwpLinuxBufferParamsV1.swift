@@ -52,7 +52,7 @@ package protocol ZwpLinuxBufferParamsV1Events: AnyObject {
     func failed(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>)
 }
 package extension ZwpLinuxBufferParamsV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_events> = {
+    @MainActor static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_events> = {
         let p = UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_events>.allocate(capacity: 1)
         unsafe p.initialize(to: swift_wayland_zwp_linux_buffer_params_v1_events())
         unsafe p.pointee.created = created_impl
@@ -62,7 +62,7 @@ package extension ZwpLinuxBufferParamsV1Client {
     private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxBufferParamsV1Events? {
         context.owner as? any ZwpLinuxBufferParamsV1Events
     }
-    private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, buffer in
+    private static let created_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, buffer in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -70,15 +70,9 @@ package extension ZwpLinuxBufferParamsV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_buffer = unsafe buffer
-        MainActor.assumeIsolated {
-            unsafe eventHandler.created(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy), buffer: WaylandProxy<WlBufferClient>(adopting: _event_buffer!, connectionLifetime: eventContext.connectionLifetime))
-        }
+        unsafe h.created(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(proxy), buffer: WaylandProxy<WlBufferClient>(adopting: buffer!, connectionLifetime: listenerContext.connectionLifetime))
     }
-    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+    private static let failed_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
         guard let data = unsafe data, let proxy = unsafe proxy else {
             return
         }
@@ -86,12 +80,7 @@ package extension ZwpLinuxBufferParamsV1Client {
         guard let h = handler(listenerContext) else {
             return
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy))
-        }
+        unsafe h.failed(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(proxy))
     }
 }
 package extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
