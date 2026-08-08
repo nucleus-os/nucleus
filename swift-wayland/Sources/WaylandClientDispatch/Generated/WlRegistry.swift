@@ -34,9 +34,9 @@ package protocol WlRegistryEvents: AnyObject {
     func globalRemove(_ proxy: WaylandBorrowedProxy<WlRegistryClient>, name: UInt32)
 }
 package extension WlRegistryClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_registry_listener> = {
-        let p = UnsafeMutablePointer<wl_registry_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_registry_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_registry_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_registry_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_registry_events())
         unsafe p.pointee.global = global_impl
         unsafe p.pointee.global_remove = globalRemove_impl
         return unsafe p
@@ -79,7 +79,7 @@ package extension WlRegistryClient {
 package extension WaylandProxy where Interface == WlRegistryClient {
     func installListener(_ owner: any WlRegistryEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_registry_add_listener(proxy, WlRegistryClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlRegistryClient.listener, data)
         }
     }
 }

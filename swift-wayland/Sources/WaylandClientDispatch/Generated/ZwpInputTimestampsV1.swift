@@ -23,9 +23,9 @@ package protocol ZwpInputTimestampsV1Events: AnyObject {
     func timestamp(_ proxy: WaylandBorrowedProxy<ZwpInputTimestampsV1Client>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32)
 }
 package extension ZwpInputTimestampsV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_input_timestamps_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_input_timestamps_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_input_timestamps_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_input_timestamps_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_input_timestamps_v1_events())
         unsafe p.pointee.timestamp = timestamp_impl
         return unsafe p
     }()
@@ -51,7 +51,7 @@ package extension ZwpInputTimestampsV1Client {
 package extension WaylandProxy where Interface == ZwpInputTimestampsV1Client {
     func installListener(_ owner: any ZwpInputTimestampsV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_input_timestamps_v1_add_listener(proxy, ZwpInputTimestampsV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpInputTimestampsV1Client.listener, data)
         }
     }
 }

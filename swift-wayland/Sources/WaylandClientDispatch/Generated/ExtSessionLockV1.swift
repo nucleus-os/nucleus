@@ -43,9 +43,9 @@ package protocol ExtSessionLockV1Events: AnyObject {
     func finished(_ proxy: WaylandBorrowedProxy<ExtSessionLockV1Client>)
 }
 package extension ExtSessionLockV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_session_lock_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_session_lock_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_session_lock_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_session_lock_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_session_lock_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_session_lock_v1_events())
         unsafe p.pointee.locked = locked_impl
         unsafe p.pointee.finished = finished_impl
         return unsafe p
@@ -87,7 +87,7 @@ package extension ExtSessionLockV1Client {
 package extension WaylandProxy where Interface == ExtSessionLockV1Client {
     func installListener(_ owner: any ExtSessionLockV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_session_lock_v1_add_listener(proxy, ExtSessionLockV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtSessionLockV1Client.listener, data)
         }
     }
 }

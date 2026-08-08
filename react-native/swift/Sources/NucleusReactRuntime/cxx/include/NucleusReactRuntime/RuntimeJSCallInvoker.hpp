@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <memory>
 #include <thread>
@@ -36,15 +37,13 @@ class RuntimeJSCallInvoker final : public facebook::react::CallInvoker {
   // number of callbacks drained. Must be called on the JS thread.
   std::size_t drainPending();
 
-  using WakeCallback = void (*)(void *context);
-  using WakeContextRelease = void (*)(void *context);
+  using JSWorkWake = std::function<void()>;
 
   // Install the embedding host's thread-safe event-loop wake. A transition
-  // from an empty cross-thread queue to a non-empty queue signals once.
-  void setWakeHandler(
-      WakeCallback callback,
-      void *context,
-      WakeContextRelease release);
+  // from an empty cross-thread queue to a non-empty queue signals once. The
+  // wake is held through a `shared_ptr`, so replacing or clearing it retires
+  // the previous callable only after every in-flight signal has released it.
+  void setWakeHandler(JSWorkWake wake);
 
   // Stop accepting work and drop any queued callbacks. Idempotent and
   // thread-safe.
@@ -57,23 +56,11 @@ class RuntimeJSCallInvoker final : public facebook::react::CallInvoker {
   std::thread::id jsThreadId() const noexcept { return jsThreadId_; }
 
  private:
-  struct WakeEntry {
-    WakeEntry(
-        WakeCallback callback,
-        void *context,
-        WakeContextRelease release);
-    ~WakeEntry();
-
-    WakeCallback callback;
-    void *context;
-    WakeContextRelease release;
-  };
-
   facebook::jsi::Runtime &runtime_;
   std::thread::id jsThreadId_;
   std::mutex queueMutex_;
   std::deque<facebook::react::CallFunc> queue_;
-  std::shared_ptr<WakeEntry> wakeEntry_;
+  std::shared_ptr<const JSWorkWake> wake_;
   std::atomic<bool> shutdown_{false};
 };
 

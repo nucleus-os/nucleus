@@ -29,6 +29,7 @@ func appleContainerBuildArguments(
 ) -> [String] {
     [
         "--platform", ociPlatformName(preparation.executionPlatform),
+        "--network", "none",
         "--pull",
         "--progress", "plain",
         "--tag", preparation.imageName,

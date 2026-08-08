@@ -2,8 +2,6 @@ FROM docker.io/library/ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-COPY ubuntu-amd64.sources /etc/apt/sources.list.d/ubuntu-amd64.sources
-
 # Ubuntu's libgudev development package is not co-installable across arm64 and
 # amd64 because its shared GIR differs between the two package instances.
 # Install the architecture-neutral libinput headers from the native package,
@@ -12,117 +10,21 @@ COPY ubuntu-amd64.sources /etc/apt/sources.list.d/ubuntu-amd64.sources
 # LLVM's libc++ runtime packages also share /usr/lib/llvm-18 across
 # architectures and cannot be co-installed. Extract only their amd64 runtime
 # objects into the multiarch directory used by translated SwiftPM host tools.
+# Collider resolves and downloads this exact package closure on the host. The
+# image build never contacts an Ubuntu mirror.
+COPY inputs/apt/install/ /tmp/nucleus-apt/install/
+COPY inputs/apt/extract/ /tmp/nucleus-apt/extract/
 RUN test "$(dpkg --print-architecture)" = arm64 \
-    && sed -i '/^Types: deb$/a Architectures: arm64' \
-        /etc/apt/sources.list.d/ubuntu.sources \
     && dpkg --add-architecture amd64 \
-    && apt-get update \
-    && apt-get install --yes --no-install-recommends \
-        binfmt-support \
-        binutils \
-        build-essential \
-        at-spi2-core \
-        ca-certificates \
-        ccache \
-        clang \
-        curl \
-        dbus-daemon \
-        git \
-        libc++-dev \
-        libc++abi-dev \
-        libblocksruntime-dev \
-        libbsd-dev \
-        libcurl4-openssl-dev \
-        libdrm-dev \
-        libedit-dev \
-        libffi-dev \
-        libfontconfig1-dev \
-        libfreetype-dev \
-        libgbm-dev \
-        libgl-dev \
-        libicu-dev \
-        libinput-dev \
-        libncurses-dev \
-        libpam0g-dev \
-        libpython3-dev \
-        libseat-dev \
-        libsqlite3-dev \
-        libssl-dev \
-        libsystemd-dev \
-        libudev-dev \
-        libvulkan-dev \
-        libwayland-dev \
-        libx11-xcb-dev \
-        libxcb-composite0-dev \
-        libxcb-ewmh-dev \
-        libxcb-icccm4-dev \
-        libxcb-res0-dev \
-        libxcb-xfixes0-dev \
-        libxcb1-dev \
-        libxkbcommon-dev \
-        libxml2-dev \
-        libzstd-dev \
-        lld \
-        mesa-vulkan-drivers \
-        meson \
-        ninja-build \
-        patch \
-        patchelf \
-        pkg-config \
-        python3 \
-        python3-mako \
-        python3-yaml \
-        rsync \
-        unzip \
-        util-linux \
-        uuid-dev \
-        xwayland \
-        zlib1g-dev \
-        libc6-dev:amd64 \
-        libbsd-dev:amd64 \
-        libcurl4t64:amd64 \
-        libdrm-dev:amd64 \
-        libedit-dev:amd64 \
-        libffi-dev:amd64 \
-        libfontconfig1-dev:amd64 \
-        libfreetype-dev:amd64 \
-        libgcc-13-dev:amd64 \
-        libgbm-dev:amd64 \
-        libgl-dev:amd64 \
-        libicu-dev:amd64 \
-        libinput10:amd64 \
-        libncurses-dev:amd64 \
-        libpam0g-dev:amd64 \
-        libseat-dev:amd64 \
-        libsqlite3-dev:amd64 \
-        libssl-dev:amd64 \
-        libsystemd-dev:amd64 \
-        libudev-dev:amd64 \
-        libvulkan-dev:amd64 \
-        libwayland-dev:amd64 \
-        libx11-xcb-dev:amd64 \
-        libxcb-composite0-dev:amd64 \
-        libxcb-ewmh-dev:amd64 \
-        libxcb-icccm4-dev:amd64 \
-        libxcb-res0-dev:amd64 \
-        libxcb-xfixes0-dev:amd64 \
-        libxcb1-dev:amd64 \
-        libxkbcommon-dev:amd64 \
-        libxml2-dev:amd64 \
-        libzstd-dev:amd64 \
-        mesa-vulkan-drivers:amd64 \
-        uuid-dev:amd64 \
-        zlib1g-dev:amd64 \
-    && cd /tmp \
-    && apt-get download \
-        libc++1-18:amd64 \
-        libc++abi1-18:amd64 \
-        libunwind-18:amd64 \
+    && mkdir -p /tmp/nucleus-empty-apt-sources \
+    && apt-get --yes --no-install-recommends \
+        -o Acquire::Retries=0 \
+        -o Dir::Etc::sourcelist=/dev/null \
+        -o Dir::Etc::sourceparts=/tmp/nucleus-empty-apt-sources \
+        install /tmp/nucleus-apt/install/*.deb \
     && mkdir -p /tmp/nucleus-amd64-libcxx \
     && for package in \
-        /tmp/libc++1-18_*_amd64.deb \
-        /tmp/libc++abi1-18_*_amd64.deb \
-        /tmp/libunwind-18_*_amd64.deb; do \
+        /tmp/nucleus-apt/extract/*.deb; do \
         dpkg-deb --extract "$package" /tmp/nucleus-amd64-libcxx; \
     done \
     && install --mode=0644 \
@@ -140,10 +42,8 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
     && ln -s libinput.so.10 /usr/lib/x86_64-linux-gnu/libinput.so \
     && rm -rf \
         /tmp/nucleus-amd64-libcxx \
-        /tmp/libc++1-18_*_amd64.deb \
-        /tmp/libc++abi1-18_*_amd64.deb \
-        /tmp/libunwind-18_*_amd64.deb \
-        /var/lib/apt/lists/*
+        /tmp/nucleus-apt \
+        /tmp/nucleus-empty-apt-sources
 
 # Apple Container VMs can begin a few hundred milliseconds behind the host
 # clock. Meson's 1 ms tolerance then rejects files it just wrote to a host bind
@@ -154,9 +54,8 @@ RUN sed -i 's/if delta > 0\.001:/if delta > 1.0:/' \
     && grep -Fq 'if delta > 1.0:' \
         /usr/lib/python3/dist-packages/mesonbuild/backend/backends.py
 
-RUN curl --fail --location --output /tmp/swift.tar.gz \
-        https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz \
-    && echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift.tar.gz' \
+COPY inputs/archives/swift-arm64.tar.gz /tmp/swift.tar.gz
+RUN echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift \
     && tar --extract --gzip \
@@ -170,9 +69,8 @@ RUN curl --fail --location --output /tmp/swift.tar.gz \
 # SwiftPM builds macro and plugin executables for the compiler's host
 # architecture. Give the translated amd64 lane a matching official compiler
 # so its host tools and target SDK share one architecture.
-RUN curl --fail --location --output /tmp/swift-x86_64.tar.gz \
-        https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz \
-    && echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp/swift-x86_64.tar.gz' \
+COPY inputs/archives/swift-amd64.tar.gz /tmp/swift-x86_64.tar.gz
+RUN echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp/swift-x86_64.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-x86_64 \
     && tar --extract --gzip \
@@ -183,9 +81,8 @@ RUN curl --fail --location --output /tmp/swift-x86_64.tar.gz \
     && /opt/swift-x86_64/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'x86_64-unknown-linux-gnu'
 
-RUN curl --fail --location --output /tmp/cmake.tar.gz \
-        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz \
-    && echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
+COPY inputs/archives/cmake-arm64.tar.gz /tmp/cmake.tar.gz
+RUN echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/cmake \
     && tar --extract --gzip \
@@ -198,9 +95,8 @@ RUN curl --fail --location --output /tmp/cmake.tar.gz \
 
 ENV PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN curl --fail --location --output /tmp/node.tar.xz \
-        https://nodejs.org/dist/v26.6.0/node-v26.6.0-linux-arm64.tar.xz \
-    && echo '974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923  /tmp/node.tar.xz' \
+COPY inputs/archives/node-arm64.tar.xz /tmp/node.tar.xz
+RUN echo '974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923  /tmp/node.tar.xz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/node \
     && tar --extract --xz --file /tmp/node.tar.xz \
@@ -208,9 +104,8 @@ RUN curl --fail --location --output /tmp/node.tar.xz \
     && rm -f /tmp/node.tar.xz \
     && /opt/node/bin/node --version | grep --fixed-strings 'v26.6.0'
 
-RUN curl --fail --location --output /tmp/bun.zip \
-        https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip \
-    && echo 'a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b  /tmp/bun.zip' \
+COPY inputs/archives/bun-arm64.zip /tmp/bun.zip
+RUN echo 'a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b  /tmp/bun.zip' \
         | sha256sum --check --strict \
     && unzip /tmp/bun.zip -d /tmp/bun \
     && install --directory --mode=0755 /opt/bun/bin \
@@ -222,12 +117,10 @@ RUN curl --fail --location --output /tmp/bun.zip \
 # loader matching Nucleus's vendored Vulkan 1.4.350 headers for both Linux
 # architecture lanes. The loader only enables the Wayland WSI used by Nucleus;
 # headless operation needs no WSI extension.
-RUN curl --fail --location --output /tmp/vulkan-headers.tar.gz \
-        https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.350.tar.gz \
-    && echo '6dd105e5cc7ddab6e7b611ae2c1872740d1727557cc8bf9daf13d6de1e4b3999  /tmp/vulkan-headers.tar.gz' \
+COPY inputs/archives/vulkan-headers.tar.gz /tmp/vulkan-headers.tar.gz
+COPY inputs/archives/vulkan-loader.tar.gz /tmp/vulkan-loader.tar.gz
+RUN echo '6dd105e5cc7ddab6e7b611ae2c1872740d1727557cc8bf9daf13d6de1e4b3999  /tmp/vulkan-headers.tar.gz' \
         | sha256sum --check --strict \
-    && curl --fail --location --output /tmp/vulkan-loader.tar.gz \
-        https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v1.4.350.tar.gz \
     && echo 'fe472f15c49b1915137c065d997dbce86e31750f5bfb56c5c9a3b5b4919e44eb  /tmp/vulkan-loader.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /tmp/vulkan-source \
@@ -293,10 +186,9 @@ RUN curl --fail --location --output /tmp/vulkan-headers.tar.gz \
 
 # Android's NDK host tools remain x86_64. The ARM guest executes them through
 # the same explicit Intel-translation policy used by the Linux amd64 test lane.
-RUN curl --fail --location --output /tmp/android-ndk.zip \
-        https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip \
-    && echo '069427047d18cc6e44369cd7b8e711bfc2c7a3b5  /tmp/android-ndk.zip' \
-        | sha1sum --check --strict \
+COPY inputs/archives/android-ndk-r30-beta2-linux.zip /tmp/android-ndk.zip
+RUN echo '3827b0acab65a4559d92bc07b05a409d57d1925c835b8e6fd741cda08ca41515  /tmp/android-ndk.zip' \
+        | sha256sum --check --strict \
     && unzip -q /tmp/android-ndk.zip -d /opt \
     && rm -f /tmp/android-ndk.zip
 

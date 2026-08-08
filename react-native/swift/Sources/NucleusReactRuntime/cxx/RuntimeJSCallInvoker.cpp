@@ -45,18 +45,6 @@ RuntimeJSCallInvoker::RuntimeJSCallInvoker(
     std::thread::id jsThreadId)
     : runtime_(runtime), jsThreadId_(jsThreadId) {}
 
-RuntimeJSCallInvoker::WakeEntry::WakeEntry(
-    WakeCallback callback,
-    void *context,
-    WakeContextRelease release)
-    : callback(callback), context(context), release(release) {}
-
-RuntimeJSCallInvoker::WakeEntry::~WakeEntry() {
-  if (release != nullptr) {
-    release(context);
-  }
-}
-
 void RuntimeJSCallInvoker::invokeAsync(
     facebook::react::CallFunc &&func) noexcept {
   if (shutdown_.load(std::memory_order_acquire)) {
@@ -66,7 +54,7 @@ void RuntimeJSCallInvoker::invokeAsync(
     runOrLogException("invokeAsync", func, runtime_);
     return;
   }
-  std::shared_ptr<WakeEntry> wake;
+  std::shared_ptr<const JSWorkWake> wake;
   {
     std::lock_guard<std::mutex> lock(queueMutex_);
     if (shutdown_.load(std::memory_order_acquire)) {
@@ -75,11 +63,11 @@ void RuntimeJSCallInvoker::invokeAsync(
     const bool wasEmpty = queue_.empty();
     queue_.push_back(std::move(func));
     if (wasEmpty) {
-      wake = wakeEntry_;
+      wake = wake_;
     }
   }
-  if (wake != nullptr && wake->callback != nullptr) {
-    wake->callback(wake->context);
+  if (wake != nullptr && *wake) {
+    (*wake)();
   }
 }
 
@@ -107,30 +95,37 @@ std::size_t RuntimeJSCallInvoker::drainPending() {
   return drained;
 }
 
-void RuntimeJSCallInvoker::setWakeHandler(
-    WakeCallback callback,
-    void *context,
-    WakeContextRelease release) {
-  std::shared_ptr<WakeEntry> next;
-  if (callback != nullptr || context != nullptr || release != nullptr) {
-    next = std::make_shared<WakeEntry>(callback, context, release);
+void RuntimeJSCallInvoker::setWakeHandler(JSWorkWake wake) {
+  std::shared_ptr<const JSWorkWake> next;
+  if (wake) {
+    next = std::make_shared<const JSWorkWake>(std::move(wake));
   }
   bool hasPending = false;
+  std::shared_ptr<const JSWorkWake> retired;
   {
     std::lock_guard<std::mutex> lock(queueMutex_);
-    wakeEntry_ = next;
+    retired = std::exchange(wake_, next);
     hasPending = !queue_.empty();
   }
-  if (hasPending && next != nullptr && next->callback != nullptr) {
-    next->callback(next->context);
+  // `retired` drops here, outside the lock. Destroying the previous wake
+  // releases its Swift captures, which can run arbitrary deinitializers; doing
+  // that under `queueMutex_` would let teardown deadlock by re-entering this
+  // invoker.
+  retired.reset();
+  if (hasPending && next != nullptr && *next) {
+    (*next)();
   }
 }
 
 void RuntimeJSCallInvoker::shutdown() {
   shutdown_.store(true, std::memory_order_release);
-  std::lock_guard<std::mutex> lock(queueMutex_);
-  queue_.clear();
-  wakeEntry_.reset();
+  std::shared_ptr<const JSWorkWake> retired;
+  {
+    std::lock_guard<std::mutex> lock(queueMutex_);
+    queue_.clear();
+    retired = std::exchange(wake_, nullptr);
+  }
+  // Retired outside the lock, for the reason given in `setWakeHandler`.
 }
 
 } // namespace nucleus::react

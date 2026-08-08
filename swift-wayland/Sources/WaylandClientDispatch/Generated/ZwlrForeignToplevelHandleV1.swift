@@ -86,9 +86,9 @@ package protocol ZwlrForeignToplevelHandleV1Events: AnyObject {
     func parent(_ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>, parent: WaylandBorrowedProxy<ZwlrForeignToplevelHandleV1Client>?)
 }
 package extension ZwlrForeignToplevelHandleV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_foreign_toplevel_handle_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_foreign_toplevel_handle_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_foreign_toplevel_handle_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_foreign_toplevel_handle_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwlr_foreign_toplevel_handle_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwlr_foreign_toplevel_handle_v1_events())
         unsafe p.pointee.title = title_impl
         unsafe p.pointee.app_id = appId_impl
         unsafe p.pointee.output_enter = outputEnter_impl
@@ -232,7 +232,7 @@ package extension ZwlrForeignToplevelHandleV1Client {
 package extension WaylandProxy where Interface == ZwlrForeignToplevelHandleV1Client {
     func installListener(_ owner: any ZwlrForeignToplevelHandleV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_foreign_toplevel_handle_v1_add_listener(proxy, ZwlrForeignToplevelHandleV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwlrForeignToplevelHandleV1Client.listener, data)
         }
     }
 }

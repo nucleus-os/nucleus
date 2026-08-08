@@ -1,37 +1,28 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <ReactCommon/TurboModule.h>
 
 namespace nucleus::react {
 
 /// Thread-safe ownership boundary for the Swift JS-command callback. Replacing
-/// a handler retires its context only after every in-flight invocation releases
-/// its shared entry.
+/// a handler retires the previous callable only after every in-flight
+/// invocation releases its shared reference.
 class HostCommandHandler final {
  public:
-  using Callback = void (*)(void *, const char *, const char *);
-  using Release = void (*)(void *);
+  using HostCommand =
+      std::function<void(const std::string &command, const std::string &argsJson)>;
 
-  struct Entry final {
-    Callback callback;
-    void *context;
-    Release release;
-
-    Entry(Callback callback, void *context, Release release);
-    Entry(const Entry &) = delete;
-    Entry &operator=(const Entry &) = delete;
-    ~Entry();
-  };
-
-  void set(Callback callback, void *context, Release release);
-  std::shared_ptr<Entry> get() const;
+  void set(HostCommand handler);
+  std::shared_ptr<const HostCommand> get() const;
 
  private:
   mutable std::mutex mutex_;
-  std::shared_ptr<Entry> entry_;
+  std::shared_ptr<const HostCommand> handler_;
 };
 
 class HostCommandTurboModule final : public facebook::react::TurboModule {

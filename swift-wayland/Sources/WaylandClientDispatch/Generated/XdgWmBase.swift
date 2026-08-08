@@ -45,9 +45,9 @@ package protocol XdgWmBaseEvents: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32)
 }
 package extension XdgWmBaseClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_wm_base_listener> = {
-        let p = UnsafeMutablePointer<xdg_wm_base_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_wm_base_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_wm_base_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_wm_base_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_wm_base_events())
         unsafe p.pointee.ping = ping_impl
         return unsafe p
     }()
@@ -73,7 +73,7 @@ package extension XdgWmBaseClient {
 package extension WaylandProxy where Interface == XdgWmBaseClient {
     func installListener(_ owner: any XdgWmBaseEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_wm_base_add_listener(proxy, XdgWmBaseClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgWmBaseClient.listener, data)
         }
     }
 }

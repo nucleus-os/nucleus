@@ -108,11 +108,10 @@ input. Deactivation and uninstall retain the disjoint persistent state root.
 
 ## Verification
 
-Run all agent-owned tests directly on the host:
+Run all agent-owned tests through the installed Collider command:
 
 ```sh
-source tools/host-env.sh
-swift test
+collider test
 ```
 
 Build and verify the signed Android image inputs:

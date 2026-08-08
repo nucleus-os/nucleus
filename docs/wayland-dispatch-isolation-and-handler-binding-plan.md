@@ -55,23 +55,30 @@ can gain an associated type.
 
 ## Phase 1 — Annotate the C dispatch surface
 
+Status: complete
+
 `WaylandServerC.h` (655 lines) and `WaylandClientC.h` (5,106 lines) are both emitted by
 `SwiftWaylandGen`, so this is a generator change, not a hand-edit.
 
 Emit a `NUCLEUS_WL_MAIN_ACTOR` macro guarded on `__has_attribute(swift_attr)` and apply it to every
-function-pointer field of every `swift_wayland_<iface>_requests` struct.
+function-pointer field of every `swift_wayland_<iface>_requests` struct. Emit first-party request
+structs for extension protocols as well as core Wayland; aliases to scanner-owned interface structs
+cannot carry the annotation required by phase 2.
 
 The client side needs one structural addition. Client listeners currently install into
 `wl_<iface>_listener`, which is wayland-scanner's own type in libwayland's headers and cannot be
 annotated. Emit first-party `swift_wayland_<iface>_events` mirror structs into `WaylandClientC.h`,
 field-for-field in scanner declaration order with the annotation applied, and guard each with a
 `_Static_assert` on `sizeof` against the corresponding `wl_<iface>_listener`. Installation moves
-from `<iface>_add_listener` to `wl_proxy_add_listener`, which takes `void (**)(void)` and is what
-the scanner inline does internally anyway.
+from `<iface>_add_listener` to a first-party façade over `wl_proxy_add_listener`, which takes
+`void (**)(void)` and is what the scanner inline does internally anyway.
 
-Nothing in Swift changes in this phase; the existing non-isolated thunks continue to assign.
+The generated Swift listener storage uses the mirror type and the new installation façade. Thunk
+isolation does not change in this phase; the existing non-isolated thunks continue to assign.
 
 ## Phase 2 — Isolated server request trampolines
+
+Status: active
 
 In the server emission path (`SwiftWaylandGenerator.swift:817-895`), emit each `<request>_impl` as
 `@MainActor @convention(c)`. Delete the `actorBoundaryBindingLines` helper

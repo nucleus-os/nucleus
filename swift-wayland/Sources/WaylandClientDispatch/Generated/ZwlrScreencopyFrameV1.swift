@@ -46,9 +46,9 @@ package protocol ZwlrScreencopyFrameV1Events: AnyObject {
     func bufferDone(_ proxy: WaylandBorrowedProxy<ZwlrScreencopyFrameV1Client>)
 }
 package extension ZwlrScreencopyFrameV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_screencopy_frame_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_screencopy_frame_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_screencopy_frame_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_screencopy_frame_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwlr_screencopy_frame_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwlr_screencopy_frame_v1_events())
         unsafe p.pointee.buffer = buffer_impl
         unsafe p.pointee.flags = flags_impl
         unsafe p.pointee.ready = ready_impl
@@ -170,7 +170,7 @@ package extension ZwlrScreencopyFrameV1Client {
 package extension WaylandProxy where Interface == ZwlrScreencopyFrameV1Client {
     func installListener(_ owner: any ZwlrScreencopyFrameV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_screencopy_frame_v1_add_listener(proxy, ZwlrScreencopyFrameV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwlrScreencopyFrameV1Client.listener, data)
         }
     }
 }

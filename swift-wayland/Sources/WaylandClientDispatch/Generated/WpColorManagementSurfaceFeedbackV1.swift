@@ -40,9 +40,9 @@ package protocol WpColorManagementSurfaceFeedbackV1Events: AnyObject {
     func preferredChanged2(_ proxy: WaylandBorrowedProxy<WpColorManagementSurfaceFeedbackV1Client>, identity_hi: UInt32, identity_lo: UInt32)
 }
 package extension WpColorManagementSurfaceFeedbackV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_management_surface_feedback_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_management_surface_feedback_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_management_surface_feedback_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_management_surface_feedback_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_color_management_surface_feedback_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_color_management_surface_feedback_v1_events())
         unsafe p.pointee.preferred_changed = preferredChanged_impl
         unsafe p.pointee.preferred_changed2 = preferredChanged2_impl
         return unsafe p
@@ -84,7 +84,7 @@ package extension WpColorManagementSurfaceFeedbackV1Client {
 package extension WaylandProxy where Interface == WpColorManagementSurfaceFeedbackV1Client {
     func installListener(_ owner: any WpColorManagementSurfaceFeedbackV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_color_management_surface_feedback_v1_add_listener(proxy, WpColorManagementSurfaceFeedbackV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpColorManagementSurfaceFeedbackV1Client.listener, data)
         }
     }
 }

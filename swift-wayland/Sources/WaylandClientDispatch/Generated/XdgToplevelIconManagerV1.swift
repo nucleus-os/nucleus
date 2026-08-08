@@ -39,9 +39,9 @@ package protocol XdgToplevelIconManagerV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>)
 }
 package extension XdgToplevelIconManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_toplevel_icon_manager_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_toplevel_icon_manager_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_toplevel_icon_manager_v1_events())
         unsafe p.pointee.icon_size = iconSize_impl
         unsafe p.pointee.done = done_impl
         return unsafe p
@@ -83,7 +83,7 @@ package extension XdgToplevelIconManagerV1Client {
 package extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {
     func installListener(_ owner: any XdgToplevelIconManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_toplevel_icon_manager_v1_add_listener(proxy, XdgToplevelIconManagerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgToplevelIconManagerV1Client.listener, data)
         }
     }
 }

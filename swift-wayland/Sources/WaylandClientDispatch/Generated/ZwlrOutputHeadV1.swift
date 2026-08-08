@@ -41,9 +41,9 @@ package protocol ZwlrOutputHeadV1Events: AnyObject {
     func adaptiveSync(_ proxy: WaylandBorrowedProxy<ZwlrOutputHeadV1Client>, state: ZwlrOutputHeadV1AdaptiveSyncState)
 }
 package extension ZwlrOutputHeadV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_output_head_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_output_head_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_output_head_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_output_head_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwlr_output_head_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwlr_output_head_v1_events())
         unsafe p.pointee.name = name_impl
         unsafe p.pointee.description = description_impl
         unsafe p.pointee.physical_size = physicalSize_impl
@@ -284,7 +284,7 @@ package extension ZwlrOutputHeadV1Client {
 package extension WaylandProxy where Interface == ZwlrOutputHeadV1Client {
     func installListener(_ owner: any ZwlrOutputHeadV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_output_head_v1_add_listener(proxy, ZwlrOutputHeadV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwlrOutputHeadV1Client.listener, data)
         }
     }
 }

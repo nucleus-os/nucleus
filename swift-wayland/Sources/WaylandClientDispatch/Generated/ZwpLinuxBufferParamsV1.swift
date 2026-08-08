@@ -52,9 +52,9 @@ package protocol ZwpLinuxBufferParamsV1Events: AnyObject {
     func failed(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>)
 }
 package extension ZwpLinuxBufferParamsV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_linux_buffer_params_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_params_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_linux_buffer_params_v1_events())
         unsafe p.pointee.created = created_impl
         unsafe p.pointee.failed = failed_impl
         return unsafe p
@@ -97,7 +97,7 @@ package extension ZwpLinuxBufferParamsV1Client {
 package extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
     func installListener(_ owner: any ZwpLinuxBufferParamsV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_linux_buffer_params_v1_add_listener(proxy, ZwpLinuxBufferParamsV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpLinuxBufferParamsV1Client.listener, data)
         }
     }
 }

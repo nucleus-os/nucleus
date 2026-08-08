@@ -98,9 +98,9 @@ package protocol ZwpTextInputV3Events: AnyObject {
     func preeditHint(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, start: UInt32, end: UInt32, hint: ZwpTextInputV3PreeditHint)
 }
 package extension ZwpTextInputV3Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_text_input_v3_listener> = {
-        let p = UnsafeMutablePointer<zwp_text_input_v3_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_text_input_v3_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_text_input_v3_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_text_input_v3_events())
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
         unsafe p.pointee.preedit_string = preeditString_impl
@@ -263,7 +263,7 @@ package extension ZwpTextInputV3Client {
 package extension WaylandProxy where Interface == ZwpTextInputV3Client {
     func installListener(_ owner: any ZwpTextInputV3Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_text_input_v3_add_listener(proxy, ZwpTextInputV3Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpTextInputV3Client.listener, data)
         }
     }
 }

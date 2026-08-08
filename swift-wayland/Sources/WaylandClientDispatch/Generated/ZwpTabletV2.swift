@@ -29,9 +29,9 @@ package protocol ZwpTabletV2Events: AnyObject {
     func bustype(_ proxy: WaylandBorrowedProxy<ZwpTabletV2Client>, bustype: ZwpTabletV2Bustype)
 }
 package extension ZwpTabletV2Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_tablet_v2_listener> = {
-        let p = UnsafeMutablePointer<zwp_tablet_v2_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_tablet_v2_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_v2_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_tablet_v2_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_tablet_v2_events())
         unsafe p.pointee.name = name_impl
         unsafe p.pointee.id = id_impl
         unsafe p.pointee.path = path_impl
@@ -139,7 +139,7 @@ package extension ZwpTabletV2Client {
 package extension WaylandProxy where Interface == ZwpTabletV2Client {
     func installListener(_ owner: any ZwpTabletV2Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_tablet_v2_add_listener(proxy, ZwpTabletV2Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpTabletV2Client.listener, data)
         }
     }
 }

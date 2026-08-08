@@ -48,9 +48,9 @@ package protocol ZwpTabletToolV1Events: AnyObject {
     func frame(_ proxy: WaylandBorrowedProxy<ZwpTabletToolV1Client>, time: UInt32)
 }
 package extension ZwpTabletToolV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_tablet_tool_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_tablet_tool_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_tablet_tool_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_tool_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_tablet_tool_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_tablet_tool_v1_events())
         unsafe p.pointee.type = type_impl
         unsafe p.pointee.hardware_serial = hardwareSerial_impl
         unsafe p.pointee.hardware_id_wacom = hardwareIdWacom_impl
@@ -366,7 +366,7 @@ package extension ZwpTabletToolV1Client {
 package extension WaylandProxy where Interface == ZwpTabletToolV1Client {
     func installListener(_ owner: any ZwpTabletToolV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_tablet_tool_v1_add_listener(proxy, ZwpTabletToolV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpTabletToolV1Client.listener, data)
         }
     }
 }

@@ -167,7 +167,7 @@ private func fixtureReactNativeNodeModules(
             environment: environment,
             runtime: ColliderRuntime()))
     let builder = try fixtureNativeBuilder(
-        context: fixtureRepositoryRoot.appending("core/build-container"),
+        context: fixtureRepositoryRoot.appending("collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -464,7 +464,7 @@ private func fixtureReactNativeNodeModules(
     let runtimeRoot = repositoryRoot.appending("android-runtime")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: repositoryRoot.appending("core/build-container"),
+        context: repositoryRoot.appending("collider/images/native-builder"),
         imageID: repositoryRoot.appending(".nucleus/native-builder/image-id"),
         ccache: repositoryRoot.appending(".nucleus/ccache"),
         swiftSDKRoot: repositoryRoot.appending(".nucleus/swift-sdks"),
@@ -832,7 +832,8 @@ private func fixtureReactNativeNodeModules(
         .deletingLastPathComponent()
     let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
     let builder = try fixtureNativeBuilder(
-        context: FilePath(workspace.appendingPathComponent("core/build-container").path),
+        context: FilePath(
+            workspace.appendingPathComponent("collider/images/native-builder").path),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -876,9 +877,10 @@ private func fixtureReactNativeNodeModules(
         Issue.record("Wayland generation must be one recipe-owned action")
         return
     }
-    let generationContainers = try await ociExecutions(in: task.action).filter {
-        $0.hostname == "wayland-source-generation"
-    }
+    let generationContainers = try await ociExecutions(
+        in: task.action,
+        files: nonEmptyDirectoryActionFileSystem()
+    ).filter { $0.hostname == "wayland-source-generation" }
     #expect(
         generation.tasks.flatMap(\.swiftProducts).map(\.qualifiedProduct) == [
             "swift-wayland:SwiftWaylandGen"
@@ -898,6 +900,116 @@ private func fixtureReactNativeNodeModules(
         action.requirements.tools.allSatisfy {
             if case .artifact = $0.executable { true } else { false }
         })
+}
+
+@Test func waylandGenerationPublishesTransactionally() async throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-wayland-publication-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
+    let protocolDirectory = root.appending("Protocols/protocols")
+    try FileManager.default.createDirectory(
+        atPath: protocolDirectory.string,
+        withIntermediateDirectories: true)
+    try Data("<protocol name=\"fixture\"/>".utf8).write(
+        to: URL(fileURLWithPath: protocolDirectory.appending("fixture.xml").string))
+
+    let generatedDirectories = [
+        root.appending("Sources/WaylandServerC"),
+        root.appending("Sources/WaylandClientC"),
+        root.appending("protocol-runtime/Sources/WaylandProtocolsC"),
+        root.appending("protocol-runtime/Sources/WaylandProtocolTypes/Generated"),
+        root.appending("Sources/WaylandServerDispatch/Generated"),
+        root.appending("Sources/WaylandClientDispatch/Generated"),
+    ]
+    for directory in generatedDirectories {
+        try FileManager.default.createDirectory(
+            atPath: directory.string,
+            withIntermediateDirectories: true)
+        try Data("published".utf8).write(
+            to: URL(fileURLWithPath: directory.appending("published.marker").string))
+    }
+
+    let builder = try fixtureNativeBuilder(
+        context: root.appending("build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/native/ccache"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: ["PATH": "/usr/bin"])
+    let nativeSDK = try WaylandColliderRecipe.buildNativeSDK(
+        root: root,
+        sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
+        environment: ["PATH": "/usr/bin"],
+        target: NativeLinuxTarget(architecture: .arm64),
+        nativeScanner: nil,
+        builder: builder)
+    let generation = try WaylandColliderRecipe.generate(
+        root: root,
+        environment: ["PATH": "/usr/bin"],
+        swiftPM: SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: fixtureSwiftPackageRoot,
+                configuration: .debug,
+                target: .swiftSDK(
+                    name: "nucleus-swift-6.4-linux",
+                    targetTriple: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "swiftc@fixture",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: builder.image,
+                        hostname: "swift-wayland-fixture",
+                        hostWorkingDirectory: root,
+                        mounts: [],
+                        hostDependencyCache: FilePath("/cache/swiftpm")))),
+            scratchPath: FilePath("/cache/swiftpm/fixture")),
+        builder: builder,
+        scanner: try #require(nativeSDK.scanner))
+    let action = try #require(generation.task.action)
+    let context = ActionContext(
+        files: ColliderRuntime().actionFileSystem(),
+        cancellation: ActionCancellation {},
+        logger: ActionLogger { _ in },
+        commands: ActionCommandExecutor { _ in CommandResult(status: 1) },
+        downloads: ActionDownloader { _, _ in },
+        containers: ActionContainerExecutor(run: { _ in CommandResult(status: 1) }))
+
+    await #expect(throws: (any Error).self) {
+        try await action.execute(in: context)
+    }
+    for directory in generatedDirectories {
+        #expect(
+            FileManager.default.fileExists(
+                atPath: directory.appending("published.marker").string))
+    }
+
+    let successfulContext = ActionContext(
+        files: ColliderRuntime().actionFileSystem(),
+        cancellation: ActionCancellation {},
+        logger: ActionLogger { _ in },
+        commands: ActionCommandExecutor { _ in CommandResult(status: 1) },
+        downloads: ActionDownloader { _, _ in },
+        containers: ActionContainerExecutor(run: { execution in
+            for mount in execution.mounts
+            where mount.access == .readWrite
+                && mount.source.string.hasSuffix(".collider-candidate")
+            {
+                try Data("generated".utf8).write(
+                    to: URL(
+                        fileURLWithPath: mount.source.appending("generated.marker").string))
+            }
+            return CommandResult(status: 0)
+        }))
+    try await action.execute(in: successfulContext)
+    for directory in generatedDirectories {
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: directory.appending("published.marker").string))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: directory.appending("generated.marker").string))
+    }
 }
 
 @Test func skiaRecipesUseTheIsolatedNativeBuilder() async throws {
@@ -1098,7 +1210,7 @@ private func fixtureReactNativeNodeModules(
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/core/build-container"),
+        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1166,7 +1278,7 @@ private func fixtureReactNativeNodeModules(
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/core/build-container"),
+        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1219,7 +1331,7 @@ private func fixtureReactNativeNodeModules(
     let x86SDKRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/core/build-container"),
+        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1307,7 +1419,7 @@ private func fixtureReactNativeNodeModules(
     let target = NativeLinuxTarget(architecture: .x86_64)
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/core/build-container"),
+        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),

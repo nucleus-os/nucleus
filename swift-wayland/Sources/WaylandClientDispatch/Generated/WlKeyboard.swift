@@ -33,9 +33,9 @@ package protocol WlKeyboardEvents: AnyObject {
     func repeatInfo(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, rate: Int32, delay: Int32)
 }
 package extension WlKeyboardClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_keyboard_listener> = {
-        let p = UnsafeMutablePointer<wl_keyboard_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_keyboard_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_keyboard_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_keyboard_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_keyboard_events())
         unsafe p.pointee.keymap = keymap_impl
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
@@ -144,7 +144,7 @@ package extension WlKeyboardClient {
 package extension WaylandProxy where Interface == WlKeyboardClient {
     func installListener(_ owner: any WlKeyboardEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_keyboard_add_listener(proxy, WlKeyboardClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlKeyboardClient.listener, data)
         }
     }
 }

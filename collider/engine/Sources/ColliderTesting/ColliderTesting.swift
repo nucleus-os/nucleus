@@ -22,6 +22,7 @@ private struct ActionExecutionRecording: Sendable {
 
 public func recordActionExecution(
     _ action: AnyColliderAction?,
+    files: ActionFileSystem = inertActionFileSystem(),
     commandResult: @escaping @Sendable (CommandSpec) async throws -> CommandResult = {
         _ in CommandResult(status: 0)
     },
@@ -37,7 +38,7 @@ public func recordActionExecution(
     }
     try await action.execute(
         in: ActionContext(
-            files: inertActionFileSystem(),
+            files: files,
             cancellation: ActionCancellation {},
             logger: ActionLogger { _ in },
             commands: ActionCommandExecutor(execute: commandResult),
@@ -63,6 +64,7 @@ public func recordActionExecution(
 
 public func recordOCIActionExecution(
     _ action: AnyColliderAction?,
+    files: ActionFileSystem = inertActionFileSystem(),
     commandResult: @escaping @Sendable (CommandSpec) async throws -> CommandResult = {
         _ in CommandResult(status: 0)
     },
@@ -79,6 +81,7 @@ public func recordOCIActionExecution(
     }
     return try await recordActionExecution(
         action,
+        files: files,
         commandResult: commandResult,
         containerResult: containerResult)
 }

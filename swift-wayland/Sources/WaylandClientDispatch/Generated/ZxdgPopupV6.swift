@@ -30,9 +30,9 @@ package protocol ZxdgPopupV6Events: AnyObject {
     func popupDone(_ proxy: WaylandBorrowedProxy<ZxdgPopupV6Client>)
 }
 package extension ZxdgPopupV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_popup_v6_listener> = {
-        let p = UnsafeMutablePointer<zxdg_popup_v6_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_popup_v6_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zxdg_popup_v6_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zxdg_popup_v6_events())
         unsafe p.pointee.configure = configure_impl
         unsafe p.pointee.popup_done = popupDone_impl
         return unsafe p
@@ -74,7 +74,7 @@ package extension ZxdgPopupV6Client {
 package extension WaylandProxy where Interface == ZxdgPopupV6Client {
     func installListener(_ owner: any ZxdgPopupV6Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zxdg_popup_v6_add_listener(proxy, ZxdgPopupV6Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZxdgPopupV6Client.listener, data)
         }
     }
 }

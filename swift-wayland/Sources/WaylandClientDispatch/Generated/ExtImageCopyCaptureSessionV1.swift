@@ -37,9 +37,9 @@ package protocol ExtImageCopyCaptureSessionV1Events: AnyObject {
     func stopped(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureSessionV1Client>)
 }
 package extension ExtImageCopyCaptureSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_image_copy_capture_session_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_image_copy_capture_session_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_image_copy_capture_session_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_image_copy_capture_session_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_image_copy_capture_session_v1_events())
         unsafe p.pointee.buffer_size = bufferSize_impl
         unsafe p.pointee.shm_format = shmFormat_impl
         unsafe p.pointee.dmabuf_device = dmabufDevice_impl
@@ -147,7 +147,7 @@ package extension ExtImageCopyCaptureSessionV1Client {
 package extension WaylandProxy where Interface == ExtImageCopyCaptureSessionV1Client {
     func installListener(_ owner: any ExtImageCopyCaptureSessionV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_image_copy_capture_session_v1_add_listener(proxy, ExtImageCopyCaptureSessionV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtImageCopyCaptureSessionV1Client.listener, data)
         }
     }
 }

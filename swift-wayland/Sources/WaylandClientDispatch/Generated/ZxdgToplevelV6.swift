@@ -98,9 +98,9 @@ package protocol ZxdgToplevelV6Events: AnyObject {
     func close(_ proxy: WaylandBorrowedProxy<ZxdgToplevelV6Client>)
 }
 package extension ZxdgToplevelV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_toplevel_v6_listener> = {
-        let p = UnsafeMutablePointer<zxdg_toplevel_v6_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_toplevel_v6_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_toplevel_v6_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zxdg_toplevel_v6_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zxdg_toplevel_v6_events())
         unsafe p.pointee.configure = configure_impl
         unsafe p.pointee.close = close_impl
         return unsafe p
@@ -143,7 +143,7 @@ package extension ZxdgToplevelV6Client {
 package extension WaylandProxy where Interface == ZxdgToplevelV6Client {
     func installListener(_ owner: any ZxdgToplevelV6Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zxdg_toplevel_v6_add_listener(proxy, ZxdgToplevelV6Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZxdgToplevelV6Client.listener, data)
         }
     }
 }

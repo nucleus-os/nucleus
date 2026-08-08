@@ -31,9 +31,9 @@ package protocol WpColorManagementOutputV1Events: AnyObject {
     func imageDescriptionChanged(_ proxy: WaylandBorrowedProxy<WpColorManagementOutputV1Client>)
 }
 package extension WpColorManagementOutputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_management_output_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_management_output_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_management_output_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_management_output_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_color_management_output_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_color_management_output_v1_events())
         unsafe p.pointee.image_description_changed = imageDescriptionChanged_impl
         return unsafe p
     }()
@@ -59,7 +59,7 @@ package extension WpColorManagementOutputV1Client {
 package extension WaylandProxy where Interface == WpColorManagementOutputV1Client {
     func installListener(_ owner: any WpColorManagementOutputV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_color_management_output_v1_add_listener(proxy, WpColorManagementOutputV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpColorManagementOutputV1Client.listener, data)
         }
     }
 }

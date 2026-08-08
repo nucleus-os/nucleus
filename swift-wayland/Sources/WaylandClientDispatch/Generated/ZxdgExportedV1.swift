@@ -23,9 +23,9 @@ package protocol ZxdgExportedV1Events: AnyObject {
     func handle(_ proxy: WaylandBorrowedProxy<ZxdgExportedV1Client>, handle: String)
 }
 package extension ZxdgExportedV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_exported_v1_listener> = {
-        let p = UnsafeMutablePointer<zxdg_exported_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_exported_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zxdg_exported_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zxdg_exported_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zxdg_exported_v1_events())
         unsafe p.pointee.handle = handle_impl
         return unsafe p
     }()
@@ -52,7 +52,7 @@ package extension ZxdgExportedV1Client {
 package extension WaylandProxy where Interface == ZxdgExportedV1Client {
     func installListener(_ owner: any ZxdgExportedV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zxdg_exported_v1_add_listener(proxy, ZxdgExportedV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZxdgExportedV1Client.listener, data)
         }
     }
 }

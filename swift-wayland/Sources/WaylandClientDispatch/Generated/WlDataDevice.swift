@@ -46,9 +46,9 @@ package protocol WlDataDeviceEvents: AnyObject {
     func selection(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, id: WaylandBorrowedProxy<WlDataOfferClient>?)
 }
 package extension WlDataDeviceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_data_device_listener> = {
-        let p = UnsafeMutablePointer<wl_data_device_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_data_device_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_data_device_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_data_device_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_data_device_events())
         unsafe p.pointee.data_offer = dataOffer_impl
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
@@ -158,7 +158,7 @@ package extension WlDataDeviceClient {
 package extension WaylandProxy where Interface == WlDataDeviceClient {
     func installListener(_ owner: any WlDataDeviceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_data_device_add_listener(proxy, WlDataDeviceClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlDataDeviceClient.listener, data)
         }
     }
 }

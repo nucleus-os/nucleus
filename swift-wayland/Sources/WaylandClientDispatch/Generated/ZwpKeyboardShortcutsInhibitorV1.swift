@@ -24,9 +24,9 @@ package protocol ZwpKeyboardShortcutsInhibitorV1Events: AnyObject {
     func inactive(_ proxy: WaylandBorrowedProxy<ZwpKeyboardShortcutsInhibitorV1Client>)
 }
 package extension ZwpKeyboardShortcutsInhibitorV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_keyboard_shortcuts_inhibitor_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_keyboard_shortcuts_inhibitor_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_keyboard_shortcuts_inhibitor_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_keyboard_shortcuts_inhibitor_v1_events())
         unsafe p.pointee.active = active_impl
         unsafe p.pointee.inactive = inactive_impl
         return unsafe p
@@ -68,7 +68,7 @@ package extension ZwpKeyboardShortcutsInhibitorV1Client {
 package extension WaylandProxy where Interface == ZwpKeyboardShortcutsInhibitorV1Client {
     func installListener(_ owner: any ZwpKeyboardShortcutsInhibitorV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_keyboard_shortcuts_inhibitor_v1_add_listener(proxy, ZwpKeyboardShortcutsInhibitorV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpKeyboardShortcutsInhibitorV1Client.listener, data)
         }
     }
 }

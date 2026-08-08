@@ -34,9 +34,9 @@ package protocol ZwlrGammaControlV1Events: AnyObject {
     func failed(_ proxy: WaylandBorrowedProxy<ZwlrGammaControlV1Client>)
 }
 package extension ZwlrGammaControlV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_gamma_control_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_gamma_control_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_gamma_control_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwlr_gamma_control_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwlr_gamma_control_v1_events())
         unsafe p.pointee.gamma_size = gammaSize_impl
         unsafe p.pointee.failed = failed_impl
         return unsafe p
@@ -78,7 +78,7 @@ package extension ZwlrGammaControlV1Client {
 package extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
     func installListener(_ owner: any ZwlrGammaControlV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_gamma_control_v1_add_listener(proxy, ZwlrGammaControlV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwlrGammaControlV1Client.listener, data)
         }
     }
 }

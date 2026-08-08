@@ -53,9 +53,9 @@ package protocol WlSeatEvents: AnyObject {
     func name(_ proxy: WaylandBorrowedProxy<WlSeatClient>, name: String)
 }
 package extension WlSeatClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_seat_listener> = {
-        let p = UnsafeMutablePointer<wl_seat_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_seat_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_seat_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_seat_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_seat_events())
         unsafe p.pointee.capabilities = capabilities_impl
         unsafe p.pointee.name = name_impl
         return unsafe p
@@ -98,7 +98,7 @@ package extension WlSeatClient {
 package extension WaylandProxy where Interface == WlSeatClient {
     func installListener(_ owner: any WlSeatEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_seat_add_listener(proxy, WlSeatClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlSeatClient.listener, data)
         }
     }
 }

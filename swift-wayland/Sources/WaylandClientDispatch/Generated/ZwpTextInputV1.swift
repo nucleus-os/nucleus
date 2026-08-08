@@ -89,9 +89,9 @@ package protocol ZwpTextInputV1Events: AnyObject {
     func textDirection(_ proxy: WaylandBorrowedProxy<ZwpTextInputV1Client>, serial: UInt32, direction: ZwpTextInputV1TextDirection)
 }
 package extension ZwpTextInputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_text_input_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_text_input_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_text_input_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_text_input_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_text_input_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_text_input_v1_events())
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
         unsafe p.pointee.modifiers_map = modifiersMap_impl
@@ -315,7 +315,7 @@ package extension ZwpTextInputV1Client {
 package extension WaylandProxy where Interface == ZwpTextInputV1Client {
     func installListener(_ owner: any ZwpTextInputV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_text_input_v1_add_listener(proxy, ZwpTextInputV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpTextInputV1Client.listener, data)
         }
     }
 }

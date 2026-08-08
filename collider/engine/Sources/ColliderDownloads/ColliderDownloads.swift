@@ -250,9 +250,7 @@ public actor ColliderDownloads {
 
     private func validateContentLength(_ result: TransferResult) throws {
         let size = try fileSize(result.file)
-        guard let contentLength = result.contentLength else {
-            throw DownloadFailure.missingContentLength
-        }
+        guard let contentLength = result.contentLength else { return }
         guard contentLength == size else {
             throw DownloadFailure.contentLengthMismatch(
                 declared: contentLength,
@@ -828,7 +826,6 @@ public enum DownloadFailure: Error, CustomStringConvertible, Sendable {
     case contentEncoding(String)
     case mediaType(String)
     case sizeExceeded
-    case missingContentLength
     case contentLengthMismatch(declared: Int64, received: Int64)
     case missingResponse
     case requestTimedOut
@@ -846,8 +843,6 @@ public enum DownloadFailure: Error, CustomStringConvertible, Sendable {
         case .contentEncoding(let value): "download returned forbidden content encoding '\(value)'"
         case .mediaType(let value): "download returned undeclared media type '\(value)'"
         case .sizeExceeded: "download exceeded its declared maximum size"
-        case .missingContentLength:
-            "download response omitted Content-Length"
         case .contentLengthMismatch(let declared, let received):
             "download Content-Length declared \(declared) bytes but received \(received)"
         case .missingResponse: "download completed without a valid HTTP response"

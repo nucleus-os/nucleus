@@ -41,9 +41,9 @@ package protocol WlShmEvents: AnyObject {
     func format(_ proxy: WaylandBorrowedProxy<WlShmClient>, format: WlShmFormat)
 }
 package extension WlShmClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_shm_listener> = {
-        let p = UnsafeMutablePointer<wl_shm_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_shm_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_shm_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_shm_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_shm_events())
         unsafe p.pointee.format = format_impl
         return unsafe p
     }()
@@ -69,7 +69,7 @@ package extension WlShmClient {
 package extension WaylandProxy where Interface == WlShmClient {
     func installListener(_ owner: any WlShmEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_shm_add_listener(proxy, WlShmClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlShmClient.listener, data)
         }
     }
 }

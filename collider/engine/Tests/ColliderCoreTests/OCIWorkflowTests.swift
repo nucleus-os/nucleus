@@ -466,6 +466,8 @@ import Testing
         environment: ["PATH": "/usr/bin"])
     let buildArguments = appleContainerBuildArguments(preparation)
     #expect(buildArguments.contains("linux/arm64"))
+    let networkIndex = try #require(buildArguments.firstIndex(of: "--network"))
+    #expect(buildArguments[networkIndex + 1] == "none")
     #expect(buildArguments.contains("--pull"))
     #expect(buildArguments.contains("plain"))
     #expect(buildArguments.contains(preparation.imageName))

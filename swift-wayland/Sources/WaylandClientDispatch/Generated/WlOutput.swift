@@ -33,9 +33,9 @@ package protocol WlOutputEvents: AnyObject {
     func description(_ proxy: WaylandBorrowedProxy<WlOutputClient>, description: String)
 }
 package extension WlOutputClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_output_listener> = {
-        let p = UnsafeMutablePointer<wl_output_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_output_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_output_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_output_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_output_events())
         unsafe p.pointee.geometry = geometry_impl
         unsafe p.pointee.mode = mode_impl
         unsafe p.pointee.done = done_impl
@@ -145,7 +145,7 @@ package extension WlOutputClient {
 package extension WaylandProxy where Interface == WlOutputClient {
     func installListener(_ owner: any WlOutputEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_output_add_listener(proxy, WlOutputClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlOutputClient.listener, data)
         }
     }
 }

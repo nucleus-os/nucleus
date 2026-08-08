@@ -1,6 +1,6 @@
 # Linux Distribution Portability Plan
 
-Status: active
+Status: deferred
 
 ## Invariant
 
@@ -222,7 +222,7 @@ package policy.
 
 ## Phase 6: Qualify One Artifact Across Distributions
 
-Status: active
+Status: deferred
 
 Current progress: the ARM64 Linux product and test graph passes in the canonical
 builder. `collider build linux-runtime` now publishes the staged runtime as a

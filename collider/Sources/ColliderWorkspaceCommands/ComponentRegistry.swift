@@ -40,7 +40,8 @@ package struct ComponentRegistry {
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
         let nativeBuilderCache = context.cacheRoot.appending("nucleus")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
-            context: context.layout.core.appending("build-container"),
+            context: context.root.appending("collider/images/native-builder"),
+            cacheRoot: nativeBuilderCache.appending("build-containers/native"),
             imageID: nativeBuilderCache.appending(
                 "build-containers/native/image-id"),
             ccache: nativeBuilderCache.appending("ccache/native"),

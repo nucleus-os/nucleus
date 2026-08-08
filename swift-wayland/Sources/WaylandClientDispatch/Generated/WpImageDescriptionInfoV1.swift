@@ -23,9 +23,9 @@ package protocol WpImageDescriptionInfoV1Events: AnyObject {
     func targetMaxFall(_ proxy: WaylandBorrowedProxy<WpImageDescriptionInfoV1Client>, max_fall: UInt32)
 }
 package extension WpImageDescriptionInfoV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_image_description_info_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_image_description_info_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_image_description_info_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_image_description_info_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_image_description_info_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_image_description_info_v1_events())
         unsafe p.pointee.done = done_impl
         unsafe p.pointee.icc_file = iccFile_impl
         unsafe p.pointee.primaries = primaries_impl
@@ -211,7 +211,7 @@ package extension WpImageDescriptionInfoV1Client {
 package extension WaylandProxy where Interface == WpImageDescriptionInfoV1Client {
     func installListener(_ owner: any WpImageDescriptionInfoV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_image_description_info_v1_add_listener(proxy, WpImageDescriptionInfoV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpImageDescriptionInfoV1Client.listener, data)
         }
     }
 }

@@ -13,9 +13,9 @@ package protocol ZwpLinuxBufferReleaseV1Events: AnyObject {
     func immediateRelease(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferReleaseV1Client>)
 }
 package extension ZwpLinuxBufferReleaseV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_linux_buffer_release_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_linux_buffer_release_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_linux_buffer_release_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_release_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_linux_buffer_release_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_linux_buffer_release_v1_events())
         unsafe p.pointee.fenced_release = fencedRelease_impl
         unsafe p.pointee.immediate_release = immediateRelease_impl
         return unsafe p
@@ -57,7 +57,7 @@ package extension ZwpLinuxBufferReleaseV1Client {
 package extension WaylandProxy where Interface == ZwpLinuxBufferReleaseV1Client {
     func installListener(_ owner: any ZwpLinuxBufferReleaseV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_linux_buffer_release_v1_add_listener(proxy, ZwpLinuxBufferReleaseV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpLinuxBufferReleaseV1Client.listener, data)
         }
     }
 }

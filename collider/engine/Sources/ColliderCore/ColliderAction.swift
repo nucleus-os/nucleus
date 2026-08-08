@@ -550,7 +550,7 @@ public func ociImagePreparationActionRequirements(
             ActionEffect(.readWrite, scope: .output(preparation.imageID)),
         ],
         lane: .hostExclusive,
-        networkAccess: .unrestricted,
+        networkAccess: .contentAddressed,
         executionPlatform: preparation.executionPlatform)
 }
 

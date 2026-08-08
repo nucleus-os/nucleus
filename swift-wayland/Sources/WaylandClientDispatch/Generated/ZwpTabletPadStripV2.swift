@@ -34,9 +34,9 @@ package protocol ZwpTabletPadStripV2Events: AnyObject {
     func frame(_ proxy: WaylandBorrowedProxy<ZwpTabletPadStripV2Client>, time: UInt32)
 }
 package extension ZwpTabletPadStripV2Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_tablet_pad_strip_v2_listener> = {
-        let p = UnsafeMutablePointer<zwp_tablet_pad_strip_v2_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_tablet_pad_strip_v2_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_strip_v2_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_tablet_pad_strip_v2_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_tablet_pad_strip_v2_events())
         unsafe p.pointee.source = source_impl
         unsafe p.pointee.position = position_impl
         unsafe p.pointee.stop = stop_impl
@@ -110,7 +110,7 @@ package extension ZwpTabletPadStripV2Client {
 package extension WaylandProxy where Interface == ZwpTabletPadStripV2Client {
     func installListener(_ owner: any ZwpTabletPadStripV2Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_tablet_pad_strip_v2_add_listener(proxy, ZwpTabletPadStripV2Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpTabletPadStripV2Client.listener, data)
         }
     }
 }

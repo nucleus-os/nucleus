@@ -79,9 +79,9 @@ package protocol ZwlrLayerSurfaceV1Events: AnyObject {
     func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>)
 }
 package extension ZwlrLayerSurfaceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_layer_surface_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_layer_surface_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_layer_surface_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwlr_layer_surface_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwlr_layer_surface_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwlr_layer_surface_v1_events())
         unsafe p.pointee.configure = configure_impl
         unsafe p.pointee.closed = closed_impl
         return unsafe p
@@ -123,7 +123,7 @@ package extension ZwlrLayerSurfaceV1Client {
 package extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
     func installListener(_ owner: any ZwlrLayerSurfaceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_layer_surface_v1_add_listener(proxy, ZwlrLayerSurfaceV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwlrLayerSurfaceV1Client.listener, data)
         }
     }
 }

@@ -23,9 +23,9 @@ package protocol ZwpRelativePointerV1Events: AnyObject {
     func relativeMotion(_ proxy: WaylandBorrowedProxy<ZwpRelativePointerV1Client>, utime_hi: UInt32, utime_lo: UInt32, dx: Double, dy: Double, dx_unaccel: Double, dy_unaccel: Double)
 }
 package extension ZwpRelativePointerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_relative_pointer_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_relative_pointer_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_relative_pointer_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_relative_pointer_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_relative_pointer_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_relative_pointer_v1_events())
         unsafe p.pointee.relative_motion = relativeMotion_impl
         return unsafe p
     }()
@@ -51,7 +51,7 @@ package extension ZwpRelativePointerV1Client {
 package extension WaylandProxy where Interface == ZwpRelativePointerV1Client {
     func installListener(_ owner: any ZwpRelativePointerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_relative_pointer_v1_add_listener(proxy, ZwpRelativePointerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpRelativePointerV1Client.listener, data)
         }
     }
 }

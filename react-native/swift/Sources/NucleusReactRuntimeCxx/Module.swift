@@ -18,62 +18,6 @@ private func requireSuccess(_ result: nucleus.react.RuntimeHostResult) throws {
     }
 }
 
-// Retains a JS→native command closure behind an opaque pointer for the facade's C callback
-// (a @convention(c) trampoline cannot capture).
-final class CommandHandlerBox: Sendable {
-    let handler: @MainActor @Sendable (String, String) -> Void
-
-    init(
-        _ handler:
-            @escaping @MainActor @Sendable (
-                String,
-                String
-            ) -> Void
-    ) {
-        self.handler = handler
-    }
-
-    static let callback:
-        @convention(c) (
-            UnsafeMutableRawPointer?,
-            UnsafePointer<CChar>?,
-            UnsafePointer<CChar>?
-        ) -> Void = { context, command, argsJson in
-            guard let context = unsafe context,
-                let command = unsafe command
-            else { return }
-            let box = unsafe Unmanaged<CommandHandlerBox>
-                .fromOpaque(context)
-                .takeUnretainedValue()
-            let commandValue = unsafe String(cString: command)
-            let argsJsonValue =
-                unsafe argsJson.map {
-                    unsafe String(cString: $0)
-                } ?? ""
-            // C++ holds the shared callback entry through this trampoline. Capture
-            // the box into the task before returning so replacement or runtime
-            // teardown may release the entry without invalidating queued delivery.
-            Task { @MainActor [box] in
-                box.handler(commandValue, argsJsonValue)
-            }
-        }
-
-    static let release:
-        @convention(c) (
-            UnsafeMutableRawPointer?
-        ) -> Void = { context in
-            guard let context = unsafe context else { return }
-            unsafe Unmanaged<CommandHandlerBox>.fromOpaque(context).release()
-        }
-}
-
-final class JSWorkWakeHandlerBox: Sendable {
-    let handler: @Sendable () -> Void
-    init(_ handler: @escaping @Sendable () -> Void) {
-        self.handler = handler
-    }
-}
-
 @MainActor
 @safe package final class RuntimeHost {
     private var facade: nucleus.react.ReactRuntimeHostFacade
@@ -179,32 +123,15 @@ final class JSWorkWakeHandlerBox: Sendable {
         return UInt32(result.unsignedValue)
     }
 
-    /// Install the embedding event loop's cross-thread JS-work wake.
+    /// Install the embedding event loop's cross-thread JS-work wake. The
+    /// closure runs on whichever thread first queues work onto an empty
+    /// invoker queue, and the runtime retires it once no signal can still
+    /// reference it.
     package func setJSWorkWakeHandler(
         _ handler: @escaping @Sendable () -> Void
     ) throws {
-        let box = JSWorkWakeHandlerBox(handler)
-        // Ownership transfers to the C++ WakeEntry. Its release callback
-        // balances passRetained on replacement, shutdown, or setup failure.
-        let callback: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
-            context in
-            guard let context = unsafe context else { return }
-            unsafe Unmanaged<JSWorkWakeHandlerBox>
-                .fromOpaque(context)
-                .takeUnretainedValue()
-                .handler()
-        }
-        let release: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
-            context in
-            guard let context = unsafe context else { return }
-            unsafe Unmanaged<JSWorkWakeHandlerBox>.fromOpaque(context).release()
-        }
         try requireSuccess(
-            unsafe facade.setJSWorkWakeHandler(
-                callback,
-                Unmanaged.passRetained(box).toOpaque(),
-                release
-            ))
+            unsafe facade.setJSWorkWakeHandler(.init { handler() }))
     }
 
     /// Thread-safe. Schedules a JS-thread dispatch of a device event with the
@@ -234,13 +161,18 @@ final class JSWorkWakeHandlerBox: Sendable {
                 String
             ) -> Void
     ) throws {
-        let box = CommandHandlerBox(handler)
         try requireSuccess(
             unsafe facade.setCommandHandler(
-                CommandHandlerBox.callback,
-                Unmanaged.passRetained(box).toOpaque(),
-                CommandHandlerBox.release
-            ))
+                .init { command, argsJson in
+                    // Runs on the JS thread. Copy the borrowed C++ strings
+                    // before the task so the typed handler never touches
+                    // storage the runtime may have retired.
+                    let commandValue = String(command)
+                    let argsJsonValue = String(argsJson)
+                    Task { @MainActor in
+                        handler(commandValue, argsJsonValue)
+                    }
+                }))
     }
 
     package var surfaceCount: UInt32 {

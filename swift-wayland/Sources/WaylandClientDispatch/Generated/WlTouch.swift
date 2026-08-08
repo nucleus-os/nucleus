@@ -33,9 +33,9 @@ package protocol WlTouchEvents: AnyObject {
     func orientation(_ proxy: WaylandBorrowedProxy<WlTouchClient>, id: Int32, orientation: Double)
 }
 package extension WlTouchClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_touch_listener> = {
-        let p = UnsafeMutablePointer<wl_touch_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_touch_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_touch_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_touch_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_touch_events())
         unsafe p.pointee.down = down_impl
         unsafe p.pointee.up = up_impl
         unsafe p.pointee.motion = motion_impl
@@ -158,7 +158,7 @@ package extension WlTouchClient {
 package extension WaylandProxy where Interface == WlTouchClient {
     func installListener(_ owner: any WlTouchEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_touch_add_listener(proxy, WlTouchClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlTouchClient.listener, data)
         }
     }
 }

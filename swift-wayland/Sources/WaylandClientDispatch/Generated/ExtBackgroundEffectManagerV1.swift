@@ -33,9 +33,9 @@ package protocol ExtBackgroundEffectManagerV1Events: AnyObject {
     func capabilities(_ proxy: WaylandBorrowedProxy<ExtBackgroundEffectManagerV1Client>, flags: ExtBackgroundEffectManagerV1Capability)
 }
 package extension ExtBackgroundEffectManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_background_effect_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_background_effect_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_background_effect_manager_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_background_effect_manager_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_background_effect_manager_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_background_effect_manager_v1_events())
         unsafe p.pointee.capabilities = capabilities_impl
         return unsafe p
     }()
@@ -61,7 +61,7 @@ package extension ExtBackgroundEffectManagerV1Client {
 package extension WaylandProxy where Interface == ExtBackgroundEffectManagerV1Client {
     func installListener(_ owner: any ExtBackgroundEffectManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_background_effect_manager_v1_add_listener(proxy, ExtBackgroundEffectManagerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtBackgroundEffectManagerV1Client.listener, data)
         }
     }
 }

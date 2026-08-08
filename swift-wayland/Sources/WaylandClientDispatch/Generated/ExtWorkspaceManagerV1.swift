@@ -27,9 +27,9 @@ package protocol ExtWorkspaceManagerV1Events: AnyObject {
     func finished(_ proxy: WaylandBorrowedProxy<ExtWorkspaceManagerV1Client>)
 }
 package extension ExtWorkspaceManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_workspace_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_workspace_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_workspace_manager_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_workspace_manager_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_workspace_manager_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_workspace_manager_v1_events())
         unsafe p.pointee.workspace_group = workspaceGroup_impl
         unsafe p.pointee.workspace = workspace_impl
         unsafe p.pointee.done = done_impl
@@ -105,7 +105,7 @@ package extension ExtWorkspaceManagerV1Client {
 package extension WaylandProxy where Interface == ExtWorkspaceManagerV1Client {
     func installListener(_ owner: any ExtWorkspaceManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_workspace_manager_v1_add_listener(proxy, ExtWorkspaceManagerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtWorkspaceManagerV1Client.listener, data)
         }
     }
 }

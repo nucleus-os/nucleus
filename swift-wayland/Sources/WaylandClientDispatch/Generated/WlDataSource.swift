@@ -45,9 +45,9 @@ package protocol WlDataSourceEvents: AnyObject {
     func action(_ proxy: WaylandBorrowedProxy<WlDataSourceClient>, dnd_action: WlDataDeviceManagerDndAction)
 }
 package extension WlDataSourceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_data_source_listener> = {
-        let p = UnsafeMutablePointer<wl_data_source_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_data_source_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_data_source_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_data_source_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_data_source_events())
         unsafe p.pointee.target = target_impl
         unsafe p.pointee.send = send_impl
         unsafe p.pointee.cancelled = cancelled_impl
@@ -157,7 +157,7 @@ package extension WlDataSourceClient {
 package extension WaylandProxy where Interface == WlDataSourceClient {
     func installListener(_ owner: any WlDataSourceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_data_source_add_listener(proxy, WlDataSourceClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlDataSourceClient.listener, data)
         }
     }
 }

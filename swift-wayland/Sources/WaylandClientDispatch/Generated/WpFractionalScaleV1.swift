@@ -23,9 +23,9 @@ package protocol WpFractionalScaleV1Events: AnyObject {
     func preferredScale(_ proxy: WaylandBorrowedProxy<WpFractionalScaleV1Client>, scale: UInt32)
 }
 package extension WpFractionalScaleV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_fractional_scale_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_fractional_scale_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_fractional_scale_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_fractional_scale_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_fractional_scale_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_fractional_scale_v1_events())
         unsafe p.pointee.preferred_scale = preferredScale_impl
         return unsafe p
     }()
@@ -51,7 +51,7 @@ package extension WpFractionalScaleV1Client {
 package extension WaylandProxy where Interface == WpFractionalScaleV1Client {
     func installListener(_ owner: any WpFractionalScaleV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_fractional_scale_v1_add_listener(proxy, WpFractionalScaleV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpFractionalScaleV1Client.listener, data)
         }
     }
 }

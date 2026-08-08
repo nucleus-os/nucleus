@@ -30,9 +30,9 @@ package protocol WpDrmLeaseDeviceV1Events: AnyObject {
     func released(_ proxy: WaylandBorrowedProxy<WpDrmLeaseDeviceV1Client>)
 }
 package extension WpDrmLeaseDeviceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_drm_lease_device_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_drm_lease_device_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_drm_lease_device_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_drm_lease_device_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_drm_lease_device_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_drm_lease_device_v1_events())
         unsafe p.pointee.drm_fd = drmFd_impl
         unsafe p.pointee.connector = connector_impl
         unsafe p.pointee.done = done_impl
@@ -107,7 +107,7 @@ package extension WpDrmLeaseDeviceV1Client {
 package extension WaylandProxy where Interface == WpDrmLeaseDeviceV1Client {
     func installListener(_ owner: any WpDrmLeaseDeviceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_drm_lease_device_v1_add_listener(proxy, WpDrmLeaseDeviceV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpDrmLeaseDeviceV1Client.listener, data)
         }
     }
 }

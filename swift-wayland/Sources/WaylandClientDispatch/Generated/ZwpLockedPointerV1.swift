@@ -35,9 +35,9 @@ package protocol ZwpLockedPointerV1Events: AnyObject {
     func unlocked(_ proxy: WaylandBorrowedProxy<ZwpLockedPointerV1Client>)
 }
 package extension ZwpLockedPointerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_locked_pointer_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_locked_pointer_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_locked_pointer_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_locked_pointer_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_locked_pointer_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_locked_pointer_v1_events())
         unsafe p.pointee.locked = locked_impl
         unsafe p.pointee.unlocked = unlocked_impl
         return unsafe p
@@ -79,7 +79,7 @@ package extension ZwpLockedPointerV1Client {
 package extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
     func installListener(_ owner: any ZwpLockedPointerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_locked_pointer_v1_add_listener(proxy, ZwpLockedPointerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpLockedPointerV1Client.listener, data)
         }
     }
 }

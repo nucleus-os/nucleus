@@ -28,9 +28,9 @@ package protocol ZwpPointerGestureHoldV1Events: AnyObject {
     func end(_ proxy: WaylandBorrowedProxy<ZwpPointerGestureHoldV1Client>, serial: UInt32, time: UInt32, cancelled: Int32)
 }
 package extension ZwpPointerGestureHoldV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_pointer_gesture_hold_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_pointer_gesture_hold_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_pointer_gesture_hold_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_pointer_gesture_hold_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_pointer_gesture_hold_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_pointer_gesture_hold_v1_events())
         unsafe p.pointee.begin = begin_impl
         unsafe p.pointee.end = end_impl
         return unsafe p
@@ -73,7 +73,7 @@ package extension ZwpPointerGestureHoldV1Client {
 package extension WaylandProxy where Interface == ZwpPointerGestureHoldV1Client {
     func installListener(_ owner: any ZwpPointerGestureHoldV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_pointer_gesture_hold_v1_add_listener(proxy, ZwpPointerGestureHoldV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpPointerGestureHoldV1Client.listener, data)
         }
     }
 }

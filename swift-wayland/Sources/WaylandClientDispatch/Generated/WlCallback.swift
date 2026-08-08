@@ -12,9 +12,9 @@ package protocol WlCallbackEvents: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WlCallbackClient>, callback_data: UInt32)
 }
 package extension WlCallbackClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_callback_listener> = {
-        let p = UnsafeMutablePointer<wl_callback_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_callback_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_callback_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_callback_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_callback_events())
         unsafe p.pointee.done = done_impl
         return unsafe p
     }()
@@ -40,7 +40,7 @@ package extension WlCallbackClient {
 package extension WaylandProxy where Interface == WlCallbackClient {
     func installListener(_ owner: any WlCallbackEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_callback_add_listener(proxy, WlCallbackClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlCallbackClient.listener, data)
         }
     }
 }

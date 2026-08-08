@@ -15,9 +15,9 @@ package protocol WpPresentationFeedbackEvents: AnyObject {
     func discarded(_ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>)
 }
 package extension WpPresentationFeedbackClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_presentation_feedback_listener> = {
-        let p = UnsafeMutablePointer<wp_presentation_feedback_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_presentation_feedback_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_feedback_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_presentation_feedback_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_presentation_feedback_events())
         unsafe p.pointee.sync_output = syncOutput_impl
         unsafe p.pointee.presented = presented_impl
         unsafe p.pointee.discarded = discarded_impl
@@ -76,7 +76,7 @@ package extension WpPresentationFeedbackClient {
 package extension WaylandProxy where Interface == WpPresentationFeedbackClient {
     func installListener(_ owner: any WpPresentationFeedbackEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_presentation_feedback_add_listener(proxy, WpPresentationFeedbackClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpPresentationFeedbackClient.listener, data)
         }
     }
 }

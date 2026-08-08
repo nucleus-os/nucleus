@@ -30,9 +30,9 @@ package protocol ZwpLinuxDmabufFeedbackV1Events: AnyObject {
     func trancheFlags(_ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>, flags: ZwpLinuxDmabufFeedbackV1TrancheFlags)
 }
 package extension ZwpLinuxDmabufFeedbackV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_linux_dmabuf_feedback_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_linux_dmabuf_feedback_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_linux_dmabuf_feedback_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_linux_dmabuf_feedback_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_linux_dmabuf_feedback_v1_events())
         unsafe p.pointee.done = done_impl
         unsafe p.pointee.format_table = formatTable_impl
         unsafe p.pointee.main_device = mainDevice_impl
@@ -157,7 +157,7 @@ package extension ZwpLinuxDmabufFeedbackV1Client {
 package extension WaylandProxy where Interface == ZwpLinuxDmabufFeedbackV1Client {
     func installListener(_ owner: any ZwpLinuxDmabufFeedbackV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_linux_dmabuf_feedback_v1_add_listener(proxy, ZwpLinuxDmabufFeedbackV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpLinuxDmabufFeedbackV1Client.listener, data)
         }
     }
 }

@@ -106,9 +106,9 @@ package protocol ZwpInputMethodContextV1Events: AnyObject {
     func preferredLanguage(_ proxy: WaylandBorrowedProxy<ZwpInputMethodContextV1Client>, language: String)
 }
 package extension ZwpInputMethodContextV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_input_method_context_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_input_method_context_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_input_method_context_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_input_method_context_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_input_method_context_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_input_method_context_v1_events())
         unsafe p.pointee.surrounding_text = surroundingText_impl
         unsafe p.pointee.reset = reset_impl
         unsafe p.pointee.content_type = contentType_impl
@@ -216,7 +216,7 @@ package extension ZwpInputMethodContextV1Client {
 package extension WaylandProxy where Interface == ZwpInputMethodContextV1Client {
     func installListener(_ owner: any ZwpInputMethodContextV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_input_method_context_v1_add_listener(proxy, ZwpInputMethodContextV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpInputMethodContextV1Client.listener, data)
         }
     }
 }

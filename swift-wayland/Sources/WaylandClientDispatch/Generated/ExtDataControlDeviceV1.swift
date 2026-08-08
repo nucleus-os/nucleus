@@ -38,9 +38,9 @@ package protocol ExtDataControlDeviceV1Events: AnyObject {
     func primarySelection(_ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>, id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?)
 }
 package extension ExtDataControlDeviceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_data_control_device_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_data_control_device_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_data_control_device_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_device_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_data_control_device_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_data_control_device_v1_events())
         unsafe p.pointee.data_offer = dataOffer_impl
         unsafe p.pointee.selection = selection_impl
         unsafe p.pointee.finished = finished_impl
@@ -117,7 +117,7 @@ package extension ExtDataControlDeviceV1Client {
 package extension WaylandProxy where Interface == ExtDataControlDeviceV1Client {
     func installListener(_ owner: any ExtDataControlDeviceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_data_control_device_v1_add_listener(proxy, ExtDataControlDeviceV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtDataControlDeviceV1Client.listener, data)
         }
     }
 }

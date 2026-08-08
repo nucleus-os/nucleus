@@ -23,9 +23,9 @@ package protocol WlBufferEvents: AnyObject {
     func release(_ proxy: WaylandBorrowedProxy<WlBufferClient>)
 }
 package extension WlBufferClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_buffer_listener> = {
-        let p = UnsafeMutablePointer<wl_buffer_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_buffer_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_buffer_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_buffer_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_buffer_events())
         unsafe p.pointee.release = release_impl
         return unsafe p
     }()
@@ -51,7 +51,7 @@ package extension WlBufferClient {
 package extension WaylandProxy where Interface == WlBufferClient {
     func installListener(_ owner: any WlBufferEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_buffer_add_listener(proxy, WlBufferClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlBufferClient.listener, data)
         }
     }
 }

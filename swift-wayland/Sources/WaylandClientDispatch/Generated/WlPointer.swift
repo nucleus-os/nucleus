@@ -44,9 +44,9 @@ package protocol WlPointerEvents: AnyObject {
     func axisRelativeDirection(_ proxy: WaylandBorrowedProxy<WlPointerClient>, axis: WlPointerAxis, direction: WlPointerAxisRelativeDirection)
 }
 package extension WlPointerClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_pointer_listener> = {
-        let p = UnsafeMutablePointer<wl_pointer_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_pointer_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_pointer_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_pointer_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_pointer_events())
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
         unsafe p.pointee.motion = motion_impl
@@ -234,7 +234,7 @@ package extension WlPointerClient {
 package extension WaylandProxy where Interface == WlPointerClient {
     func installListener(_ owner: any WlPointerEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_pointer_add_listener(proxy, WlPointerClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlPointerClient.listener, data)
         }
     }
 }

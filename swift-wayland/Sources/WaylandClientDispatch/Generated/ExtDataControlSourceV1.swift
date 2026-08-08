@@ -31,9 +31,9 @@ package protocol ExtDataControlSourceV1Events: AnyObject {
     func cancelled(_ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>)
 }
 package extension ExtDataControlSourceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_data_control_source_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_data_control_source_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_data_control_source_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_data_control_source_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_data_control_source_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_data_control_source_v1_events())
         unsafe p.pointee.send = send_impl
         unsafe p.pointee.cancelled = cancelled_impl
         return unsafe p
@@ -76,7 +76,7 @@ package extension ExtDataControlSourceV1Client {
 package extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
     func installListener(_ owner: any ExtDataControlSourceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_data_control_source_v1_add_listener(proxy, ExtDataControlSourceV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtDataControlSourceV1Client.listener, data)
         }
     }
 }

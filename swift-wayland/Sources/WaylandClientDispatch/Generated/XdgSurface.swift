@@ -51,9 +51,9 @@ package protocol XdgSurfaceEvents: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<XdgSurfaceClient>, serial: UInt32)
 }
 package extension XdgSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_surface_listener> = {
-        let p = UnsafeMutablePointer<xdg_surface_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_surface_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_surface_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_surface_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_surface_events())
         unsafe p.pointee.configure = configure_impl
         return unsafe p
     }()
@@ -79,7 +79,7 @@ package extension XdgSurfaceClient {
 package extension WaylandProxy where Interface == XdgSurfaceClient {
     func installListener(_ owner: any XdgSurfaceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_surface_add_listener(proxy, XdgSurfaceClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgSurfaceClient.listener, data)
         }
     }
 }

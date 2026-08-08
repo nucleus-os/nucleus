@@ -44,15 +44,16 @@ hash_standard_input() {
 append_repository_state() {
   local repository="$1"
   local label="$2"
+  shift 2
   local path
   printf 'repository\0%s\0' "$label"
   git -C "$repository" rev-parse HEAD
   git -C "$repository" diff \
-    --binary --no-ext-diff --ignore-submodules=all HEAD --
+    --binary --no-ext-diff --ignore-submodules=all HEAD -- "$@"
   while IFS= read -r -d '' path; do
     printf 'untracked\0%s\0' "$path"
     git -C "$repository" hash-object --no-filters -- "$path"
-  done < <(git -C "$repository" ls-files --others --exclude-standard -z)
+  done < <(git -C "$repository" ls-files --others --exclude-standard -z -- "$@")
 }
 
 collider_source_fingerprint() {
@@ -66,20 +67,36 @@ collider_source_fingerprint() {
     third-party/swift-subprocess
     third-party/swift-system
   )
+  local root_paths=(
+    collider/Package.swift
+    collider/Package.resolved
+    collider/Sources
+    collider/engine/Package.swift
+    collider/engine/Package.resolved
+    collider/engine/Sources
+    tools/collider-launcher.sh
+    tools/configure-swiftpm-mirrors.sh
+    tools/host-env.sh
+    tools/host-platform-env.sh
+  )
+  if [[ "$(uname -s)" != Darwin ]]; then
+    # Linux Collider links the supported root-package protocol products.
+    root_paths=(.)
+  fi
   {
     swiftc --version 2>&1
-    append_repository_state "$root" .
+    append_repository_state "$root" . "${root_paths[@]}"
     # These are the root-owned source repositories in Collider's SwiftPM
     # dependency closure. Remote transitive packages remain SwiftPM-owned.
     for source_repository in "${source_repositories[@]}"; do
-      append_repository_state "$root/$source_repository" "$source_repository"
+      append_repository_state "$root/$source_repository" "$source_repository" .
     done
   } | hash_standard_input
 }
 
-# Git supplies the complete committed, modified, staged, submodule, and
-# untracked-source identity. SwiftPM remains the sole builder; the launcher only
-# avoids asking it to re-plan a source/toolchain state it has already built.
+# Git supplies the committed, modified, staged, and untracked identity of
+# Collider's compilation closure. SwiftPM remains the sole builder; the launcher
+# only avoids asking it to re-plan a source/toolchain state it has already built.
 fingerprint="$(collider_source_fingerprint)"
 recorded_fingerprint=""
 if [[ -r "$fingerprint_file" ]]; then

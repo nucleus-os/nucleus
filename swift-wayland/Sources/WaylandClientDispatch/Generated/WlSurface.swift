@@ -111,9 +111,9 @@ package protocol WlSurfaceEvents: AnyObject {
     func preferredBufferTransform(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, transform: WlOutputTransform)
 }
 package extension WlSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_surface_listener> = {
-        let p = UnsafeMutablePointer<wl_surface_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_surface_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_surface_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_surface_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_surface_events())
         unsafe p.pointee.enter = enter_impl
         unsafe p.pointee.leave = leave_impl
         unsafe p.pointee.preferred_buffer_scale = preferredBufferScale_impl
@@ -189,7 +189,7 @@ package extension WlSurfaceClient {
 package extension WaylandProxy where Interface == WlSurfaceClient {
     func installListener(_ owner: any WlSurfaceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_surface_add_listener(proxy, WlSurfaceClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlSurfaceClient.listener, data)
         }
     }
 }

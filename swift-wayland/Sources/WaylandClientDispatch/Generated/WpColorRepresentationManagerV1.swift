@@ -35,9 +35,9 @@ package protocol WpColorRepresentationManagerV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WpColorRepresentationManagerV1Client>)
 }
 package extension WpColorRepresentationManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_representation_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_representation_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_representation_manager_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_representation_manager_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_color_representation_manager_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_color_representation_manager_v1_events())
         unsafe p.pointee.supported_alpha_mode = supportedAlphaMode_impl
         unsafe p.pointee.supported_coefficients_and_ranges = supportedCoefficientsAndRanges_impl
         unsafe p.pointee.done = done_impl
@@ -95,7 +95,7 @@ package extension WpColorRepresentationManagerV1Client {
 package extension WaylandProxy where Interface == WpColorRepresentationManagerV1Client {
     func installListener(_ owner: any WpColorRepresentationManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_color_representation_manager_v1_add_listener(proxy, WpColorRepresentationManagerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpColorRepresentationManagerV1Client.listener, data)
         }
     }
 }

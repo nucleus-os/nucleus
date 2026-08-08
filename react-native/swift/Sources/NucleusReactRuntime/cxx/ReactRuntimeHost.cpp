@@ -308,17 +308,11 @@ class ReactRuntimeHostImpl final {
     return jsInvoker_->drainPending();
   }
 
-  void setJSWorkWakeHandler(
-      RuntimeJSCallInvoker::WakeCallback callback,
-      void *context,
-      RuntimeJSCallInvoker::WakeContextRelease release) {
+  void setJSWorkWakeHandler(RuntimeJSCallInvoker::JSWorkWake wake) {
     if (jsInvoker_ == nullptr) {
-      if (release != nullptr) {
-        release(context);
-      }
       return;
     }
-    jsInvoker_->setWakeHandler(callback, context, release);
+    jsInvoker_->setWakeHandler(std::move(wake));
   }
 
   void evaluateJavaScriptSource(const char *source, const char *sourceUrl) {
@@ -364,11 +358,8 @@ class ReactRuntimeHostImpl final {
     deviceEventEmitter_->emit(std::string(name), std::move(payload));
   }
 
-  void setCommandHandler(
-      void (*callback)(void *ctx, const char *command, const char *argsJson),
-      void *context,
-      void (*release)(void *ctx)) {
-    commandHandler_->set(callback, context, release);
+  void setCommandHandler(HostCommandHandler::HostCommand handler) {
+    commandHandler_->set(std::move(handler));
   }
 
   void setAppState(const char *state) {
@@ -2240,20 +2231,12 @@ RuntimeHostResult ReactRuntimeHostFacade::drainPendingJSCalls() {
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(
-    JSWorkWakeCallback callback,
-    void *context,
-    JSWorkWakeContextRelease release) {
-  if (impl_ == nullptr) {
-    if (release != nullptr) {
-      release(context);
+RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(JSWorkWake wake) {
+  return invokeRuntimeHostEntry([this, wake = std::move(wake)]() mutable {
+    if (impl_ == nullptr) {
+      throw std::runtime_error("React runtime host facade is moved-from");
     }
-    return RuntimeHostResult{
-        .succeeded = false,
-        .error = "React runtime host facade is moved-from"};
-  }
-  return invokeRuntimeHostEntry([this, callback, context, release] {
-    impl_->setJSWorkWakeHandler(callback, context, release);
+    impl_->setJSWorkWakeHandler(std::move(wake));
   });
 }
 
@@ -2270,18 +2253,12 @@ RuntimeHostResult ReactRuntimeHostFacade::emitDeviceEvent(
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setCommandHandler(
-    HostCommandCallback callback,
-    void *context,
-    HostCommandContextRelease release) {
-  if (impl_ == nullptr) {
-    if (release != nullptr) {
-      release(context);
+RuntimeHostResult ReactRuntimeHostFacade::setCommandHandler(HostCommand handler) {
+  return invokeRuntimeHostEntry([this, handler = std::move(handler)]() mutable {
+    if (impl_ == nullptr) {
+      throw std::runtime_error("React runtime host facade is moved-from");
     }
-    return RuntimeHostResult{.succeeded = false, .error = "React runtime host facade is moved-from"};
-  }
-  return invokeRuntimeHostEntry([this, callback, context, release] {
-    impl_->setCommandHandler(callback, context, release);
+    impl_->setCommandHandler(std::move(handler));
   });
 }
 

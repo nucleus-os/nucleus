@@ -63,9 +63,9 @@ package protocol XdgSessionV1Events: AnyObject {
     func replaced(_ proxy: WaylandBorrowedProxy<XdgSessionV1Client>)
 }
 package extension XdgSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_session_v1_listener> = {
-        let p = UnsafeMutablePointer<xdg_session_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_session_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_session_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_session_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_session_v1_events())
         unsafe p.pointee.created = created_impl
         unsafe p.pointee.restored = restored_impl
         unsafe p.pointee.replaced = replaced_impl
@@ -124,7 +124,7 @@ package extension XdgSessionV1Client {
 package extension WaylandProxy where Interface == XdgSessionV1Client {
     func installListener(_ owner: any XdgSessionV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_session_v1_add_listener(proxy, XdgSessionV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgSessionV1Client.listener, data)
         }
     }
 }

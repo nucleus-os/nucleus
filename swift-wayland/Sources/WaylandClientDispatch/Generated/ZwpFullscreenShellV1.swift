@@ -41,9 +41,9 @@ package protocol ZwpFullscreenShellV1Events: AnyObject {
     func capability(_ proxy: WaylandBorrowedProxy<ZwpFullscreenShellV1Client>, capability: ZwpFullscreenShellV1Capability)
 }
 package extension ZwpFullscreenShellV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_fullscreen_shell_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_fullscreen_shell_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_fullscreen_shell_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_fullscreen_shell_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_fullscreen_shell_v1_events())
         unsafe p.pointee.capability = capability_impl
         return unsafe p
     }()
@@ -69,7 +69,7 @@ package extension ZwpFullscreenShellV1Client {
 package extension WaylandProxy where Interface == ZwpFullscreenShellV1Client {
     func installListener(_ owner: any ZwpFullscreenShellV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_fullscreen_shell_v1_add_listener(proxy, ZwpFullscreenShellV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpFullscreenShellV1Client.listener, data)
         }
     }
 }

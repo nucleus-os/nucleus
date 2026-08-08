@@ -24,9 +24,9 @@ package protocol ExtTransientSeatV1Events: AnyObject {
     func denied(_ proxy: WaylandBorrowedProxy<ExtTransientSeatV1Client>)
 }
 package extension ExtTransientSeatV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_transient_seat_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_transient_seat_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_transient_seat_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_ext_transient_seat_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_ext_transient_seat_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_ext_transient_seat_v1_events())
         unsafe p.pointee.ready = ready_impl
         unsafe p.pointee.denied = denied_impl
         return unsafe p
@@ -68,7 +68,7 @@ package extension ExtTransientSeatV1Client {
 package extension WaylandProxy where Interface == ExtTransientSeatV1Client {
     func installListener(_ owner: any ExtTransientSeatV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_transient_seat_v1_add_listener(proxy, ExtTransientSeatV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ExtTransientSeatV1Client.listener, data)
         }
     }
 }

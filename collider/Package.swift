@@ -1,6 +1,20 @@
 // swift-tools-version: 6.4
 import PackageDescription
 
+var packageDependencies: [Package.Dependency] = [
+    .package(path: "engine"),
+    .package(path: "../third-party/swift-argument-parser"),
+]
+var nucleusSessionDependencies: [Target.Dependency] = []
+var nucleusAndroidRuntimeDependencies: [Target.Dependency] = []
+#if os(Linux)
+packageDependencies.append(.package(name: "Nucleus", path: ".."))
+nucleusSessionDependencies.append(
+    .product(name: "NucleusSessionProtocol", package: "Nucleus"))
+nucleusAndroidRuntimeDependencies.append(
+    .product(name: "NucleusAndroidRuntimeCore", package: "Nucleus"))
+#endif
+
 let package = Package(
     name: "collider-cli",
     platforms: [.macOS("27")],
@@ -10,11 +24,7 @@ let package = Package(
             name: "nucleus-runtime-assembler",
             targets: ["NucleusRuntimeAssembler"]),
     ],
-    dependencies: [
-        .package(path: "engine"),
-        .package(path: "../third-party/swift-argument-parser"),
-        .package(name: "Nucleus", path: ".."),
-    ],
+    dependencies: packageDependencies,
     targets: [
         .executableTarget(
             name: "Collider",
@@ -72,15 +82,7 @@ let package = Package(
                 "ColliderWorkspaceCommands",
                 "AndroidRuntimeColliderRecipe",
                 "ShellColliderRecipe",
-                .product(
-                    name: "NucleusSessionProtocol",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-                .product(
-                    name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-            ]),
+            ] + nucleusSessionDependencies + nucleusAndroidRuntimeDependencies),
         .target(
             name: "ColliderSwiftPM",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -90,11 +92,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
-                .product(
-                    name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-            ]),
+            ] + nucleusAndroidRuntimeDependencies),
         .target(
             name: "ChromiumColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -134,11 +132,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "NativeBuilderColliderRecipe",
-                .product(
-                    name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-            ]),
+            ] + nucleusAndroidRuntimeDependencies),
         .target(
             name: "SwiftTargetSDKColliderRecipe",
             dependencies: [
@@ -212,15 +206,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
-                .product(
-                    name: "NucleusSessionProtocol",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-                .product(
-                    name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus",
-                    condition: .when(platforms: [.linux])),
-            ]),
+            ] + nucleusSessionDependencies + nucleusAndroidRuntimeDependencies),
         .testTarget(
             name: "CoreColliderRecipeTests",
             dependencies: [

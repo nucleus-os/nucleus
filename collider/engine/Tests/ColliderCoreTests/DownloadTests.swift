@@ -125,14 +125,17 @@ struct DownloadPolicyTests {
             containing: "HTTP status 503")
     }
 
-    @Test func rejectsMissingAndIncorrectContentLength() async throws {
+    @Test func acceptsMissingAndRejectsIncorrectContentLength() async throws {
         let body = Data("length".utf8)
-        try await expectFailure(
-            StubHTTPResponse(
+        let fixture = try fixture(
+            response: StubHTTPResponse(
                 status: 200,
                 headers: ["Content-Type": "application/octet-stream"],
-                body: body),
-            containing: "omitted Content-Length")
+                body: body))
+        defer { fixture.remove() }
+        try await fixture.download()
+        #expect(try Data(contentsOf: fixture.candidate) == body)
+
         try await expectFailure(
             StubHTTPResponse(
                 status: 200,

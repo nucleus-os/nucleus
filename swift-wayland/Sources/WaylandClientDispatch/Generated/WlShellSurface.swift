@@ -78,9 +78,9 @@ package protocol WlShellSurfaceEvents: AnyObject {
     func popupDone(_ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>)
 }
 package extension WlShellSurfaceClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_shell_surface_listener> = {
-        let p = UnsafeMutablePointer<wl_shell_surface_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wl_shell_surface_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wl_shell_surface_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wl_shell_surface_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wl_shell_surface_events())
         unsafe p.pointee.ping = ping_impl
         unsafe p.pointee.configure = configure_impl
         unsafe p.pointee.popup_done = popupDone_impl
@@ -138,7 +138,7 @@ package extension WlShellSurfaceClient {
 package extension WaylandProxy where Interface == WlShellSurfaceClient {
     func installListener(_ owner: any WlShellSurfaceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wl_shell_surface_add_listener(proxy, WlShellSurfaceClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WlShellSurfaceClient.listener, data)
         }
     }
 }

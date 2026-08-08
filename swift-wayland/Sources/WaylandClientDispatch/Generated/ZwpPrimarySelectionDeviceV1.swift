@@ -30,9 +30,9 @@ package protocol ZwpPrimarySelectionDeviceV1Events: AnyObject {
     func selection(_ proxy: WaylandBorrowedProxy<ZwpPrimarySelectionDeviceV1Client>, id: WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>?)
 }
 package extension ZwpPrimarySelectionDeviceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_primary_selection_device_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_primary_selection_device_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_primary_selection_device_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_zwp_primary_selection_device_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_zwp_primary_selection_device_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_zwp_primary_selection_device_v1_events())
         unsafe p.pointee.data_offer = dataOffer_impl
         unsafe p.pointee.selection = selection_impl
         return unsafe p
@@ -76,7 +76,7 @@ package extension ZwpPrimarySelectionDeviceV1Client {
 package extension WaylandProxy where Interface == ZwpPrimarySelectionDeviceV1Client {
     func installListener(_ owner: any ZwpPrimarySelectionDeviceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_primary_selection_device_v1_add_listener(proxy, ZwpPrimarySelectionDeviceV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, ZwpPrimarySelectionDeviceV1Client.listener, data)
         }
     }
 }

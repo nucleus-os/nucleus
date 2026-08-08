@@ -41,9 +41,9 @@ package protocol XdgPopupEvents: AnyObject {
     func repositioned(_ proxy: WaylandBorrowedProxy<XdgPopupClient>, token: UInt32)
 }
 package extension XdgPopupClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_popup_listener> = {
-        let p = UnsafeMutablePointer<xdg_popup_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_popup_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_popup_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_popup_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_popup_events())
         unsafe p.pointee.configure = configure_impl
         unsafe p.pointee.popup_done = popupDone_impl
         unsafe p.pointee.repositioned = repositioned_impl
@@ -101,7 +101,7 @@ package extension XdgPopupClient {
 package extension WaylandProxy where Interface == XdgPopupClient {
     func installListener(_ owner: any XdgPopupEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_popup_add_listener(proxy, XdgPopupClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgPopupClient.listener, data)
         }
     }
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -52,31 +53,24 @@ class ReactRuntimeHostFacade final {
   // the JS thread (i.e. the thread that constructed this facade).
   // Returns the number of callbacks drained.
   RuntimeHostResult drainPendingJSCalls();
-  using JSWorkWakeCallback = void (*)(void *ctx);
-  using JSWorkWakeContextRelease = void (*)(void *ctx);
+  using JSWorkWake = std::function<void()>;
   // Installs a thread-safe wake invoked when cross-thread JS work first enters
-  // an empty invoker queue. Ownership of `context` transfers to the runtime.
-  RuntimeHostResult setJSWorkWakeHandler(
-      JSWorkWakeCallback callback,
-      void *context,
-      JSWorkWakeContextRelease release);
+  // an empty invoker queue. Replacing the wake, or shutting the runtime down,
+  // retires the previous callable once every in-flight signal has released it.
+  RuntimeHostResult setJSWorkWakeHandler(JSWorkWake wake);
   // Thread-safe. Schedules a JS-thread call to the global device-event
   // emitter with `name` and the optionally JSON-encoded `payloadJson`. The
   // event is dropped if the JS-side emitter is not installed yet.
   RuntimeHostResult emitDeviceEvent(const std::string &name, const std::string &payloadJson);
-  // The JS→native command seam (counterpart to emitDeviceEvent). Installs a C callback the
+  // The JS→native command seam (counterpart to emitDeviceEvent). Installs the callable the
   // `NucleusHostCommand` TurboModule forwards `invoke(command, argsJson)` to; the embedding
-  // host routes it to its native services. A plain C callback + opaque context so a Swift
-  // closure can bridge without a C++ vtable. `callback` runs on the JS thread; the Swift
-  // trampoline copies its inputs and schedules the typed handler on MainActor.
-  using HostCommandCallback = void (*)(void *ctx, const char *command, const char *argsJson);
-  using HostCommandContextRelease = void (*)(void *ctx);
-  // Takes ownership of `context`. The runtime calls `release` after no invocation can
-  // still reference it, including when a handler is replaced or the runtime is destroyed.
-  RuntimeHostResult setCommandHandler(
-      HostCommandCallback callback,
-      void *context,
-      HostCommandContextRelease release);
+  // host routes it to its native services. `handler` runs on the JS thread; the Swift
+  // closure copies its inputs and schedules the typed handler on MainActor.
+  using HostCommand =
+      std::function<void(const std::string &command, const std::string &argsJson)>;
+  // Replacing a handler, or destroying the runtime, retires the previous callable after no
+  // invocation can still reference it.
+  RuntimeHostResult setCommandHandler(HostCommand handler);
   RuntimeHostResult setAppState(const std::string &state);
   unsigned int surfaceCount() const;
   FabricMountReport readFabricMountReport() const;

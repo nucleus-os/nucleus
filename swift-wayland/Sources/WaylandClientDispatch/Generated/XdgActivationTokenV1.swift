@@ -47,9 +47,9 @@ package protocol XdgActivationTokenV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<XdgActivationTokenV1Client>, token: String)
 }
 package extension XdgActivationTokenV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_activation_token_v1_listener> = {
-        let p = UnsafeMutablePointer<xdg_activation_token_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_activation_token_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_xdg_activation_token_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_xdg_activation_token_v1_events())
         unsafe p.pointee.done = done_impl
         return unsafe p
     }()
@@ -76,7 +76,7 @@ package extension XdgActivationTokenV1Client {
 package extension WaylandProxy where Interface == XdgActivationTokenV1Client {
     func installListener(_ owner: any XdgActivationTokenV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_activation_token_v1_add_listener(proxy, XdgActivationTokenV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, XdgActivationTokenV1Client.listener, data)
         }
     }
 }

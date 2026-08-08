@@ -92,9 +92,9 @@ package protocol WpColorManagerV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>)
 }
 package extension WpColorManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_manager_v1_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_color_manager_v1_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_color_manager_v1_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_color_manager_v1_events())
         unsafe p.pointee.supported_intent = supportedIntent_impl
         unsafe p.pointee.supported_feature = supportedFeature_impl
         unsafe p.pointee.supported_tf_named = supportedTfNamed_impl
@@ -184,7 +184,7 @@ package extension WpColorManagerV1Client {
 package extension WaylandProxy where Interface == WpColorManagerV1Client {
     func installListener(_ owner: any WpColorManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_color_manager_v1_add_listener(proxy, WpColorManagerV1Client.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpColorManagerV1Client.listener, data)
         }
     }
 }

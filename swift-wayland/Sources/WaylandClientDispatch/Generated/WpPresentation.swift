@@ -32,9 +32,9 @@ package protocol WpPresentationEvents: AnyObject {
     func clockId(_ proxy: WaylandBorrowedProxy<WpPresentationClient>, clk_id: UInt32)
 }
 package extension WpPresentationClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_presentation_listener> = {
-        let p = UnsafeMutablePointer<wp_presentation_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_presentation_listener())
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<swift_wayland_wp_presentation_events> = {
+        let p = UnsafeMutablePointer<swift_wayland_wp_presentation_events>.allocate(capacity: 1)
+        unsafe p.initialize(to: swift_wayland_wp_presentation_events())
         unsafe p.pointee.clock_id = clockId_impl
         return unsafe p
     }()
@@ -60,7 +60,7 @@ package extension WpPresentationClient {
 package extension WaylandProxy where Interface == WpPresentationClient {
     func installListener(_ owner: any WpPresentationEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_presentation_add_listener(proxy, WpPresentationClient.listener, data)
+            unsafe swift_wayland_client_install_listener(proxy, WpPresentationClient.listener, data)
         }
     }
 }
