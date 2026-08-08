@@ -133,11 +133,9 @@ public struct ColliderCommand: AsyncParsableCommand {
             let wasInterrupted = await application.cancellation.wasInterrupted()
             let interruptionSignal =
                 await application.cancellation.receivedInterruptionSignal()
-            let failure =
-                (error as? ExecutionFailure)
-                ?? ExecutionFailure(reason: String(describing: error))
-            let contextualFailure = failure.addingContext(
-                logPath: application.run?.directory.appending("run.log").string)
+            let contextualFailure = recordedExecutionFailure(
+                error,
+                runLogPath: application.run?.directory.appending("run.log").string)
             if let run = application.run {
                 try? await application.registry.appendLog(
                     Array("Error: \(contextualFailure)\n".utf8),
@@ -228,6 +226,16 @@ func commandFailureStatus(
         return .interrupted
     }
     return .failed
+}
+
+func recordedExecutionFailure(
+    _ error: any Error,
+    runLogPath: String?
+) -> ExecutionFailure {
+    let failure =
+        (error as? ExecutionFailure)
+        ?? ExecutionFailure(reason: String(describing: error))
+    return failure.addingContext(logPath: runLogPath)
 }
 
 func commandExitCode(

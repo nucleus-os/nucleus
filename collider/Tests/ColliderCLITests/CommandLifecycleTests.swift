@@ -42,6 +42,22 @@ func interruptedCommandsReturnTheConventionalSignalExitStatus() {
 }
 
 @Test
+func everyRecordedCommandFailureNamesItsDurableLog() {
+    let fallback = recordedExecutionFailure(
+        WorkspaceFailure.message("planning failed"),
+        runLogPath: "/runs/fixture/run.log")
+    #expect(fallback.logPath == "/runs/fixture/run.log")
+
+    let stage = recordedExecutionFailure(
+        ExecutionFailure(
+            task: TaskID(rawValue: "fixture.build"),
+            logPath: "/runs/fixture/stages/fixture-build.log",
+            reason: "build failed"),
+        runLogPath: "/runs/fixture/run.log")
+    #expect(stage.logPath == "/runs/fixture/stages/fixture-build.log")
+}
+
+@Test
 func executableRequiresTheWorkspaceLauncher() throws {
     #expect(throws: (any Error).self) {
         try validateColliderEntrypoint(environment: [:])

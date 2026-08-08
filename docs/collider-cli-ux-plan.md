@@ -1,6 +1,6 @@
 # Collider CLI and terminal UX plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -19,7 +19,7 @@ plan.
 Typed planning, resource-aware scheduling, records, cancellation-aware process
 teardown, artifact reuse, and cache diagnostics already exist.
 
-Phases 1 through 5 are complete. `ColliderCLI` resolves one output policy from every
+Phases 1 through 6 are complete. `ColliderCLI` resolves one output policy from every
 leaf and injects one console into the workspace context. Command implementations
 return typed reports to that console instead of writing process-global output.
 Machine reports use stdout; human diagnostics and task summaries use stderr;
@@ -157,10 +157,20 @@ because artifact reuse is represented by a clean task.
 Gate: signals, explicit cancellation, child process groups, records, terminal
 state, and exit statuses agree for native and container actions.
 
-## Phase 6 — Verify the noninteractive contract
+## Phase 6 — Verify the noninteractive contract (complete)
 
 Run parser, console, reducer, record, log, JSON, signal, and CI-redirection tests
 across successful, failed, cancelled, and interrupted operations.
+
+Complete. Typed parser tests cover every command capability and reject retired or
+unsupported controls. Finalized successful, failed, explicitly cancelled, and
+signal-interrupted records render one decodable JSON value on stdout or one human
+summary on stderr. Redirected progress is append-only, and redirected text and
+JSON output contain no terminal control sequences. Structured task failures retain
+their stage log; failures without a stage log name the durable run log. Reducer,
+record retention, incomplete-tail reading, credential scrubbing, process-group
+signals, container cleanup, and terminal restoration remain covered by the same
+package suite. Collider has no TUI-specific state or observer protocol.
 
 Gate: every supported operation is scriptable without terminal control, every
 human failure names its durable log, and no TUI-specific persistence or protocol

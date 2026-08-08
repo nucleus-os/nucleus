@@ -19,8 +19,7 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
-2. [Android application integration](android-application-integration-plan.md)
+1. [Android application integration](android-application-integration-plan.md)
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
@@ -37,6 +36,7 @@ implementation inputs are available:
 
 ## Completed plans awaiting architecture consolidation
 
+- [Collider CLI and terminal UX](collider-cli-ux-plan.md)
 - [Manifest portability](manifest-portability-plan.md)
 - [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
 
