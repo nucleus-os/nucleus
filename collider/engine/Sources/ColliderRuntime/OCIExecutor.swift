@@ -57,8 +57,8 @@ package enum OCIExecutorFailure: Error, CustomStringConvertible {
                 + "\(platform.operatingSystem.rawValue)/"
                 + platform.architecture.rawValue
         case .unsupportedPolicy:
-            "OCI executor requires external networking disabled, all capabilities "
-                + "dropped, privilege acquisition prohibited, and a process limit"
+            "OCI executor requires all capabilities dropped, privilege acquisition "
+                + "prohibited, and a process limit"
         case .unsupportedRunner(let runner):
             "unsupported OCI runner: \(runner.operatingSystem.rawValue)/"
                 + runner.architecture.rawValue

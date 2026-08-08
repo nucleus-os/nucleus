@@ -196,7 +196,6 @@ import Testing
                         imageDigest: digest,
                         executionPlatform: .linuxARM64OCI,
                         artifactTarget: .linuxX86_64,
-                        networkPolicy: .externalDisabled,
                         userPolicy: .builder,
                         capabilityPolicy: .dropAll,
                         privilegePolicy: .prohibitAcquisition,

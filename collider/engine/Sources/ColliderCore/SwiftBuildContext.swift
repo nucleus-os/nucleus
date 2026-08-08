@@ -36,6 +36,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
+    public let hostDependencyCache: FilePath
     public let temporaryDirectory: FilePath?
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
     public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
@@ -51,6 +52,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
+        hostDependencyCache: FilePath,
         temporaryDirectory: FilePath? = nil,
         processFilesystemPolicy: OCIProcessFilesystemPolicy = .standard,
         intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
@@ -66,6 +68,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.hostname = hostname
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
+        self.hostDependencyCache = hostDependencyCache
         self.temporaryDirectory = temporaryDirectory
         self.processFilesystemPolicy = processFilesystemPolicy
         self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
@@ -223,6 +226,9 @@ public struct SwiftBuildContext: Hashable, Sendable {
             for argument in configuration.commandPrefix {
                 encoder.append(tag: 24, string: argument)
             }
+            encoder.append(
+                tag: 27,
+                string: configuration.hostDependencyCache.string)
         }
         return encoder.bytes
     }
@@ -233,15 +239,18 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     public let context: SwiftBuildContext
     public let scratchPath: FilePath
     public let swiftExecutable: CommandSpec.Executable
+    public let dependencyLock: FilePath?
 
     public init(
         context: SwiftBuildContext,
         scratchPath: FilePath,
-        swiftExecutable: CommandSpec.Executable = .named("swift")
+        swiftExecutable: CommandSpec.Executable = .named("swift"),
+        dependencyLock: FilePath? = nil
     ) {
         self.context = context
         self.scratchPath = scratchPath
         self.swiftExecutable = swiftExecutable
+        self.dependencyLock = dependencyLock
     }
 
     /// Typed artifacts required to execute this invocation. Logical SwiftPM
@@ -296,12 +305,14 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         case .host:
             inputs = []
         case .oci:
-            inputs = [
-                .file(context.packageRoot.appending("Package.swift")),
-                .optionalSourceCheckout(
-                    packageRoot.appending("Sources"),
-                    fallback: Array("no-sources-directory".utf8)),
-            ]
+            inputs =
+                [
+                    .file(context.packageRoot.appending("Package.swift")),
+                    .optionalSourceCheckout(
+                        packageRoot.appending("Sources"),
+                        fallback: Array("no-sources-directory".utf8)),
+                ]
+                + (dependencyLock.map { [.file($0)] } ?? [])
         }
         return SwiftProductRequirement(
             package: package,
@@ -327,15 +338,17 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         case .host:
             inputs = []
         case .oci:
-            inputs = [
-                .file(context.packageRoot.appending("Package.swift")),
-                .optionalSourceCheckout(
-                    packageRoot.appending("Sources"),
-                    fallback: Array("no-sources-directory".utf8)),
-                .optionalSourceCheckout(
-                    packageRoot.appending("Tests"),
-                    fallback: Array("no-tests-directory".utf8)),
-            ]
+            inputs =
+                [
+                    .file(context.packageRoot.appending("Package.swift")),
+                    .optionalSourceCheckout(
+                        packageRoot.appending("Sources"),
+                        fallback: Array("no-sources-directory".utf8)),
+                    .optionalSourceCheckout(
+                        packageRoot.appending("Tests"),
+                        fallback: Array("no-tests-directory".utf8)),
+                ]
+                + (dependencyLock.map { [.file($0)] } ?? [])
         }
         return SwiftTestRequirement(
             package: package,
@@ -385,7 +398,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             hostWorkingDirectory: configuration.hostWorkingDirectory,
             mounts: configuration.mounts,
             temporaryDirectory: configuration.temporaryDirectory,
-            networkPolicy: .externalDisabled,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -449,7 +461,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             hostWorkingDirectory: configuration.hostWorkingDirectory,
             mounts: configuration.mounts,
             temporaryDirectory: configuration.temporaryDirectory,
-            networkPolicy: .externalDisabled,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -494,6 +505,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         }
         if context.staticSwiftStandardLibrary {
             arguments.append("--static-swift-stdlib")
+        }
+        if dependencyLock != nil {
+            arguments.append("--only-use-versions-from-resolved-file")
         }
         if let sanitizer = context.sanitizer {
             arguments += ["--sanitize", sanitizer]

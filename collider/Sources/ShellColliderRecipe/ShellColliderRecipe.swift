@@ -5,6 +5,7 @@ public struct ShellRuntimeInstallConfiguration: RecipeConfiguration {
     public let swiftPM: SwiftPMInvocation
     public let prefix: FilePath
     public let generationsRoot: FilePath
+    public let packageManifestsRoot: FilePath
     public let sessionPackage: FilePath
     public let kernelContract: FilePath
     public let trustKey: FilePath?
@@ -15,6 +16,7 @@ public struct ShellRuntimeInstallConfiguration: RecipeConfiguration {
         swiftPM: SwiftPMInvocation,
         prefix: FilePath,
         generationsRoot: FilePath,
+        packageManifestsRoot: FilePath,
         sessionPackage: FilePath,
         kernelContract: FilePath,
         trustKey: FilePath?,
@@ -24,6 +26,7 @@ public struct ShellRuntimeInstallConfiguration: RecipeConfiguration {
         self.swiftPM = swiftPM
         self.prefix = prefix
         self.generationsRoot = generationsRoot
+        self.packageManifestsRoot = packageManifestsRoot
         self.sessionPackage = sessionPackage
         self.kernelContract = kernelContract
         self.trustKey = trustKey
@@ -105,6 +108,10 @@ public enum ShellColliderRecipe: ColliderComponent {
         let _: ArtifactReference<PathArtifact> = try builder.output(
             "active-installation",
             path: configuration.prefix,
+            validation: .symlinkTarget)
+        let _: ArtifactReference<PathArtifact> = try builder.output(
+            "active-package-manifests",
+            path: configuration.packageManifestsRoot.appending("current"),
             validation: .symlinkTarget)
         return builder.build(
             swiftProducts: requirements,

@@ -522,7 +522,6 @@ private func sourceGenerationExecution(
             + generatedDirectories.map {
                 OCIMount(source: $0, target: $0.string, access: .readWrite)
             },
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -634,7 +633,6 @@ private func nativeExecution(
         workingDirectory: "/src",
         hostWorkingDirectory: root,
         mounts: mounts,
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

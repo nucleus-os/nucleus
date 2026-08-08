@@ -4,56 +4,64 @@ import Foundation
 import NucleusAndroidRuntimeCore
 import SystemPackage
 
-struct InstallRuntimeAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
+package struct InstallRuntimeAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
         let products: FilePath
         let prefix: FilePath
         let generationsRoot: FilePath
+        let packageManifestsRoot: FilePath
         let sessionPackage: FilePath
         let kernelContract: FilePath
         let trustKey: FilePath?
         let buildMetadata: String
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
+        package func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: products.string)
             encoder.append(tag: 2, string: prefix.string)
             encoder.append(tag: 3, string: generationsRoot.string)
-            encoder.append(tag: 4, string: sessionPackage.string)
-            encoder.append(tag: 5, string: kernelContract.string)
-            encoder.append(tag: 6, string: trustKey?.string ?? "")
-            encoder.append(tag: 7, string: buildMetadata)
+            encoder.append(tag: 4, string: packageManifestsRoot.string)
+            encoder.append(tag: 5, string: sessionPackage.string)
+            encoder.append(tag: 6, string: kernelContract.string)
+            encoder.append(tag: 7, string: trustKey?.string ?? "")
+            encoder.append(tag: 8, string: buildMetadata)
         }
     }
 
-    static let kind: ActionKind = "shell.install-runtime"
+    package static let kind: ActionKind = "shell.install-runtime"
 
     let products: FilePath
     let prefix: FilePath
     let generationsRoot: FilePath
+    let packageManifestsRoot: FilePath
     let sessionPackage: FilePath
     let kernelContract: FilePath
     let trustKey: FilePath?
     let buildMetadata: String
-    let environment: [String: String]
+    package let environment: [String: String]
 
-    var identity: Identity {
+    package var identity: Identity {
         Identity(
             products: products,
             prefix: prefix,
             generationsRoot: generationsRoot,
+            packageManifestsRoot: packageManifestsRoot,
             sessionPackage: sessionPackage,
             kernelContract: kernelContract,
             trustKey: trustKey,
             buildMetadata: buildMetadata)
     }
 
-    var requirements: ActionRequirements {
+    package var requirements: ActionRequirements {
         var effects = [
             ActionEffect(.read, scope: .input(products)),
             ActionEffect(.read, scope: .checkout(sessionPackage)),
             ActionEffect(.read, scope: .checkout(kernelContract)),
             ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
+            ActionEffect(
+                .readWrite,
+                scope: .unrestricted(FilePath("/tmp/nucleus-systemd-analyze"))),
             ActionEffect(.readWrite, scope: .scratch(generationsRoot)),
+            ActionEffect(.readWrite, scope: .publication(packageManifestsRoot)),
             ActionEffect(.readWrite, scope: .publication(prefix)),
         ]
         if let trustKey {
@@ -93,6 +101,7 @@ struct InstallRuntimeAction: ColliderAction {
         products = configuration.swiftPM.productsDirectory
         prefix = configuration.prefix
         generationsRoot = configuration.generationsRoot
+        packageManifestsRoot = configuration.packageManifestsRoot
         sessionPackage = configuration.sessionPackage
         kernelContract = configuration.kernelContract
         trustKey = configuration.trustKey
@@ -100,7 +109,29 @@ struct InstallRuntimeAction: ColliderAction {
         environment = configuration.environment
     }
 
-    func execute(in context: ActionContext) async throws {
+    package init(
+        products: FilePath,
+        prefix: FilePath,
+        generationsRoot: FilePath,
+        packageManifestsRoot: FilePath,
+        sessionPackage: FilePath,
+        kernelContract: FilePath,
+        trustKey: FilePath?,
+        buildMetadata: String,
+        environment: [String: String]
+    ) {
+        self.products = products
+        self.prefix = prefix
+        self.generationsRoot = generationsRoot
+        self.packageManifestsRoot = packageManifestsRoot
+        self.sessionPackage = sessionPackage
+        self.kernelContract = kernelContract
+        self.trustKey = trustKey
+        self.buildMetadata = buildMetadata
+        self.environment = environment
+    }
+
+    package func execute(in context: ActionContext) async throws {
         if let metadata = try context.files.metadataWithoutFollowingSymlinks(
             for: prefix),
             metadata.type != .symbolicLink
@@ -118,8 +149,8 @@ struct InstallRuntimeAction: ColliderAction {
             "libexec",
             "share/nucleus",
             "share/nucleus/host-integration/pam",
-            "share/systemd/user",
-            "share/wayland-sessions",
+            "share/nucleus/host-integration/systemd",
+            "share/nucleus/host-integration/wayland",
         ] {
             try context.files.createDirectory(candidate.appending(directory))
         }
@@ -159,6 +190,10 @@ struct InstallRuntimeAction: ColliderAction {
             generation: generation,
             active: prefix)
         published = true
+        try writePackageManifests(
+            artifactDigest: digest.description,
+            generationName: generation.lastComponent?.string ?? "",
+            context: context)
         try context.files.pruneDirectories(
             DirectoryRetentionPlan(
                 safetyRoot: generationsRoot.removingLastComponent(),
@@ -167,8 +202,53 @@ struct InstallRuntimeAction: ColliderAction {
                         root: generationsRoot,
                         current: prefix,
                         retain: 3,
-                        naming: .contentIdentity)
+                        naming: .contentIdentity),
+                    DirectoryRetentionRule(
+                        root: packageManifestsRoot,
+                        current: packageManifestsRoot.appending("current"),
+                        retain: 3,
+                        naming: .contentIdentity),
                 ]))
+    }
+
+    private func writePackageManifests(
+        artifactDigest: String,
+        generationName: String,
+        context: ActionContext
+    ) throws {
+        guard !generationName.isEmpty else {
+            throw RuntimeInstallFailure("runtime generation has no name")
+        }
+        let pamTemplate = String(
+            decoding: try context.files.read(
+                sessionPackage.appending("nucleus.pam.in")),
+            as: UTF8.self)
+        let systemdUnitTemplate = String(
+            decoding: try context.files.read(
+                sessionPackage.appending("nucleus@.service")),
+            as: UTF8.self)
+        let desktopEntryTemplate = String(
+            decoding: try context.files.read(
+                sessionPackage.appending("nucleus-wayland.desktop")),
+            as: UTF8.self)
+        let candidate = packageManifestsRoot.appending(".candidate")
+        try context.files.remove(candidate)
+        try context.files.createDirectory(candidate)
+        for manifest in try LinuxDistributionPackaging.encodedManifests(
+            architecture: RunnerPlatform.current.architecture,
+            artifactDigest: artifactDigest,
+            systemdUnitTemplate: systemdUnitTemplate,
+            desktopEntryTemplate: desktopEntryTemplate,
+            pamTemplate: pamTemplate)
+        {
+            try context.files.write(
+                manifest.bytes,
+                to: candidate.appending("\(manifest.family.rawValue).json"))
+        }
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: packageManifestsRoot.appending(generationName),
+            active: packageManifestsRoot.appending("current"))
     }
 
     private func installHostIntegration(
@@ -189,28 +269,8 @@ struct InstallRuntimeAction: ColliderAction {
                 context: context)
         }
 
-        guard let unitBytes = source["nucleus@.service"] else {
-            throw RuntimeInstallFailure("missing nucleus@.service source")
-        }
-        let unitTemplate = String(decoding: unitBytes, as: UTF8.self)
-        let unit = candidate.appending("share/systemd/user/nucleus@.service")
-        let validation = RuntimeHostIntegration.render(
-            unitTemplate,
-            activePrefix: candidate)
-        try context.files.write(Array(validation.utf8), to: unit)
-        try await requireSuccess(
-            CommandSpec(
-                executable: .named("systemd-analyze"),
-                arguments: [
-                    "--user", "--recursive-errors=no", "verify", unit.string,
-                ],
-                workingDirectory: candidate,
-                environment: environment),
-            context: context)
-
         for file in try RuntimeHostIntegration.payload(
             source: source,
-            activePrefix: prefix,
             architecture: RunnerPlatform.current.architecture)
         {
             let destination = candidate.appending(file.path)
@@ -219,6 +279,32 @@ struct InstallRuntimeAction: ColliderAction {
                 try context.files.setPermissions(0o755, for: destination)
             }
         }
+
+        guard let unitBytes = source["nucleus@.service"] else {
+            throw RuntimeInstallFailure("missing nucleus@.service source")
+        }
+        let unitTemplate = String(decoding: unitBytes, as: UTF8.self)
+        let unit = candidate.appending(".nucleus-systemd-validation.service")
+        let validation = RuntimeHostIntegration.render(
+            unitTemplate,
+            activePrefix: candidate)
+        try context.files.write(Array(validation.utf8), to: unit)
+        let systemdRuntime = FilePath("/tmp/nucleus-systemd-analyze")
+        try context.files.remove(systemdRuntime)
+        try context.files.createDirectory(systemdRuntime)
+        defer { try? context.files.remove(systemdRuntime) }
+        var systemdEnvironment = environment
+        systemdEnvironment["XDG_RUNTIME_DIR"] = systemdRuntime.string
+        try await requireSuccess(
+            CommandSpec(
+                executable: .named("systemd-analyze"),
+                arguments: [
+                    "--user", "--recursive-errors=no", "verify", unit.string,
+                ],
+                workingDirectory: candidate,
+                environment: systemdEnvironment),
+            context: context)
+        try context.files.remove(unit)
     }
 
     private func installTrustRoot(
@@ -270,8 +356,8 @@ struct InstallRuntimeAction: ColliderAction {
         }
         for path in [
             "bin/nucleus-session-validate",
-            "share/systemd/user/nucleus@.service",
-            "share/wayland-sessions/nucleus.desktop",
+            "share/nucleus/host-integration/systemd/nucleus@.service.in",
+            "share/nucleus/host-integration/wayland/nucleus.desktop.in",
             "share/nucleus/host-integration/pam/nucleus.pam.in",
             "share/nucleus/host-requirements.json",
         ] {

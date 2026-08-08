@@ -67,8 +67,8 @@ public enum ReactNativeColliderRecipe {
         let root = context.componentRoot(descriptor)
         let javascript = try installJavaScriptDependencies(
             root: root,
-            environment: context.environment,
-            builder: native.builder)
+            cacheRoot: context.cacheRoot,
+            environment: context.environment)
         let boost = try provisionBoost(
             root: root,
             environment: context.environment)
@@ -125,8 +125,8 @@ public enum ReactNativeColliderRecipe {
 
     package static func installJavaScriptDependencies(
         root: FilePath,
-        environment: [String: String],
-        builder: NativeOCIConfiguration
+        cacheRoot: FilePath,
+        environment: [String: String]
     ) throws -> JavaScriptDependencyArtifacts {
         let packageManifest = root.appending("package.json")
         let lockfile = root.appending("bun.lock")
@@ -134,28 +134,27 @@ public enum ReactNativeColliderRecipe {
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
-        task.consume(builder.image)
         let nodeModules: ArtifactReference<DirectoryArtifact> = try task.output(
             "node-modules",
             path: active,
             validation: .nonEmptyDirectory)
-        let execution = javascriptExecution(
-            root: root,
-            builder: builder,
-            networkPolicy: .externalEnabled,
-            command: [
-                "/opt/bun/bin/bun", "install", "--frozen-lockfile", "--no-save",
-            ],
-            environment: environment)
+        let cache = cacheRoot.appending("nucleus/bun/linux-multiarch")
         let declaration = task.build(
             inputs: [
                 .file(lockfile),
                 .file(packageManifest),
+                .sourceCheckout(root),
             ],
-            locks: [.checkout("rn-javascript-dependencies")],
+            locks: [
+                .checkout("rn-javascript-dependencies"),
+                .shared(cache.appending(".collider.lock")),
+            ],
             action:
                 try AnyColliderAction(
-                    RunReactNativeJavaScriptAction(execution: execution)))
+                    InstallReactNativeJavaScriptDependenciesAction(
+                        root: root,
+                        cache: cache,
+                        environment: environment)))
         return JavaScriptDependencyArtifacts(
             task: declaration,
             nodeModules: nodeModules)
@@ -789,39 +788,6 @@ private enum BoostProvisioningFailure: Error {
     case commandFailed(Int32)
 }
 
-private func javascriptExecution(
-    root: FilePath,
-    builder: NativeOCIConfiguration,
-    networkPolicy: OCINetworkPolicy,
-    command: [String],
-    environment: [String: String]
-) -> OCIExecution {
-    OCIExecution(
-        executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxARM64,
-        imageID: builder.imageID,
-        hostname: "react-native-javascript",
-        workingDirectory: root.string,
-        hostWorkingDirectory: root,
-        mounts: [
-            OCIMount(source: root, target: root.string, access: .readWrite)
-        ],
-        networkPolicy: networkPolicy,
-        userPolicy: .builder,
-        capabilityPolicy: .dropAll,
-        privilegePolicy: .prohibitAcquisition,
-        processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
-        containerEnvironment: [
-            "HOME": "/home/nucleus-build",
-            "PATH":
-                "/opt/bun/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        ],
-        command: ["javascript"] + command,
-        environment: environment,
-        output: .logged)
-}
-
 private let boostVersion = "1.84.0"
 private let boostArchiveName = "boost_1_84_0.tar.gz"
 private let boostArchiveSHA256 =
@@ -987,7 +953,6 @@ private func nativeContainerOperation(
                 target: "/swift-sdk",
                 access: .readOnly),
         ] + additionalMounts,
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -1004,24 +969,69 @@ private func nativeContainerOperation(
         output: .logged)
 }
 
-private struct RunReactNativeJavaScriptAction: ColliderAction {
-    static let kind: ActionKind = "rn.run-javascript"
+private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let root: FilePath
+        let cache: FilePath
 
-    let execution: OCIExecution
-
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: root.string)
+            encoder.append(tag: 2, string: cache.string)
+            encoder.append(tag: 3, string: "linux")
+            encoder.append(tag: 4, string: "multiarch")
+            encoder.append(tag: 5, string: "copyfile")
+        }
     }
+
+    static let kind: ActionKind = "rn.install-javascript-dependencies"
+
+    let root: FilePath
+    let cache: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(root: root, cache: cache) }
 
     var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "bun", executable: .named("bun"), role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .checkout(root)),
+                ActionEffect(
+                    .readWrite,
+                    scope: .publication(root.appending("node_modules"))),
+                ActionEffect(.readWrite, scope: .scratch(cache)),
+            ],
+            lane: .hostExclusive,
+            networkAccess: .unrestricted,
+            executionPlatform: .macOSARM64Native)
     }
-
-    var environment: [String: String] { execution.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("bun"),
+                arguments: [
+                    "install",
+                    "--frozen-lockfile",
+                    "--no-save",
+                    "--os", "linux",
+                    "--cpu", "*",
+                    "--backend", "copyfile",
+                    "--cache-dir", cache.string,
+                ],
+                workingDirectory: root,
+                environment: environment))
+        guard result.status == 0 else {
+            throw JavaScriptDependencyInstallFailure.commandFailed(result.status)
+        }
     }
+}
+
+private enum JavaScriptDependencyInstallFailure: Error {
+    case commandFailed(Int32)
 }
 
 private struct RunReactNativeNativeBuildAction: ColliderAction {

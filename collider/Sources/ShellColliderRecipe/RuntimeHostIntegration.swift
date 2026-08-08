@@ -4,6 +4,18 @@ import NativeBuilderColliderRecipe
 import SystemPackage
 
 package struct RuntimeHostRequirements: Codable, Equatable, Sendable {
+    package static let linuxCapabilities = [
+        "dbus.session",
+        "drm.kms",
+        "input.libinput",
+        "pam.authentication",
+        "seat.libseat",
+        "udev.devices",
+        "vulkan.loader",
+        "wayland",
+        "xwayland",
+    ]
+
     package let architecture: String
     package let minimumGlibcVersion: String
     package let serviceManager: String
@@ -19,17 +31,7 @@ package struct RuntimeHostRequirements: Codable, Equatable, Sendable {
         serviceManager = "systemd"
         pamService = "nucleus"
         sessionBus = "private-dbus-run-session"
-        requiredCapabilities = [
-            "dbus.session",
-            "drm.kms",
-            "input.libinput",
-            "pam.authentication",
-            "seat.libseat",
-            "udev.devices",
-            "vulkan.loader",
-            "wayland",
-            "xwayland",
-        ]
+        requiredCapabilities = Self.linuxCapabilities
         requiredExecutables = ["bash", "dbus-run-session"]
         let dynamicLoader =
             switch architecture {
@@ -68,7 +70,6 @@ package enum RuntimeHostIntegration {
 
     package static func payload(
         source: [String: [UInt8]],
-        activePrefix: FilePath,
         architecture: PlatformArchitecture
     ) throws -> [PayloadFile] {
         func text(_ name: String) throws -> String {
@@ -78,20 +79,8 @@ package enum RuntimeHostIntegration {
             return String(decoding: bytes, as: UTF8.self)
         }
 
-        let unit = render(
-            try text("nucleus@.service"),
-            activePrefix: activePrefix)
-        try validatePublishedTemplate(
-            unit,
-            activePrefix: activePrefix,
-            name: "nucleus@.service")
-        let desktop = render(
-            try text("nucleus-wayland.desktop"),
-            activePrefix: activePrefix)
-        try validatePublishedTemplate(
-            desktop,
-            activePrefix: activePrefix,
-            name: "nucleus-wayland.desktop")
+        let unit = try text("nucleus@.service")
+        let desktop = try text("nucleus-wayland.desktop")
         let pam = try text("nucleus.pam.in")
         try validatePAMTemplate(pam)
 
@@ -105,11 +94,13 @@ package enum RuntimeHostIntegration {
                 bytes: Array(try text("nucleus-session-validate").utf8),
                 executable: true),
             PayloadFile(
-                path: "share/systemd/user/nucleus@.service",
+                path:
+                    "share/nucleus/host-integration/systemd/nucleus@.service.in",
                 bytes: Array(unit.utf8),
                 executable: false),
             PayloadFile(
-                path: "share/wayland-sessions/nucleus.desktop",
+                path:
+                    "share/nucleus/host-integration/wayland/nucleus.desktop.in",
                 bytes: Array(desktop.utf8),
                 executable: false),
             PayloadFile(

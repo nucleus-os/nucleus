@@ -80,6 +80,73 @@ private func executeWithSwiftPM(
     #expect(lowered[0].task.dependencies == [prerequisite.id])
 }
 
+@Test func ociLoweringMaterializesLockedDependenciesOnTheHost() throws {
+    let packageRoot = FilePath("/fixture/package")
+    let scratch = FilePath("/fixture/scratch")
+    let lock = packageRoot.appending("Package.resolved")
+    var imageBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.image"),
+        component: ComponentID(rawValue: "fixture"))
+    let image: ArtifactReference<FileArtifact> = try imageBuilder.output(
+        "image-id",
+        path: FilePath("/fixture/image-id"),
+        validation: .regularFile)
+    let imageTask = imageBuilder.build()
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .release,
+            target: .host(identity: "aarch64-unknown-linux-gnu"),
+            toolchainIdentity: "fixture-toolchain",
+            execution: .oci(
+                SwiftPMOCIExecution(
+                    executionPlatform: .linuxARM64OCI,
+                    artifactTarget: .linuxARM64,
+                    image: image,
+                    hostname: "fixture",
+                    hostWorkingDirectory: packageRoot,
+                    mounts: [],
+                    hostDependencyCache: FilePath("/fixture/cache"),
+                    containerEnvironment: [:]))),
+        scratchPath: scratch,
+        dependencyLock: lock)
+    let owner = TaskBuilder(
+        id: TaskID(rawValue: "fixture.product"),
+        component: ComponentID(rawValue: "fixture")
+    ).build(swiftProducts: [
+        invocation.product(
+            package: "fixture",
+            product: "FixtureProduct",
+            packageRoot: packageRoot,
+            environment: [:])
+    ])
+
+    let lowered = try SwiftPMLowering().lower([
+        AssessedTaskDeclaration(task: imageTask, isClean: false),
+        AssessedTaskDeclaration(task: owner, isClean: false),
+    ])
+    let host = try #require(
+        lowered.first {
+            $0.task.action?.requirements.executionPlatform == .macOSARM64Native
+        })
+    let container = try #require(
+        lowered.first {
+            $0.task.action?.requirements.executionPlatform == .linuxARM64OCI
+        })
+
+    #expect(lowered.count == 2)
+    #expect(host.task.action?.requirements.networkAccess == .unrestricted)
+    #expect(
+        container.task.action?.requirements.networkAccess
+            == ActionNetworkAccess.none)
+    #expect(container.prerequisites.contains(host.task.id))
+    let execution = try invocation.ociExecution(
+        arguments: ["build"],
+        workingDirectory: packageRoot,
+        environment: [:])
+    #expect(execution.command.contains("--only-use-versions-from-resolved-file"))
+}
+
 @Test func loweringConsumesAnArtifactBackedSwiftCompiler() throws {
     let packageRoot = FilePath("/fixture/package")
     var compilerBuilder = TaskBuilder(

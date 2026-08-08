@@ -86,6 +86,7 @@ reject_newer_glibc_imports() {
 validate_linux_sdk_runtime() {
     triple=$1
     description_pattern=$2
+    gnu_architecture=$3
     triple_root="$linux_sdk_root/swift-linux/$triple"
     target_root="$triple_root/$linux_sdk_directory"
     toolset="$linux_sdk_root/swift-linux/$triple/toolset.json"
@@ -114,11 +115,12 @@ PY
         exit 1
     fi
     /usr/bin/python3 - "$linux_sdk_root/swift-linux/swift-sdk.json" \
-        "$triple_root/swift-sdk.json" "$triple" "$linux_sdk_directory" <<'PY'
+        "$triple_root/swift-sdk.json" "$triple" "$linux_sdk_directory" \
+        "$gnu_architecture" <<'PY'
 import json
 import sys
 
-root_path, triple_path, triple, sdk_directory = sys.argv[1:]
+root_path, triple_path, triple, sdk_directory, gnu_architecture = sys.argv[1:]
 for path, key in ((root_path, triple), (triple_path, triple)):
     with open(path, encoding="utf-8") as stream:
         metadata = json.load(stream)
@@ -128,6 +130,15 @@ for path, key in ((root_path, triple), (triple_path, triple)):
         raise SystemExit(f"Linux SDK metadata has the wrong SDK root: {path}: {sdk_root}")
     if "ubuntu" in json.dumps(metadata).lower():
         raise SystemExit(f"Linux SDK metadata exposes its assembly distribution: {path}")
+    expected_library_paths = [
+        f"{sdk_root}/usr/lib/swift/linux",
+        f"{sdk_root}/usr/lib/{gnu_architecture}",
+    ]
+    if target.get("librarySearchPaths") != expected_library_paths:
+        raise SystemExit(
+            f"Linux SDK metadata has the wrong library search paths: {path}: "
+            f"{target.get('librarySearchPaths')}"
+        )
 PY
     if find "$target_root" \
         \( -name 'libstdc++*' -o -name 'libstdcxx*' \) -print -quit \
@@ -199,10 +210,12 @@ require_libcxx "$linux_amd64"
 reject_newer_glibc_imports "$linux_amd64"
 validate_linux_sdk_runtime \
     aarch64-unknown-linux-gnu \
-    "ELF 64-bit LSB shared object, ARM aarch64"
+    "ELF 64-bit LSB shared object, ARM aarch64" \
+    aarch64-linux-gnu
 validate_linux_sdk_runtime \
     x86_64-unknown-linux-gnu \
-    "ELF 64-bit LSB shared object, x86-64"
+    "ELF 64-bit LSB shared object, x86-64" \
+    x86_64-linux-gnu
 
 require_file_description "$android_arm64" "ELF 64-bit LSB pie executable, ARM aarch64"
 require_interpreter "$android_arm64" "/system/bin/linker64"

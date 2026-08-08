@@ -46,10 +46,15 @@ validation.
   host-owned by explicit SONAME;
 - runtime staging uses the ownership contract regardless of the dependency's
   filesystem location;
-- the only development-package inventory is `compositor/packages/ubuntu.txt`;
-- installation emits a common host-integration payload containing the systemd
-  user unit, Wayland session entry, PAM adapter template, and machine-readable
-  host requirements; and
+- host actions resolve and acquire the exact SwiftPM and Bun dependency closures;
+  OCI actions run on the host-only Apple container network with DNS disabled and
+  compile, test, assemble, and package only mounted inputs;
+- Debian/Ubuntu, RPM-family, and Arch-family adapters translate the common
+  capability contract into runtime-only dependencies, PAM stacks, standard
+  integration paths, and complete removal manifests;
+- installation emits a common host-integration payload containing immutable
+  systemd, Wayland-session, and PAM templates plus machine-readable host
+  requirements; and
 - PAM authentication requires the dedicated `nucleus` service without a
   fallback.
 
@@ -171,15 +176,18 @@ Gate: the common installation payload can be placed under an arbitrary absolute
 prefix and validated without Ubuntu package metadata.
 
 Gate satisfied: the generation-based runtime now carries its session launcher,
-session validator, systemd user unit, Wayland session entry, distribution-owned
-PAM policy template, and machine-readable host requirements. Unit and desktop
-templates resolve through the stable active prefix and pass arbitrary-prefix
-coverage. The host requirements derive their glibc and ELF library contract from
-the same source as runtime staging and contain no distribution identity. The
-shell defaults to the `nucleus` PAM service, and both the shell and helper reject
-an empty service instead of falling back to `login`.
+session validator, immutable systemd, Wayland-session, and PAM templates, and
+machine-readable host requirements. Distribution adapters render the templates
+against the stable active prefix while leaving the runtime artifact unchanged;
+arbitrary-prefix rendering has direct coverage. The host requirements derive
+their glibc and ELF library contract from the same source as runtime staging and
+contain no distribution identity. The shell defaults to the `nucleus` PAM
+service, and both the shell and helper reject an empty service instead of falling
+back to `login`.
 
 ## Phase 5: Add Distribution Packaging Adapters
+
+Status: complete
 
 Create packaging adapters that translate the common host capability contract into
 distribution-native package dependencies and filesystem integration. Begin with
@@ -202,7 +210,29 @@ development packages to the product at runtime.
 Gate: every adapter consumes the same architecture artifact and contains no
 source-build logic.
 
+Gate satisfied: the runtime installation publishes deterministic Debian, RPM,
+and Arch package manifests beside each content-addressed generation. Every
+manifest names the same complete artifact digest, maps that artifact into one
+generation-based `/opt/nucleus` layout, installs the systemd user unit, Wayland
+session entry, and distribution-native PAM policy in standard paths, declares
+only runtime capability packages, and lists every owned path for clean removal.
+Behavioral coverage stages and removes package roots from the manifests. The old
+Ubuntu development-tool inventory is deleted rather than becoming runtime
+package policy.
+
 ## Phase 6: Qualify One Artifact Across Distributions
+
+Status: active
+
+Current progress: the ARM64 Linux product and test graph passes in the canonical
+builder. `collider build linux-runtime` now publishes the staged runtime as a
+content-addressed, host-visible generation together with its distribution package
+manifests. Its ELF closure is assembled from direct `DT_NEEDED` entries, resolves
+the target SDK before the bootstrap toolchain, contains libc++ rather than
+libstdc++, and passes relocation and offline host-integration validation. No
+cross-distribution result is claimed yet. Every matrix environment consumes this
+published output by digest; none invokes SwiftPM, a native build action, or an
+external network.
 
 Build each architecture once. Exercise that exact staged artifact in a sequential
 runtime matrix containing:
@@ -233,6 +263,8 @@ Gate: the same artifact digest passes the complete runtime matrix for its
 architecture.
 
 ## Phase 7: Complete Hardware Qualification
+
+Status: pending
 
 Run the already-qualified artifacts on physical arm64 and x86_64 Linux hardware.
 Validate DRM master acquisition and release, input discovery, seat pause and

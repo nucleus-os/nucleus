@@ -93,6 +93,11 @@ import Testing
         ])
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
+    #expect(
+        result.tasks.filter {
+            $0.id.rawValue.hasPrefix("swift-sdk.validate-")
+                && $0.id.rawValue.hasSuffix("-consumer")
+        }.count == 4)
     var executions: [OCIExecution] = []
     for task in result.tasks {
         executions += try await ociExecutions(in: task.action)
@@ -164,6 +169,31 @@ import Testing
                 ActionEffect(.read, scope: .input(target.runtimeInstall))))
     }
 
+    let consumerValidations = result.tasks.filter {
+        $0.id.rawValue.hasPrefix("swift-sdk.validate-")
+            && $0.id.rawValue.hasSuffix("-consumer")
+    }
+    #expect(
+        Set(consumerValidations.map(\.id.rawValue))
+            == Set([
+                "swift-sdk.validate-linux-arm64-consumer",
+                "swift-sdk.validate-linux-x86_64-consumer",
+                "swift-sdk.validate-android-arm64-consumer",
+                "swift-sdk.validate-android-amd64-consumer",
+            ]))
+    for consumer in consumerValidations {
+        let action = try #require(consumer.action)
+        #expect(
+            action.kind
+                == ActionKind(rawValue: "swift-sdk.validate-target-sdk-consumer"))
+        #expect(consumer.outputs.count == 1)
+        #expect(
+            !consumer.dependencies.contains {
+                $0.rawValue.hasPrefix("swift-sdk.validate-")
+                    && $0.rawValue.hasSuffix("-consumer")
+            })
+    }
+
     let validation = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
     guard let validationAction = validation.action else {
@@ -172,13 +202,17 @@ import Testing
     }
     #expect(
         validationAction.kind
-            == ActionKind(rawValue: "swift-sdk.validate-target-sdks"))
-    #expect(validation.outputs.count == 4)
+            == ActionKind(rawValue: "swift-sdk.validate-target-sdk-artifacts"))
+    #expect(validation.outputs.count == 1)
     #expect(
         validationAction.requirements.effects.contains(
             ActionEffect(
-                .readWrite,
-                scope: .output(configuration.candidate.appending("validation")))))
+                .write,
+                scope: .output(
+                    configuration.candidate.appending("validation/.validated")))))
+    for consumer in consumerValidations {
+        #expect(validation.dependencies.contains(consumer.id))
+    }
 
     let activeSDKRoot = configuration.generation.appending("swift-sdks/fixture")
     let activeSwift = configuration.generation.appending("toolchain/usr/bin/swift")

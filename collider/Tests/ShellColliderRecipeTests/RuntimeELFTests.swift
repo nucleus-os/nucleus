@@ -194,6 +194,12 @@ import Testing
         recording.withLock {
             $0.commands.append((executable, command.arguments))
         }
+        if executable == "readelf" {
+            return CommandResult(
+                status: 0,
+                standardOutput:
+                    " 0x1 (NEEDED) Shared library: [libswiftCore.so]\n")
+        }
         if executable == "ldd" {
             if command.arguments == ["/runtime/lib/libswiftCore.so"] {
                 return CommandResult(
@@ -204,7 +210,8 @@ import Testing
             return CommandResult(
                 status: 0,
                 standardOutput:
-                    "libswiftCore.so => /toolchain/libswiftCore.so (0x1)\n")
+                    "libswiftCore.so => /toolchain/libswiftCore.so (0x1)\n"
+                    + "libstdc++.so.6 => /lib/libstdc++.so.6 (0x2)\n")
         }
         return CommandResult(status: 0)
     }
@@ -238,9 +245,16 @@ import Testing
         setPermissions: { _, _ in },
         write: { _, _ in })
     let context = testActionContext(files: files) { command in
-        guard case .named("ldd") = command.executable else {
+        guard case .named(let executable) = command.executable else {
             return CommandResult(status: 0)
         }
+        if executable == "readelf" {
+            return CommandResult(
+                status: 0,
+                standardOutput:
+                    " 0x1 (NEEDED) Shared library: [libswiftCore.so]\n")
+        }
+        guard executable == "ldd" else { return CommandResult(status: 0) }
         let invocation = lddInvocation.withLock {
             $0 += 1
             return $0

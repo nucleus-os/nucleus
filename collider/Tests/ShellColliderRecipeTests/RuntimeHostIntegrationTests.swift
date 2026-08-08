@@ -44,7 +44,6 @@ import Testing
 
         let payload = try RuntimeHostIntegration.payload(
             source: source,
-            activePrefix: prefix,
             architecture: .arm64)
         #expect(payload.count == 6)
         #expect(
@@ -53,6 +52,12 @@ import Testing
         #expect(
             payload.map(\.path).contains(
                 "share/nucleus/host-requirements.json"))
+        #expect(
+            payload.map(\.path).contains(
+                "share/nucleus/host-integration/systemd/nucleus@.service.in"))
+        #expect(
+            payload.map(\.path).contains(
+                "share/nucleus/host-integration/wayland/nucleus.desktop.in"))
     }
 }
 
@@ -77,6 +82,161 @@ import Testing
     #expect(!String(decoding: bytes, as: UTF8.self).lowercased().contains("ubuntu"))
 }
 
+@Test func distributionAdaptersConsumeOneRuntimeArtifactWithoutBuildInputs() throws {
+    let templates = try hostIntegrationTemplates()
+    let digest = "sha256:" + String(repeating: "a", count: 64)
+
+    let manifests = try LinuxDistributionPackageAdapter.all.map {
+        try $0.manifest(
+            architecture: .arm64,
+            artifactDigest: digest,
+            systemdUnitTemplate: templates.systemd,
+            desktopEntryTemplate: templates.desktop,
+            pamTemplate: templates.pam)
+    }
+
+    #expect(manifests.map(\.family) == [.debian, .rpm, .arch])
+    #expect(Set(manifests.map(\.artifactDigest)) == [digest])
+    #expect(
+        Set(manifests.map(\.runtimeRoot))
+            == [LinuxDistributionPackageAdapter.runtimeRoot])
+    for manifest in manifests {
+        #expect(!manifest.dependencies.contains { $0.contains("-dev") })
+        #expect(!manifest.dependencies.contains("clang"))
+        #expect(!manifest.dependencies.contains("cmake"))
+        #expect(!manifest.dependencies.contains("ninja"))
+        #expect(
+            Set(manifest.capabilityPackages.keys)
+                == Set(RuntimeHostRequirements.linuxCapabilities))
+        #expect(
+            manifest.installations.map(\.destination).sorted()
+                == manifest.removals)
+        #expect(manifest.seatPolicy == "systemd-logind")
+        #expect(
+            manifest.installations.contains {
+                $0.kind == .tree && $0.destination == manifest.runtimeGeneration
+            })
+        #expect(
+            manifest.installations.contains {
+                $0.kind == .symbolicLink
+                    && $0.destination == manifest.runtimeRoot
+                    && $0.target == manifest.runtimeGeneration
+            })
+        let pamPolicy = try #require(
+            manifest.installations.first {
+                $0.destination == "/etc/pam.d/nucleus"
+            }?.contents)
+        #expect(!pamPolicy.contains("@authentication-stack@"))
+        #expect(!pamPolicy.contains("@account-stack@"))
+        #expect(pamPolicy.contains("auth include "))
+        #expect(pamPolicy.contains("account include "))
+    }
+}
+
+@Test func distributionAdaptersUseNativeArchitectureNames() throws {
+    let templates = try hostIntegrationTemplates()
+    let digest = "sha256:" + String(repeating: "b", count: 64)
+
+    let architectures = try LinuxDistributionPackageAdapter.all.map { adapter in
+        (
+            try adapter.manifest(
+                architecture: .arm64,
+                artifactDigest: digest,
+                systemdUnitTemplate: templates.systemd,
+                desktopEntryTemplate: templates.desktop,
+                pamTemplate: templates.pam
+            ).architecture,
+            try adapter.manifest(
+                architecture: .x86_64,
+                artifactDigest: digest,
+                systemdUnitTemplate: templates.systemd,
+                desktopEntryTemplate: templates.desktop,
+                pamTemplate: templates.pam
+            ).architecture
+        )
+    }
+    #expect(architectures.map(\.0) == ["arm64", "aarch64", "aarch64"])
+    #expect(architectures.map(\.1) == ["amd64", "x86_64", "x86_64"])
+}
+
+@Test func distributionPackageManifestsAreDeterministicAndDecodable() throws {
+    let templates = try hostIntegrationTemplates()
+    let digest = "sha256:" + String(repeating: "c", count: 64)
+
+    let first = try LinuxDistributionPackaging.encodedManifests(
+        architecture: .x86_64,
+        artifactDigest: digest,
+        systemdUnitTemplate: templates.systemd,
+        desktopEntryTemplate: templates.desktop,
+        pamTemplate: templates.pam)
+    let second = try LinuxDistributionPackaging.encodedManifests(
+        architecture: .x86_64,
+        artifactDigest: digest,
+        systemdUnitTemplate: templates.systemd,
+        desktopEntryTemplate: templates.desktop,
+        pamTemplate: templates.pam)
+
+    #expect(first.map(\.family) == [.debian, .rpm, .arch])
+    #expect(first.map(\.bytes) == second.map(\.bytes))
+    for encoded in first {
+        let manifest = try JSONDecoder().decode(
+            LinuxDistributionPackageManifest.self,
+            from: Data(encoded.bytes))
+        #expect(manifest.family == encoded.family)
+        #expect(manifest.artifactDigest == digest)
+    }
+}
+
+@Test func distributionPackageRootsInstallAndRemoveOnlyDeclaredFiles() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString,
+        isDirectory: true)
+    let runtime = temporary.appendingPathComponent("runtime", isDirectory: true)
+    let packageRoot = temporary.appendingPathComponent("package", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    try FileManager.default.createDirectory(
+        at: runtime.appendingPathComponent("bin", isDirectory: true),
+        withIntermediateDirectories: true)
+    try Data("runtime\n".utf8).write(
+        to: runtime.appendingPathComponent("bin/NucleusCompositor"))
+    let templates = try hostIntegrationTemplates()
+    let manifest = try LinuxDistributionPackageAdapter(family: .debian).manifest(
+        architecture: .arm64,
+        artifactDigest: "sha256:" + String(repeating: "d", count: 64),
+        systemdUnitTemplate: templates.systemd,
+        desktopEntryTemplate: templates.desktop,
+        pamTemplate: templates.pam)
+
+    try LinuxDistributionPackaging.stagePackageRoot(
+        manifest: manifest,
+        runtimeArtifact: runtime,
+        packageRoot: packageRoot)
+
+    for path in manifest.removals {
+        let url = packageRoot.appendingPathComponent(String(path.dropFirst()))
+        #expect(
+            (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil)
+    }
+    let pam = try String(
+        contentsOf: packageRoot.appendingPathComponent("etc/pam.d/nucleus"),
+        encoding: .utf8)
+    #expect(pam.contains("auth include common-auth"))
+    #expect(pam.contains("account include common-account"))
+    let unit = try String(
+        contentsOf: packageRoot.appendingPathComponent(
+            "usr/lib/systemd/user/nucleus@.service"),
+        encoding: .utf8)
+    #expect(unit.contains("ExecStart=/opt/nucleus/current/bin/nucleus-session"))
+
+    try LinuxDistributionPackaging.removePackageFiles(
+        manifest: manifest,
+        packageRoot: packageRoot)
+    for path in manifest.removals {
+        let url = packageRoot.appendingPathComponent(String(path.dropFirst()))
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
 @Test func pamTemplateRequiresDistributionOwnedStacksWithoutLoginFallback() throws {
     let template = try String(
         contentsOfFile: sessionPackageRoot().appending("nucleus.pam.in").string,
@@ -93,4 +253,23 @@ private func sessionPackageRoot() -> FilePath {
             .deletingLastPathComponent()
             .appendingPathComponent("compositor/packages/session")
             .path)
+}
+
+private func hostIntegrationTemplates() throws -> (
+    systemd: String,
+    desktop: String,
+    pam: String
+) {
+    let root = sessionPackageRoot()
+    return (
+        try String(
+            contentsOfFile: root.appending("nucleus@.service").string,
+            encoding: .utf8),
+        try String(
+            contentsOfFile: root.appending("nucleus-wayland.desktop").string,
+            encoding: .utf8),
+        try String(
+            contentsOfFile: root.appending("nucleus.pam.in").string,
+            encoding: .utf8)
+    )
 }

@@ -309,6 +309,27 @@ struct RepositoryCache {
                     "host-compiler-cache.lock"),
                 retention: "host compiler results remain reusable until explicit clean"),
             StorageDeclaration(
+                id: "swift-package-cache",
+                owner: "collider-swiftpm",
+                storageClass: .cache,
+                root: cache.appending("swiftpm-user"),
+                safetyRoot: cache,
+                cleanupPolicy: .explicitClean,
+                workflowLock: context.layout.locks.appending(
+                    "swift-package-cache.lock"),
+                retention: "locked Swift package sources remain reusable until explicit clean"),
+            StorageDeclaration(
+                id: "javascript-package-cache",
+                owner: "collider-javascript",
+                storageClass: .cache,
+                root: cache.appending("bun"),
+                safetyRoot: cache,
+                cleanupPolicy: .explicitClean,
+                workflowLock: context.layout.locks.appending(
+                    "javascript-package-cache.lock"),
+                retention: "locked JavaScript package archives remain reusable until explicit clean"
+            ),
+            StorageDeclaration(
                 id: "android-sdk",
                 owner: "android-toolchain",
                 storageClass: .published,

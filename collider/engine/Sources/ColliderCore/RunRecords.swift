@@ -57,7 +57,6 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     public let imageDigest: ArtifactDigest
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget
-    public let networkPolicy: OCINetworkPolicy
     public let userPolicy: OCIUserPolicy
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
@@ -71,7 +70,6 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         imageDigest: ArtifactDigest,
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget,
-        networkPolicy: OCINetworkPolicy,
         userPolicy: OCIUserPolicy,
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
@@ -84,7 +82,6 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         self.imageDigest = imageDigest
         self.executionPlatform = executionPlatform
         self.artifactTarget = artifactTarget
-        self.networkPolicy = networkPolicy
         self.userPolicy = userPolicy
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy

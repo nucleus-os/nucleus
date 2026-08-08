@@ -24,25 +24,21 @@ public struct CommandLogging: Sendable {
 }
 
 public struct OCIRuntimeConfiguration: Hashable, Sendable {
-    public let externalNetwork: String
     public let isolatedNetwork: String
     public let guestHome: String
     public let managedLabels: [String]
     public let loggerLabel: String
 
     public init(
-        externalNetwork: String,
         isolatedNetwork: String,
         guestHome: String,
         managedLabels: [String],
         loggerLabel: String
     ) {
-        precondition(!externalNetwork.isEmpty)
         precondition(!isolatedNetwork.isEmpty)
         precondition(guestHome.hasPrefix("/"))
         precondition(!managedLabels.isEmpty)
         precondition(!loggerLabel.isEmpty)
-        self.externalNetwork = externalNetwork
         self.isolatedNetwork = isolatedNetwork
         self.guestHome = guestHome
         self.managedLabels = managedLabels
@@ -50,7 +46,6 @@ public struct OCIRuntimeConfiguration: Hashable, Sendable {
     }
 
     public static let engineDefault = OCIRuntimeConfiguration(
-        externalNetwork: "default",
         isolatedNetwork: "collider-internal",
         guestHome: "/home/collider",
         managedLabels: ["dev.collider.managed=true"],
@@ -178,7 +173,6 @@ public actor ColliderRuntime {
                                 imageDigest: imageDigest,
                                 executionPlatform: execution.executionPlatform,
                                 artifactTarget: execution.artifactTarget,
-                                networkPolicy: execution.networkPolicy,
                                 userPolicy: execution.userPolicy,
                                 capabilityPolicy: execution.capabilityPolicy,
                                 privilegePolicy: execution.privilegePolicy,

@@ -368,7 +368,7 @@ func appleContainerFlags(
             nameservers: [],
             options: [],
             searchDomains: []),
-        dnsDisabled: execution.networkPolicy == .externalDisabled,
+        dnsDisabled: true,
         entrypoint: nil,
         initImage: nil,
         kernel: nil,
@@ -377,11 +377,7 @@ func appleContainerFlags(
         maskedPaths: [],
         mounts: mounts,
         name: name,
-        networks: [
-            execution.networkPolicy == .externalDisabled
-                ? configuration.isolatedNetwork
-                : configuration.externalNetwork
-        ],
+        networks: [configuration.isolatedNetwork],
         os: "linux",
         platform: "linux/arm64",
         publishPorts: [],

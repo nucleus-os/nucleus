@@ -200,7 +200,6 @@ func aospProductOCIExecution(
             + writableMounts.map {
                 OCIMount(source: $0.0, target: $0.1, access: .readWrite)
             },
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

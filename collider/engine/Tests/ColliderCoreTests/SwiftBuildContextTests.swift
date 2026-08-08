@@ -249,6 +249,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                 target: fixturePackageRoot.string,
                 access: .readWrite)
         ],
+        hostDependencyCache: FilePath("/cache/swiftpm"),
         intelBinaryTranslationPolicy: .required,
         containerEnvironment: ["HOME": "/home/fixture"],
         environmentProjection: EnvironmentProjection(

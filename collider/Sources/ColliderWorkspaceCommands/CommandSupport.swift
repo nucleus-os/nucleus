@@ -67,6 +67,7 @@ extension WorkspaceContext {
     }
 
     package func swiftPMInvocation(
+        packageRoot explicitPackageRoot: FilePath? = nil,
         configuration: SwiftBuildConfiguration = .debug,
         sanitizer: String? = nil,
         traits: [String] = [],
@@ -82,7 +83,7 @@ extension WorkspaceContext {
         scratchRoot: FilePath? = nil,
         swiftExecutable: CommandSpec.Executable = .named("swift")
     ) throws -> SwiftPMInvocation {
-        let packageRoot = layout.root
+        let packageRoot = explicitPackageRoot ?? layout.root
         let manifest = packageRoot.appending("Package.swift")
         guard FileManager.default.fileExists(atPath: manifest.string) else {
             throw WorkspaceFailure.message(
@@ -127,9 +128,15 @@ extension WorkspaceContext {
         let invocation = SwiftPMInvocation(
             context: context,
             scratchPath: layout.swiftScratch(for: context, under: scratchRoot),
-            swiftExecutable: swiftExecutable)
+            swiftExecutable: swiftExecutable,
+            dependencyLock: {
+                let lock = packageRoot.appending("Package.resolved")
+                return FileManager.default.fileExists(atPath: lock.string)
+                    ? lock : nil
+            }())
         let isDefaultContext =
-            configuration == .debug
+            packageRoot == layout.root
+            && configuration == .debug
             && sanitizer == nil
             && target == nil
             && traits.isEmpty

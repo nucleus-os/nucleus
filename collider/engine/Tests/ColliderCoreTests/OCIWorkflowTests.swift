@@ -27,7 +27,6 @@ import Testing
                 target: "/build",
                 access: .readWrite),
         ],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -75,7 +74,6 @@ import Testing
             "type=bind,source=/var/nucleus/temporary,target=/tmp"))
 
     let alternateConfiguration = OCIRuntimeConfiguration(
-        externalNetwork: "alternate-external",
         isolatedNetwork: "alternate-isolated",
         guestHome: "/home/alternate",
         managedLabels: ["example.alternate.managed=true"],
@@ -90,30 +88,6 @@ import Testing
     #expect(alternateFlags.management.tmpFs.contains("/home/alternate"))
     #expect(alternateFlags.management.networks != flags.management.networks)
 
-    let externalExecution = OCIExecution(
-        executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxARM64,
-        imageID: FilePath("/var/nucleus/image-id"),
-        hostname: "fixture-download",
-        workingDirectory: "/src",
-        hostWorkingDirectory: FilePath("/var/nucleus"),
-        mounts: [],
-        networkPolicy: .externalEnabled,
-        userPolicy: .builder,
-        capabilityPolicy: .dropAll,
-        privilegePolicy: .prohibitAcquisition,
-        processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
-        containerEnvironment: [:],
-        command: ["download"],
-        environment: [:],
-        output: .logged)
-    let externalFlags = appleContainerFlags(
-        externalExecution,
-        name: "fixture-download-id",
-        temporaryDirectory: nil)
-    #expect(externalFlags.management.networks == ["default"])
-    #expect(!externalFlags.management.dnsDisabled)
 }
 
 @Test func ociExecutionRejectsDuplicateMountTargets() async throws {
@@ -146,7 +120,6 @@ import Testing
                         target: "/src",
                         access: .readOnly),
                 ],
-                networkPolicy: .externalDisabled,
                 userPolicy: .builder,
                 capabilityPolicy: .dropAll,
                 privilegePolicy: .prohibitAcquisition,
@@ -181,7 +154,6 @@ import Testing
 
     let backend = RecordingOCIBackend()
     let configuration = OCIRuntimeConfiguration(
-        externalNetwork: "fixture-external",
         isolatedNetwork: "fixture-isolated",
         guestHome: "/home/fixture",
         managedLabels: ["example.fixture.managed=true"],
@@ -220,7 +192,6 @@ import Testing
                 access: .readWrite),
         ],
         temporaryDirectory: FilePath(temporary.path),
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -279,7 +250,6 @@ import Testing
         workingDirectory: "/work",
         hostWorkingDirectory: root,
         mounts: [],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -455,7 +425,6 @@ import Testing
         mounts: [],
         temporaryDirectory: FilePath(
             root.appendingPathComponent("temporary").path),
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -523,7 +492,6 @@ import Testing
                 target: "/output",
                 access: .readWrite),
         ],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -573,7 +541,6 @@ import Testing
         workingDirectory: "/source",
         hostWorkingDirectory: root,
         mounts: [],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -598,7 +565,6 @@ import Testing
         workingDirectory: "/source",
         hostWorkingDirectory: root,
         mounts: [],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

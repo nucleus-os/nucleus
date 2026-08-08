@@ -176,12 +176,12 @@ private func fixtureReactNativeNodeModules(
     let arm64 = try registry.linuxSwiftPMInvocation(
         architecture: .arm64,
         builder: builder)
-    let x86_64 = try registry.linuxSwiftPMInvocation(
+    let amd64 = try registry.linuxSwiftPMInvocation(
         architecture: .x86_64,
         builder: builder)
 
     guard case .oci(let armExecution) = arm64.context.execution,
-        case .oci(let x86Execution) = x86_64.context.execution
+        case .oci(let x86Execution) = amd64.context.execution
     else {
         Issue.record("Linux SwiftPM builds must execute in OCI")
         return
@@ -195,7 +195,7 @@ private func fixtureReactNativeNodeModules(
         arm64.swiftExecutable
             == .path(FilePath("/opt/swift/usr/bin/swift")))
     #expect(
-        x86_64.swiftExecutable
+        amd64.swiftExecutable
             == .path(FilePath("/opt/swift-x86_64/usr/bin/swift")))
     #expect(
         NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
@@ -214,32 +214,38 @@ private func fixtureReactNativeNodeModules(
                 target: fixtureRepositoryRoot.string,
                 access: .readOnly)))
     #expect(armWritable.contains { arm64.scratchPath.isContained(in: $0) })
-    #expect(x86Writable.contains { x86_64.scratchPath.isContained(in: $0) })
+    #expect(x86Writable.contains { amd64.scratchPath.isContained(in: $0) })
     #expect(
         armWritable.allSatisfy { armPath in
             x86Writable.allSatisfy { !$0.overlaps(armPath) }
         })
 }
 
-@Test func reactNativeDependencyInstallRejectsContainerFailure() async throws {
+@Test func reactNativeDependencyInstallRunsOnHostForLinuxMultiarch() async throws {
     let root = FilePath("/workspace/react-native")
     let task = try ReactNativeColliderRecipe.installJavaScriptDependencies(
         root: root,
-        environment: ["PATH": "/usr/bin"],
-        builder: try fixtureNativeBuilder(
-            context: FilePath("/workspace/core/build-container"),
-            imageID: FilePath("/cache/native/image-id"),
-            ccache: FilePath("/cache/native/ccache"),
-            swiftSDKRoot: FilePath("/cache/swift-sdks"),
-            environment: ["PATH": "/usr/bin"])
+        cacheRoot: FilePath("/cache"),
+        environment: ["PATH": "/usr/bin"]
     ).task
     let action = try #require(task.action)
+    #expect(action.requirements.executionPlatform == .macOSARM64Native)
+    #expect(action.requirements.artifactTarget == nil)
+    #expect(action.requirements.networkAccess == .unrestricted)
 
-    await #expect(throws: ActionContainerExecutorFailure.self) {
-        _ = try await recordActionExecution(
-            action,
-            containerResult: { _ in CommandResult(status: 1) })
-    }
+    let execution = try await recordActionExecution(
+        action,
+        commandResult: { command in
+            #expect(command.executable == .named("bun"))
+            #expect(command.arguments.contains("--os"))
+            #expect(command.arguments.contains("linux"))
+            #expect(command.arguments.contains("--cpu"))
+            #expect(command.arguments.contains("*"))
+            #expect(command.arguments.contains("--frozen-lockfile"))
+            #expect(command.arguments.contains("--cache-dir"))
+            return CommandResult(status: 0)
+        })
+    #expect(execution.ociExecutions.isEmpty)
 }
 
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
@@ -358,6 +364,48 @@ private func fixtureReactNativeNodeModules(
     #expect(throws: (any Error).self) {
         try selectedTestTasks(in: registry, selection: "unknown")
     }
+}
+
+@Test func linuxRuntimeArtifactBuildsOnceThenPublishesTypedOutputs() async throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: root,
+            environment: [:],
+            runtime: ColliderRuntime()))
+    let catalog = try registry.componentCatalog()
+    let selected = try selectedTasks(
+        in: catalog,
+        entrypoint: .build,
+        selection: "linux-runtime")
+    #expect(selected.contains(TaskID(rawValue: "linux.arm64.runtime-artifact")))
+
+    let task = try #require(
+        catalog.tasks.first {
+            $0.id == TaskID(rawValue: "linux.arm64.runtime-artifact")
+        })
+    #expect(
+        Set(task.swiftProducts.map(\.qualifiedProduct)) == [
+            "collider-cli:nucleus-runtime-assembler",
+            "nucleus:NucleusCompositor",
+            "nucleus:NucleusSessionSupervisor",
+            "nucleus:NucleusConfigService",
+            "nucleus:NucleusControlService",
+            "nucleus:NucleusShell",
+            "nucleus:NucleusShellPamHelper",
+            "nucleus:nucleus",
+        ])
+    #expect(task.outputs.count == 2)
+    #expect(task.outputs.allSatisfy { $0.validation == .symlinkTarget })
+    let action = try #require(task.action)
+    #expect(action.kind == "linux.publish-runtime-artifact")
+    let execution = try #require(try await ociExecutions(in: action).first)
+    #expect(execution.executionPlatform == .linuxARM64OCI)
+    #expect(action.requirements.networkAccess == .none)
+    #expect(execution.command.first == "swiftpm")
+    #expect(execution.command.dropFirst().first?.hasSuffix("nucleus-runtime-assembler") == true)
+    #expect(!execution.command.contains("swift"))
 }
 
 @Test func unselectedWorkDoesNotRequireDRMHardware() throws {
@@ -815,7 +863,8 @@ private func fixtureReactNativeNodeModules(
                         image: builder.image,
                         hostname: "swift-wayland-fixture",
                         hostWorkingDirectory: root,
-                        mounts: []))),
+                        mounts: [],
+                        hostDependencyCache: FilePath("/cache/swiftpm")))),
             scratchPath: FilePath(
                 workspace.appendingPathComponent(
                     ".nucleus/swiftpm/fixture"

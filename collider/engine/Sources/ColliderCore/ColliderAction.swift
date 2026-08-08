@@ -384,7 +384,6 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         }
         encoder.append(tag: 12, bytes: mounts.bytes)
         encoder.append(tag: 13, string: execution.temporaryDirectory?.string ?? "")
-        encoder.append(tag: 14, string: execution.networkPolicy.rawValue)
         encoder.append(tag: 15, integer: UInt64(execution.userPolicy.userID))
         encoder.append(tag: 16, integer: UInt64(execution.userPolicy.groupID))
         encoder.append(tag: 17, string: execution.capabilityPolicy.rawValue)
@@ -496,9 +495,7 @@ public struct OCIExecutionPipeline: Sendable {
         requirements = ActionRequirements(
             effects: effects,
             lane: .oci,
-            networkAccess: executions.contains {
-                $0.networkPolicy == .externalEnabled
-            } ? .unrestricted : .none,
+            networkAccess: .none,
             executionPlatform: first.executionPlatform,
             artifactTarget: first.artifactTarget)
         environment = first.environment
@@ -539,8 +536,7 @@ public func ociActionRequirements(
     return ActionRequirements(
         effects: effects,
         lane: .oci,
-        networkAccess:
-            execution.networkPolicy == .externalEnabled ? .unrestricted : .none,
+        networkAccess: .none,
         executionPlatform: execution.executionPlatform,
         artifactTarget: execution.artifactTarget)
 }

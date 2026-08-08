@@ -925,7 +925,6 @@ private func gfxstreamExecution(
                 target: "/swift-sdk",
                 access: .readOnly),
         ],
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

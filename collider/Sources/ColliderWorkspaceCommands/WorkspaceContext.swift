@@ -4,7 +4,6 @@ import Foundation
 import SystemPackage
 
 package let nucleusOCIRuntimeConfiguration = OCIRuntimeConfiguration(
-    externalNetwork: "default",
     isolatedNetwork: "nucleus-build-internal",
     guestHome: "/home/nucleus-build",
     managedLabels: ["dev.nucleus.collider.managed=true"],

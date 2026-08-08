@@ -5,7 +5,10 @@ let package = Package(
     name: "collider-cli",
     platforms: [.macOS("27")],
     products: [
-        .executable(name: "collider", targets: ["Collider"])
+        .executable(name: "collider", targets: ["Collider"]),
+        .executable(
+            name: "nucleus-runtime-assembler",
+            targets: ["NucleusRuntimeAssembler"]),
     ],
     dependencies: [
         .package(path: "engine"),
@@ -16,6 +19,12 @@ let package = Package(
         .executableTarget(
             name: "Collider",
             dependencies: ["ColliderCLI"]),
+        .executableTarget(
+            name: "NucleusRuntimeAssembler",
+            dependencies: [
+                .product(name: "ColliderRuntime", package: "engine"),
+                "ShellColliderRecipe",
+            ]),
         .target(
             name: "ColliderCLI",
             dependencies: [
@@ -103,6 +112,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "NativeBuilderColliderRecipe",
+                "ShellColliderRecipe",
             ]),
         .target(
             name: "NativeBuilderColliderRecipe",

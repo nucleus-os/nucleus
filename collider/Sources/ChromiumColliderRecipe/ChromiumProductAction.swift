@@ -174,7 +174,6 @@ package struct BuildChromiumProductAction: ColliderAction {
                     access: .readWrite),
             ],
             temporaryDirectory: temporaryDirectory,
-            networkPolicy: .externalDisabled,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,

@@ -64,6 +64,8 @@ public struct StageRuntimeELFAction: ColliderAction {
                 ActionToolRequirement(
                     "patchelf", executable: .named("patchelf"), role: .semantic),
                 ActionToolRequirement(
+                    "readelf", executable: .named("readelf"), role: .semantic),
+                ActionToolRequirement(
                     "strip", executable: .named("strip"), role: .semantic),
             ],
             effects: [
@@ -129,45 +131,58 @@ package func stageRuntimeELF(
     while index < queue.count {
         let artifact = queue[index]
         index += 1
-        let output = try await run(
+        let dynamic = try await run(
+            "readelf",
+            ["-d", artifact.string],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
+        let directDependencies = parseReadELFDynamic(dynamic).needed
+        let lddOutput = try await run(
             "ldd",
             [artifact.string],
             workingDirectory: prefix,
             environment: environment,
             context: context)
-        guard !output.contains("not found") else {
-            throw RuntimeELFFailure(
-                "\(artifact) has an unresolved dynamic dependency:\n\(output)")
-        }
-        for dependency in parseLDDResolvedDependencies(output) {
-            guard let owner = NucleusLinuxABI.owner(ofSONAME: dependency.soname)
+        let resolvedDependencies = Dictionary(
+            parseLDDResolvedDependencies(lddOutput).map {
+                ($0.soname, $0.path)
+            },
+            uniquingKeysWith: { first, _ in first })
+        for soname in directDependencies.sorted() {
+            guard let owner = NucleusLinuxABI.owner(ofSONAME: soname)
             else {
                 throw RuntimeELFFailure(
-                    "unclassified dynamic dependency \(dependency.soname) "
-                        + "resolved at \(dependency.path)")
+                    "\(artifact) has unclassified dynamic dependency "
+                        + soname)
+            }
+            guard let resolvedPath = resolvedDependencies[soname] else {
+                throw RuntimeELFFailure(
+                    "\(artifact) has unresolved direct dynamic dependency "
+                        + "\(soname):\n\(lddOutput)")
             }
             guard owner == .artifact else { continue }
-            let name = dependency.soname
+            let name = soname
             let destination = prefix.appending("lib").appending(name)
             if let existing = copiedDependencies[name] {
-                if dependency.path == destination || existing == dependency.path {
+                if resolvedPath == destination || existing == resolvedPath {
                     continue
                 }
                 guard
                     try context.files.contentsEqual(
                         at: existing,
-                        and: dependency.path)
+                        and: resolvedPath)
                 else {
                     throw RuntimeELFFailure(
                         "dynamic dependency basename collision for \(name): "
-                            + "\(existing) and \(dependency.path)")
+                            + "\(existing) and \(resolvedPath)")
                 }
                 continue
             }
-            try requireRegularFile(dependency.path, files: context.files)
-            try context.files.copy(from: dependency.path, to: destination)
+            try requireRegularFile(resolvedPath, files: context.files)
+            try context.files.copy(from: resolvedPath, to: destination)
             try context.files.setPermissions(0o755, for: destination)
-            copiedDependencies[name] = dependency.path
+            copiedDependencies[name] = resolvedPath
             queue.append(destination)
         }
     }

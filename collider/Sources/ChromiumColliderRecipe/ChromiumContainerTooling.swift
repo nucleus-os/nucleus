@@ -26,7 +26,6 @@ func chromiumToolExecution(
         hostWorkingDirectory: hostWorkingDirectory,
         mounts: mounts,
         temporaryDirectory: temporaryDirectory,
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

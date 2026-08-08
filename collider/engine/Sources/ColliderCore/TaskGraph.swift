@@ -134,11 +134,6 @@ public struct OCIMount: Hashable, Sendable {
     }
 }
 
-public enum OCINetworkPolicy: String, Codable, Hashable, Sendable {
-    case externalDisabled = "external-disabled"
-    case externalEnabled = "external-enabled"
-}
-
 public struct OCIUserPolicy: Codable, Hashable, Sendable {
     public let userID: UInt32
     public let groupID: UInt32
@@ -212,7 +207,6 @@ public struct OCIExecution: Hashable, Sendable {
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
     public let temporaryDirectory: FilePath?
-    public let networkPolicy: OCINetworkPolicy
     public let userPolicy: OCIUserPolicy
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
@@ -233,7 +227,6 @@ public struct OCIExecution: Hashable, Sendable {
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
         temporaryDirectory: FilePath? = nil,
-        networkPolicy: OCINetworkPolicy,
         userPolicy: OCIUserPolicy,
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
@@ -253,7 +246,6 @@ public struct OCIExecution: Hashable, Sendable {
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
         self.temporaryDirectory = temporaryDirectory
-        self.networkPolicy = networkPolicy
         self.userPolicy = userPolicy
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy

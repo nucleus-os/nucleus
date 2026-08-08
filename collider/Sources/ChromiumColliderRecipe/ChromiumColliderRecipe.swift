@@ -875,7 +875,6 @@ private func chromiumBuildExecution(
         ],
         temporaryDirectory: output.removingLastComponent().appending(
             ".temporary"),
-        networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

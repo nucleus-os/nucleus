@@ -463,7 +463,6 @@ import Testing
     #expect(
         recorded.allSatisfy {
             $0.artifactTarget == .androidX86_64(apiLevel: 37)
-                && $0.networkPolicy == .externalDisabled
                 && $0.intelBinaryTranslationPolicy == .required
         })
 }
@@ -573,7 +572,6 @@ import Testing
     #expect(recorded.command.contains("--avb_vbmeta_key"))
     #expect(recorded.command.contains("/keys/releasekey.pem"))
     #expect(!recorded.command.contains("--allow_gsi_debug_sepolicy"))
-    #expect(recorded.networkPolicy == .externalDisabled)
     #expect(
         recorded.mounts.contains {
             $0.source == FilePath(signing.path)
