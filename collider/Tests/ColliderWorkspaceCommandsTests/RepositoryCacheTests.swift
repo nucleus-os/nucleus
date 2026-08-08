@@ -58,15 +58,28 @@ import Testing
             root: FilePath(generations.path),
             safetyRoot: FilePath(generations.deletingLastPathComponent().path),
             cleanupPolicy: .explicitPrune,
-            workflowLock: FilePath(
-                cache.appendingPathComponent("nucleus/swift-target-sdks/rebuild.lock").path),
             activeGenerationLink: FilePath(
                 cache.appendingPathComponent("nucleus/swift-target-sdks/current").path),
+            rollbackGenerationCount: 0,
+            interruptedCandidateNaming: DirectoryNamePattern(
+                rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#),
             retention: "fixture")
     ]
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: ComponentID(rawValue: "fixture"),
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [],
+                entrypoints: [],
+                storage: storage)
+        ],
+        publicEntrypoints: [])
     try await RepositoryCache(
         context: context,
-        storageDeclarations: storage
+        catalog: catalog
     ).prune(
         keepingRuns: 0,
         dryRun: false,
@@ -75,6 +88,93 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
     #expect(FileManager.default.fileExists(atPath: active.path))
     #expect(!FileManager.default.fileExists(atPath: inactive.path))
+    #expect(FileManager.default.fileExists(atPath: unrelated.path))
+}
+
+@Test func repositoryCleanRemovesOnlySelectedExplicitlyCleanableRoots() async throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-clean-workspace-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let cleanable = workspace.appendingPathComponent("build", isDirectory: true)
+    let protected = workspace.appendingPathComponent("source", isDirectory: true)
+    let unrelated = workspace.appendingPathComponent("other-build", isDirectory: true)
+    for directory in [cleanable, protected, unrelated] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("payload".utf8).write(to: directory.appendingPathComponent("payload"))
+    }
+    let owner = ComponentID(rawValue: "fixture")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.build"),
+        component: owner,
+        locks: [.shared(FilePath(workspace.appendingPathComponent("fixture.lock").path))])
+    let storage = [
+        StorageDeclaration(
+            id: "fixture-build",
+            owner: owner,
+            producers: [.task(task.id)],
+            storageClass: .incremental,
+            root: FilePath(cleanable.path),
+            safetyRoot: FilePath(workspace.path),
+            cleanupPolicy: .explicitClean,
+            retention: "fixture"),
+        StorageDeclaration(
+            id: "fixture-source",
+            owner: owner,
+            producers: [.task(task.id)],
+            storageClass: .source,
+            root: FilePath(protected.path),
+            safetyRoot: FilePath(workspace.path),
+            cleanupPolicy: .protected,
+            retention: "fixture"),
+    ]
+    let fixture = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: owner,
+            canonicalName: "fixture",
+            directoryName: "fixture",
+            aliases: ["alias"]),
+        tasks: [task],
+        entrypoints: [],
+        storage: storage)
+    let otherOwner = ComponentID(rawValue: "other")
+    let otherTask = TaskDeclaration(
+        id: TaskID(rawValue: "other.build"),
+        component: otherOwner,
+        locks: [.shared(FilePath(workspace.appendingPathComponent("other.lock").path))])
+    let other = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: otherOwner,
+            canonicalName: "other",
+            directoryName: "other"),
+        tasks: [otherTask],
+        entrypoints: [],
+        storage: [
+            StorageDeclaration(
+                id: "other-build",
+                owner: otherOwner,
+                producers: [.task(otherTask.id)],
+                storageClass: .incremental,
+                root: FilePath(unrelated.path),
+                safetyRoot: FilePath(workspace.path),
+                cleanupPolicy: .explicitClean,
+                retention: "fixture")
+        ])
+    let context = WorkspaceContext(
+        root: FilePath(workspace.path),
+        environment: ["HOME": workspace.path],
+        runtime: ColliderRuntime())
+    let cache = RepositoryCache(
+        context: context,
+        catalog: ComponentCatalog(
+            components: [fixture, other],
+            publicEntrypoints: []))
+
+    try await cache.clean(component: "alias", dryRun: true, json: true)
+    #expect(FileManager.default.fileExists(atPath: cleanable.path))
+
+    try await cache.clean(component: "fixture", dryRun: false, json: true)
+    #expect(!FileManager.default.fileExists(atPath: cleanable.path))
+    #expect(FileManager.default.fileExists(atPath: protected.path))
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
 }
 

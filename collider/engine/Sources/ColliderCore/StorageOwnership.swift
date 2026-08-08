@@ -3,6 +3,7 @@ import SystemPackage
 
 public enum StorageClass: String, Codable, Hashable, Sendable {
     case source
+    case identity
     case sourceSnapshot
     case incremental
     case cache
@@ -34,8 +35,9 @@ public struct StorageDeclaration: Hashable, Sendable {
     public let root: FilePath
     public let safetyRoot: FilePath
     public let cleanupPolicy: StorageCleanupPolicy
-    public let workflowLock: FilePath?
     public let activeGenerationLink: FilePath?
+    public let rollbackGenerationCount: UInt32?
+    public let interruptedCandidateNaming: DirectoryNamePattern?
     public let retention: String
 
     public init(
@@ -46,8 +48,9 @@ public struct StorageDeclaration: Hashable, Sendable {
         root: FilePath,
         safetyRoot: FilePath,
         cleanupPolicy: StorageCleanupPolicy,
-        workflowLock: FilePath? = nil,
         activeGenerationLink: FilePath? = nil,
+        rollbackGenerationCount: UInt32? = nil,
+        interruptedCandidateNaming: DirectoryNamePattern? = nil,
         retention: String
     ) {
         self.id = id
@@ -57,8 +60,9 @@ public struct StorageDeclaration: Hashable, Sendable {
         self.root = root
         self.safetyRoot = safetyRoot
         self.cleanupPolicy = cleanupPolicy
-        self.workflowLock = workflowLock
         self.activeGenerationLink = activeGenerationLink
+        self.rollbackGenerationCount = rollbackGenerationCount
+        self.interruptedCandidateNaming = interruptedCandidateNaming
         self.retention = retention
     }
 }
@@ -103,9 +107,40 @@ public enum StorageCatalog {
                         "removable storage cannot name a safety or forbidden root: \(declaration.id)"
                     )
                 }
-                guard declaration.workflowLock != nil else {
+            }
+            if declaration.storageClass == .source || declaration.storageClass == .identity {
+                guard declaration.cleanupPolicy == .protected else {
                     throw StorageCatalogFailure.invalid(
-                        "removable storage requires its producer workflow lock: \(declaration.id)")
+                        "source and identity storage must be protected: \(declaration.id)")
+                }
+            }
+            if declaration.cleanupPolicy == .automaticRetention,
+                declaration.storageClass != .generation
+                    && declaration.storageClass != .runRecord
+            {
+                throw StorageCatalogFailure.invalid(
+                    "automatic retention requires generation or run-record storage: "
+                        + declaration.id)
+            }
+            if declaration.cleanupPolicy == .explicitPrune,
+                declaration.storageClass != .generation
+            {
+                throw StorageCatalogFailure.invalid(
+                    "explicit pruning requires generation storage: " + declaration.id)
+            }
+            if declaration.cleanupPolicy == .automaticRetention,
+                declaration.storageClass == .generation,
+                declaration.activeGenerationLink == nil
+            {
+                throw StorageCatalogFailure.invalid(
+                    "automatically retained generation storage requires an active link: "
+                        + declaration.id)
+            }
+            if let activeGenerationLink = declaration.activeGenerationLink {
+                let active = activeGenerationLink.normalizedForComparison()
+                guard active.isAbsolute, active.isContained(in: safetyRoot) else {
+                    throw StorageCatalogFailure.invalid(
+                        "active generation link escapes its safety root: \(declaration.id)")
                 }
             }
             if declaration.activeGenerationLink != nil,
@@ -113,6 +148,29 @@ public enum StorageCatalog {
             {
                 throw StorageCatalogFailure.invalid(
                     "only generation storage may declare an active link: \(declaration.id)")
+            }
+            if declaration.rollbackGenerationCount != nil,
+                declaration.storageClass != .generation
+                    || declaration.activeGenerationLink == nil
+            {
+                throw StorageCatalogFailure.invalid(
+                    "rollback retention requires generation storage with an active link: "
+                        + declaration.id)
+            }
+            if declaration.storageClass == .generation,
+                declaration.activeGenerationLink != nil,
+                declaration.rollbackGenerationCount == nil
+            {
+                throw StorageCatalogFailure.invalid(
+                    "active generation storage requires an explicit rollback count: "
+                        + declaration.id)
+            }
+            if declaration.interruptedCandidateNaming != nil,
+                declaration.storageClass != .generation
+            {
+                throw StorageCatalogFailure.invalid(
+                    "only generation storage may declare interrupted candidate naming: "
+                        + declaration.id)
             }
             roots.append((declaration, root))
         }
@@ -122,6 +180,17 @@ public enum StorageCatalog {
                 let left = roots[leftIndex]
                 let right = roots[rightIndex]
                 guard left.1.overlaps(right.1) else { continue }
+                let leftProtectsContent =
+                    left.0.storageClass == .source || left.0.storageClass == .identity
+                let rightProtectsContent =
+                    right.0.storageClass == .source || right.0.storageClass == .identity
+                if (leftProtectsContent && right.0.cleanupPolicy != .protected)
+                    || (rightProtectsContent && left.0.cleanupPolicy != .protected)
+                {
+                    throw StorageCatalogFailure.invalid(
+                        "removable storage overlaps source or identity storage: "
+                            + "\(left.0.id), \(right.0.id)")
+                }
                 if left.0.cleanupPolicy != .protected,
                     right.0.cleanupPolicy != .protected
                 {
@@ -150,8 +219,31 @@ public enum StorageCatalog {
                         "storage producer belongs to another component: \(declaration.id), \(taskID)"
                     )
                 }
+                if declaration.cleanupPolicy != .protected, task.locks.isEmpty {
+                    throw StorageCatalogFailure.invalid(
+                        "removable storage producer has no workflow lock: "
+                            + "\(declaration.id), \(taskID)")
+                }
             }
         }
+    }
+
+    public static func workflowLocks(
+        for declaration: StorageDeclaration,
+        tasks: [TaskDeclaration]
+    ) throws -> Set<TaskLock> {
+        let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        var locks = Set<TaskLock>()
+        for producer in declaration.producers {
+            guard case .task(let taskID) = producer else { continue }
+            guard let task = tasksByID[taskID] else {
+                throw StorageCatalogFailure.invalid(
+                    "storage declaration names unknown producer task: \(declaration.id), \(taskID)"
+                )
+            }
+            locks.formUnion(task.locks)
+        }
+        return locks
     }
 
 }

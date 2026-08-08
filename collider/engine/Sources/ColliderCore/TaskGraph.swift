@@ -58,6 +58,8 @@ public struct DirectoryNamePattern: RawRepresentable, Hashable, Sendable {
     }
 
     public static let contentIdentity = Self(rawValue: #"^[0-9a-f]{24}$"#)
+    public static let contentIdentityCandidate = Self(
+        rawValue: #"^\.[0-9a-f]{24}\.(prepared|preparing)$"#)
 }
 
 public struct DirectoryRetentionRule: Hashable, Sendable {

@@ -91,7 +91,7 @@ struct PublishAOSPProductAction: ColliderAction {
                     DirectoryRetentionRule(
                         root: generations,
                         current: active,
-                        retain: 2,
+                        retain: AndroidRuntimeColliderRecipe.rollbackGenerationCount,
                         naming: .aospProduct)
                 ]))
     }

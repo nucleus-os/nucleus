@@ -274,8 +274,12 @@ package struct InstallBrowserAction: ColliderAction {
                     DirectoryRetentionRule(
                         root: generations,
                         current: runtimeRoot.appending("current"),
-                        retain: 2,
-                        naming: .contentIdentity)
+                        retain: ChromiumRetention.installationRollbackGenerationCount,
+                        naming: .contentIdentity),
+                    DirectoryRetentionRule(
+                        root: generations,
+                        retain: 0,
+                        naming: .contentIdentityCandidate),
                 ]))
         try await requireSuccess(
             .named("update-desktop-database"),

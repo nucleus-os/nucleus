@@ -284,7 +284,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(
                     id: .build,
                     roots: Set(taskSet.selected))
-            ])
+            ],
+            storage: storage(configuration, tasks: taskSet.tasks))
         return PreparedComponent(
             component: component,
             activeSDK: taskSet.activeSDK,
@@ -322,6 +323,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .executableFile)
         let task = builder.build(
             inputs: [.file(configuration.inputsFile)],
+            locks: [
+                .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
+            ],
             recordsActiveArtifact: true)
         return PreparedComponent(
             component: try ComponentDefinition(
@@ -329,9 +333,99 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 tasks: [task],
                 entrypoints: [
                     ComponentEntrypoint(id: .build, roots: [task.id])
-                ]),
+                ],
+                storage: storage(configuration, tasks: [task])),
             activeSDK: activeSDK,
             activeSwift: activeSwift)
+    }
+
+    private static func storage(
+        _ configuration: SwiftTargetSDKGenerationConfiguration,
+        tasks: [TaskDeclaration]
+    ) -> [StorageDeclaration] {
+        let artifactRoot = configuration.active.removingLastComponent()
+        let runtimeBuildRoot =
+            configuration.linuxTargets.first?.runtimeBuildWorkspace
+            .removingLastComponent().removingLastComponent().removingLastComponent()
+            ?? configuration.generatorScratch.removingLastComponent()
+            .appending("swift-target-runtime")
+        let runtimeCompilerCache =
+            configuration.linuxTargets.first?.runtimeCompilerCache
+            .removingLastComponent()
+            ?? runtimeBuildRoot.removingLastComponent().removingLastComponent()
+            .appending("ccache/swift-runtime")
+
+        func producers(_ matches: (String) -> Bool, runtime: String) -> Set<StorageProducer> {
+            let resolved = Set(
+                tasks.compactMap { matches($0.id.rawValue) ? StorageProducer.task($0.id) : nil })
+            return resolved.isEmpty ? [.runtime(runtime)] : resolved
+        }
+
+        return [
+            StorageDeclaration(
+                id: "swift-target-sdk-generations",
+                owner: descriptor.id,
+                producers: producers(
+                    {
+                        $0 == "swift-sdk.activate-target-sdks"
+                            || $0 == "swift-sdk.use-active-generation"
+                    },
+                    runtime: "swift-sdk-generation-lifecycle"),
+                storageClass: .generation,
+                root: artifactRoot.appending("generations"),
+                safetyRoot: artifactRoot,
+                cleanupPolicy: .explicitPrune,
+                activeGenerationLink: configuration.active,
+                rollbackGenerationCount: 0,
+                interruptedCandidateNaming: DirectoryNamePattern(
+                    rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#),
+                retention: "the active generation is protected; inactive generations are prunable"),
+            StorageDeclaration(
+                id: "swift-sdk-generator-build",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0 == "swift-sdk.build-sdk-generator" },
+                    runtime: "swift-sdk-rebuild"),
+                storageClass: .incremental,
+                root: configuration.generatorScratch,
+                safetyRoot: configuration.generatorScratch.removingLastComponent(),
+                cleanupPolicy: .explicitClean,
+                retention: "the generator build remains reusable until explicit clean"),
+            StorageDeclaration(
+                id: "swift-runtime-build",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0.hasPrefix("swift-sdk.build-linux-") && $0.hasSuffix("-runtime") },
+                    runtime: "swift-sdk-rebuild"),
+                storageClass: .incremental,
+                root: runtimeBuildRoot,
+                safetyRoot: runtimeBuildRoot.removingLastComponent(),
+                cleanupPolicy: .explicitClean,
+                retention: "architecture-specific target runtime builds remain reusable"),
+            StorageDeclaration(
+                id: "swift-runtime-builder-metadata",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0 == "swift-sdk.prepare-linux-runtime-builder" },
+                    runtime: "swift-sdk-rebuild"),
+                storageClass: .cache,
+                root: configuration.runtimeBuilderImageID.removingLastComponent(),
+                safetyRoot: configuration.runtimeBuilderImageID.removingLastComponent()
+                    .removingLastComponent(),
+                cleanupPolicy: .explicitClean,
+                retention: "the target-runtime builder image remains reusable"),
+            StorageDeclaration(
+                id: "swift-runtime-ccache",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0.hasPrefix("swift-sdk.build-linux-") && $0.hasSuffix("-runtime") },
+                    runtime: "swift-sdk-rebuild"),
+                storageClass: .cache,
+                root: runtimeCompilerCache,
+                safetyRoot: runtimeCompilerCache.removingLastComponent(),
+                cleanupPolicy: .explicitClean,
+                retention: "target-runtime compiler results remain reusable"),
+        ]
     }
 
     public static func generation(
@@ -1065,6 +1159,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 PathPostcondition(
                     path: configuration.active,
                     validation: .symlinkTarget)
+            ],
+            locks: [
+                .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
             ],
             assessmentPolicy: .always,
             recordsActiveArtifact: true,

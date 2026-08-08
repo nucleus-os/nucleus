@@ -82,6 +82,26 @@ public enum NativeBuilderColliderRecipe {
                 tasks: [task],
                 entrypoints: [
                     ComponentEntrypoint(id: .bootstrap, roots: [task.id])
+                ],
+                storage: [
+                    StorageDeclaration(
+                        id: "native-builder-metadata",
+                        owner: descriptor.id,
+                        producers: [.task(task.id)],
+                        storageClass: .cache,
+                        root: cacheRoot,
+                        safetyRoot: cacheRoot.removingLastComponent(),
+                        cleanupPolicy: .explicitClean,
+                        retention: "the native builder image and generated context remain reusable"),
+                    StorageDeclaration(
+                        id: "native-builder-ccache",
+                        owner: descriptor.id,
+                        producers: [.task(task.id)],
+                        storageClass: .cache,
+                        root: ccache,
+                        safetyRoot: ccache.removingLastComponent(),
+                        cleanupPolicy: .explicitClean,
+                        retention: "native builder compiler results remain reusable"),
                 ]),
             configuration: configuration)
     }

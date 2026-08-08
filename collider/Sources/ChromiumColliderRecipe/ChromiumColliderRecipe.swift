@@ -13,6 +13,13 @@ package enum ChromiumTaskIDs {
     package static let install = TaskID(rawValue: "browser.install")
 }
 
+enum ChromiumRetention {
+    static let sourceRollbackGenerationCount: UInt32 = 0
+    static let cefRollbackGenerationCount: UInt32 = 1
+    static let browserRollbackGenerationCount: UInt32 = 1
+    static let installationRollbackGenerationCount: UInt32 = 1
+}
+
 public struct ChromiumRecipeLayout: Hashable, Sendable {
     public let sourceID: String
     public let cacheRoot: FilePath
@@ -59,15 +66,21 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             context.environment["PREFIX"]
             ?? context.environment["HOME"].map { FilePath($0).appending(".local").string }
             ?? "/tmp/nucleus-browser"
+        let cacheRoot = context.cacheRoot.appending("nucleus/cef")
         let tasks = try tasks(
             workspaceRoot: context.repositoryRoot,
             environment: context.environment,
             layout: ChromiumRecipeLayout(
                 sourceID: sourceID,
-                cacheRoot: context.cacheRoot.appending("nucleus/cef"),
+                cacheRoot: cacheRoot,
                 installPrefix: FilePath(prefix),
                 jobs: Int(context.environment["NUCLEUS_CHROMIUM_JOBS"] ?? "")
                     ?? 16))
+        func producers(_ ids: TaskID...) -> Set<StorageProducer> {
+            Set(ids.map(StorageProducer.task))
+        }
+        let retention = ChromiumTaskIDs.retention
+        let installationRoot = FilePath(prefix).appending("lib/nucleus-browser")
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
@@ -78,6 +91,102 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(id: .build, roots: [ChromiumTaskIDs.retention]),
                 ComponentEntrypoint(id: .testDefault, roots: [ChromiumTaskIDs.test]),
                 ComponentEntrypoint(id: .install, roots: [ChromiumTaskIDs.install]),
+            ],
+            storage: [
+                StorageDeclaration(
+                    id: "browser-source-generations",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.source, retention),
+                    storageClass: .generation,
+                    root: cacheRoot.appending("source-generations"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: cacheRoot.appending("source-generations/current"),
+                    rollbackGenerationCount: ChromiumRetention.sourceRollbackGenerationCount,
+                    retention: "the active pinned Chromium source generation remains"),
+                StorageDeclaration(
+                    id: "browser-incremental-builds",
+                    owner: descriptor.id,
+                    producers: producers(
+                        ChromiumTaskIDs.cefBuild, ChromiumTaskIDs.browserBuild, retention),
+                    storageClass: .incremental,
+                    root: cacheRoot.appending("build"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "source-addressed incremental browser builds remain reusable"),
+                StorageDeclaration(
+                    id: "browser-cef-generations",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.cefArtifact, retention),
+                    storageClass: .generation,
+                    root: cacheRoot.appending("dist/releases"),
+                    safetyRoot: cacheRoot.appending("dist"),
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: cacheRoot.appending("dist/current-release"),
+                    rollbackGenerationCount: ChromiumRetention.cefRollbackGenerationCount,
+                    retention: "the active CEF publication and one rollback generation remain"),
+                StorageDeclaration(
+                    id: "browser-product-generations",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.browserArtifact, retention),
+                    storageClass: .generation,
+                    root: cacheRoot.appending("browser-dist/generations"),
+                    safetyRoot: cacheRoot.appending("browser-dist"),
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: cacheRoot.appending("browser-dist/current"),
+                    rollbackGenerationCount: ChromiumRetention.browserRollbackGenerationCount,
+                    retention: "the active browser publication and one rollback generation remain"),
+                StorageDeclaration(
+                    id: "browser-depot-tools",
+                    owner: descriptor.id,
+                    producers: producers(
+                        TaskID(rawValue: "browser.depot-tools"),
+                        TaskID(rawValue: "browser.depot-tools-bootstrap")),
+                    storageClass: .cache,
+                    root: cacheRoot.appending("depot_tools"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "the pinned depot_tools checkout remains reusable"),
+                StorageDeclaration(
+                    id: "browser-builder-metadata",
+                    owner: descriptor.id,
+                    producers: producers(TaskID(rawValue: "browser.builder")),
+                    storageClass: .cache,
+                    root: cacheRoot.appending("build-container"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "the Chromium builder image metadata remains reusable"),
+                StorageDeclaration(
+                    id: "browser-logs",
+                    owner: descriptor.id,
+                    producers: producers(
+                        ChromiumTaskIDs.cefBuild, ChromiumTaskIDs.browserBuild),
+                    storageClass: .diagnostic,
+                    root: cacheRoot.appending("logs"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "browser build diagnostics remain until explicit clean"),
+                StorageDeclaration(
+                    id: "browser-locks",
+                    owner: descriptor.id,
+                    producers: Set(tasks.map { .task($0.id) }),
+                    storageClass: .incremental,
+                    root: cacheRoot.appending("locks"),
+                    safetyRoot: cacheRoot,
+                    cleanupPolicy: .protected,
+                    retention: "workflow lock identity remains with browser storage"),
+                StorageDeclaration(
+                    id: "browser-installations",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.install),
+                    storageClass: .generation,
+                    root: installationRoot.appending("generations"),
+                    safetyRoot: installationRoot,
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: installationRoot.appending("current"),
+                    rollbackGenerationCount:
+                        ChromiumRetention.installationRollbackGenerationCount,
+                    retention: "the active browser installation and one rollback generation remain"),
             ])
     }
 
@@ -378,7 +487,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let retention = retentionBuilder.build(
             inputs: commonInputs,
             locks: [
-                .shared(cache.appending("locks/cache-retention.lock"))
+                .shared(cache.appending("locks/cache-retention.lock")),
+                .shared(cache.appending("locks/source.lock")),
+                .shared(cache.appending("locks/cef-output.lock")),
+                .shared(cache.appending("locks/cef-publication.lock")),
+                .shared(cache.appending("locks/browser-output.lock")),
+                .shared(cache.appending("locks/browser-publication.lock")),
             ],
             assessmentPolicy: .always,
             action:
@@ -390,23 +504,30 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 DirectoryRetentionRule(
                                     root: sources,
                                     current: sources.appending("current"),
-                                    retain: 1,
+                                    retain: ChromiumRetention.sourceRollbackGenerationCount,
                                     naming: .contentIdentity),
                                 DirectoryRetentionRule(
-                                    root: cache.appending("build"),
-                                    current: nil,
-                                    retain: 1,
-                                    naming: .contentIdentity),
+                                    root: sources,
+                                    retain: 0,
+                                    naming: .contentIdentityCandidate),
                                 DirectoryRetentionRule(
                                     root: cefDistribution.appending("releases"),
                                     current: cefDistribution.appending("current-release"),
-                                    retain: 2,
+                                    retain: ChromiumRetention.cefRollbackGenerationCount,
                                     naming: .contentIdentity),
+                                DirectoryRetentionRule(
+                                    root: cefDistribution.appending("releases"),
+                                    retain: 0,
+                                    naming: .contentIdentityCandidate),
                                 DirectoryRetentionRule(
                                     root: browserDistribution.appending("generations"),
                                     current: browserDistribution.appending("current"),
-                                    retain: 2,
+                                    retain: ChromiumRetention.browserRollbackGenerationCount,
                                     naming: .contentIdentity),
+                                DirectoryRetentionRule(
+                                    root: browserDistribution.appending("generations"),
+                                    retain: 0,
+                                    naming: .contentIdentityCandidate),
                             ]))))
         var testBuilder = TaskBuilder(
             id: ChromiumTaskIDs.test,
@@ -634,7 +755,7 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
     }
 
     package var requirements: ActionRequirements {
-        ActionRequirements(
+        return ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "git",
@@ -775,10 +896,13 @@ private struct PruneChromiumCacheAction: ColliderAction {
     var identity: Identity { Identity(plan: plan) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: plan.rules.map {
-                ActionEffect(.readWrite, scope: .scratch($0.root))
-            },
+        var effects: [ActionEffect] = []
+        for rule in plan.rules {
+            let effect = ActionEffect(.readWrite, scope: .scratch(rule.root))
+            if !effects.contains(effect) { effects.append(effect) }
+        }
+        return ActionRequirements(
+            effects: effects,
             executionPlatform: .macOSARM64Native)
     }
 

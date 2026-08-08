@@ -52,6 +52,53 @@ import Testing
             atPath: generations.appendingPathComponent(names[2]).path))
 }
 
+@Test func directoryRetentionCountsOnlyInactiveRollbackGenerations() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-rollback-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let generations = directory.appendingPathComponent("generations")
+    try FileManager.default.createDirectory(
+        at: generations, withIntermediateDirectories: true)
+    let names = [
+        "111111111111111111111111",
+        "222222222222222222222222",
+        "333333333333333333333333",
+    ]
+    for (index, name) in names.enumerated() {
+        let path = generations.appendingPathComponent(name)
+        try FileManager.default.createDirectory(
+            at: path, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: Double(index))],
+            ofItemAtPath: path.path)
+    }
+    let current = directory.appendingPathComponent("current")
+    try FileManager.default.createSymbolicLink(
+        atPath: current.path,
+        withDestinationPath: "generations/\(names[2])")
+
+    try DirectoryLifecycle.prune(
+        DirectoryRetentionPlan(
+            safetyRoot: FilePath(directory.path),
+            rules: [
+                DirectoryRetentionRule(
+                    root: FilePath(generations.path),
+                    current: FilePath(current.path),
+                    retain: 1,
+                    naming: .contentIdentity)
+            ]))
+
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[0]).path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[1]).path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[2]).path))
+}
+
 @Test func directoryRetentionRemovesOnlyOwnedCandidateDirectories() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-candidate-retention-\(UUID().uuidString)")
@@ -83,6 +130,63 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
     #expect(FileManager.default.fileExists(atPath: active.path))
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
+}
+
+@Test func directoryRetentionRemovesAbandonedContentIdentityCandidates() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-content-candidates-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let generations = directory.appendingPathComponent("generations")
+    try FileManager.default.createDirectory(
+        at: generations, withIntermediateDirectories: true)
+    let identity = "1234567890abcdef12345678"
+    let finalized = generations.appendingPathComponent(identity)
+    let preparing = generations.appendingPathComponent(".\(identity).preparing")
+    let prepared = generations.appendingPathComponent(".\(identity).prepared")
+    let unrelated = generations.appendingPathComponent(".\(identity).manual")
+    for path in [finalized, preparing, prepared, unrelated] {
+        try FileManager.default.createDirectory(
+            at: path, withIntermediateDirectories: true)
+    }
+
+    try DirectoryLifecycle.prune(
+        DirectoryRetentionPlan(
+            safetyRoot: FilePath(directory.path),
+            rules: [
+                DirectoryRetentionRule(
+                    root: FilePath(generations.path),
+                    retain: 0,
+                    naming: .contentIdentityCandidate)
+            ]))
+
+    #expect(FileManager.default.fileExists(atPath: finalized.path))
+    #expect(!FileManager.default.fileExists(atPath: preparing.path))
+    #expect(!FileManager.default.fileExists(atPath: prepared.path))
+    #expect(FileManager.default.fileExists(atPath: unrelated.path))
+}
+
+@Test func directoryActivationAtomicallyReplacesOnlySymlinks() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-directory-activation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let active = directory.appendingPathComponent("current")
+    try FileManager.default.createSymbolicLink(
+        atPath: active.path, withDestinationPath: "old")
+
+    try DirectoryLifecycle.activate(
+        target: "new", link: FilePath(active.path))
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
+            == "new")
+
+    try FileManager.default.removeItem(at: active)
+    try Data("identity".utf8).write(to: active)
+    #expect(throws: PersistenceFailure.self) {
+        try DirectoryLifecycle.activate(
+            target: "replacement", link: FilePath(active.path))
+    }
+    #expect(try Data(contentsOf: active) == Data("identity".utf8))
 }
 
 @Test func generationPublicationCutsOverAndReusesExistingGenerationKey() throws {

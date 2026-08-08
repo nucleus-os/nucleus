@@ -14,10 +14,10 @@ struct Cache: AsyncParsableCommand {
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")
         @OptionGroup var reportOptions: ReportOptions
         mutating func run(in context: WorkspaceContext) async throws {
-            let storage = try ComponentRegistry(context: context).componentCatalog().storage
+            let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
-                storageDeclarations: storage
+                catalog: catalog
             ).status(
                 json: reportOptions.json)
         }
@@ -39,10 +39,10 @@ struct Cache: AsyncParsableCommand {
         }
 
         mutating func run(in context: WorkspaceContext) async throws {
-            let storage = try ComponentRegistry(context: context).componentCatalog().storage
+            let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
-                storageDeclarations: storage
+                catalog: catalog
             ).prune(
                 keepingRuns: keepRuns,
                 dryRun: dryRun,

@@ -18,6 +18,7 @@ package enum WorkspaceCommandSet {
         Generate.self,
         Sanitize.self,
         Benchmark.self,
+        Clean.self,
         Cache.self,
         Logs.self,
         Status.self,

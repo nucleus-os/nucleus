@@ -20,6 +20,8 @@ package enum AndroidRuntimeTaskIDs {
 }
 
 public enum AndroidRuntimeColliderRecipe: ColliderComponent {
+    static let rollbackGenerationCount: UInt32 = 1
+
     package struct GfxstreamArtifacts: Sendable {
         package let task: TaskDeclaration
         package let hostBackend: ArtifactReference<FileArtifact>
@@ -137,6 +139,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 id: ComponentEntrypointID(rawValue: "aosp.image"),
                 roots: [AndroidRuntimeTaskIDs.aospImage]),
         ]
+        var platformStorage: [StorageDeclaration] = []
         #if os(Linux)
         if let configuration = try context.configurationIfPresent(
             AndroidAddonPackageConfiguration.self,
@@ -151,12 +154,120 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(
                     id: AndroidRuntimeEntrypoints.packageAddon,
                     roots: [package.id]))
+            platformStorage = [
+                StorageDeclaration(
+                    id: "android-addon-packaging-scratch",
+                    owner: descriptor.id,
+                    producers: [.task(package.id)],
+                    storageClass: .incremental,
+                    root: configuration.runtimeScratch,
+                    safetyRoot: configuration.runtimeScratch.removingLastComponent(),
+                    cleanupPolicy: .explicitClean,
+                    retention: "Android add-on packaging scratch remains until explicit clean"),
+                StorageDeclaration(
+                    id: "android-addon-publication",
+                    owner: descriptor.id,
+                    producers: [.task(package.id)],
+                    storageClass: .published,
+                    root: configuration.output,
+                    safetyRoot: configuration.output,
+                    cleanupPolicy: .protected,
+                    retention: "the requested downloadable Android add-on remains published"),
+            ]
         }
         #endif
+        let aospProducers = Set(
+            tasks.compactMap {
+                $0.id.rawValue.hasPrefix("android-runtime.aosp-")
+                    ? StorageProducer.task($0.id) : nil
+            })
+        var storage = [
+            StorageDeclaration(
+                id: "android-aosp-source",
+                owner: descriptor.id,
+                producers: [.task(AndroidRuntimeTaskIDs.aospSource)],
+                storageClass: .source,
+                root: root.appending(".aosp-source"),
+                safetyRoot: root,
+                cleanupPolicy: .protected,
+                retention: "the exact Repo-managed AOSP source checkout remains materialized"),
+            StorageDeclaration(
+                id: "android-aosp-signing-identity",
+                owner: descriptor.id,
+                producers: [
+                    .task(TaskID(rawValue: "android-runtime.aosp-signing-identity"))
+                ],
+                storageClass: .identity,
+                root: root.appending(".aosp-signing"),
+                safetyRoot: root,
+                cleanupPolicy: .protected,
+                retention: "AOSP private signing identity is never a cleanup candidate"),
+            StorageDeclaration(
+                id: "android-aosp-tools",
+                owner: descriptor.id,
+                producers: [
+                    .task(AndroidRuntimeTaskIDs.aospSourceLock),
+                    .task(TaskID(rawValue: "android-runtime.aosp-repo-launcher")),
+                ],
+                storageClass: .cache,
+                root: root.appending(".aosp-tools"),
+                safetyRoot: root,
+                cleanupPolicy: .explicitClean,
+                retention: "verified Repo tooling and source-lock reports remain reusable"),
+            StorageDeclaration(
+                id: "android-aosp-build",
+                owner: descriptor.id,
+                producers: aospProducers,
+                storageClass: .generation,
+                root: root.appending(".aosp-build/generations"),
+                safetyRoot: root.appending(".aosp-build"),
+                cleanupPolicy: .automaticRetention,
+                activeGenerationLink: root.appending(".aosp-build/current"),
+                rollbackGenerationCount: rollbackGenerationCount,
+                retention:
+                    "the active AOSP image generation and build intermediates remain available"),
+            StorageDeclaration(
+                id: "android-aosp-builder-metadata",
+                owner: descriptor.id,
+                producers: [
+                    .task(TaskID(rawValue: "android-runtime.aosp-builder-image"))
+                ],
+                storageClass: .cache,
+                root: root.appending(".aosp-build/container"),
+                safetyRoot: root.appending(".aosp-build"),
+                cleanupPolicy: .explicitClean,
+                retention: "the AOSP builder image metadata remains reusable"),
+            StorageDeclaration(
+                id: "android-aosp-ccache",
+                owner: descriptor.id,
+                producers: aospProducers,
+                storageClass: .cache,
+                root: context.cacheRoot.appending("nucleus/aosp-ccache"),
+                safetyRoot: context.cacheRoot.appending("nucleus"),
+                cleanupPolicy: .explicitClean,
+                retention: "AOSP compiler results remain reusable"),
+        ]
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            storage.append(
+                StorageDeclaration(
+                    id: "android-gfxstream-build-\(target.identifier)",
+                    owner: descriptor.id,
+                    producers: [
+                        .task(TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)"))
+                    ],
+                    storageClass: .incremental,
+                    root: root.appending(".gfxstream-build/\(target.identifier)"),
+                    safetyRoot: root.appending(".gfxstream-build"),
+                    cleanupPolicy: .explicitClean,
+                    retention: "the architecture-specific gfxstream build remains reusable"))
+        }
+        storage += platformStorage
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
-            entrypoints: entrypoints)
+            entrypoints: entrypoints,
+            storage: storage)
         return PreparedComponent(
             component: component,
             artifacts: Artifacts(

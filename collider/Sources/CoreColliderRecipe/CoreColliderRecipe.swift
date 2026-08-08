@@ -151,6 +151,47 @@ public enum CoreColliderRecipe: ColliderComponent {
             androidSkia.task, androidNativeSDK.task, androidHost.task,
             androidValidation.task, androidBuild,
         ]
+        func producers(_ matches: (String) -> Bool) -> Set<StorageProducer> {
+            Set(tasks.compactMap { matches($0.id.rawValue) ? .task($0.id) : nil })
+        }
+        var storage = [
+            StorageDeclaration(
+                id: "core-skia-build",
+                owner: descriptor.id,
+                producers: producers {
+                    $0 == "core.gn-download" || $0 == "core.gn-install"
+                        || $0 == "core.sources" || $0.contains("core.skia.")
+                },
+                storageClass: .incremental,
+                root: root.appending(".skia-build"),
+                safetyRoot: root,
+                cleanupPolicy: .explicitClean,
+                retention: "Skia dependency and target build trees remain reusable")
+        ]
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let sdkRoot = native.nativeSDK(for: target)
+            storage.append(
+                StorageDeclaration(
+                    id: "core-render-sdk-\(target.identifier)",
+                    owner: descriptor.id,
+                    producers: producers { $0 == CoreTaskIDs.nativeSDK(target).rawValue },
+                    storageClass: .published,
+                    root: sdkRoot.appending("render"),
+                    safetyRoot: sdkRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "the validated render SDK remains published"))
+        }
+        storage.append(
+            StorageDeclaration(
+                id: "core-render-sdk-android-arm64",
+                owner: descriptor.id,
+                producers: [.task(CoreTaskIDs.androidNativeSDK)],
+                storageClass: .published,
+                root: androidSDKRoot.appending("render"),
+                safetyRoot: androidSDKRoot,
+                cleanupPolicy: .explicitClean,
+                retention: "the validated render SDK remains published"))
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
@@ -165,7 +206,8 @@ public enum CoreColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(
                     id: CoreEntrypoints.androidVerify,
                     roots: [androidValidation.task.id]),
-            ])
+            ],
+            storage: storage)
         return ComponentArtifacts(
             component: component,
             skiaExternalSources: sources.externalSources,

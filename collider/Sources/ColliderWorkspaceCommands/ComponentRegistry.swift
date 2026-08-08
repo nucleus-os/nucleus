@@ -170,7 +170,7 @@ package struct ComponentRegistry {
             CompositorColliderRecipe.self,
             VulkanColliderRecipe.self,
         ]
-        let componentsWithoutStorage =
+        let components =
             [
                 try ColliderStorageComponent.makeComponent(in: context),
                 nativeBuilder.component, swiftTargetSDK.component,
@@ -181,9 +181,6 @@ package struct ComponentRegistry {
             + (try componentTypes.map {
                 try $0.makeComponent(in: recipeContext)
             })
-        let components = try componentsWithoutStorage.map {
-            try attachingStorageOwnership(to: $0)
-        }
         let core = CoreColliderRecipe.descriptor.id
         let wayland = WaylandColliderRecipe.descriptor.id
         let reactNative = ReactNativeColliderRecipe.descriptor.id
@@ -358,6 +355,7 @@ package struct ComponentRegistry {
                 context.cacheRoot.appending("nucleus"),
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
+        try StorageCatalog.validateProducers(catalog.storage, tasks: catalog.tasks)
         return catalog
     }
 

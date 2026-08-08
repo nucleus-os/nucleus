@@ -10,7 +10,7 @@ import Darwin
 #endif
 
 public enum DirectoryLifecycle {
-    static func activate(target: String, link: FilePath) throws {
+    public static func activate(target: String, link: FilePath) throws {
         let manager = FileManager.default
         try manager.createDirectory(
             atPath: link.removingLastComponent().string,
@@ -109,8 +109,11 @@ public enum DirectoryLifecycle {
                 .contentModificationDate
             return (left ?? .distantPast) > (right ?? .distantPast)
         }
+        let inactiveCandidates = candidates.filter {
+            $0.lastPathComponent != protectedName
+        }
         var retained = Set(
-            candidates.prefix(Int(rule.retain)).map(\.lastPathComponent))
+            inactiveCandidates.prefix(Int(rule.retain)).map(\.lastPathComponent))
         if let protectedName { retained.insert(protectedName) }
         for candidate in candidates
         where !retained.contains(candidate.lastPathComponent) {

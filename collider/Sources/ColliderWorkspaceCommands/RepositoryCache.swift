@@ -2,7 +2,6 @@ import ColliderCore
 import ColliderPersistence
 import ColliderRuntime
 import Foundation
-import SwiftTargetSDKColliderRecipe
 import SystemPackage
 
 struct StorageStatusRecord: Codable, Equatable {
@@ -15,6 +14,7 @@ struct StorageStatusRecord: Codable, Equatable {
     let cleanupPolicy: StorageCleanupPolicy
     let state: String
     let retention: String
+    let rollbackGenerationCount: UInt32?
     let quotaBytes: UInt64?
     let reserveBytes: UInt64?
 }
@@ -24,10 +24,22 @@ private struct StorageStatusReport: Codable {
     let appleContainer: OCIRuntimeDiskUsage?
 }
 
-private struct PruneResult: Codable {
+struct StorageRemovalTarget: Codable, Equatable, Sendable {
+    let id: String
+    let path: String
+    let allocatedBytes: UInt64
+}
+
+struct CleanResult: Codable, Equatable, Sendable {
+    let component: String
+    let targets: [StorageRemovalTarget]
+    let reclaimedBytes: UInt64
+    let dryRun: Bool
+}
+
+struct PruneResult: Codable, Equatable, Sendable {
     let removedRuns: [String]
-    let removedSwiftSDKCandidates: [String]
-    let removedSwiftSDKGenerations: [String]
+    let targets: [StorageRemovalTarget]
     let reclaimedBytes: UInt64
     let appleContainerImagesPruned: Bool
     let appleContainerReclaimableBytes: UInt64
@@ -36,16 +48,81 @@ private struct PruneResult: Codable {
 
 struct RepositoryCache {
     let context: WorkspaceContext
-    let storageDeclarations: [StorageDeclaration]
+    let catalog: ComponentCatalog
+
+    private var storageDeclarations: [StorageDeclaration] { catalog.storage }
+
+    func clean(
+        component selection: String,
+        dryRun: Bool,
+        json: Bool
+    ) async throws {
+        try validateStorageDeclarations()
+        guard
+            let component = catalog.components.first(where: {
+                $0.descriptor.canonicalName == selection
+                    || $0.descriptor.aliases.contains(selection)
+            })
+        else {
+            throw WorkspaceFailure.message("unknown component '\(selection)'")
+        }
+        let declarations = component.storage
+            .filter { $0.cleanupPolicy == .explicitClean }
+            .sorted { $0.id < $1.id }
+        guard !declarations.isEmpty else {
+            throw WorkspaceFailure.message(
+                "component '\(component.descriptor.canonicalName)' has no explicitly cleanable storage"
+            )
+        }
+        var locks = Set<TaskLock>()
+        for declaration in declarations {
+            let declarationLocks = try catalog.workflowLocks(for: declaration)
+            guard !declarationLocks.isEmpty else {
+                throw StorageCatalogFailure.invalid(
+                    "cleanable storage has no producer lock: \(declaration.id)")
+            }
+            locks.formUnion(declarationLocks)
+        }
+        let targets = try declarations.map { declaration in
+            StorageRemovalTarget(
+                id: declaration.id,
+                path: declaration.root.string,
+                allocatedBytes: try allocatedSize(
+                    URL(fileURLWithPath: declaration.root.string)))
+        }
+        let result = CleanResult(
+            component: component.descriptor.canonicalName,
+            targets: targets,
+            reclaimedBytes: targets.reduce(0) { $0 &+ $1.allocatedBytes },
+            dryRun: dryRun)
+        try emit(result, json: json)
+        guard !dryRun else { return }
+        try await context.runtime.withTaskLocks(
+            locks,
+            stateRoot: context.layout.tasks,
+            purpose: "clean \(component.descriptor.canonicalName) storage"
+        ) {
+            for declaration in declarations {
+                try removeDeclaredRoot(declaration)
+            }
+        }
+    }
 
     func status(json: Bool) async throws {
         try validateStorageDeclarations()
         let declarations = storageDeclarations
         let runs = await runReclamation(
             keeping: RunRegistry.defaultRetainedRunCount)
-        let sdkCandidates = try swiftSDKCandidates()
-        let sdkGenerations = try inactiveSwiftSDKGenerations()
-        let sdkReclaimableBytes = try allocatedSize(of: sdkCandidates + sdkGenerations)
+        let explicitlyPrunableBytes = try Dictionary(
+            uniqueKeysWithValues:
+                declarations
+                .filter { $0.cleanupPolicy == .explicitPrune }
+                .map { declaration in
+                    (
+                        declaration.id,
+                        try allocatedSize(of: pruneTargets(for: declaration))
+                    )
+                })
         let apfs = try await apfsVolumes()
         let ociUsage = try await containerDiskUsage()
         let contract = try? MacOSBuilderContract.load(root: context.root)
@@ -53,10 +130,10 @@ struct RepositoryCache {
             let allocated = try allocatedSize(
                 URL(fileURLWithPath: declaration.root.string))
             let reclaimable: UInt64
-            switch declaration.id {
-            case "run-records": reclaimable = runs.bytes
-            case "swift-target-sdk-generations": reclaimable = sdkReclaimableBytes
-            default: reclaimable = 0
+            if declaration.storageClass == .runRecord {
+                reclaimable = runs.bytes
+            } else {
+                reclaimable = explicitlyPrunableBytes[declaration.id] ?? 0
             }
             return StorageStatusRecord(
                 id: declaration.id,
@@ -71,6 +148,7 @@ struct RepositoryCache {
                     allocatedBytes: allocated,
                     reclaimableBytes: reclaimable),
                 retention: declaration.retention,
+                rollbackGenerationCount: declaration.rollbackGenerationCount,
                 quotaBytes: nil,
                 reserveBytes: nil)
         }
@@ -102,6 +180,7 @@ struct RepositoryCache {
                         ? "missing"
                         : reclaimableBytes > 0 ? "reclaimable" : "mounted",
                     retention: declaration.retention,
+                    rollbackGenerationCount: nil,
                     quotaBytes: declaration.quotaBytes,
                     reserveBytes: declaration.reserveBytes)
             }
@@ -135,40 +214,40 @@ struct RepositoryCache {
         let runBytes = try reclaimableRuns.reduce(into: UInt64(0)) { total, run in
             total &+= try allocatedSize(URL(fileURLWithPath: run.directory.string))
         }
-        var sdkCandidates = try swiftSDKCandidates()
-        var sdkGenerations = try inactiveSwiftSDKGenerations()
-        var sdkReclaimableBytes = try allocatedSize(of: sdkCandidates + sdkGenerations)
+        let pruneDeclarations =
+            storageDeclarations
+            .filter { $0.cleanupPolicy == .explicitPrune }
+            .sorted { $0.id < $1.id }
+        var targetRecords: [StorageRemovalTarget]
         let beforeOCI = try await containerDiskUsage()
 
-        if !dryRun {
-            let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-            let sdkLock = try ColliderFileLock(
-                path: paths.rebuildLock,
-                purpose: "Swift target SDK candidate pruning",
-                waitForExistingOwner: false)
-            try withExtendedLifetime(sdkLock) {
-                sdkCandidates = try swiftSDKCandidates()
-                sdkGenerations = try inactiveSwiftSDKGenerations()
-                sdkReclaimableBytes = try allocatedSize(of: sdkCandidates + sdkGenerations)
-                try DirectoryLifecycle.prune(
-                    DirectoryRetentionPlan(
-                        safetyRoot: paths.artifactRoot,
-                        rules: [
-                            DirectoryRetentionRule(
-                                root: paths.artifactRoot.appending("generations"),
-                                retain: 0,
-                                naming: .swiftSDKCandidate),
-                            DirectoryRetentionRule(
-                                root: paths.artifactRoot.appending("generations"),
-                                current: paths.artifactRoot.appending("current"),
-                                retain: 0,
-                                naming: .contentIdentity),
-                        ]))
+        if dryRun {
+            targetRecords = try resolvedPruneTargets(pruneDeclarations).records
+        } else {
+            var locks = Set<TaskLock>()
+            for declaration in pruneDeclarations {
+                locks.formUnion(try catalog.workflowLocks(for: declaration))
+            }
+            targetRecords = try await context.runtime.withTaskLocks(
+                locks,
+                stateRoot: context.layout.tasks,
+                purpose: "declared storage pruning"
+            ) {
+                let resolved = try resolvedPruneTargets(pruneDeclarations)
+                for (_, urls) in resolved.targets {
+                    for url in urls {
+                        try FileManager.default.removeItem(at: url)
+                    }
+                }
+                return resolved.records
             }
             try await registry.remove(reclaimableRuns)
             if beforeOCI != nil {
                 try await context.runtime.pruneOCIImages()
             }
+        }
+        let declaredReclaimableBytes = targetRecords.reduce(UInt64(0)) {
+            $0 &+ $1.allocatedBytes
         }
 
         let afterOCI = dryRun ? beforeOCI : try await containerDiskUsage()
@@ -181,13 +260,12 @@ struct RepositoryCache {
                     - Int64(afterOCI?.reclaimableBytes ?? 0))
         let reclaimed =
             dryRun
-            ? runBytes &+ sdkReclaimableBytes
-            : runBytes &+ sdkReclaimableBytes &+ UInt64(ociReclaimed)
+            ? runBytes &+ declaredReclaimableBytes
+            : runBytes &+ declaredReclaimableBytes &+ UInt64(ociReclaimed)
         try emit(
             PruneResult(
                 removedRuns: reclaimableRuns.map(\.id.rawValue),
-                removedSwiftSDKCandidates: sdkCandidates.map(\.lastPathComponent),
-                removedSwiftSDKGenerations: sdkGenerations.map(\.lastPathComponent),
+                targets: targetRecords,
                 reclaimedBytes: reclaimed,
                 appleContainerImagesPruned: !dryRun && beforeOCI != nil,
                 appleContainerReclaimableBytes: beforeOCI?.reclaimableBytes ?? 0,
@@ -203,61 +281,115 @@ struct RepositoryCache {
                 context.cacheRoot.appending("nucleus"),
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
+        try StorageCatalog.validateProducers(storageDeclarations, tasks: catalog.tasks)
     }
 
-    private func swiftSDKCandidates() throws -> [URL] {
-        let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let generations = paths.artifactRoot.appending("generations")
-        guard FileManager.default.fileExists(atPath: generations.string) else { return [] }
-        return try FileManager.default.contentsOfDirectory(
-            at: URL(fileURLWithPath: generations.string, isDirectory: true),
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-        )
-        .filter { url in
-            guard isSwiftSDKCandidateName(url.lastPathComponent),
-                let values = try? url.resourceValues(
-                    forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            else { return false }
-            return values.isDirectory == true && values.isSymbolicLink != true
+    private func pruneTargets(
+        for declaration: StorageDeclaration
+    ) throws -> [URL] {
+        guard declaration.storageClass == .generation,
+            let activeLink = declaration.activeGenerationLink,
+            let rollbackCount = declaration.rollbackGenerationCount
+        else {
+            throw StorageCatalogFailure.invalid(
+                "explicit prune requires generation storage with active-link retention: "
+                    + declaration.id)
         }
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-
-    private func inactiveSwiftSDKGenerations() throws -> [URL] {
-        let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let generations = paths.artifactRoot.appending("generations")
-        guard FileManager.default.fileExists(atPath: generations.string) else { return [] }
-        let activeName = try activeSwiftSDKGenerationName(paths: paths)
-        return try FileManager.default.contentsOfDirectory(
-            at: URL(fileURLWithPath: generations.string, isDirectory: true),
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-        )
-        .filter { url in
-            let name = url.lastPathComponent
-            guard name != activeName,
-                name.wholeMatch(of: /^[0-9a-f]{24}$/) != nil,
-                let values = try? url.resourceValues(
-                    forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            else { return false }
-            return values.isDirectory == true && values.isSymbolicLink != true
+        let root = URL(fileURLWithPath: declaration.root.string, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
+        let activeName = try activeGenerationName(link: activeLink)
+        let entries = try realDirectories(in: root)
+        let generations = try matching(entries, pattern: .contentIdentity)
+            .filter { $0.lastPathComponent != activeName }
+            .sorted(by: newestFirst)
+        var targets = Array(generations.dropFirst(Int(rollbackCount)))
+        if let naming = declaration.interruptedCandidateNaming {
+            targets += try matching(entries, pattern: naming)
         }
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        return targets.sorted { $0.path < $1.path }
     }
 
-    private func activeSwiftSDKGenerationName(
-        paths: SwiftTargetSDKStoragePaths
-    ) throws -> String? {
-        let current = paths.artifactRoot.appending("current")
-        let currentURL = URL(fileURLWithPath: current.string)
-        guard let values = try? currentURL.resourceValues(forKeys: [.isSymbolicLinkKey]),
+    private func resolvedPruneTargets(
+        _ declarations: [StorageDeclaration]
+    ) throws -> (
+        targets: [(StorageDeclaration, [URL])],
+        records: [StorageRemovalTarget]
+    ) {
+        var targets: [(StorageDeclaration, [URL])] = []
+        var records: [StorageRemovalTarget] = []
+        for declaration in declarations {
+            let urls = try pruneTargets(for: declaration)
+            targets.append((declaration, urls))
+            for url in urls {
+                records.append(
+                    StorageRemovalTarget(
+                        id: declaration.id,
+                        path: url.path,
+                        allocatedBytes: try allocatedSize(url)))
+            }
+        }
+        records.sort { $0.path < $1.path }
+        return (targets, records)
+    }
+
+    private func activeGenerationName(link: FilePath) throws -> String? {
+        let linkURL = URL(fileURLWithPath: link.string)
+        guard let values = try? linkURL.resourceValues(forKeys: [.isSymbolicLinkKey]),
             values.isSymbolicLink == true
         else { return nil }
         let destination = try FileManager.default.destinationOfSymbolicLink(
-            atPath: current.string)
+            atPath: link.string)
         return URL(
             fileURLWithPath: destination,
-            relativeTo: currentURL.deletingLastPathComponent()
+            relativeTo: linkURL.deletingLastPathComponent()
         ).standardizedFileURL.lastPathComponent
+    }
+
+    private func realDirectories(in root: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [
+                .isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey,
+            ]
+        ).filter { url in
+            guard
+                let values = try? url.resourceValues(
+                    forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            else { return false }
+            return values.isDirectory == true && values.isSymbolicLink != true
+        }
+    }
+
+    private func matching(
+        _ entries: [URL],
+        pattern: DirectoryNamePattern
+    ) throws -> [URL] {
+        let expression = try NSRegularExpression(pattern: pattern.rawValue)
+        return entries.filter { url in
+            let name = url.lastPathComponent
+            return expression.firstMatch(
+                in: name,
+                range: NSRange(name.startIndex..., in: name)) != nil
+        }
+    }
+
+    private func newestFirst(_ left: URL, _ right: URL) -> Bool {
+        let leftDate = try? left.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        let rightDate = try? right.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        return (leftDate ?? .distantPast) > (rightDate ?? .distantPast)
+    }
+
+    private func removeDeclaredRoot(_ declaration: StorageDeclaration) throws {
+        let root = declaration.root.normalizedForComparison()
+        let safetyRoot = declaration.safetyRoot.normalizedForComparison()
+        guard root != safetyRoot, root.isContained(in: safetyRoot) else {
+            throw StorageCatalogFailure.invalid(
+                "refusing to clean unsafe storage root: \(declaration.id)")
+        }
+        guard FileManager.default.fileExists(atPath: root.string) else { return }
+        try FileManager.default.removeItem(atPath: root.string)
     }
 
     private func runReclamation(keeping count: Int) async -> (
@@ -340,15 +472,11 @@ struct RepositoryCache {
         let action = result.dryRun ? "would remove" : "removed"
         print(
             "cache prune: \(action) \(result.removedRuns.count) run(s), "
-                + "\(result.removedSwiftSDKCandidates.count) abandoned Swift SDK candidate(s), and "
-                + "\(result.removedSwiftSDKGenerations.count) inactive Swift SDK generation(s), "
+                + "\(result.targets.count) declared storage target(s), "
                 + formatted(result.reclaimedBytes))
         for run in result.removedRuns { print("  run \(run)") }
-        for candidate in result.removedSwiftSDKCandidates {
-            print("  Swift SDK candidate \(candidate)")
-        }
-        for generation in result.removedSwiftSDKGenerations {
-            print("  Swift SDK generation: \(generation)")
+        for target in result.targets {
+            print("  \(target.id): \(target.path)")
         }
         if result.appleContainerReclaimableBytes > 0 {
             let verb = result.dryRun ? "reports" : "reported before dangling-image pruning"
@@ -357,10 +485,20 @@ struct RepositoryCache {
                     + "\(formatted(result.appleContainerReclaimableBytes)) reclaimable")
         }
     }
-}
 
-private func isSwiftSDKCandidateName(_ name: String) -> Bool {
-    name.wholeMatch(of: /^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$/) != nil
+    private func emit(_ result: CleanResult, json: Bool) throws {
+        if json {
+            print(String(decoding: try JSONEncoder.sorted.encode(result), as: UTF8.self))
+            return
+        }
+        let action = result.dryRun ? "would remove" : "removing"
+        print(
+            "clean \(result.component): \(action) \(result.targets.count) declared root(s), "
+                + formatted(result.reclaimedBytes))
+        for target in result.targets {
+            print("  \(target.id): \(target.path)")
+        }
+    }
 }
 
 private func allocatedSize(of roots: [URL]) throws -> UInt64 {

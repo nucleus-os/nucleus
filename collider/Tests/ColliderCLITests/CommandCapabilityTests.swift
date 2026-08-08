@@ -36,6 +36,7 @@ private let reportLeaves: [[String]] = [
 private let diagnosticLeaves: [[String]] = [
     ["doctor"],
     ["browser", "doctor"],
+    ["clean", "core"],
     ["cache", "prune"],
 ]
 

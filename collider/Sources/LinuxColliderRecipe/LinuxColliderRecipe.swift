@@ -57,6 +57,8 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
 }
 
 public enum LinuxColliderRecipe: ColliderComponent {
+    static let rollbackGenerationCount: UInt32 = 1
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "linux"),
         canonicalName: "linux",
@@ -111,6 +113,31 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(
                     id: ComponentEntrypointID(rawValue: "test.loader"),
                     roots: loaderRoots),
+            ],
+            storage: [
+                StorageDeclaration(
+                    id: "linux-runtime-generations",
+                    owner: descriptor.id,
+                    producers: [.task(artifactTask.id)],
+                    storageClass: .generation,
+                    root: runtimeArtifact.artifactRoot.appending("generations"),
+                    safetyRoot: runtimeArtifact.artifactRoot,
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: runtimeArtifact.artifactRoot.appending("current"),
+                    rollbackGenerationCount: rollbackGenerationCount,
+                    retention: "the active assembled Linux runtime and one rollback remain"),
+                StorageDeclaration(
+                    id: "linux-package-manifest-generations",
+                    owner: descriptor.id,
+                    producers: [.task(artifactTask.id)],
+                    storageClass: .generation,
+                    root: runtimeArtifact.artifactRoot.appending("package-manifests"),
+                    safetyRoot: runtimeArtifact.artifactRoot,
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: runtimeArtifact.artifactRoot.appending(
+                        "package-manifests/current"),
+                    rollbackGenerationCount: rollbackGenerationCount,
+                    retention: "the active package manifests and one rollback remain"),
             ])
     }
 
@@ -191,6 +218,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     artifactRoot: configuration.artifactRoot,
                     generationsRoot: generations,
                     packageManifestsRoot: packageManifests,
+                    rollbackGenerationCount: rollbackGenerationCount,
                     sessionPackage: configuration.sessionPackage,
                     kernelContract: configuration.kernelContract,
                     environment: configuration.environment)))

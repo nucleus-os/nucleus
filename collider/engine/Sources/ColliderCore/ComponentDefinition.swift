@@ -305,6 +305,12 @@ public struct ComponentCatalog: Sendable {
     public var storage: [StorageDeclaration] {
         components.flatMap(\.storage)
     }
+
+    public func workflowLocks(
+        for declaration: StorageDeclaration
+    ) throws -> Set<TaskLock> {
+        try StorageCatalog.workflowLocks(for: declaration, tasks: tasks)
+    }
 }
 
 public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable {

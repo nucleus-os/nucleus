@@ -112,6 +112,17 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                 ComponentEntrypoint(
                     id: BenchmarkEntrypoints.run,
                     roots: Set(tasks.map(\.id)))
+            ],
+            storage: [
+                StorageDeclaration(
+                    id: "benchmark-results",
+                    owner: descriptor.id,
+                    producers: Set(tasks.map { .task($0.id) }),
+                    storageClass: .diagnostic,
+                    root: context.repositoryRoot.appending(".nucleus/benchmarks"),
+                    safetyRoot: context.repositoryRoot.appending(".nucleus"),
+                    cleanupPolicy: .explicitClean,
+                    retention: "benchmark result sets remain until explicit clean")
             ])
     }
 }

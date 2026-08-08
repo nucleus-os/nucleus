@@ -11,7 +11,7 @@ func macOSCommandCompositionContainsOnlyWorkspaceOperations() {
         Doctor.self, Bootstrap.self, Build.self, Test.self,
         Install.self, SwiftSDK.self, Android.self, AndroidRuntime.self,
         Browser.self, Generate.self, Sanitize.self, Benchmark.self,
-        Cache.self, Logs.self, Status.self,
+        Clean.self, Cache.self, Logs.self, Status.self,
     ]
     let expectedInstall: [ParsableCommand.Type] = [InstallBrowser.self]
     let expectedAndroidRuntime: [ParsableCommand.Type] = [

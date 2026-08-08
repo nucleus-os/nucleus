@@ -112,12 +112,62 @@ public enum ReactNativeColliderRecipe {
             bootstrapRoots.insert(sdk.task.id)
             nativeSDKs[target] = sdk.outputs
         }
+        func producers(_ matches: (String) -> Bool) -> Set<StorageProducer> {
+            Set(tasks.compactMap { matches($0.id.rawValue) ? .task($0.id) : nil })
+        }
+        let javascriptProducers = producers { $0 == "rn.javascript-dependencies" }
+        var storage = [
+            StorageDeclaration(
+                id: "rn-native-build",
+                owner: descriptor.id,
+                producers: producers {
+                    $0.hasPrefix("rn.") && $0 != "rn.javascript-dependencies"
+                },
+                storageClass: .incremental,
+                root: root.appending(".rn-build"),
+                safetyRoot: root,
+                cleanupPolicy: .explicitClean,
+                retention: "Hermes and React Native native build trees remain reusable"),
+            StorageDeclaration(
+                id: "rn-node-modules",
+                owner: descriptor.id,
+                producers: javascriptProducers,
+                storageClass: .incremental,
+                root: root.appending("node_modules"),
+                safetyRoot: root,
+                cleanupPolicy: .explicitClean,
+                retention: "the lockfile-selected JavaScript dependency generation remains active"),
+            StorageDeclaration(
+                id: "rn-javascript-cache",
+                owner: descriptor.id,
+                producers: javascriptProducers,
+                storageClass: .cache,
+                root: context.cacheRoot.appending("nucleus/bun/linux-multiarch"),
+                safetyRoot: context.cacheRoot.appending("nucleus/bun"),
+                cleanupPolicy: .explicitClean,
+                retention: "Bun package archives remain reusable"),
+        ]
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let sdkRoot = native.nativeSDK(for: target)
+            storage.append(
+                StorageDeclaration(
+                    id: "rn-sdk-\(target.identifier)",
+                    owner: descriptor.id,
+                    producers: producers { $0 == "rn.native-sdk.\(target.identifier)" },
+                    storageClass: .published,
+                    root: sdkRoot.appending("rn"),
+                    safetyRoot: sdkRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "the validated React Native SDK remains published"))
+        }
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots)
-            ])
+            ],
+            storage: storage)
         return PreparedComponent(
             component: component,
             artifacts: Artifacts(nativeSDKs: nativeSDKs))

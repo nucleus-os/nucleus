@@ -10,6 +10,7 @@ package struct InstallRuntimeAction: ColliderAction {
         let prefix: FilePath
         let generationsRoot: FilePath
         let packageManifestsRoot: FilePath
+        let rollbackGenerationCount: UInt32
         let sessionPackage: FilePath
         let kernelContract: FilePath
         let trustKey: FilePath?
@@ -20,10 +21,11 @@ package struct InstallRuntimeAction: ColliderAction {
             encoder.append(tag: 2, string: prefix.string)
             encoder.append(tag: 3, string: generationsRoot.string)
             encoder.append(tag: 4, string: packageManifestsRoot.string)
-            encoder.append(tag: 5, string: sessionPackage.string)
-            encoder.append(tag: 6, string: kernelContract.string)
-            encoder.append(tag: 7, string: trustKey?.string ?? "")
-            encoder.append(tag: 8, string: buildMetadata)
+            encoder.append(tag: 5, integer: UInt64(rollbackGenerationCount))
+            encoder.append(tag: 6, string: sessionPackage.string)
+            encoder.append(tag: 7, string: kernelContract.string)
+            encoder.append(tag: 8, string: trustKey?.string ?? "")
+            encoder.append(tag: 9, string: buildMetadata)
         }
     }
 
@@ -33,6 +35,7 @@ package struct InstallRuntimeAction: ColliderAction {
     let prefix: FilePath
     let generationsRoot: FilePath
     let packageManifestsRoot: FilePath
+    let rollbackGenerationCount: UInt32
     let sessionPackage: FilePath
     let kernelContract: FilePath
     let trustKey: FilePath?
@@ -45,6 +48,7 @@ package struct InstallRuntimeAction: ColliderAction {
             prefix: prefix,
             generationsRoot: generationsRoot,
             packageManifestsRoot: packageManifestsRoot,
+            rollbackGenerationCount: rollbackGenerationCount,
             sessionPackage: sessionPackage,
             kernelContract: kernelContract,
             trustKey: trustKey,
@@ -102,6 +106,7 @@ package struct InstallRuntimeAction: ColliderAction {
         prefix = configuration.prefix
         generationsRoot = configuration.generationsRoot
         packageManifestsRoot = configuration.packageManifestsRoot
+        rollbackGenerationCount = ShellColliderRecipe.rollbackGenerationCount
         sessionPackage = configuration.sessionPackage
         kernelContract = configuration.kernelContract
         trustKey = configuration.trustKey
@@ -114,6 +119,7 @@ package struct InstallRuntimeAction: ColliderAction {
         prefix: FilePath,
         generationsRoot: FilePath,
         packageManifestsRoot: FilePath,
+        rollbackGenerationCount: UInt32,
         sessionPackage: FilePath,
         kernelContract: FilePath,
         trustKey: FilePath?,
@@ -124,6 +130,7 @@ package struct InstallRuntimeAction: ColliderAction {
         self.prefix = prefix
         self.generationsRoot = generationsRoot
         self.packageManifestsRoot = packageManifestsRoot
+        self.rollbackGenerationCount = rollbackGenerationCount
         self.sessionPackage = sessionPackage
         self.kernelContract = kernelContract
         self.trustKey = trustKey
@@ -201,12 +208,12 @@ package struct InstallRuntimeAction: ColliderAction {
                     DirectoryRetentionRule(
                         root: generationsRoot,
                         current: prefix,
-                        retain: 3,
+                        retain: rollbackGenerationCount,
                         naming: .contentIdentity),
                     DirectoryRetentionRule(
                         root: packageManifestsRoot,
                         current: packageManifestsRoot.appending("current"),
-                        retain: 3,
+                        retain: rollbackGenerationCount,
                         naming: .contentIdentity),
                 ]))
     }

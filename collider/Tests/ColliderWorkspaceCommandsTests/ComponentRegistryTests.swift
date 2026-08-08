@@ -74,14 +74,21 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
 
     #expect(
         Set(withoutLinuxOperations.storage.map(\.id)) == [
-            "android-aosp-build", "android-aosp-ccache", "android-gfxstream-build-linux-arm64",
-            "android-gfxstream-build-linux-x86_64", "android-sdk",
-            "browser-build-and-publications", "checkout-state", "core-render-sdk-android-arm64",
+            "android-aosp-build", "android-aosp-builder-metadata", "android-aosp-ccache",
+            "android-aosp-signing-identity", "android-aosp-source", "android-aosp-tools",
+            "android-gfxstream-build-linux-arm64", "android-gfxstream-build-linux-x86_64",
+            "android-sdk", "benchmark-results", "browser-builder-metadata",
+            "browser-cef-generations", "browser-depot-tools", "browser-installations",
+            "browser-locks", "browser-logs", "browser-product-generations",
+            "browser-incremental-builds", "browser-source-generations", "checkout-state",
+            "checkout-swiftpm-builds",
+            "core-render-sdk-android-arm64",
             "core-render-sdk-linux-arm64", "core-render-sdk-linux-x86_64", "core-skia-build",
-            "downloads", "host-compiler-cache", "linux-runtime-artifacts",
+            "downloads", "host-compiler-cache", "language-server-configuration",
+            "linux-package-manifest-generations", "linux-runtime-generations",
             "native-builder-ccache", "native-builder-metadata", "rn-javascript-cache",
             "rn-native-build", "rn-node-modules", "rn-sdk-linux-arm64", "rn-sdk-linux-x86_64",
-            "run-records", "swift-package-cache", "swift-runtime-build",
+            "run-records", "swift-package-cache", "swift-package-graphs", "swift-runtime-build",
             "swift-runtime-builder-metadata", "swift-runtime-ccache", "swift-sdk-generator-build",
             "swift-target-sdk-generations", "swiftpm-builds", "swiftpm-tool-builds",
             "wayland-build-linux-arm64", "wayland-build-linux-x86_64",
@@ -97,8 +104,12 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(storageOwners["rn-native-build"] == "rn")
     #expect(storageOwners["wayland-build-linux-arm64"] == "wayland")
     #expect(storageOwners["android-aosp-build"] == "android-runtime")
-    #expect(storageOwners["linux-runtime-artifacts"] == "linux")
-    #expect(storageOwners["browser-build-and-publications"] == "browser")
+    #expect(storageOwners["linux-runtime-generations"] == "linux")
+    #expect(storageOwners["browser-product-generations"] == "browser")
+    let storageClasses = Dictionary(
+        uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
+    #expect(storageClasses["android-aosp-source"] == .source)
+    #expect(storageClasses["android-aosp-signing-identity"] == .identity)
 
     let shellInstall = ComponentEntrypointRequest(
         spelling: "shell",

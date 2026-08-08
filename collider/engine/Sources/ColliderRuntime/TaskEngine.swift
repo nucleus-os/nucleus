@@ -182,6 +182,22 @@ private func claimsConflict(
 }
 
 extension ColliderRuntime {
+    public func withTaskLocks<Result: Sendable>(
+        _ locks: Set<TaskLock>,
+        stateRoot: FilePath,
+        purpose: String,
+        operation: @Sendable () async throws -> Result
+    ) async throws -> Result {
+        let heldLocks = try await acquireTaskLocks(
+            Array(locks),
+            stateRoot: stateRoot,
+            run: nil,
+            purpose: purpose,
+            cancellation: cancellation)
+        defer { withExtendedLifetime(heldLocks) {} }
+        return try await operation()
+    }
+
     public func execute(
         plan frozenPlan: ExecutionPlan,
         stateRoot: FilePath,

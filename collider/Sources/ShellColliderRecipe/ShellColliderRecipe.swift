@@ -36,6 +36,8 @@ public struct ShellRuntimeInstallConfiguration: RecipeConfiguration {
 }
 
 public enum ShellColliderRecipe: ColliderComponent {
+    static let rollbackGenerationCount: UInt32 = 2
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "shell"),
         canonicalName: "shell",
@@ -58,6 +60,39 @@ public enum ShellColliderRecipe: ColliderComponent {
             entrypoints: [
                 ComponentEntrypoint(id: .install, roots: [task.id]),
                 ComponentEntrypoint(id: .bootstrap, roots: [tracy.id]),
+            ],
+            storage: [
+                StorageDeclaration(
+                    id: "shell-runtime-generations",
+                    owner: descriptor.id,
+                    producers: [.task(task.id)],
+                    storageClass: .generation,
+                    root: configuration.generationsRoot,
+                    safetyRoot: configuration.generationsRoot.removingLastComponent(),
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: configuration.prefix,
+                    rollbackGenerationCount: rollbackGenerationCount,
+                    retention: "the active runtime and two rollback generations remain installed"),
+                StorageDeclaration(
+                    id: "shell-package-manifest-generations",
+                    owner: descriptor.id,
+                    producers: [.task(task.id)],
+                    storageClass: .generation,
+                    root: configuration.packageManifestsRoot,
+                    safetyRoot: configuration.packageManifestsRoot.removingLastComponent(),
+                    cleanupPolicy: .automaticRetention,
+                    activeGenerationLink: configuration.packageManifestsRoot.appending("current"),
+                    rollbackGenerationCount: rollbackGenerationCount,
+                    retention: "the active package manifests and two rollback generations remain"),
+                StorageDeclaration(
+                    id: "shell-tracy-receivers",
+                    owner: descriptor.id,
+                    producers: [.task(tracy.id)],
+                    storageClass: .incremental,
+                    root: context.repositoryRoot.appending("compositor/.tracy-build"),
+                    safetyRoot: context.repositoryRoot.appending("compositor"),
+                    cleanupPolicy: .explicitClean,
+                    retention: "Tracy receiver build state remains reusable"),
             ])
         #else
         return try ComponentDefinition(

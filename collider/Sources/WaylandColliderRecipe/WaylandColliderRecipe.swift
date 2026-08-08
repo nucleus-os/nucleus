@@ -72,13 +72,41 @@ public enum WaylandColliderRecipe: ColliderComponent {
             builder: native.builder,
             scanner: scanner)
         tasks.append(contentsOf: generation.tasks)
+        let storage = PlatformArchitecture.allCases.flatMap { architecture in
+            let target = NativeLinuxTarget(architecture: architecture)
+            let sdkRoot = native.nativeSDK(for: target)
+            let producers: Set<StorageProducer> = [
+                .task(TaskID(rawValue: "wayland.native-sdk.\(target.identifier)"))
+            ]
+            return [
+                StorageDeclaration(
+                    id: "wayland-build-\(target.identifier)",
+                    owner: descriptor.id,
+                    producers: producers,
+                    storageClass: .incremental,
+                    root: root.appending(".wayland-build/\(target.identifier)"),
+                    safetyRoot: root.appending(".wayland-build"),
+                    cleanupPolicy: .explicitClean,
+                    retention: "the architecture-specific Wayland build remains reusable"),
+                StorageDeclaration(
+                    id: "wayland-sdk-\(target.identifier)",
+                    owner: descriptor.id,
+                    producers: producers,
+                    storageClass: .published,
+                    root: sdkRoot.appending("wayland"),
+                    safetyRoot: sdkRoot,
+                    cleanupPolicy: .explicitClean,
+                    retention: "the validated Wayland SDK remains published"),
+            ]
+        }
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
                 ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
-            ])
+            ],
+            storage: storage)
         return ComponentArtifacts(
             component: component,
             nativeSDKs: [

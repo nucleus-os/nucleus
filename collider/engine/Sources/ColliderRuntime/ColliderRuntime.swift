@@ -368,18 +368,7 @@ public actor ColliderRuntime {
             },
             pruneDirectories: { try DirectoryLifecycle.prune($0) },
             replaceSymlink: { path, target in
-                if FileManager.default.fileExists(atPath: path.string)
-                    || (try? FileManager.default.destinationOfSymbolicLink(
-                        atPath: path.string)) != nil
-                {
-                    try FileManager.default.removeItem(atPath: path.string)
-                }
-                try FileManager.default.createDirectory(
-                    atPath: path.removingLastComponent().string,
-                    withIntermediateDirectories: true)
-                try FileManager.default.createSymbolicLink(
-                    atPath: path.string,
-                    withDestinationPath: target)
+                try DirectoryLifecycle.activate(target: target, link: path)
             },
             setPermissions: { path, permissions in
                 try FileManager.default.setAttributes(
