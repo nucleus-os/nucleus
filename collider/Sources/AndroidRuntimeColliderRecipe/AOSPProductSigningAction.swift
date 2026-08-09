@@ -77,6 +77,7 @@ struct SignAOSPProductAction: ColliderAction {
         var arguments = [
             "-o",
             "-d", "/keys",
+            "--threads", String(build.buildJobs),
             "--override_apk_keys", aospContainerReleaseKey,
             "--override_apex_keys", aospContainerReleasePEM,
             "--avb_vbmeta_key", aospContainerReleasePEM,

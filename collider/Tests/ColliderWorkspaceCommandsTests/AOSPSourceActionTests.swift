@@ -620,7 +620,7 @@ import Testing
         variant: "user",
         buildNumber: "1",
         buildTimestamp: 1,
-        buildJobs: 1,
+        buildJobs: 24,
         expectedPlatformSDK: 37,
         expectedVendorAPILevel: 37,
         environment: fixture.environment)
@@ -656,6 +656,8 @@ import Testing
     let recorded = try #require(execution.withLock { $0 })
     #expect(recorded.command.contains("--avb_vbmeta_key"))
     #expect(recorded.command.contains("/keys/releasekey.pem"))
+    let threadsIndex = try #require(recorded.command.firstIndex(of: "--threads"))
+    #expect(recorded.command[threadsIndex + 1] == "24")
     #expect(!recorded.command.contains("--allow_gsi_debug_sepolicy"))
     #expect(
         recorded.mounts.contains {

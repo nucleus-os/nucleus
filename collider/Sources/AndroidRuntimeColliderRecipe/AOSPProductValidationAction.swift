@@ -42,6 +42,7 @@ struct ValidateAOSPProductAction: ColliderAction {
                 overlays.append(tag: 2, string: overlay.relativeDestination)
             }
             encoder.append(tag: 12, bytes: overlays.bytes)
+            encoder.append(tag: 13, string: aospPackageValidationProgram)
         }
     }
 
@@ -105,6 +106,10 @@ private struct AOSPProductValidationWorkflow {
     let context: ActionContext
 
     func execute() async throws {
+        try context.files.remove(validationRoot)
+        try context.files.createDirectory(validationRoot)
+        defer { try? context.files.remove(validationRoot) }
+
         let sourceProvenance = try JSONDecoder().decode(
             AOSPValidationSourceProvenance.self,
             from: Data(try context.files.read(build.sourceProvenance)))
@@ -259,127 +264,24 @@ private struct AOSPProductValidationWorkflow {
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .lowercased()
 
-        let validation = archive.removingLastComponent().appending(
-            ".package-validation")
-        try context.files.remove(validation)
-        defer { try? context.files.remove(validation) }
-        try context.files.createDirectory(validation)
-        let archiveEntries = try await captured(
-            .named("unzip"),
-            ["-Z1", archive.string],
-            in: archive.removingLastComponent(),
-            environment: environment
-        ).split(whereSeparator: \.isNewline).map(String.init)
-        let extensions = archiveEntries.map {
-            URL(fileURLWithPath: $0).pathExtension.lowercased()
-        }
-        guard extensions.contains("apk"),
-            extensions.contains("apex"),
-            !extensions.contains("capex")
-        else {
-            throw failure(
-                "signed target-files must contain APKs and uncompressed "
-                    + "APEXes and must not contain CAPEXes")
-        }
+        let program = validationRoot.appending("validate-aosp-packages.py")
+        try context.files.write(
+            Array(aospPackageValidationProgram.utf8),
+            to: program)
         try await checked(
-            .named("unzip"),
+            .named("python3"),
             [
-                "-q", archive.string, "*.apk", "*.apex",
-                "-d", validation.string,
+                program.string,
+                "--archive", archive.string,
+                "--scratch", validationRoot.string,
+                "--apksigner", apksigner.string,
+                "--avbtool", avbTool.string,
+                "--release-key", releasePEM.string,
+                "--certificate-sha256", expectedCertificateDigest,
+                "--minimum-sdk", String(build.expectedPlatformSDK),
+                "--workers", String(build.buildJobs),
             ],
-            in: archive.removingLastComponent(),
-            environment: environment)
-
-        let packages = try context.files.listRecursively(validation)
-            .filter {
-                guard $0.metadata.type == .regular else { return false }
-                switch URL(fileURLWithPath: $0.path.string).pathExtension.lowercased() {
-                case "apk", "apex": return true
-                default: return false
-                }
-            }
-            .map(\.path)
-            .sorted { $0.string < $1.string }
-        guard packages.contains(where: { fileExtension($0) == "apk" }),
-            packages.contains(where: { fileExtension($0) == "apex" })
-        else {
-            throw failure(
-                "signed target-files do not contain APK and APEX packages")
-        }
-        for (index, package) in packages.enumerated() {
-            try await requirePackageCertificate(
-                package,
-                expectedDigest: expectedCertificateDigest,
-                apksigner: apksigner,
-                environment: environment)
-            if fileExtension(package) == "apex" {
-                try await requireAPEXPayloadSignature(
-                    package,
-                    validationRoot: validation,
-                    index: index,
-                    releasePEM: releasePEM,
-                    avbTool: avbTool,
-                    environment: environment)
-            }
-        }
-    }
-
-    private func requirePackageCertificate(
-        _ package: FilePath,
-        expectedDigest: String,
-        apksigner: FilePath,
-        environment: [String: String]
-    ) async throws {
-        let result = try await command(
-            .path(apksigner),
-            [
-                "verify", "--print-certs", "--min-sdk-version",
-                String(build.expectedPlatformSDK), package.string,
-            ],
-            in: package.removingLastComponent(),
-            environment: environment)
-        let digests = result.standardOutput
-            .split(whereSeparator: \.isNewline)
-            .compactMap { line -> String? in
-                let marker = "certificate SHA-256 digest:"
-                guard let range = line.range(of: marker) else { return nil }
-                return line[range.upperBound...]
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .lowercased()
-            }
-        guard result.status == 0, digests == [expectedDigest] else {
-            throw failure(
-                "package does not carry exactly the Nucleus release "
-                    + "certificate: \(package)")
-        }
-    }
-
-    private func requireAPEXPayloadSignature(
-        _ apex: FilePath,
-        validationRoot: FilePath,
-        index: Int,
-        releasePEM: FilePath,
-        avbTool: FilePath,
-        environment: [String: String]
-    ) async throws {
-        let payload = validationRoot.appending(".apex-payload-\(index)")
-        try context.files.createDirectory(payload)
-        try await checked(
-            .named("unzip"),
-            [
-                "-q", apex.string, "apex_payload.img",
-                "-d", payload.string,
-            ],
-            in: payload,
-            environment: environment)
-        try await checked(
-            .path(avbTool),
-            [
-                "verify_image", "--image",
-                payload.appending("apex_payload.img").string,
-                "--key", releasePEM.string,
-            ],
-            in: payload,
+            in: validationRoot,
             environment: environment)
     }
 
@@ -488,7 +390,7 @@ private struct AOSPProductValidationWorkflow {
         return try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
-                writableMounts: [],
+                writableMounts: [(validationRoot, "/validation")],
                 readOnlyMounts: [
                     (build.source, "/src"),
                     (build.signingIdentity, "/keys"),
@@ -525,6 +427,10 @@ private struct AOSPProductValidationWorkflow {
     private func containerPath(_ value: String) -> String {
         value
             .replacingOccurrences(
+                of: validationRoot.string,
+                with: "/validation"
+            )
+            .replacingOccurrences(
                 of: build.signingIdentity.string,
                 with: "/keys"
             )
@@ -537,8 +443,8 @@ private struct AOSPProductValidationWorkflow {
                 with: "/src")
     }
 
-    private func fileExtension(_ path: FilePath) -> String {
-        URL(fileURLWithPath: path.string).pathExtension.lowercased()
+    private var validationRoot: FilePath {
+        build.artifactRoot.appending("validation")
     }
 
     private func failure(_ message: String) -> AOSPProductValidationFailure {
@@ -566,7 +472,7 @@ func validateAOSPFontContract(
         throw AOSPProductValidationFailure.invalidOutput(
             "signed Android font contract is missing \(path)")
     }
-    var references: Set<String> = []
+    var referencesByConfiguration: [String: Set<String>] = [:]
     for path in required {
         guard let xml = configurations[path],
             let data = xml.data(using: .utf8)
@@ -584,21 +490,38 @@ func validateAOSPFontContract(
             throw AOSPProductValidationFailure.invalidOutput(
                 "signed Android font configuration is malformed: \(path)")
         }
-        references.formUnion(delegate.references)
+        referencesByConfiguration[path] = delegate.references
     }
+    guard
+        referencesByConfiguration["SYSTEM/etc/fonts.xml"]?
+            .contains("Roboto-Regular.ttf") == true
+    else {
+        throw AOSPProductValidationFailure.invalidOutput(
+            "signed Android font contract has no Roboto default family")
+    }
+
+    // Android 17 loads font_fallback.xml as its runtime font map. fonts.xml is
+    // the legacy compatibility and Zygote-preloading view, whose parser
+    // deliberately tolerates entries for files omitted by the selected product.
+    let references =
+        referencesByConfiguration["SYSTEM/etc/font_fallback.xml"] ?? []
     let entries = Set(archiveEntries)
-    let roots = ["SYSTEM", "PRODUCT", "SYSTEM_EXT", "VENDOR"]
+    let partitionRoots = ["SYSTEM", "PRODUCT", "SYSTEM_EXT", "VENDOR"]
     let missing = references.filter { reference in
         let normalized = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
+        guard !normalized.split(separator: "/").contains("..") else {
+            return true
+        }
         if normalized.hasPrefix("/") {
             let path = normalized.dropFirst()
             let components = path.split(separator: "/", maxSplits: 1)
             guard components.count == 2 else { return true }
             let partition = components[0].uppercased()
+            guard partitionRoots.contains(partition) else { return true }
             return !entries.contains("\(partition)/\(components[1])")
         }
-        return !roots.contains { entries.contains("\($0)/fonts/\(normalized)") }
+        return !entries.contains("SYSTEM/fonts/\(normalized)")
     }
     guard missing.isEmpty else {
         throw AOSPProductValidationFailure.invalidOutput(
@@ -610,15 +533,24 @@ func validateAOSPFontContract(
 private final class AOSPFontReferenceParser: NSObject, XMLParserDelegate {
     private(set) var references: Set<String> = []
     private var fontText: String?
+    private var depth = 0
+    private var ignoredFamilyDepth: Int?
 
     func parser(
         _: XMLParser,
         didStartElement elementName: String,
         namespaceURI _: String?,
         qualifiedName _: String?,
-        attributes _: [String: String] = [:]
+        attributes: [String: String] = [:]
     ) {
-        if elementName == "font" { fontText = "" }
+        depth += 1
+        if elementName == "family",
+            ["true", "1"].contains(attributes["ignore"])
+        {
+            ignoredFamilyDepth = depth
+        } else if elementName == "font", ignoredFamilyDepth == nil {
+            fontText = ""
+        }
     }
 
     func parser(_: XMLParser, foundCharacters string: String) {
@@ -631,9 +563,16 @@ private final class AOSPFontReferenceParser: NSObject, XMLParserDelegate {
         namespaceURI _: String?,
         qualifiedName _: String?
     ) {
-        guard elementName == "font", let fontText else { return }
-        references.insert(fontText)
-        self.fontText = nil
+        if elementName == "font", let fontText {
+            let reference = fontText.trimmingCharacters(
+                in: .whitespacesAndNewlines)
+            if !reference.isEmpty { references.insert(reference) }
+            self.fontText = nil
+        }
+        if elementName == "family", ignoredFamilyDepth == depth {
+            ignoredFamilyDepth = nil
+        }
+        depth -= 1
     }
 }
 

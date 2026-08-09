@@ -6,6 +6,119 @@ import Testing
 @testable import AndroidRuntimeColliderRecipe
 @testable import ColliderRuntime
 
+private struct AOSPValidationFixtureProcessResult {
+    let status: Int32
+    let output: String
+}
+
+private func runAOSPValidationFixturePython(
+    arguments: [String],
+    environment: [String: String]
+) throws -> AOSPValidationFixtureProcessResult {
+    let output = Pipe()
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["python3"] + arguments
+    process.environment = ProcessInfo.processInfo.environment.merging(
+        environment,
+        uniquingKeysWith: { _, fixture in fixture })
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    return AOSPValidationFixtureProcessResult(
+        status: process.terminationStatus,
+        output: String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self))
+}
+
+@Test func aospPackageValidationBatchesCertificatesAndAPEXPayloads() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-aosp-package-validation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root, withIntermediateDirectories: true)
+
+    let program = root.appendingPathComponent("validate-packages.py")
+    try Data(aospPackageValidationProgram.utf8).write(to: program)
+    let apksigner = root.appendingPathComponent("apksigner")
+    try Data(
+        """
+        #!/bin/sh
+        printf '%s\\n' 'Signer #1 certificate SHA-256 digest: abc123'
+        """.utf8
+    ).write(to: apksigner)
+    let avbtool = root.appendingPathComponent("avbtool")
+    try Data(
+        """
+        #!/bin/sh
+        printf 'verified\\n' >> "$AOSP_VALIDATION_MARKER"
+        """.utf8
+    ).write(to: avbtool)
+    for tool in [apksigner, avbtool] {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: tool.path)
+    }
+
+    let archive = root.appendingPathComponent("target-files.zip")
+    let archiveCreation = try runAOSPValidationFixturePython(
+        arguments: [
+            "-c",
+            """
+            import pathlib, sys, zipfile
+            root = pathlib.Path(sys.argv[1])
+            apex = root / "Test.apex"
+            with zipfile.ZipFile(apex, "w") as output:
+                output.writestr("apex_payload.img", b"payload")
+            with zipfile.ZipFile(root / "target-files.zip", "w") as output:
+                output.writestr("SYSTEM/app/Test.apk", b"apk")
+                output.write(apex, "SYSTEM/apex/Test.apex")
+            """,
+            root.path,
+        ],
+        environment: [:])
+    #expect(archiveCreation.status == 0)
+
+    let scratch = root.appendingPathComponent("scratch")
+    let marker = root.appendingPathComponent("avbtool-invocations")
+    try FileManager.default.createDirectory(
+        at: scratch, withIntermediateDirectories: true)
+    let result = try runAOSPValidationFixturePython(
+        arguments: [
+            program.path,
+            "--archive", archive.path,
+            "--scratch", scratch.path,
+            "--apksigner", apksigner.path,
+            "--avbtool", avbtool.path,
+            "--release-key", root.appendingPathComponent("release.pem").path,
+            "--certificate-sha256", "abc123",
+            "--minimum-sdk", "37",
+            "--workers", "4",
+        ],
+        environment: ["AOSP_VALIDATION_MARKER": marker.path])
+    #expect(result.status == 0, Comment(rawValue: result.output))
+    #expect(result.output.contains("verified 2 packages (1 APEX payload)"))
+    #expect(
+        (try? String(contentsOf: marker, encoding: .utf8)) == "verified\n")
+
+    let rejected = try runAOSPValidationFixturePython(
+        arguments: [
+            program.path,
+            "--archive", archive.path,
+            "--scratch", root.appendingPathComponent("rejected").path,
+            "--apksigner", apksigner.path,
+            "--avbtool", avbtool.path,
+            "--release-key", root.appendingPathComponent("release.pem").path,
+            "--certificate-sha256", "deadbeef",
+            "--minimum-sdk", "37",
+            "--workers", "4",
+        ],
+        environment: ["AOSP_VALIDATION_MARKER": marker.path])
+    #expect(rejected.status != 0)
+    #expect(rejected.output.contains("does not carry exactly"))
+}
+
 @Test func aospProductDefinitionDigestIncludesEveryOverlayCanonically() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-aosp-product-hash-\(UUID().uuidString)")
@@ -88,16 +201,19 @@ import Testing
                 with: "/home/user/signing/releasekey")))
 }
 
-@Test func aospFontContractResolvesEveryConfiguredFont() throws {
+@Test func aospFontContractUsesAuthoritativeFallbackConfiguration() throws {
     let configurations = [
         "SYSTEM/etc/fonts.xml": """
         <familyset>
           <family name="sans-serif">
-            <font weight="400">Roboto-Regular.ttf</font>
+            <font weight="400">Roboto-Regular.ttf
+              <axis tag="wght" stylevalue="400"/>
+            </font>
           </family>
-          <family>
+          <family ignore="true">
             <font>NotoColorEmojiLegacy.ttf</font>
           </family>
+          <family><font>NotoSerifKhmer-Regular.otf</font></family>
         </familyset>
         """,
         "SYSTEM/etc/font_fallback.xml": """
@@ -106,13 +222,13 @@ import Testing
             <font>NotoColorEmoji.ttf</font>
             <font>/product/fonts/DisplaySerif.ttf</font>
           </family>
+          <family ignore="true"><font>IgnoredMissing.ttf</font></family>
         </familyset>
         """,
     ]
     try validateAOSPFontContract(
         archiveEntries: Array(configurations.keys) + [
             "SYSTEM/fonts/Roboto-Regular.ttf",
-            "SYSTEM/fonts/NotoColorEmojiLegacy.ttf",
             "SYSTEM/fonts/NotoColorEmoji.ttf",
             "PRODUCT/fonts/DisplaySerif.ttf",
         ],
@@ -148,6 +264,24 @@ import Testing
                 "SYSTEM/etc/font_fallback.xml": """
                 <familyset>
                   <family><font>MissingFallback.ttf</font></family>
+                </familyset>
+                """,
+            ])
+    }
+
+    #expect(throws: (any Error).self) {
+        try validateAOSPFontContract(
+            archiveEntries: [
+                "SYSTEM/etc/fonts.xml",
+                "SYSTEM/etc/font_fallback.xml",
+                "SYSTEM/fonts/Roboto-Regular.ttf",
+                "PRODUCT/fonts/WrongRoot.ttf",
+            ],
+            configurations: [
+                "SYSTEM/etc/fonts.xml": fontsXML,
+                "SYSTEM/etc/font_fallback.xml": """
+                <familyset>
+                  <family><font>WrongRoot.ttf</font></family>
                 </familyset>
                 """,
             ])
