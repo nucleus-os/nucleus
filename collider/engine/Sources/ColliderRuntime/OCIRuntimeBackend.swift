@@ -76,6 +76,28 @@ public struct OCIRuntimeDiskUsage: Codable, Equatable, Sendable {
     }
 }
 
+public struct OCIPersistentWorkspaceState: Codable, Equatable, Sendable {
+    public let name: String
+    public let identity: PersistentWorkspaceIdentity
+    public let capacityBytes: UInt64
+    public let allocatedBytes: UInt64
+    public let active: Bool
+
+    public init(
+        name: String,
+        identity: PersistentWorkspaceIdentity,
+        capacityBytes: UInt64,
+        allocatedBytes: UInt64,
+        active: Bool
+    ) {
+        self.name = name
+        self.identity = identity
+        self.capacityBytes = capacityBytes
+        self.allocatedBytes = allocatedBytes
+        self.active = active
+    }
+}
+
 public struct OCIRuntimeExecutionRequest: Sendable {
     public let execution: OCIExecution
     public let imageReference: String
@@ -124,8 +146,17 @@ public protocol OCIRuntimeBackend: Sendable {
     ) async throws -> OCIRuntimeExecutionOutcome
     func health() async throws -> OCIRuntimeHealth
     func network(named name: String) async throws -> OCIRuntimeNetworkState
-    func diskUsage() async throws -> OCIRuntimeDiskUsage
+    func diskUsage(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage
     func pruneImages() async throws
+    func persistentWorkspaces(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> [OCIPersistentWorkspaceState]
+    func deletePersistentWorkspace(
+        named name: String,
+        configuration: OCIRuntimeConfiguration
+    ) async throws
 }
 
 extension OCIRuntimeBackend {
@@ -137,11 +168,26 @@ extension OCIRuntimeBackend {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
-    public func diskUsage() async throws -> OCIRuntimeDiskUsage {
+    public func diskUsage(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
     public func pruneImages() async throws {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func persistentWorkspaces(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> [OCIPersistentWorkspaceState] {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func deletePersistentWorkspace(
+        named name: String,
+        configuration: OCIRuntimeConfiguration
+    ) async throws {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 }

@@ -1,13 +1,26 @@
 import ColliderCore
+import ColliderPersistence
 import ColliderRuntime
 import Foundation
 import SystemPackage
 
-package let nucleusOCIRuntimeConfiguration = OCIRuntimeConfiguration(
-    isolatedNetwork: "nucleus-build-internal",
-    guestHome: "/home/nucleus-build",
-    managedLabels: ["dev.nucleus.collider.managed=true"],
-    loggerLabel: "dev.nucleus.collider.apple-container")
+package func nucleusOCIRuntimeConfiguration(
+    workspaceRoot: FilePath
+) -> OCIRuntimeConfiguration {
+    let canonicalRoot = FilePath(
+        URL(fileURLWithPath: workspaceRoot.string)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path)
+    let owner = ArtifactHasher.digest(bytes: Array(canonicalRoot.string.utf8)).hexadecimal
+    return OCIRuntimeConfiguration(
+        isolatedNetwork: "nucleus-build-internal",
+        guestHome: "/home/nucleus-build",
+        managedLabels: ["dev.nucleus.collider.managed=true"],
+        managedLabelNamespace: "dev.nucleus.collider",
+        persistentWorkspaceOwner: owner,
+        loggerLabel: "dev.nucleus.collider.apple-container")
+}
 
 package let nucleusSwiftPMEnvironmentProjection = EnvironmentProjection(
     names: ["LANG", "LC_ALL", "TZ", "TERM"],
@@ -47,7 +60,7 @@ package struct WorkspaceContext: Sendable {
         environment: [String: String],
         runtime: ColliderRuntime,
         console: CommandConsole = .processDefault,
-        ociConfiguration: OCIRuntimeConfiguration = nucleusOCIRuntimeConfiguration
+        ociConfiguration: OCIRuntimeConfiguration? = nil
     ) {
         self.root = root
         var normalizedEnvironment = environment
@@ -65,7 +78,8 @@ package struct WorkspaceContext: Sendable {
         self.nativeSDKRoot = resolvedNativeSDKRoot
         self.runtime = runtime
         self.console = console
-        self.ociConfiguration = ociConfiguration
+        self.ociConfiguration =
+            ociConfiguration ?? nucleusOCIRuntimeConfiguration(workspaceRoot: root)
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: root.appending(".nucleus/swift-package-graphs"),
             environment: normalizedEnvironment)

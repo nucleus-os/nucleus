@@ -78,11 +78,12 @@ public struct ColliderCommand: AsyncParsableCommand {
         #else
         let ociBackend: (any OCIRuntimeBackend)? = nil
         #endif
+        let ociConfiguration = nucleusOCIRuntimeConfiguration(workspaceRoot: workspace)
         let runtime = ColliderRuntime(
             logging: logging,
             cancellation: cancellation,
             downloadCacheRoot: cacheLayout.downloads,
-            ociConfiguration: nucleusOCIRuntimeConfiguration,
+            ociConfiguration: ociConfiguration,
             ociBackend: ociBackend)
         let signals = RuntimeSignalHandlers(cancellation: cancellation)
         let application = ColliderApplicationComposition(
@@ -95,7 +96,8 @@ public struct ColliderCommand: AsyncParsableCommand {
                 root: workspace,
                 environment: environment,
                 runtime: runtime,
-                console: console),
+                console: console,
+                ociConfiguration: ociConfiguration),
             signals: signals)
         defer {
             application.signals.cancel()

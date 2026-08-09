@@ -63,22 +63,34 @@ extension ColliderRuntime {
                 "invalid OCI execution contract")
         }
 
-        var targets = [FilePath("/tmp"), FilePath(ociConfiguration.guestHome)]
-        func validateMountTarget(_ rawTarget: String) throws -> FilePath {
+        let reservedTargets = [FilePath("/tmp"), FilePath(ociConfiguration.guestHome)]
+        var bindTargets: [(path: FilePath, access: OCIMount.Access)] = []
+        var persistentTargets: [FilePath] = []
+        func normalizedMountTarget(_ rawTarget: String) throws -> FilePath {
             let target = FilePath(rawTarget).lexicallyNormalized()
             guard rawTarget.hasPrefix("/"), rawTarget != "/",
                 !rawTarget.split(separator: "/").contains(".."),
                 target.string == rawTarget,
-                !targets.contains(where: { $0.overlaps(target) })
+                !reservedTargets.contains(where: { $0.overlaps(target) })
             else {
                 throw RuntimeFailure.invalidOutput(
                     "invalid, duplicate, or overlapping OCI mount: \(rawTarget)")
             }
-            targets.append(target)
             return target
         }
         for mount in execution.mounts {
-            _ = try validateMountTarget(mount.target)
+            let target = try normalizedMountTarget(mount.target)
+            guard
+                !bindTargets.contains(where: {
+                    $0.path == target
+                        || ($0.path.overlaps(target)
+                            && ($0.access != .readOnly || mount.access != .readOnly))
+                })
+            else {
+                throw RuntimeFailure.invalidOutput(
+                    "invalid, duplicate, or overlapping OCI mount: \(mount.target)")
+            }
+            bindTargets.append((target, mount.access))
             if mount.access == .readWrite {
                 try FileManager.default.createDirectory(
                     atPath: mount.source.string,
@@ -89,7 +101,20 @@ extension ColliderRuntime {
             }
         }
         for mount in execution.persistentWorkspaceMounts {
-            _ = try validateMountTarget(mount.target)
+            let target = try normalizedMountTarget(mount.target)
+            guard
+                !bindTargets.contains(where: {
+                    guard $0.path.overlaps(target) else { return false }
+                    return $0.access != .readOnly
+                        || $0.path == target
+                        || !target.string.hasPrefix($0.path.string + "/")
+                }),
+                !persistentTargets.contains(where: { $0.overlaps(target) })
+            else {
+                throw RuntimeFailure.invalidOutput(
+                    "invalid, duplicate, or overlapping OCI mount: \(mount.target)")
+            }
+            persistentTargets.append(target)
         }
 
         let temporaryDirectory: FilePath?

@@ -57,7 +57,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private struct SourceArtifacts {
         let tasks: [TaskDeclaration]
-        let launcher: ArtifactReference<FileArtifact>
         let provenance: ArtifactReference<JSONArtifact>
     }
 
@@ -75,7 +74,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     private struct CompileArtifacts {
         let task: TaskDeclaration
         let unsignedTargetFiles: ArtifactReference<FileArtifact>
-        let hostTools: ArtifactReference<DirectoryArtifact>
+        let result: TaskResultReference<AOSPCompileResult>
     }
 
     private struct AssembleArtifacts {
@@ -112,7 +111,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let aosp = try aospImageTasks(
             root: root,
             sourceRoot: aospSourceRoot,
-            cacheRoot: context.cacheRoot,
             builderImage: native.builder.image,
             environment: context.environment)
         var tasks = aosp.tasks
@@ -228,16 +226,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 activeGenerationLink: aospBuildRoot.appending("current"),
                 rollbackGenerationCount: rollbackGenerationCount,
                 retention:
-                    "the active AOSP image generation and build intermediates remain available"),
-            StorageDeclaration(
-                id: "android-aosp-ccache",
-                owner: descriptor.id,
-                producers: aospProducers,
-                storageClass: .cache,
-                root: context.cacheRoot.appending("nucleus/aosp-ccache"),
-                safetyRoot: context.cacheRoot.appending("nucleus"),
-                cleanupPolicy: .explicitClean,
-                retention: "AOSP compiler results remain reusable"),
+                    "the active signed AOSP artifact generation remains available"),
         ]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -321,7 +310,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tool(.named("git")),
             ],
             locks: [.checkout("android-runtime-aosp-source-lock")],
-            assessmentPolicy: .always,
+            assessmentPolicy: .incremental,
             action:
                 try AnyColliderAction(
                     VerifyAOSPSourceLockAction(
@@ -364,14 +353,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             verification: verification.verification)
         return SourceArtifacts(
             tasks: [launcher.task, verification.task, source.task],
-            launcher: launcher.executable,
             provenance: source.provenance)
     }
 
     package static func aospImageTasks(
         root: FilePath,
         sourceRoot: FilePath? = nil,
-        cacheRoot: FilePath,
         builderImage: ArtifactReference<FileArtifact>,
         environment: [String: String]
     ) throws -> AOSPImageArtifacts {
@@ -386,9 +373,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let product = try aospProductImageTasks(
             root: root,
             sourceRoot: resolvedSourceRoot,
-            cacheRoot: cacheRoot,
             environment: environment,
-            launcher: source.launcher,
             sourceProvenance: source.provenance,
             signing: signing,
             builderImage: builderImage)
@@ -530,9 +515,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     private static func aospProductImageTasks(
         root: FilePath,
         sourceRoot: FilePath,
-        cacheRoot: FilePath,
         environment: [String: String],
-        launcher: ArtifactReference<FileArtifact>,
         sourceProvenance: ArtifactReference<JSONArtifact>,
         signing: SigningArtifacts,
         builderImage: ArtifactReference<FileArtifact>
@@ -548,7 +531,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let aospBuildRoot = aospBuildRoot(
             root: root,
             environment: environment)
-        let ccacheDirectory = cacheRoot.appending("nucleus/aosp-ccache")
         let productIdentity = Array(
             [
                 lock.product,
@@ -588,15 +570,18 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let stagedImages = staged.appending("images")
         let stagedProvenance = staged.appending(
             "image-provenance.json")
-        let hostTools = buildRoot.appending("out/host/linux-x86/bin")
         let build = AOSPProductBuild(
             productSource: root.appending(
                 "aosp/device/nucleus/nucleus_x86_64"),
             source: source,
-            repoLauncher: launcher.path,
             sourceProvenance: sourceProvenance.path,
-            buildRoot: buildRoot,
-            ccacheDirectory: ccacheDirectory,
+            artifactRoot: buildRoot,
+            legacyOutput: buildRoot.appending("out"),
+            legacyCompilerCache: aospLegacyCompilerCache(
+                environment: environment),
+            outputWorkspace: aospOutputWorkspace(apiLevel: lock.platformSDK),
+            compilerCacheWorkspace: aospCompilerCacheWorkspace(
+                apiLevel: lock.platformSDK),
             containerImageID: containerImageID,
             signingIdentity: signingIdentity,
             product: lock.product,
@@ -614,7 +599,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "android-runtime.aosp-compile"),
             component: component)
         compileBuilder.consume(sourceProvenance)
-        compileBuilder.consume(launcher)
         compileBuilder.consume(builderImage)
         let unsignedReference: ArtifactReference<FileArtifact> = try compileBuilder.output(
             "unsigned-target-files",
@@ -624,11 +608,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             "unsigned-target-files-digest",
             path: unsignedDigest,
             validation: .regularFile)
-        let hostToolsReference: ArtifactReference<DirectoryArtifact> =
-            try compileBuilder.output(
-                "host-tools",
-                path: hostTools,
-                validation: .nonEmptyDirectory)
+        let compileResult: TaskResultReference<AOSPCompileResult> =
+            try compileBuilder.result("compiled-output")
         let compileTask = compileBuilder.build(
             inputs: [
                 .value(
@@ -648,8 +629,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             locks: [
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
-                .checkout("android-runtime-aosp-ccache"),
             ],
+            assessmentPolicy: .always,
             action:
                 try AnyColliderAction(
                     CompileAOSPProductAction(build: build))
@@ -657,14 +638,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let compile = CompileArtifacts(
             task: compileTask,
             unsignedTargetFiles: unsignedReference,
-            hostTools: hostToolsReference)
+            result: compileResult)
         var signBuilder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.aosp-sign"),
             component: component)
         signBuilder.consume(signing.identity)
         signBuilder.consume(signing.directory)
         signBuilder.consume(compile.unsignedTargetFiles)
-        signBuilder.consume(compile.hostTools)
+        signBuilder.consume(compile.result)
         signBuilder.consume(builderImage)
         let stagedTargetFilesReference: ArtifactReference<FileArtifact> =
             try signBuilder.output(
@@ -690,7 +671,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
             component: component)
         assembleBuilder.consume(stagedTargetFilesReference)
-        assembleBuilder.consume(compile.hostTools)
+        assembleBuilder.consume(compile.result)
         assembleBuilder.consume(builderImage)
         let stagedArchiveReference: ArtifactReference<FileArtifact> =
             try assembleBuilder.output(
@@ -838,6 +819,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             return root.appending(".aosp-build")
         }
         return FilePath(buildRoot).appending("nucleus/aosp-build")
+    }
+
+    private static func aospLegacyCompilerCache(
+        environment: [String: String]
+    ) -> FilePath? {
+        if let cacheRoot = environment["XDG_CACHE_HOME"], !cacheRoot.isEmpty {
+            return FilePath(cacheRoot).appending("nucleus/aosp-ccache")
+        }
+        guard let home = environment["HOME"], !home.isEmpty else { return nil }
+        return FilePath(home).appending(".cache/nucleus/aosp-ccache")
     }
 
     private static func aospRepoLauncherPath(

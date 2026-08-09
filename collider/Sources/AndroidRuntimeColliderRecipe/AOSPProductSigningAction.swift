@@ -30,7 +30,7 @@ struct SignAOSPProductAction: ColliderAction {
     var identity: Identity {
         Identity(
             source: build.source,
-            buildRoot: build.buildRoot,
+            buildRoot: build.artifactRoot,
             containerImageID: build.containerImageID,
             signingIdentity: build.signingIdentity,
             product: build.product,
@@ -44,7 +44,13 @@ struct SignAOSPProductAction: ColliderAction {
                 ActionEffect(.read, scope: .input(build.source)),
                 ActionEffect(.read, scope: .input(build.containerImageID)),
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
-                ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
+                ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
+            ],
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.outputWorkspace,
+                    target: "/src/out",
+                    access: .readOnly)
             ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
@@ -55,18 +61,9 @@ struct SignAOSPProductAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try validateSigningIdentityMetadata(files: context.files)
-        let output = build.buildRoot.appending("out")
-        let unsigned = build.buildRoot.appending("unsigned")
-        let staged = build.buildRoot.appending("staged")
+        let unsigned = build.artifactRoot.appending("unsigned")
+        let staged = build.artifactRoot.appending("staged")
         try context.files.createDirectory(staged)
-        let signingTool = output.appending(
-            "host/linux-x86/bin/sign_target_files_apks")
-        guard let metadata = try context.files.metadata(for: signingTool),
-            metadata.type == .regular,
-            metadata.ownerExecutable
-        else {
-            throw AOSPProductSigningFailure.missingExecutable(signingTool)
-        }
         let unsignedTarget = unsigned.appending(
             "\(build.product)-target_files.zip")
         guard try context.files.metadata(for: unsignedTarget)?.type == .regular else {
@@ -112,12 +109,12 @@ struct SignAOSPProductAction: ColliderAction {
                 writableMounts: [(staged, "/staged")],
                 readOnlyMounts: [
                     (build.source, "/src"),
-                    (output, "/src/out/nucleus"),
                     (unsigned, "/unsigned"),
                     (build.signingIdentity, "/keys"),
                 ],
+                persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
-                    "/src/out/nucleus/host/linux-x86/bin/sign_target_files_apks"
+                    "/src/out/host/linux-x86/bin/sign_target_files_apks"
                 ] + arguments))
         guard try context.files.metadata(for: candidate)?.type == .regular else {
             throw AOSPProductSigningFailure.missingOutput(candidate)
@@ -166,7 +163,6 @@ let aospContainerReleasePEM = "\(aospContainerReleaseKey).pem"
 
 private enum AOSPProductSigningFailure: Error, CustomStringConvertible {
     case invalidSigningIdentity
-    case missingExecutable(FilePath)
     case missingInput(FilePath)
     case missingOutput(FilePath)
 
@@ -174,8 +170,6 @@ private enum AOSPProductSigningFailure: Error, CustomStringConvertible {
         switch self {
         case .invalidSigningIdentity:
             "AOSP signing identity metadata or certificate digest is invalid"
-        case .missingExecutable(let path):
-            "AOSP host signing executable is missing: \(path)"
         case .missingInput(let path):
             "AOSP unsigned target-files archive is missing: \(path)"
         case .missingOutput(let path):

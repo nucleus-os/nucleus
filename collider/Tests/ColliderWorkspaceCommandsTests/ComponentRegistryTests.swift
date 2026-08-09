@@ -195,7 +195,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
 
     #expect(
         Set(withoutLinuxOperations.storage.map(\.id)) == [
-            "android-aosp-build", "android-aosp-ccache",
+            "android-aosp-build",
             "android-aosp-signing-identity", "android-aosp-source", "android-aosp-tools",
             "android-gfxstream-build-linux-arm64", "android-gfxstream-build-linux-x86_64",
             "android-sdk", "benchmark-results", "browser-builder-metadata",
@@ -1654,7 +1654,6 @@ private func fixtureReactNativeNodeModules(
             workspace.appendingPathComponent(
                 "android-runtime"
             ).path),
-        cacheRoot: FilePath("/cache"),
         builderImage: builderImage,
         environment: [
             "NUCLEUS_BUILD_ROOT": "/build-root",
@@ -1670,6 +1669,9 @@ private func fixtureReactNativeNodeModules(
             AndroidRuntimeTaskIDs.aospSource,
             AndroidRuntimeTaskIDs.aospImage,
         ]))
+    let sourceLock = try #require(
+        tasks.first { $0.id == AndroidRuntimeTaskIDs.aospSourceLock })
+    #expect(sourceLock.assessmentPolicy == .incremental)
     #expect(!pipelineIDs.contains("android-runtime.aosp-builder-image"))
     #expect(
         pipelineIDs.suffix(5) == [

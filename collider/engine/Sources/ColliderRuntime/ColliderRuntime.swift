@@ -27,21 +27,30 @@ public struct OCIRuntimeConfiguration: Hashable, Sendable {
     public let isolatedNetwork: String
     public let guestHome: String
     public let managedLabels: [String]
+    public let managedLabelNamespace: String
+    public let persistentWorkspaceOwner: String?
     public let loggerLabel: String
 
     public init(
         isolatedNetwork: String,
         guestHome: String,
         managedLabels: [String],
+        managedLabelNamespace: String,
+        persistentWorkspaceOwner: String?,
         loggerLabel: String
     ) {
         precondition(!isolatedNetwork.isEmpty)
         precondition(guestHome.hasPrefix("/"))
         precondition(!managedLabels.isEmpty)
+        precondition(!managedLabelNamespace.isEmpty)
+        precondition(!managedLabelNamespace.contains("="))
+        precondition(persistentWorkspaceOwner?.isEmpty != true)
         precondition(!loggerLabel.isEmpty)
         self.isolatedNetwork = isolatedNetwork
         self.guestHome = guestHome
         self.managedLabels = managedLabels
+        self.managedLabelNamespace = managedLabelNamespace
+        self.persistentWorkspaceOwner = persistentWorkspaceOwner
         self.loggerLabel = loggerLabel
     }
 
@@ -49,6 +58,8 @@ public struct OCIRuntimeConfiguration: Hashable, Sendable {
         isolatedNetwork: "collider-internal",
         guestHome: "/home/collider",
         managedLabels: ["dev.collider.managed=true"],
+        managedLabelNamespace: "dev.collider",
+        persistentWorkspaceOwner: nil,
         loggerLabel: "dev.collider.apple-container")
 }
 
@@ -108,11 +119,23 @@ public actor ColliderRuntime {
     }
 
     public func ociRuntimeDiskUsage() async throws -> OCIRuntimeDiskUsage {
-        try await ociBackend.diskUsage()
+        try await ociBackend.diskUsage(configuration: ociConfiguration)
     }
 
     public func pruneOCIImages() async throws {
         try await ociBackend.pruneImages()
+    }
+
+    public func ociPersistentWorkspaces() async throws
+        -> [OCIPersistentWorkspaceState]
+    {
+        try await ociBackend.persistentWorkspaces(configuration: ociConfiguration)
+    }
+
+    public func deleteOCIPersistentWorkspace(named name: String) async throws {
+        try await ociBackend.deletePersistentWorkspace(
+            named: name,
+            configuration: ociConfiguration)
     }
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
@@ -1018,17 +1041,20 @@ private func collect(
     sink: CommandOutputSink
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
+    var exceededLimit = false
     for try await chunk in sequence {
         let bytes = unsafe chunk.withUnsafeBytes { unsafe Array($0) }
         if let limit {
-            guard captured.count <= limit,
-                bytes.count <= limit - captured.count
-            else {
-                throw RuntimeFailure.outputLimitExceeded(limit)
+            let remaining = max(0, limit - captured.count)
+            if remaining > 0 {
+                captured += bytes.prefix(remaining)
             }
-            captured += bytes
+            exceededLimit = exceededLimit || bytes.count > remaining
         }
         try await sink.write(bytes, mirror: mirror)
+    }
+    if let limit, exceededLimit {
+        throw RuntimeFailure.outputLimitExceeded(limit)
     }
     return captured
 }

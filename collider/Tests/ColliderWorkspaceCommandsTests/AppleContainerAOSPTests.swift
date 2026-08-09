@@ -27,10 +27,10 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     let build = AOSPProductBuild(
         productSource: path("product"),
         source: path("source"),
-        repoLauncher: path("repo"),
         sourceProvenance: path("source-provenance.json"),
-        buildRoot: path("build"),
-        ccacheDirectory: path("ccache"),
+        artifactRoot: path("build"),
+        outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+        compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         containerImageID: FilePath(imageID.path),
         signingIdentity: path("keys"),
         product: "nucleus_x86_64",
@@ -45,28 +45,33 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
 
     let execution = aospProductOCIExecution(
         build: build,
-        writableMounts: [
-            (path("output"), "/output"),
-            (path("ccache"), "/src/out/nucleus/.ccache"),
-        ],
-        readOnlyMounts: [(path("source"), "/src")],
+        writableMounts: [(path("output"), "/output")],
+        readOnlyMounts: aospProductSourceMounts(build: build),
+        persistentWorkspaceMounts: [build.outputMount, build.compilerCacheMount],
         command: ["/bin/true"],
         containerEnvironment: ["TZ": "UTC"])
-    let flags = appleContainerFlags(
+    let runtimeConfiguration = nucleusOCIRuntimeConfiguration(
+        workspaceRoot: FilePath(root.path))
+    let flags = try appleContainerFlags(
         execution,
         name: appleContainerName(for: execution),
         temporaryDirectory: nil,
-        configuration: nucleusOCIRuntimeConfiguration)
+        configuration: runtimeConfiguration,
+        persistentWorkspaceNames: [
+            build.outputWorkspace.identity: "aosp-output-volume",
+            build.compilerCacheWorkspace.identity: "aosp-ccache-volume",
+        ])
 
     #expect(execution.executionPlatform == .linuxARM64OCI)
     #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
     #expect(execution.command == ["aosp", "/bin/true"])
+    #expect(flags.management.entrypoint == nil)
     #expect(aospProductContainerToolEnvironment()["REPO_TRACE"] == "0")
     #expect(
         flags.management.networks
-            == [nucleusOCIRuntimeConfiguration.isolatedNetwork])
+            == [runtimeConfiguration.isolatedNetwork])
     #expect(flags.management.capDrop == ["ALL"])
     #expect(flags.management.readOnly)
     #expect(flags.management.tmpFs.contains("/tmp"))
@@ -76,14 +81,31 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
             "type=bind,source=\(path("source").string),target=/src,readonly"))
     #expect(
         flags.management.mounts.contains(
-            "type=bind,source=\(path("output").string),target=/output"))
+            "type=bind,source=\(build.assembledProductSource.string),target=/src/device/nucleus/nucleus_x86_64,readonly"
+        ))
     #expect(
         flags.management.mounts.contains(
-            "type=bind,source=\(path("ccache").string),"
-                + "target=/src/out/nucleus/.ccache"))
+            "type=bind,source=\(path("output").string),target=/output"))
+    #expect(
+        flags.management.volumes
+            == ["aosp-output-volume:/src/out", "aosp-ccache-volume:/ccache"])
     #expect(
         !flags.process.env.contains(where: {
             $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
         }))
+
+    let migration = aospProductOCIExecution(
+        build: build,
+        writableMounts: [],
+        readOnlyMounts: [],
+        command: ["-c", "true"],
+        imageEntrypointOverride: "/bin/bash")
+    let migrationFlags = try appleContainerFlags(
+        migration,
+        name: appleContainerName(for: migration),
+        temporaryDirectory: nil,
+        configuration: runtimeConfiguration)
+    #expect(migration.command == ["-c", "true"])
+    #expect(migrationFlags.management.entrypoint == "/bin/bash")
 }
 #endif

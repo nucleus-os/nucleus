@@ -281,11 +281,16 @@ import Testing
     try FileManager.default.createDirectory(
         at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let completionMarker = directory.appendingPathComponent("completed")
     await #expect(throws: ExecutionFailure.self) {
         try await ColliderRuntime().execute(
             CommandSpec(
                 executable: .named("sh"),
-                arguments: ["-c", "printf '0123456789abcdef'"],
+                arguments: [
+                    "-c",
+                    "printf '0123456789abcdef'; printf completed > \"$1\"",
+                    "sh", completionMarker.path,
+                ],
                 workingDirectory: FilePath(directory.path),
                 environment: [
                     "PATH": ProcessInfo.processInfo.environment["PATH"]
@@ -293,6 +298,7 @@ import Testing
                 ],
                 output: .captured(limit: 8)))
     }
+    #expect(FileManager.default.fileExists(atPath: completionMarker.path))
 }
 
 @Test func runtimeCancellationTearsDownTheRegisteredProcessGroup() async throws {

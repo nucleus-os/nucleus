@@ -361,7 +361,6 @@ private struct AOSPSourceWorkflow {
                 try context.files.remove(path)
             }
         }
-        try await requireCleanAOSPSource(preparation, stage: stage)
         let platform = preparation.specification.platform
         let repo = preparation.specification.repo
         if let existing = try await validateExistingAOSPSourceIdentity(
@@ -373,6 +372,7 @@ private struct AOSPSourceWorkflow {
             existing.superprojectCommit == platform.superprojectCommit,
             existing.repoCommit == repo.commit
         {
+            try await requireCleanAOSPSource(preparation, stage: stage)
             return
         }
         let superprojectRoot = source.appending(".repo/exp-superproject")
@@ -401,7 +401,6 @@ private struct AOSPSourceWorkflow {
         let initialized = try await validateInitializedAOSPSource(
             preparation,
             stage: stage)
-        try await requireCleanAOSPSource(preparation, stage: stage)
 
         _ = try await aospRepo(
             preparation,
@@ -410,12 +409,15 @@ private struct AOSPSourceWorkflow {
                 "--current-branch",
                 "--detach",
                 "--fail-fast",
+                "--force-checkout",
                 "--force-sync",
                 "--no-clone-bundle",
+                "--no-interleaved",
                 "--no-tags",
                 "--optimized-fetch",
                 "--prune",
-                "--jobs=\(preparation.syncJobs)",
+                "--jobs-network=\(preparation.syncJobs)",
+                "--jobs-checkout=1",
                 "--retry-fetches=\(preparation.retryFetches)",
             ],
             output: .logged,
@@ -669,7 +671,7 @@ private struct AOSPSourceWorkflow {
             arguments: [
                 "forall",
                 "--ignore-missing",
-                "--jobs=1",
+                "--jobs=\(preparation.syncJobs)",
                 "--verbose",
                 "-c",
                 command,

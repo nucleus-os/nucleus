@@ -38,7 +38,7 @@ import Testing
         environment: [:],
         output: .logged)
 
-    let flags = appleContainerFlags(
+    let flags = try appleContainerFlags(
         execution,
         name: "fixture-builder-id",
         temporaryDirectory: FilePath("/var/nucleus/temporary"))
@@ -77,8 +77,10 @@ import Testing
         isolatedNetwork: "alternate-isolated",
         guestHome: "/home/alternate",
         managedLabels: ["example.alternate.managed=true"],
+        managedLabelNamespace: "example.alternate",
+        persistentWorkspaceOwner: "fixture-owner",
         loggerLabel: "example.alternate.container")
-    let alternateFlags = appleContainerFlags(
+    let alternateFlags = try appleContainerFlags(
         execution,
         name: "alternate-builder-id",
         temporaryDirectory: nil,
@@ -196,10 +198,14 @@ import Testing
         at: root,
         withIntermediateDirectories: true)
     let context = root.appendingPathComponent("context", isDirectory: true)
+    let product = root.appendingPathComponent("product", isDirectory: true)
     let output = root.appendingPathComponent("output", isDirectory: true)
     let temporary = root.appendingPathComponent("temporary", isDirectory: true)
     try FileManager.default.createDirectory(
         at: context,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: product,
         withIntermediateDirectories: true)
     let containerFile = context.appendingPathComponent("Containerfile")
     try Data(
@@ -211,6 +217,8 @@ import Testing
         isolatedNetwork: "fixture-isolated",
         guestHome: "/home/fixture",
         managedLabels: ["example.fixture.managed=true"],
+        managedLabelNamespace: "example.fixture",
+        persistentWorkspaceOwner: "fixture-owner",
         loggerLabel: "example.fixture")
     let runtime = ColliderRuntime(
         downloadCacheRoot: FilePath(root.appendingPathComponent("cache").path),
@@ -241,9 +249,28 @@ import Testing
                 target: "/src",
                 access: .readOnly),
             OCIMount(
+                source: FilePath(product.path),
+                target: "/src/device/nucleus/product",
+                access: .readOnly),
+            OCIMount(
                 source: FilePath(output.path),
                 target: "/output",
                 access: .readWrite),
+        ],
+        persistentWorkspaceMounts: [
+            OCIPersistentWorkspaceMount(
+                workspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "fixture-output",
+                        artifactTarget: .linuxARM64,
+                        role: "build"),
+                    capacityBytes: 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: PersistentWorkspaceJournal(
+                        mode: .writeback,
+                        sizeBytes: 64 * 1_024)),
+                target: "/src/out",
+                access: .readWrite)
         ],
         temporaryDirectory: FilePath(temporary.path),
         userPolicy: .builder,
@@ -266,6 +293,7 @@ import Testing
     #expect(await backend.preparation?.imageName == "localhost/fixture")
     let request = try #require(await backend.request)
     #expect(request.execution.command == ["true"])
+    #expect(request.execution.persistentWorkspaceMounts.first?.target == "/src/out")
     #expect(request.configuration == configuration)
     #expect(request.stage == TaskID(rawValue: "fixture.execute"))
     #expect(request.temporaryDirectory != nil)
@@ -430,18 +458,58 @@ import Testing
     #expect(invocationCount.withLock { $0 } == 1)
 }
 
-@Test func appleContainerSuspensionStopsAndPreservesTheExactBuilder() async throws {
-    let fixture = AppleContainerSuspensionFixture()
+@Test func appleContainerBuilderSessionDeletesBuilderAfterSuccess() async throws {
+    let fixture = AppleContainerCleanupFixture(remainingChecks: 0)
     let name = "fixture-builder"
-    let suspension = AppleContainerSuspension(
-        name: name,
-        stop: { await fixture.stop(name) },
-        status: { await fixture.isStopped() ? .stopped : .running })
+    let session = AppleContainerBuilderSession(
+        cleanup: AppleContainerCleanup(
+            name: name,
+            delete: { await fixture.recordDelete(name) },
+            exists: { await fixture.exists() }))
 
-    try await suspension.stopAndVerify()
+    let imageID = try await session.run { "fixture-image" }
 
-    #expect(await fixture.stoppedNames == [name])
-    #expect(await fixture.isStopped())
+    #expect(imageID == "fixture-image")
+    #expect(await fixture.deletedNames == [name])
+    #expect(await !fixture.exists())
+}
+
+@Test func appleContainerBuilderSessionDeletesBuilderAfterFailure() async {
+    let fixture = AppleContainerCleanupFixture(remainingChecks: 0)
+    let name = "fixture-builder-failure"
+    let session = AppleContainerBuilderSession(
+        cleanup: AppleContainerCleanup(
+            name: name,
+            delete: { await fixture.recordDelete(name) },
+            exists: { await fixture.exists() }))
+
+    await #expect(throws: BuilderOperationFailure.self) {
+        try await session.run {
+            throw BuilderOperationFailure()
+        }
+    }
+
+    #expect(await fixture.deletedNames == [name])
+    #expect(await !fixture.exists())
+}
+
+@Test func appleContainerBuilderSessionDeletesBuilderAfterCancellation() async {
+    let fixture = AppleContainerCleanupFixture(remainingChecks: 0)
+    let name = "fixture-builder-cancellation"
+    let session = AppleContainerBuilderSession(
+        cleanup: AppleContainerCleanup(
+            name: name,
+            delete: { await fixture.recordDelete(name) },
+            exists: { await fixture.exists() }))
+
+    await #expect(throws: CancellationError.self) {
+        try await session.run {
+            throw CancellationError()
+        }
+    }
+
+    #expect(await fixture.deletedNames == [name])
+    #expect(await !fixture.exists())
 }
 
 @Test func ociPolicyValidationIsBackendIndependent() throws {
@@ -569,7 +637,7 @@ import Testing
     #expect(secondExecutionName != executionName)
     #expect(ociImageReference("\(name)\n\(digest)") == name)
 
-    let flags = appleContainerFlags(
+    let flags = try appleContainerFlags(
         execution,
         name: executionName,
         temporaryDirectory: nil)
@@ -606,7 +674,7 @@ import Testing
         command: ["uname", "-m"],
         environment: ["PATH": "/usr/bin"],
         output: .logged)
-    let armFlags = appleContainerFlags(
+    let armFlags = try appleContainerFlags(
         armExecution,
         name: appleContainerName(for: armExecution),
         temporaryDirectory: nil)
@@ -630,7 +698,7 @@ import Testing
         command: ["true"],
         environment: ["PATH": "/usr/bin"],
         output: .logged)
-    let untranslatedFlags = appleContainerFlags(
+    let untranslatedFlags = try appleContainerFlags(
         untranslatedIntelArtifact,
         name: appleContainerName(for: untranslatedIntelArtifact),
         temporaryDirectory: nil)
@@ -656,19 +724,7 @@ private actor AppleContainerCleanupFixture {
     }
 }
 
-private actor AppleContainerSuspensionFixture {
-    private var stopped = false
-    private(set) var stoppedNames: [String] = []
-
-    func stop(_ name: String) {
-        stoppedNames.append(name)
-        stopped = true
-    }
-
-    func isStopped() -> Bool {
-        stopped
-    }
-}
+private struct BuilderOperationFailure: Error {}
 
 private actor RecordingOCIBackend: OCIRuntimeBackend {
     private(set) var preparation: OCIImagePreparation?
@@ -705,7 +761,9 @@ private actor RecordingOCIBackend: OCIRuntimeBackend {
         OCIRuntimeNetworkState(name: name, mode: "fixture")
     }
 
-    func diskUsage() async throws -> OCIRuntimeDiskUsage {
+    func diskUsage(
+        configuration _: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage {
         let usage = { (bytes: UInt64) in
             OCIRuntimeResourceUsage(
                 active: 0,

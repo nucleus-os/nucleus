@@ -22,6 +22,7 @@ struct StorageStatusRecord: Codable, Equatable {
 private struct StorageStatusReport: Codable {
     let storage: [StorageStatusRecord]
     let appleContainer: OCIRuntimeDiskUsage?
+    let persistentWorkspaces: [OCIPersistentWorkspaceState]
 }
 
 struct StorageRemovalTarget: Codable, Equatable, Sendable {
@@ -125,6 +126,7 @@ struct RepositoryCache {
         let contract = try? MacOSBuilderContract.load(root: context.root)
         let apfs = contract == nil ? [:] : try await apfsVolumes()
         let ociUsage = try await containerDiskUsage()
+        let persistentWorkspaces = await containerPersistentWorkspaces()
         var records = try declarations.map { declaration in
             let allocated = try allocatedSize(
                 URL(fileURLWithPath: declaration.root.string))
@@ -187,7 +189,8 @@ struct RepositoryCache {
         records.sort { $0.id < $1.id }
         let report = StorageStatusReport(
             storage: records,
-            appleContainer: ociUsage)
+            appleContainer: ociUsage,
+            persistentWorkspaces: persistentWorkspaces)
         try emit(report)
     }
 
@@ -415,6 +418,10 @@ struct RepositoryCache {
         try? await context.runtime.ociRuntimeDiskUsage()
     }
 
+    private func containerPersistentWorkspaces() async -> [OCIPersistentWorkspaceState] {
+        (try? await context.runtime.ociPersistentWorkspaces()) ?? []
+    }
+
     private func storageState(
         declaration: StorageDeclaration,
         allocatedBytes: UInt64,
@@ -455,6 +462,23 @@ struct RepositoryCache {
                 "apple-container: \(formatted(usage.images.sizeInBytes)) images, "
                     + "\(formatted(usage.containers.sizeInBytes)) containers, "
                     + "\(formatted(usage.reclaimableBytes)) reclaimable")
+        }
+        for workspace in report.persistentWorkspaces {
+            let state = workspace.active ? "active" : "retained"
+            let capacityWarning =
+                workspace.capacityBytes > 0
+                && workspace.allocatedBytes
+                    >= workspace.capacityBytes - workspace.capacityBytes / 5
+            let warning = capacityWarning ? ", capacity warning" : ""
+            lines.append(
+                "persistent-workspace:\(workspace.identity.key): \(state)\(warning), "
+                    + "\(formatted(workspace.allocatedBytes)) allocated / "
+                    + "\(formatted(workspace.capacityBytes)) logical")
+            lines.append(
+                "  \(workspace.identity.artifactTarget.operatingSystem.rawValue)/"
+                    + "\(workspace.identity.artifactTarget.architecture.rawValue) · "
+                    + workspace.identity.role)
+            lines.append("  \(workspace.name)")
         }
         try context.console.report(report, text: lines.joined(separator: "\n"))
     }

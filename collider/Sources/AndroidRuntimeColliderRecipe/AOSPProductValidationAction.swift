@@ -53,7 +53,7 @@ struct ValidateAOSPProductAction: ColliderAction {
         Identity(
             productSource: build.productSource,
             sourceProvenance: build.sourceProvenance,
-            buildRoot: build.buildRoot,
+            buildRoot: build.artifactRoot,
             signingIdentity: build.signingIdentity,
             product: build.product,
             release: build.release,
@@ -71,7 +71,7 @@ struct ValidateAOSPProductAction: ColliderAction {
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
             ActionEffect(.read, scope: .input(build.containerImageID)),
             ActionEffect(.read, scope: .input(build.signingIdentity)),
-            ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
+            ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]
         for overlay in build.sourceOverlays {
             let effect = ActionEffect(.read, scope: .input(overlay.source))
@@ -79,6 +79,12 @@ struct ValidateAOSPProductAction: ColliderAction {
         }
         return ActionRequirements(
             effects: effects,
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.outputWorkspace,
+                    target: "/src/out",
+                    access: .readOnly)
+            ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))
@@ -106,16 +112,14 @@ private struct AOSPProductValidationWorkflow {
             productSource: build.productSource,
             sourceOverlays: build.sourceOverlays,
             files: context.files)
-        let output = build.buildRoot.appending("out")
-        let staged = build.buildRoot.appending("staged")
-        let hostTools = output.appending("host/linux-x86/bin")
+        let staged = build.artifactRoot.appending("staged")
+        let hostTools = FilePath("/src/out/host/linux-x86/bin")
         let targetFiles = staged.appending("\(build.product)-target_files.zip")
         let imageArchive = staged.appending("\(build.product)-images.zip")
         let imagesRoot = staged.appending("images")
         let environment = productEnvironment()
         let releasePEM = build.signingIdentity.appending("releasekey.pem")
         let avbTool = hostTools.appending("avbtool")
-        try requireExecutable(avbTool)
 
         var images: [AOSPImageProvenance.Image] = []
         for name in aospRequiredProductImages {
@@ -236,8 +240,6 @@ private struct AOSPProductValidationWorkflow {
 
         let apksigner = hostTools.appending("apksigner")
         let avbTool = hostTools.appending("avbtool")
-        try requireExecutable(apksigner)
-        try requireExecutable(avbTool)
         let certificateOutput = try await captured(
             .named("openssl"),
             [
@@ -486,11 +488,13 @@ private struct AOSPProductValidationWorkflow {
         return try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
-                writableMounts: [(build.buildRoot, "/build")],
+                writableMounts: [],
                 readOnlyMounts: [
                     (build.source, "/src"),
                     (build.signingIdentity, "/keys"),
+                    (build.artifactRoot, "/export"),
                 ],
+                persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [executablePath]
                     + arguments.map(containerPath),
                 workingDirectory: containerPath(directory.string),
@@ -498,22 +502,13 @@ private struct AOSPProductValidationWorkflow {
                 output: .captured(limit: 32 * 1_024 * 1_024)))
     }
 
-    private func requireExecutable(_ path: FilePath) throws {
-        guard let metadata = try context.files.metadata(for: path),
-            metadata.type == .regular,
-            metadata.ownerExecutable
-        else {
-            throw failure("AOSP verification executable is missing: \(path)")
-        }
-    }
-
     private func productEnvironment() -> [String: String] {
         var environment = aospProductContainerToolEnvironment()
         environment["TARGET_PRODUCT"] = build.product
         environment["TARGET_BUILD_VARIANT"] = build.variant
         environment["TARGET_RELEASE"] = build.release
-        environment["OUT_DIR"] = "/build/out"
-        environment["DIST_DIR"] = "/build/dist"
+        environment["OUT_DIR"] = "out"
+        environment["DIST_DIR"] = "/export/dist"
         environment["BUILD_NUMBER"] = build.buildNumber
         environment["BUILD_DATETIME"] = String(build.buildTimestamp)
         environment["BUILD_USERNAME"] = "nucleus"
@@ -522,7 +517,7 @@ private struct AOSPProductValidationWorkflow {
         environment["LANG"] = "C.UTF-8"
         environment["LC_ALL"] = "C.UTF-8"
         environment["PATH"] =
-            "/build/out/host/linux-x86/bin:"
+            "/src/out/host/linux-x86/bin:"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         return environment
     }
@@ -534,8 +529,8 @@ private struct AOSPProductValidationWorkflow {
                 with: "/keys"
             )
             .replacingOccurrences(
-                of: build.buildRoot.string,
-                with: "/build"
+                of: build.artifactRoot.string,
+                with: "/export"
             )
             .replacingOccurrences(
                 of: build.source.string,

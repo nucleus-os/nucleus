@@ -521,7 +521,7 @@ extension ColliderRuntime {
     ) async throws -> TaskExecutionObservations {
         let taskStart = ContinuousClock().now
         let heldLocks = try await acquireTaskLocks(
-            task.locks,
+            task.locks + persistentWorkspaceLocks(for: task, stateRoot: stateRoot),
             stateRoot: stateRoot,
             run: eventRun,
             registry: eventRegistry,
@@ -658,6 +658,20 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
             "task plan has unsatisfied synthesized-build dependencies: "
                 + tasks.joined(separator: ", ")
         }
+    }
+}
+
+private func persistentWorkspaceLocks(
+    for task: TaskDeclaration,
+    stateRoot: FilePath
+) -> [TaskLock] {
+    let locksRoot = stateRoot.removingLastComponent().appending("locks")
+    return (task.action?.requirements.persistentWorkspaceEffects ?? []).map { effect in
+        let digest = ArtifactHasher.digest(
+            bytes: Array(effect.workspace.identity.schedulingKey.utf8))
+        return .shared(
+            locksRoot.appending(
+                "persistent-workspace-\(digest.hexadecimal.prefix(24)).lock"))
     }
 }
 

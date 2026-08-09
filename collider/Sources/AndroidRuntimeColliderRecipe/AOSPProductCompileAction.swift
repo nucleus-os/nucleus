@@ -10,10 +10,8 @@ struct CompileAOSPProductAction: ColliderAction {
             for (tag, path) in [
                 (1, build.productSource),
                 (2, build.source),
-                (3, build.repoLauncher),
                 (4, build.sourceProvenance),
-                (5, build.buildRoot),
-                (6, build.ccacheDirectory),
+                (5, build.artifactRoot),
                 (7, build.containerImageID),
             ] {
                 encoder.append(tag: UInt64(tag), string: path.string)
@@ -34,6 +32,24 @@ struct CompileAOSPProductAction: ColliderAction {
                 overlays.append(tag: 2, string: overlay.relativeDestination)
             }
             encoder.append(tag: 15, bytes: overlays.bytes)
+            encoder.append(
+                tag: 16,
+                string: build.outputWorkspace.identity.key)
+            encoder.append(
+                tag: 17,
+                integer: build.outputWorkspace.capacityBytes)
+            encoder.append(
+                tag: 18,
+                string: build.compilerCacheWorkspace.identity.key)
+            encoder.append(
+                tag: 19,
+                integer: build.compilerCacheWorkspace.capacityBytes)
+            if let legacyOutput = build.legacyOutput {
+                encoder.append(tag: 20, string: legacyOutput.string)
+            }
+            if let legacyCompilerCache = build.legacyCompilerCache {
+                encoder.append(tag: 21, string: legacyCompilerCache.string)
+            }
         }
     }
 
@@ -46,20 +62,31 @@ struct CompileAOSPProductAction: ColliderAction {
     var requirements: ActionRequirements {
         var effects = [
             ActionEffect(.read, scope: .input(build.productSource)),
-            ActionEffect(.readWrite, scope: .checkout(build.source)),
-            ActionEffect(.read, scope: .input(build.repoLauncher)),
+            ActionEffect(.read, scope: .input(build.source)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
             ActionEffect(.read, scope: .input(build.containerImageID)),
-            ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
-            ActionEffect(.readWrite, scope: .scratch(build.ccacheDirectory)),
+            ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]
         for overlay in build.sourceOverlays {
             let effect = ActionEffect(.read, scope: .input(overlay.source))
             if !effects.contains(effect) { effects.append(effect) }
         }
+        if let legacyCompilerCache = build.legacyCompilerCache {
+            effects.append(
+                ActionEffect(.read, scope: .input(legacyCompilerCache)))
+        }
         return ActionRequirements(
             effects: effects,
-            lane: .hostExclusive,
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.outputWorkspace,
+                    target: "/src/out",
+                    access: .readWrite),
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.compilerCacheWorkspace,
+                    target: "/ccache",
+                    access: .readWrite),
+            ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))
@@ -95,74 +122,28 @@ private struct AOSPProductCompileWorkflow {
         guard sourceProvenance.status == "materialized" else {
             throw failure("AOSP source provenance is not materialized")
         }
-        let manifest =
-            try await captured(
-                [
-                    "manifest",
-                    "--revision-as-HEAD",
-                ],
-                in: build.source) + "\n"
-        guard
-            ArtifactDigest.sha256(Data(manifest.utf8)).hexadecimal
-                == sourceProvenance.resolvedManifestSHA256
-        else {
-            throw failure(
-                "current AOSP project revisions do not match signed-build "
-                    + "source provenance")
-        }
+        try context.files.createDirectory(build.artifactRoot)
+        try assembleProductInput()
+        try await migrateLegacyWorkspaceIfNeeded()
 
-        let productDigest = try aospProductDefinitionDigest(
-            productSource: build.productSource,
-            sourceOverlays: build.sourceOverlays,
-            files: context.files)
-        try stageProduct(digest: productDigest)
-        let output = build.buildRoot.appending("out")
-        let distribution = build.buildRoot.appending("dist")
-        let unsigned = build.buildRoot.appending("unsigned")
-        let signed = build.buildRoot.appending("signed")
-        for directory in [
-            build.buildRoot, build.ccacheDirectory, output, distribution,
-            unsigned, signed,
-        ] {
+        let distribution = build.artifactRoot.appending("dist")
+        let unsigned = build.artifactRoot.appending("unsigned")
+        try context.files.remove(distribution)
+        try context.files.remove(unsigned)
+        for directory in [build.artifactRoot, distribution, unsigned] {
             try context.files.createDirectory(directory)
         }
-        for endpoint in [".path_interposer_log", ".ninja_fifo"] {
-            try context.files.remove(output.appending(endpoint))
-        }
-        try context.files.write(
-            Array("max_size = 50G\n".utf8),
-            to: build.ccacheDirectory.appending("ccache.conf"))
-        try ensureContainerMountpoint(build.source.appending("out/nucleus"))
-        try ensureContainerMountpoint(build.source.appending("out/nucleus-dist"))
 
         let environment = buildEnvironment()
-        let writableMounts = [
-            (output, "/src/out/nucleus"),
-            (distribution, "/src/out/nucleus-dist"),
-        ]
-        let allWritableMounts =
-            writableMounts + [
-                (build.ccacheDirectory, "/src/out/nucleus/.ccache")
-            ]
-        let cleanResult = try await context.containers.execute(
-            aospProductOCIExecution(
-                build: build,
-                writableMounts: allWritableMounts,
-                readOnlyMounts: [(build.source, "/src")],
-                command: [
-                    "/src/build/soong/soong_ui.bash",
-                    "--make-mode",
-                    "installclean",
-                ],
-                containerEnvironment: environment,
-                output: .combined(limit: 4 * 1_024 * 1_024)))
-        try requireAOSPBuildSuccess(cleanResult.status)
-
         let result = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
-                writableMounts: allWritableMounts,
-                readOnlyMounts: [(build.source, "/src")],
+                writableMounts: [(build.artifactRoot, "/export")],
+                readOnlyMounts: aospProductSourceMounts(build: build),
+                persistentWorkspaceMounts: [
+                    build.outputMount,
+                    build.compilerCacheMount,
+                ],
                 command: [
                     "/src/build/soong/soong_ui.bash",
                     "--make-mode",
@@ -171,63 +152,29 @@ private struct AOSPProductCompileWorkflow {
                     "otatools",
                 ],
                 containerEnvironment: environment,
-                output: .combined(limit: 4 * 1_024 * 1_024)))
+                output: .logged))
         try requireAOSPBuildSuccess(result.status)
 
-        let builtTargetFiles = try locateTargetFiles(under: output)
         let destination = unsigned.appending(
             "\(build.product)-target_files.zip")
-        try context.files.copy(from: builtTargetFiles, to: destination)
+        let exportResult = try await context.containers.execute(
+            aospProductOCIExecution(
+                build: build,
+                writableMounts: [(unsigned, "/export")],
+                readOnlyMounts: [(build.source, "/src")],
+                persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                command: [
+                    "/bin/cp", "--preserve=timestamps",
+                    "/src/out/target/product/\(build.product)/obj/PACKAGING/target_files_intermediates/\(build.product)-target_files.zip",
+                    "/export/\(build.product)-target_files.zip",
+                ],
+                output: .combined(limit: 4 * 1_024 * 1_024)))
+        try requireAOSPBuildSuccess(exportResult.status)
         let digest = try context.files.digest(file: destination).hexadecimal
         try context.files.write(
             Array("\(digest)  \(build.product)-target_files.zip\n".utf8),
             to: unsigned.appending(
                 "\(build.product)-target_files.zip.sha256"))
-    }
-
-    private func stageProduct(digest: ArtifactDigest) throws {
-        let destination = build.source.appending(
-            "device/nucleus/nucleus_x86_64")
-        try context.files.createDirectory(destination.removingLastComponent())
-        if try context.files.metadataWithoutFollowingSymlinks(
-            for: destination.appending(".git")) != nil
-        {
-            throw failure("refusing to replace a Git checkout at \(destination)")
-        }
-        try synchronizeAOSPProductTree(
-            from: build.productSource,
-            to: destination,
-            preservingAtRoot: [".nucleus-product-stage.json"],
-            files: context.files)
-        for overlay in build.sourceOverlays {
-            guard !overlay.relativeDestination.isEmpty,
-                !overlay.relativeDestination.hasPrefix("/"),
-                !overlay.relativeDestination.split(separator: "/").contains("..")
-            else {
-                throw failure(
-                    "invalid AOSP product overlay destination "
-                        + "'\(overlay.relativeDestination)'")
-            }
-            try synchronizeAOSPProductTree(
-                from: overlay.source,
-                to: destination.appending(overlay.relativeDestination),
-                files: context.files)
-        }
-        let metadata = AOSPProductStage(
-            source: build.productSource.string,
-            sha256: digest.hexadecimal)
-        try context.files.write(
-            Array(try JSONEncoder().encode(metadata)),
-            to: destination.appending(".nucleus-product-stage.json"))
-    }
-
-    private func ensureContainerMountpoint(_ path: FilePath) throws {
-        if let metadata = try context.files.metadataWithoutFollowingSymlinks(for: path),
-            metadata.type != .directory
-        {
-            try context.files.remove(path)
-        }
-        try context.files.createDirectory(path)
     }
 
     private func buildEnvironment() -> [String: String] {
@@ -236,8 +183,8 @@ private struct AOSPProductCompileWorkflow {
                 "TARGET_PRODUCT": build.product,
                 "TARGET_BUILD_VARIANT": build.variant,
                 "TARGET_RELEASE": build.release,
-                "OUT_DIR": "out/nucleus",
-                "DIST_DIR": "out/nucleus-dist",
+                "OUT_DIR": "out",
+                "DIST_DIR": "/export/dist",
                 "BUILD_NUMBER": build.buildNumber,
                 "BUILD_DATETIME": String(build.buildTimestamp),
                 "BUILD_USERNAME": "nucleus",
@@ -247,156 +194,88 @@ private struct AOSPProductCompileWorkflow {
                 "LC_ALL": "C.UTF-8",
                 "USE_CCACHE": "1",
                 "CCACHE_EXEC": "/usr/bin/ccache",
-                "CCACHE_DIR": "/src/out/nucleus/.ccache",
+                "CCACHE_DIR": "/ccache",
+                "CCACHE_MAXSIZE": "50G",
                 "CCACHE_COMPILERCHECK": "content",
             ],
             uniquingKeysWith: { _, requested in requested })
     }
 
-    private func locateTargetFiles(under root: FilePath) throws -> FilePath {
-        let expected = "\(build.product)-target_files.zip"
-        let matches = try context.files.listRecursively(root)
-            .filter {
-                $0.metadata.type == .regular
-                    && $0.path.lastComponent?.string == expected
+    private func assembleProductInput() throws {
+        let candidate = build.artifactRoot.appending(".product-input-candidate")
+        try context.files.remove(candidate)
+        defer { try? context.files.remove(candidate) }
+        try context.files.copyTree(from: build.productSource, to: candidate)
+        for overlay in build.sourceOverlays {
+            guard !overlay.relativeDestination.isEmpty,
+                !overlay.relativeDestination.hasPrefix("/"),
+                !overlay.relativeDestination.split(separator: "/").contains("..")
+            else {
+                throw failure(
+                    "invalid AOSP product overlay destination "
+                        + "'\(overlay.relativeDestination)'")
             }
-            .map(\.path)
-            .sorted { $0.string < $1.string }
-        guard matches.count == 1 else {
-            throw failure(
-                "expected one \(expected) under \(root); found "
-                    + (matches.isEmpty
-                        ? "none"
-                        : matches.map(\.string).joined(separator: ", ")))
+            let destination = candidate.appending(overlay.relativeDestination)
+            try context.files.createDirectory(destination.removingLastComponent())
+            try context.files.copyTree(from: overlay.source, to: destination)
         }
-        return matches[0]
+        try context.files.remove(build.assembledProductSource)
+        try context.files.move(from: candidate, to: build.assembledProductSource)
     }
 
-    private func captured(
-        _ arguments: [String],
-        in directory: FilePath
-    ) async throws -> String {
-        let result = try await command(
-            arguments,
-            in: directory,
-            output: .captured(limit: 32 * 1_024 * 1_024))
-        guard result.succeeded else {
-            throw result.executionFailure(
-                reason: "\(arguments.first ?? "command") failed")
-        }
-        return result.standardOutput.trimmingCharacters(
-            in: .whitespacesAndNewlines)
-    }
+    private func migrateLegacyWorkspaceIfNeeded() async throws {
+        guard let legacyOutput = build.legacyOutput,
+            let legacyCompilerCache = build.legacyCompilerCache,
+            try context.files.metadata(for: legacyOutput)?.type == .directory,
+            try context.files.metadata(for: legacyCompilerCache)?.type == .directory
+        else { return }
 
-    private func command(
-        _ arguments: [String],
-        in directory: FilePath,
-        output: CommandSpec.Output
-    ) async throws -> CommandResult {
-        precondition(directory == build.source)
-        guard let launcherName = build.repoLauncher.lastComponent?.string else {
-            throw failure("Repo launcher path has no file name")
-        }
-        return try await context.containers.execute(
+        let migration = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [],
                 readOnlyMounts: [
-                    (build.source, "/src"),
-                    (build.repoLauncher.removingLastComponent(), "/repo"),
+                    (legacyOutput, "/legacy-output"),
+                    (legacyCompilerCache, "/legacy-ccache"),
                 ],
-                command: ["/usr/bin/python3", "/repo/\(launcherName)"] + arguments,
-                output: output))
+                persistentWorkspaceMounts: [
+                    build.outputMount,
+                    build.compilerCacheMount,
+                ],
+                command: [
+                    "-eu", "-o", "pipefail", "-c",
+                    """
+                    marker=/src/out/.nucleus-aosp-migration-complete
+                    if [[ -e \"$marker\" ]]; then
+                      if [[ -f /src/out/out/build-\(build.product).ninja \
+                            && ! -e /src/out/build-\(build.product).ninja ]]; then
+                        find /src/out/out -mindepth 1 -maxdepth 1 \
+                          -exec mv -t /src/out -- {} +
+                        rmdir /src/out/out
+                      fi
+                      exit 0
+                    fi
+                    find /src/out -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                    find /ccache -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                    tar -C /legacy-output --sparse \
+                      --exclude=.path_interposer_log \
+                      --exclude=.ninja_fifo \
+                      -cf - . | tar -C /src/out --sparse -xf -
+                    tar -C /legacy-ccache --sparse -cf - . \
+                      | tar -C /ccache --sparse -xf -
+                    test -f /src/out/build-\(build.product).ninja
+                    ccache --show-stats
+                    touch \"$marker\"
+                    """,
+                ],
+                imageEntrypointOverride: "/bin/bash",
+                workingDirectory: "/src",
+                output: .combined(limit: 4 * 1_024 * 1_024)))
+        try requireAOSPBuildSuccess(migration.status)
     }
 
     private func failure(_ message: String) -> AOSPProductCompileFailure {
         .invalidOutput(message)
-    }
-}
-
-func synchronizeAOSPProductTree(
-    from source: FilePath,
-    to destination: FilePath,
-    preservingAtRoot preservedNames: Set<String> = [],
-    files: ActionFileSystem
-) throws {
-    guard
-        try files.metadataWithoutFollowingSymlinks(for: source)?.type
-            == .directory
-    else {
-        throw AOSPProductCompileFailure.invalidOutput(
-            "AOSP product source is not a directory: \(source)")
-    }
-    if let destinationMetadata = try files.metadataWithoutFollowingSymlinks(
-        for: destination),
-        destinationMetadata.type != .directory
-    {
-        try files.remove(destination)
-    }
-    try files.createDirectory(destination)
-
-    let sourceEntries = Dictionary(
-        uniqueKeysWithValues: try files.listRecursively(source).map {
-            ($0.relativePath, $0)
-        })
-    let destinationEntries = Dictionary(
-        uniqueKeysWithValues: try files.listRecursively(destination).map {
-            ($0.relativePath, $0)
-        })
-    let stale = destinationEntries.keys.filter { relativePath in
-        sourceEntries[relativePath] == nil
-            && !(preservedNames.contains(relativePath)
-                && !relativePath.contains("/"))
-    }.sorted { pathDepth($0) > pathDepth($1) }
-    for relativePath in stale {
-        try files.remove(destination.appending(relativePath))
-    }
-
-    for relativePath in sourceEntries.keys.sorted(by: {
-        pathDepth($0) < pathDepth($1)
-            || (pathDepth($0) == pathDepth($1) && $0 < $1)
-    }) {
-        guard let sourceEntry = sourceEntries[relativePath] else { continue }
-        let sourcePath = sourceEntry.path
-        let destinationPath = destination.appending(relativePath)
-        let destinationMetadata = try files.metadataWithoutFollowingSymlinks(
-            for: destinationPath)
-        switch sourceEntry.metadata.type {
-        case .directory:
-            if let destinationMetadata, destinationMetadata.type != .directory {
-                try files.remove(destinationPath)
-            }
-            try files.createDirectory(destinationPath)
-        case .regular:
-            var unchanged = false
-            if destinationMetadata?.type == .regular,
-                destinationMetadata?.ownerExecutable
-                    == sourceEntry.metadata.ownerExecutable
-            {
-                unchanged = try files.contentsEqual(
-                    at: sourcePath,
-                    and: destinationPath)
-            }
-            if !unchanged {
-                if let destinationMetadata, destinationMetadata.type != .regular {
-                    try files.remove(destinationPath)
-                }
-                try files.copy(from: sourcePath, to: destinationPath)
-            }
-        case .symbolicLink:
-            let sourceTarget = try files.readSymbolicLink(sourcePath)
-            let destinationTarget =
-                destinationMetadata?.type == .symbolicLink
-                ? try files.readSymbolicLink(destinationPath)
-                : nil
-            if sourceTarget != destinationTarget {
-                if destinationMetadata != nil { try files.remove(destinationPath) }
-                try files.replaceSymlink(at: destinationPath, target: sourceTarget)
-            }
-        case .other:
-            throw AOSPProductCompileFailure.invalidOutput(
-                "AOSP product source contains an unsupported entry: \(sourcePath)")
-        }
     }
 }
 
@@ -407,18 +286,8 @@ func requireAOSPBuildSuccess(_ status: Int32) throws {
     }
 }
 
-private func pathDepth(_ path: String) -> Int {
-    path.split(separator: "/").count
-}
-
 private struct AOSPCompileSourceProvenance: Decodable {
     let status: String
-    let resolvedManifestSHA256: String
-}
-
-private struct AOSPProductStage: Codable {
-    let source: String
-    let sha256: String
 }
 
 private enum AOSPProductCompileFailure: Error, CustomStringConvertible {

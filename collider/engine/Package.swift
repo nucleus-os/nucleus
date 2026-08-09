@@ -38,6 +38,7 @@ let package = Package(
                     name: "ContainerizationOCI",
                     package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ]),
         .target(

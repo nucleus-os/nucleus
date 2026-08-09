@@ -2,6 +2,32 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+enum AOSPCompileResult: TaskResultValue {}
+
+func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "aosp-output",
+            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            role: "build"),
+        capacityBytes: 300 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
+func aospCompilerCacheWorkspace(
+    apiLevel: UInt32
+) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "aosp-ccache",
+            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            role: "compiler-cache"),
+        capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
 struct AOSPProductSourceOverlay: Hashable, Sendable {
     let source: FilePath
     let relativeDestination: String
@@ -10,10 +36,12 @@ struct AOSPProductSourceOverlay: Hashable, Sendable {
 struct AOSPProductBuild: Hashable, Sendable {
     let productSource: FilePath
     let source: FilePath
-    let repoLauncher: FilePath
     let sourceProvenance: FilePath
-    let buildRoot: FilePath
-    let ccacheDirectory: FilePath
+    let artifactRoot: FilePath
+    let legacyOutput: FilePath?
+    let legacyCompilerCache: FilePath?
+    let outputWorkspace: PersistentWorkspaceDeclaration
+    let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     let containerImageID: FilePath
     let signingIdentity: FilePath
     let product: String
@@ -30,10 +58,12 @@ struct AOSPProductBuild: Hashable, Sendable {
     init(
         productSource: FilePath,
         source: FilePath,
-        repoLauncher: FilePath,
         sourceProvenance: FilePath,
-        buildRoot: FilePath,
-        ccacheDirectory: FilePath,
+        artifactRoot: FilePath,
+        legacyOutput: FilePath? = nil,
+        legacyCompilerCache: FilePath? = nil,
+        outputWorkspace: PersistentWorkspaceDeclaration,
+        compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         signingIdentity: FilePath,
         product: String,
@@ -49,10 +79,12 @@ struct AOSPProductBuild: Hashable, Sendable {
     ) {
         self.productSource = productSource
         self.source = source
-        self.repoLauncher = repoLauncher
         self.sourceProvenance = sourceProvenance
-        self.buildRoot = buildRoot
-        self.ccacheDirectory = ccacheDirectory
+        self.artifactRoot = artifactRoot
+        self.legacyOutput = legacyOutput
+        self.legacyCompilerCache = legacyCompilerCache
+        self.outputWorkspace = outputWorkspace
+        self.compilerCacheWorkspace = compilerCacheWorkspace
         self.containerImageID = containerImageID
         self.signingIdentity = signingIdentity
         self.product = product
@@ -65,6 +97,31 @@ struct AOSPProductBuild: Hashable, Sendable {
         self.expectedVendorAPILevel = expectedVendorAPILevel
         self.environment = environment
         self.sourceOverlays = sourceOverlays
+    }
+
+    var outputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/src/out",
+            access: .readWrite)
+    }
+
+    var readOnlyOutputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/src/out",
+            access: .readOnly)
+    }
+
+    var compilerCacheMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: compilerCacheWorkspace,
+            target: "/ccache",
+            access: .readWrite)
+    }
+
+    var assembledProductSource: FilePath {
+        artifactRoot.appending("product-input")
     }
 }
 

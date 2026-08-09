@@ -220,15 +220,18 @@ import Testing
                 + "-u manifest://fixture -b refs/heads/platform"))
     #expect(
         commands.contains(
-            "sync --current-branch --detach --fail-fast --force-sync "
-                + "--no-clone-bundle "
-                + "--no-tags --optimized-fetch --prune --jobs=4 "
-                + "--retry-fetches=3"))
+            "sync --current-branch --detach --fail-fast --force-checkout "
+                + "--force-sync --no-clone-bundle --no-interleaved "
+                + "--no-tags --optimized-fetch --prune --jobs-network=4 "
+                + "--jobs-checkout=1 --retry-fetches=3"))
     #expect(
         commands.components(
             separatedBy:
-                "forall --ignore-missing --jobs=1 --verbose -c "
-        ).count == 3)
+                "forall --ignore-missing --jobs=4 --verbose -c "
+        ).count == 2)
+    let syncRange = try #require(commands.range(of: "sync --current-branch"))
+    let cleanRange = try #require(commands.range(of: "forall --ignore-missing"))
+    #expect(syncRange.lowerBound < cleanRange.lowerBound)
     #expect(commands.contains("if test ! -e .git; then exit 0; fi"))
     #expect(commands.contains("manifest --revision-as-HEAD"))
     let materialization = try JSONDecoder().decode(
@@ -338,10 +341,10 @@ import Testing
                 build: AOSPProductBuild(
                     productSource: root.appending("product"),
                     source: root.appending("source"),
-                    repoLauncher: root.appending("repo"),
                     sourceProvenance: root.appending("source-provenance.json"),
-                    buildRoot: root.appending("build"),
-                    ccacheDirectory: root.appending("ccache"),
+                    artifactRoot: root.appending("build"),
+                    outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+                    compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
                     containerImageID: root.appending("container-image-id"),
                     signingIdentity: root.appending("signing-identity"),
                     product: "nucleus_x86_64",
@@ -355,7 +358,91 @@ import Testing
                     environment: [:])))
     }
 
-    #expect(try action(jobs: 12).identity == action(jobs: 24).identity)
+    let first = try action(jobs: 12)
+    let second = try action(jobs: 24)
+    #expect(first.identity == second.identity)
+    #expect(
+        first.requirements.persistentWorkspaceEffects.map(\.workspace)
+            == [
+                aospOutputWorkspace(apiLevel: 37),
+                aospCompilerCacheWorkspace(apiLevel: 37),
+            ])
+    #expect(
+        first.requirements.effects.contains(
+            ActionEffect(.read, scope: .input(root.appending("source")))))
+    #expect(
+        !first.requirements.effects.contains(
+            ActionEffect(.readWrite, scope: .checkout(root.appending("source")))))
+}
+
+@Test func aospCompileDelegatesIncrementalCleanupToSoong() async throws {
+    let fixture = try AOSPWorkflowFixture(name: "product-compile")
+    defer { fixture.remove() }
+    let productSource = fixture.root.appendingPathComponent("product")
+    let source = fixture.root.appendingPathComponent("source")
+    let artifactRoot = fixture.root.appendingPathComponent("build")
+    try FileManager.default.createDirectory(
+        at: productSource,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: source,
+        withIntermediateDirectories: true)
+    try Data("product".utf8).write(
+        to: productSource.appendingPathComponent("AndroidProducts.mk"))
+    let provenance = fixture.root.appendingPathComponent("source.json")
+    try Data(#"{"status":"materialized"}"#.utf8).write(to: provenance)
+    let imageID = fixture.root.appendingPathComponent("image-id")
+    try Data("fixture-image".utf8).write(to: imageID)
+    let product = "nucleus_x86_64"
+    let build = AOSPProductBuild(
+        productSource: FilePath(productSource.path),
+        source: FilePath(source.path),
+        sourceProvenance: FilePath(provenance.path),
+        artifactRoot: FilePath(artifactRoot.path),
+        outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+        compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
+        containerImageID: FilePath(imageID.path),
+        signingIdentity: FilePath(
+            fixture.root.appendingPathComponent("signing").path),
+        product: product,
+        release: "fixture",
+        variant: "user",
+        buildNumber: "1",
+        buildTimestamp: 1,
+        buildJobs: 24,
+        expectedPlatformSDK: 37,
+        expectedVendorAPILevel: 37,
+        environment: fixture.environment)
+    let executions = Mutex<[OCIExecution]>([])
+
+    try await CompileAOSPProductAction(build: build).execute(
+        in: ActionContext(
+            files: ColliderRuntime().actionFileSystem(),
+            cancellation: ActionCancellation {},
+            logger: ActionLogger { _ in },
+            commands: ActionCommandExecutor { _ in
+                Issue.record("AOSP compilation escaped through the host executor")
+                return CommandResult(status: 1)
+            },
+            downloads: ActionDownloader { _, _ in },
+            containers: ActionContainerExecutor(run: { execution in
+                executions.withLock { $0.append(execution) }
+                if execution.command.contains("/bin/cp") {
+                    let unsigned = artifactRoot.appendingPathComponent("unsigned")
+                    try Data("target-files".utf8).write(
+                        to: unsigned.appendingPathComponent(
+                            "\(product)-target_files.zip"))
+                }
+                return CommandResult(status: 0)
+            })))
+
+    let recorded = executions.withLock { $0 }
+    #expect(recorded.count == 2)
+    #expect(recorded[0].command.contains("target-files-package"))
+    #expect(recorded[0].command.contains("otatools"))
+    #expect(recorded.allSatisfy { !$0.command.contains("installclean") })
+    #expect(recorded.allSatisfy { !$0.command.contains("manifest") })
+    #expect(recorded[1].command.contains("/bin/cp"))
 }
 
 @Test func aospProductAssemblyNormalizesSparseImagesAndStagesOutputs() async throws {
@@ -389,12 +476,11 @@ import Testing
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
         source: FilePath(source.path),
-        repoLauncher: FilePath(fixture.launcher.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
-        buildRoot: FilePath(buildRoot.path),
-        ccacheDirectory: FilePath(
-            fixture.root.appendingPathComponent("ccache").path),
+        artifactRoot: FilePath(buildRoot.path),
+        outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+        compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         containerImageID: FilePath(imageID.path),
         signingIdentity: FilePath(
             fixture.root.appendingPathComponent("signing").path),
@@ -522,12 +608,11 @@ import Testing
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
         source: FilePath(source.path),
-        repoLauncher: FilePath(fixture.launcher.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
-        buildRoot: FilePath(buildRoot.path),
-        ccacheDirectory: FilePath(
-            fixture.root.appendingPathComponent("ccache").path),
+        artifactRoot: FilePath(buildRoot.path),
+        outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+        compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         containerImageID: FilePath(imageID.path),
         signingIdentity: FilePath(signing.path),
         product: product,
@@ -602,10 +687,10 @@ import Testing
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
         source: FilePath(fixture.root.path),
-        repoLauncher: FilePath(fixture.launcher.path),
         sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),
-        buildRoot: FilePath(buildRoot.path),
-        ccacheDirectory: FilePath(fixture.root.appendingPathComponent("ccache").path),
+        artifactRoot: FilePath(buildRoot.path),
+        outputWorkspace: aospOutputWorkspace(apiLevel: 37),
+        compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         containerImageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
         signingIdentity: FilePath(fixture.root.appendingPathComponent("signing").path),
         product: "nucleus_x86_64",

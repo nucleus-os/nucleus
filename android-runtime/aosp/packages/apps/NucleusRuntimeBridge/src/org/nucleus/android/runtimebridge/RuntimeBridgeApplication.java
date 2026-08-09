@@ -59,7 +59,6 @@ public final class RuntimeBridgeApplication extends Application {
     private static final int MAXIMUM_PACKET_BYTES = 256 * 1024;
     private static final AtomicBoolean STARTED = new AtomicBoolean();
 
-    private final AtomicBoolean userStateDirty = new AtomicBoolean();
     private final Set<String> dirtyPackages =
             ConcurrentHashMap.newKeySet();
     private final Map<Integer, Integer> pointerButtonStates =
@@ -99,16 +98,6 @@ public final class RuntimeBridgeApplication extends Application {
         getSystemService(InputManager.class)
                 .registerPointerIconChangedListener(
                         pointerIconChangedListener);
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_USER_UNLOCKED);
-        filter.addAction(Intent.ACTION_USER_LOCKED);
-        filter.addAction(Intent.ACTION_USER_STOPPED);
-        registerReceiver(new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context ignored, Intent intent) {
-                userStateDirty.set(true);
-            }
-        }, filter, Context.RECEIVER_NOT_EXPORTED);
         IntentFilter packages = new IntentFilter();
         packages.addAction(Intent.ACTION_PACKAGE_ADDED);
         packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
@@ -255,8 +244,7 @@ public final class RuntimeBridgeApplication extends Application {
                 }
             }
             boolean currentlyUnlocked = users.isUserUnlocked();
-            if (userStateDirty.getAndSet(false)
-                    || currentlyUnlocked != catalogPublished) {
+            if (currentlyUnlocked != catalogPublished) {
                 if (currentlyUnlocked && !catalogPublished) {
                     sendRuntimeState(output, generation, true, serial);
                     sendActivitySnapshot(output, generation, serial);

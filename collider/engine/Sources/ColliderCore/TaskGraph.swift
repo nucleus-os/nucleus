@@ -303,6 +303,7 @@ public struct OCIExecution: Hashable, Sendable {
     public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
     public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
+    public let imageEntrypointOverride: String?
     public let command: [String]
     public let environment: [String: String]
     public let output: CommandSpec.Output
@@ -324,6 +325,7 @@ public struct OCIExecution: Hashable, Sendable {
         intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
         resourceLimits: OCIResourceLimits,
         containerEnvironment: [String: String],
+        imageEntrypointOverride: String? = nil,
         command: [String],
         environment: [String: String],
         output: CommandSpec.Output
@@ -344,6 +346,7 @@ public struct OCIExecution: Hashable, Sendable {
         self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
         self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
+        self.imageEntrypointOverride = imageEntrypointOverride
         self.command = command
         self.environment = environment
         self.output = output

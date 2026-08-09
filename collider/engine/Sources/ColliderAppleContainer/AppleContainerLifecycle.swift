@@ -14,23 +14,32 @@ import ContainerizationOCI
 
 #if os(macOS)
 enum AppleContainerFailure: Error, CustomStringConvertible {
-    case builderReleaseFailed(operation: String, cleanup: String)
+    case builderCleanupFailed(operation: String, cleanup: String)
     case cleanupFailed(name: String, reason: String)
     case invalidImageDigest
-    case suspensionFailed(name: String, reason: String)
+    case invalidPersistentWorkspaceOwner(String?)
+    case persistentWorkspaceConfigurationMismatch(name: String, reason: String)
+    case persistentWorkspaceResolutionMissing(PersistentWorkspaceIdentity)
+    case persistentWorkspaceDeletionRefused(String)
     case unsupportedTerminalOutput
 
     var description: String {
         switch self {
-        case .builderReleaseFailed(let operation, let cleanup):
+        case .builderCleanupFailed(let operation, let cleanup):
             "Apple container image preparation failed (\(operation)) and the "
-                + "ephemeral builder could not be released (\(cleanup))"
+                + "ephemeral builder could not be deleted (\(cleanup))"
         case .cleanupFailed(let name, let reason):
             "Apple container cleanup failed for \(name): \(reason)"
         case .invalidImageDigest:
             "Apple container image API did not return one OCI digest"
-        case .suspensionFailed(let name, let reason):
-            "Apple container suspension failed for \(name): \(reason)"
+        case .invalidPersistentWorkspaceOwner(let owner):
+            "Apple container persistent workspaces require a 64-character lowercase checkout digest; received \(owner ?? "none")"
+        case .persistentWorkspaceConfigurationMismatch(let name, let reason):
+            "Apple container volume \(name) does not match its persistent workspace declaration: \(reason)"
+        case .persistentWorkspaceResolutionMissing(let identity):
+            "Apple container persistent workspace was not resolved: \(identity.key)"
+        case .persistentWorkspaceDeletionRefused(let name):
+            "refusing to delete Apple container volume not owned by this checkout: \(name)"
         case .unsupportedTerminalOutput:
             "Apple container lifecycle execution does not support terminal output"
         }
@@ -44,23 +53,11 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         _ preparation: OCIImagePreparation
     ) async throws -> String {
         try validateRunner()
-        let suspension = AppleContainerSuspension(
+        let cleanup = AppleContainerCleanup(
             client: ContainerClient(),
             name: Builder.builderContainerId)
-        do {
-            let imageID = try await AppleContainerImageBuilder().build(preparation)
-            try await suspension.stopAndVerify()
-            return imageID
-        } catch {
-            let preparationError = error
-            do {
-                try await suspension.stopAndVerify()
-            } catch {
-                throw AppleContainerFailure.builderReleaseFailed(
-                    operation: String(describing: preparationError),
-                    cleanup: String(describing: error))
-            }
-            throw preparationError
+        return try await AppleContainerBuilderSession(cleanup: cleanup).run {
+            try await AppleContainerImageBuilder().build(preparation)
         }
     }
 
@@ -69,6 +66,29 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
     ) async throws -> OCIRuntimeExecutionOutcome {
         try validateRunner()
         let name = appleContainerName(for: request.execution)
+        let workspaces = ApplePersistentWorkspaceManager(
+            configuration: request.configuration)
+        let resolution = try await workspaces.resolve(
+            request.execution.persistentWorkspaceMounts)
+        do {
+            for mount in resolution.created {
+                guard let volumeName = resolution.names[mount.workspace.identity] else {
+                    throw AppleContainerFailure.persistentWorkspaceResolutionMissing(
+                        mount.workspace.identity)
+                }
+                try await initializePersistentWorkspace(
+                    mount,
+                    volumeName: volumeName,
+                    request: request)
+            }
+        } catch {
+            for mount in resolution.created {
+                if let volumeName = resolution.names[mount.workspace.identity] {
+                    try? await workspaces.deleteOwned(name: volumeName)
+                }
+            }
+            throw error
+        }
         return try await AppleContainerLifecycle(
             cancellation: request.cancellation,
             configuration: request.configuration
@@ -79,7 +99,8 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             temporaryDirectory: request.temporaryDirectory,
             output: request.output,
             logging: request.logging,
-            stage: request.stage)
+            stage: request.stage,
+            persistentWorkspaceNames: resolution.names)
     }
 
     public func health() async throws -> OCIRuntimeHealth {
@@ -104,7 +125,9 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             mode: network.configuration.mode.rawValue)
     }
 
-    public func diskUsage() async throws -> OCIRuntimeDiskUsage {
+    public func diskUsage(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage {
         try validateRunner()
         let usage = try await ClientDiskUsage.get()
         func project(_ value: ResourceUsage) -> OCIRuntimeResourceUsage {
@@ -114,10 +137,24 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
                 sizeInBytes: value.sizeInBytes,
                 total: value.total)
         }
+        var volumes = project(usage.volumes)
+        if configuration.persistentWorkspaceOwner != nil {
+            let retainedBytes = try await ApplePersistentWorkspaceManager(
+                configuration: configuration
+            ).states().filter { !$0.active }.reduce(into: UInt64(0)) {
+                $0 &+= $1.allocatedBytes
+            }
+            volumes = OCIRuntimeResourceUsage(
+                active: volumes.active,
+                reclaimable: volumes.reclaimable > retainedBytes
+                    ? volumes.reclaimable - retainedBytes : 0,
+                sizeInBytes: volumes.sizeInBytes,
+                total: volumes.total)
+        }
         return OCIRuntimeDiskUsage(
             containers: project(usage.containers),
             images: project(usage.images),
-            volumes: project(usage.volumes))
+            volumes: volumes)
     }
 
     public func pruneImages() async throws {
@@ -132,12 +169,84 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         _ = try await ClientImage.cleanUpOrphanedBlobs()
     }
 
+    public func persistentWorkspaces(
+        configuration: OCIRuntimeConfiguration
+    ) async throws -> [OCIPersistentWorkspaceState] {
+        try validateRunner()
+        return try await ApplePersistentWorkspaceManager(
+            configuration: configuration
+        ).states()
+    }
+
+    public func deletePersistentWorkspace(
+        named name: String,
+        configuration: OCIRuntimeConfiguration
+    ) async throws {
+        try validateRunner()
+        try await ApplePersistentWorkspaceManager(
+            configuration: configuration
+        ).deleteOwned(name: name)
+    }
+
     private func validateRunner() throws {
         guard RunnerPlatform.current.operatingSystem == .macOS,
             RunnerPlatform.current.architecture == .arm64
         else {
             throw OCIExecutorFailure.unsupportedRunner(.current)
         }
+    }
+
+    private func initializePersistentWorkspace(
+        _ mount: OCIPersistentWorkspaceMount,
+        volumeName: String,
+        request: OCIRuntimeExecutionRequest
+    ) async throws {
+        let target = "/collider-workspace"
+        let execution = OCIExecution(
+            executionPlatform: request.execution.executionPlatform,
+            artifactTarget: mount.workspace.identity.artifactTarget,
+            imageID: request.execution.imageID,
+            hostname: "collider-workspace-init",
+            workingDirectory: "/",
+            hostWorkingDirectory: request.execution.hostWorkingDirectory,
+            mounts: [],
+            persistentWorkspaceMounts: [
+                OCIPersistentWorkspaceMount(
+                    workspace: mount.workspace,
+                    target: target,
+                    access: .readWrite)
+            ],
+            userPolicy: OCIUserPolicy(userID: 0, groupID: 0),
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: OCIResourceLimits(
+                cpuCount: 1,
+                memoryBytes: 512 * 1_024 * 1_024,
+                processCount: 128,
+                openFileCount: 1_024),
+            containerEnvironment: [:],
+            imageEntrypointOverride: "/usr/bin/install",
+            command: [
+                "-d", "-o", "1000", "-g", "1000", "-m", "0755", target,
+            ],
+            environment: request.execution.environment,
+            output: .captured(limit: 64 * 1_024))
+        let initialization = try await AppleContainerLifecycle(
+            cancellation: request.cancellation,
+            configuration: request.configuration
+        ).execute(
+            execution,
+            name: appleContainerName(for: execution),
+            imageReference: request.imageReference,
+            temporaryDirectory: nil,
+            output: execution.output,
+            logging: request.logging,
+            stage: request.stage,
+            persistentWorkspaceNames: [mount.workspace.identity: volumeName],
+            addedCapabilities: ["CAP_CHOWN"])
+        try initialization.result.requireSuccess(
+            reason: "persistent workspace ownership initialization failed")
     }
 }
 
@@ -167,7 +276,9 @@ struct AppleContainerLifecycle: Sendable {
         temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID?
+        stage: TaskID?,
+        persistentWorkspaceNames: [PersistentWorkspaceIdentity: String] = [:],
+        addedCapabilities: [String] = []
     ) async throws -> OCIRuntimeExecutionOutcome {
         let lifecycleStart = ContinuousClock().now
         let interruptionCleanup = AppleContainerCleanup(client: client, name: name)
@@ -179,7 +290,9 @@ struct AppleContainerLifecycle: Sendable {
                 temporaryDirectory: temporaryDirectory,
                 output: output,
                 logging: logging,
-                stage: stage)
+                stage: stage,
+                persistentWorkspaceNames: persistentWorkspaceNames,
+                addedCapabilities: addedCapabilities)
         }
         let cancellationRegistration = await cancellation.register {
             operation.cancel()
@@ -242,14 +355,18 @@ struct AppleContainerLifecycle: Sendable {
         temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID?
+        stage: TaskID?,
+        persistentWorkspaceNames: [PersistentWorkspaceIdentity: String],
+        addedCapabilities: [String]
     ) async throws -> CreatedContainerExecution {
         let configurationStart = ContinuousClock().now
-        let flags = appleContainerFlags(
+        let flags = try appleContainerFlags(
             execution,
             name: name,
             temporaryDirectory: temporaryDirectory,
-            configuration: configuration)
+            configuration: configuration,
+            persistentWorkspaceNames: persistentWorkspaceNames,
+            addedCapabilities: addedCapabilities)
         try flags.management.validate()
         let systemConfiguration = try await Application.loadContainerSystemConfig()
         let (configuration, kernel, initImage) = try await Utility.containerConfigFromFlags(
@@ -325,8 +442,10 @@ func appleContainerFlags(
     _ execution: OCIExecution,
     name: String,
     temporaryDirectory: FilePath?,
-    configuration: OCIRuntimeConfiguration = .engineDefault
-) -> AppleContainerFlags {
+    configuration: OCIRuntimeConfiguration = .engineDefault,
+    persistentWorkspaceNames: [PersistentWorkspaceIdentity: String] = [:],
+    addedCapabilities: [String] = []
+) throws -> AppleContainerFlags {
     var mounts = execution.mounts.map { mount in
         var value =
             "type=bind,source=\(mount.source),target=\(mount.target)"
@@ -341,6 +460,17 @@ func appleContainerFlags(
             "type=bind,source=\(temporaryDirectory),target=/tmp")
     } else {
         temporaryFilesystems.append("/tmp")
+    }
+    let volumes = try execution.persistentWorkspaceMounts.map { mount in
+        guard let name = persistentWorkspaceNames[mount.workspace.identity] else {
+            throw AppleContainerFailure.persistentWorkspaceResolutionMissing(
+                mount.workspace.identity)
+        }
+        var value = "\(name):\(mount.target)"
+        if mount.access == .readOnly {
+            value += ":ro"
+        }
+        return value
     }
 
     let process = Flags.Process(
@@ -359,7 +489,7 @@ func appleContainerFlags(
         user: nil)
     let management = Flags.Management(
         arch: "arm64",
-        capAdd: [],
+        capAdd: addedCapabilities,
         capDrop: ["ALL"],
         cidfile: "",
         detach: false,
@@ -369,7 +499,7 @@ func appleContainerFlags(
             options: [],
             searchDomains: []),
         dnsDisabled: true,
-        entrypoint: nil,
+        entrypoint: execution.imageEntrypointOverride,
         initImage: nil,
         kernel: nil,
         kernelArgs: [],
@@ -392,7 +522,7 @@ func appleContainerFlags(
         tmpFs: temporaryFilesystems,
         useInit: false,
         virtualization: false,
-        volumes: [])
+        volumes: volumes)
     let resource = Flags.Resource(
         cpus: execution.resourceLimits.cpuCount.map(Int64.init),
         memory: execution.resourceLimits.memoryBytes.map(String.init))
@@ -485,56 +615,27 @@ actor AppleContainerCleanup {
     }
 }
 
-actor AppleContainerSuspension {
-    private let name: String
-    private let stop: @Sendable () async throws -> Void
-    private let status: @Sendable () async throws -> RuntimeStatus?
+struct AppleContainerBuilderSession: Sendable {
+    let cleanup: AppleContainerCleanup
 
-    init(client: ContainerClient, name: String) {
-        self.name = name
-        stop = {
-            try await client.stop(id: name)
-        }
-        status = {
-            try await client.list(
-                filters: ContainerListFilters(ids: [name])
-            ).first?.status
-        }
-    }
-
-    init(
-        name: String,
-        stop: @Sendable @escaping () async throws -> Void,
-        status: @Sendable @escaping () async throws -> RuntimeStatus?
-    ) {
-        self.name = name
-        self.stop = stop
-        self.status = status
-    }
-
-    func stopAndVerify() async throws {
-        let deadline = ContinuousClock().now.advanced(by: .seconds(30))
-        var lastError: (any Error)?
-        repeat {
+    func run<Result: Sendable>(
+        _ operation: @Sendable () async throws -> Result
+    ) async throws -> Result {
+        do {
+            let result = try await operation()
+            try await cleanup.deleteAndVerify()
+            return result
+        } catch {
+            let operationError = error
             do {
-                guard let current = try await status() else { return }
-                switch current {
-                case .stopped:
-                    return
-                case .running, .unknown:
-                    try await stop()
-                case .stopping:
-                    break
-                }
+                try await cleanup.deleteAndVerify()
             } catch {
-                lastError = error
+                throw AppleContainerFailure.builderCleanupFailed(
+                    operation: String(describing: operationError),
+                    cleanup: String(describing: error))
             }
-            try await ContinuousClock().sleep(for: .milliseconds(100))
-        } while ContinuousClock().now < deadline
-        throw AppleContainerFailure.suspensionFailed(
-            name: name,
-            reason: lastError.map(String.init(describing:))
-                ?? "container did not reach the stopped state")
+            throw operationError
+        }
     }
 }
 
@@ -770,20 +871,23 @@ private func collectAppleContainerOutput(
     sink: CommandOutputSink
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
+    var exceededLimit = false
     for await chunk in chunks {
         try Task.checkCancellation()
         let bytes = [UInt8](chunk)
         if let limit {
-            guard captured.count <= limit,
-                bytes.count <= limit - captured.count
-            else {
-                throw RuntimeFailure.outputLimitExceeded(limit)
+            let remaining = max(0, limit - captured.count)
+            if remaining > 0 {
+                captured += bytes.prefix(remaining)
             }
-            captured += bytes
+            exceededLimit = exceededLimit || bytes.count > remaining
         }
         try await sink.write(bytes, mirror: mirror)
     }
     try await sink.finish()
+    if let limit, exceededLimit {
+        throw RuntimeFailure.outputLimitExceeded(limit)
+    }
     return captured
 }
 #endif

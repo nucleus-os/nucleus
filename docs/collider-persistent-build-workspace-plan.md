@@ -168,6 +168,8 @@ container modules or embedding Nucleus component names.
 
 ## Phase 2: Implement Apple Volume Ownership and Lifecycle
 
+Status: complete.
+
 Extend `ColliderAppleContainer` to create, inspect, initialize, attach, and
 delete named volumes through `ClientVolume`. Pass named mounts through
 `Flags.Management.volumes` so `Utility.containerConfigFromFlags` produces
@@ -196,17 +198,32 @@ an unrelated volume.
 
 ## Phase 3: Hard-Migrate AOSP
 
+Status: in progress. The AOSP action chain declares and attaches its target-
+specific output and compiler-cache workspaces, keeps the Repo checkout and
+first-party product inputs read-only, and limits host writes to the artifact
+generation boundary. Existing warm output and ccache state are migrated into
+their volumes. The full product build gate and removal of the temporary
+migration path remain.
+
 Create separate `nucleus_x86_64` output and ccache workspace declarations. Keep
 the exact Repo source on the host as a read-only `/src` mount. Attach the output
-volume at `/build` and the compiler-cache volume at `/ccache`. Set absolute
-`OUT_DIR=/build`, `CCACHE_DIR=/ccache`, and a bounded host-mounted `DIST_DIR`.
-Keep signing inputs read-only and network disabled.
+volume as the nested `/src/out` mount and the compiler-cache volume at
+`/ccache`. Set `OUT_DIR=out`, preserving AOSP and Siso's native source-relative
+output contract while keeping the mounted checkout read-only. Set
+`CCACHE_DIR=/ccache` and a bounded host-mounted `DIST_DIR`. Keep signing inputs
+read-only and network disabled.
 
 Make compile, signing, image assembly, and validation attach the same output
 workspace sequentially. Produce target-files, OTA tools, images, symbols, and
 provenance into the host export boundary as part of the owning action. Host code
 no longer traverses AOSP intermediates or executes tools from a host-mounted
 `out` tree.
+
+Source materialization owns Repo revision validation and emits the resolved
+manifest provenance consumed by compilation. The compile action does not run
+`repo manifest` again. Soong owns incremental output invalidation, including
+configuration-triggered install cleanup; Collider never runs an unconditional
+`installclean` before the real build.
 
 Perform one hard migration of the current case-sensitive host generation and
 ccache. An ephemeral migration container copies regular files, directories, and

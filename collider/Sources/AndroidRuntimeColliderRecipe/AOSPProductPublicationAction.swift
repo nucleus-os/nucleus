@@ -22,7 +22,7 @@ struct PublishAOSPProductAction: ColliderAction {
     let build: AOSPProductBuild
 
     var identity: Identity {
-        Identity(buildRoot: build.buildRoot, product: build.product)
+        Identity(buildRoot: build.artifactRoot, product: build.product)
     }
 
     var requirements: ActionRequirements {
@@ -34,7 +34,7 @@ struct PublishAOSPProductAction: ColliderAction {
     }
 
     private var generations: FilePath {
-        build.buildRoot.removingLastComponent()
+        build.artifactRoot.removingLastComponent()
     }
 
     private var aospBuildRoot: FilePath {
@@ -42,9 +42,9 @@ struct PublishAOSPProductAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        let staged = build.buildRoot.appending("staged")
-        let signed = build.buildRoot.appending("signed")
-        let finalImages = build.buildRoot.appending("images")
+        let staged = build.artifactRoot.appending("staged")
+        let signed = build.artifactRoot.appending("signed")
+        let finalImages = build.artifactRoot.appending("images")
         try context.files.createDirectory(signed)
 
         try replace(
@@ -56,7 +56,8 @@ struct PublishAOSPProductAction: ColliderAction {
             with: signed.appending("\(build.product)-images.zip"),
             files: context.files)
 
-        let imageCandidate = build.buildRoot.appending(".images-publication-candidate")
+        let imageCandidate = build.artifactRoot.appending(
+            ".images-publication-candidate")
         try context.files.remove(imageCandidate)
         defer { try? context.files.remove(imageCandidate) }
         guard
@@ -80,7 +81,7 @@ struct PublishAOSPProductAction: ColliderAction {
             files: context.files)
 
         let active = aospBuildRoot.appending("current")
-        let generationName = build.buildRoot.lastComponent?.string ?? ""
+        let generationName = build.artifactRoot.lastComponent?.string ?? ""
         try context.files.replaceSymlink(
             at: active,
             target: "generations/\(generationName)")
