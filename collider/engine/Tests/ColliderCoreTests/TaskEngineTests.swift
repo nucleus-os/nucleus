@@ -36,6 +36,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let probe: ParallelismProbe
     let output: FilePath
     let publicationClaim: FilePath?
+    let persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect]
     let lane: TaskExecutionLane
 
     init(
@@ -43,12 +44,14 @@ private struct ParallelismProbeAction: ColliderAction {
         probe: ParallelismProbe,
         output: FilePath,
         publicationClaim: FilePath? = nil,
+        persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect] = [],
         lane: TaskExecutionLane = .lightweight
     ) {
         self.identity = identity
         self.probe = probe
         self.output = output
         self.publicationClaim = publicationClaim
+        self.persistentWorkspaceEffects = persistentWorkspaceEffects
         self.lane = lane
     }
 
@@ -60,14 +63,37 @@ private struct ParallelismProbeAction: ColliderAction {
         }
         return ActionRequirements(
             effects: effects,
+            persistentWorkspaceEffects: persistentWorkspaceEffects,
             lane: lane,
-            executionPlatform: .macOSARM64Native)
+            executionPlatform: persistentWorkspaceEffects.isEmpty
+                ? .macOSARM64Native : .linuxARM64OCI,
+            artifactTarget: persistentWorkspaceEffects.first?.workspace.identity.artifactTarget)
     }
 
     func execute(in context: ActionContext) async throws {
         await probe.exercise()
         try context.files.write(Array(identity.name.utf8), to: output)
     }
+}
+
+private func schedulerWorkspace(
+    key: String,
+    target: ArtifactTarget = .linuxARM64,
+    access: OCIMount.Access = .readWrite
+) -> ActionPersistentWorkspaceEffect {
+    ActionPersistentWorkspaceEffect(
+        workspace: PersistentWorkspaceDeclaration(
+            identity: PersistentWorkspaceIdentity(
+                key: key,
+                artifactTarget: target,
+                role: "build"),
+            capacityBytes: 1_024 * 1_024,
+            filesystem: .ext4,
+            journal: PersistentWorkspaceJournal(
+                mode: .writeback,
+                sizeBytes: 64 * 1_024)),
+        target: "/build",
+        access: access)
 }
 
 private struct FailAfterWriteAction: ColliderAction {
@@ -212,6 +238,112 @@ private struct FailAfterWriteAction: ColliderAction {
     let maximumActive = await probe.maximum()
 
     #expect(maximumActive == 1)
+}
+
+@Test func taskSchedulerSerializesTheSamePersistentWorkspace() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-workspace-concurrency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let workspace = schedulerWorkspace(key: "shared-build")
+    let tasks = try ["first", "second"].enumerated().map { index, name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.workspace.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    persistentWorkspaceEffects: [
+                        schedulerWorkspace(
+                            key: workspace.workspace.identity.key,
+                            access: index == 0 ? .readOnly : .readWrite)
+                    ],
+                    lane: .oci)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    #expect(await probe.maximum() == 1)
+}
+
+@Test func taskSchedulerRunsDistinctPersistentWorkspacesConcurrently() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-independent-workspaces-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let tasks = try ["first", "second"].map { name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.workspace-independent.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    persistentWorkspaceEffects: [schedulerWorkspace(key: name)],
+                    lane: .oci)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    #expect(await probe.maximum() == 2)
+}
+
+@Test func taskSchedulerTreatsTheSameWorkspaceKeyForDifferentTargetsAsIndependent()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-cross-target-workspaces-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let targets: [(String, ArtifactTarget)] = [
+        ("arm64", .linuxARM64),
+        ("x86_64", .linuxX86_64),
+    ]
+    let tasks = try targets.map { name, target in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.workspace-target.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    persistentWorkspaceEffects: [
+                        schedulerWorkspace(key: "build", target: target)
+                    ],
+                    lane: .oci)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    #expect(await probe.maximum() == 2)
 }
 
 @Test func taskSchedulerAtomicallyReservesOverlappingPublicationClaims() async throws {

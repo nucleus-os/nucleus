@@ -137,6 +137,91 @@ public struct OCIMount: Hashable, Sendable {
     }
 }
 
+public struct PersistentWorkspaceIdentity: Codable, Hashable, Sendable {
+    public let key: String
+    public let artifactTarget: ArtifactTarget
+    public let role: String
+
+    public init(
+        key: String,
+        artifactTarget: ArtifactTarget,
+        role: String
+    ) {
+        self.key = key
+        self.artifactTarget = artifactTarget
+        self.role = role
+    }
+
+    package var schedulingKey: String {
+        let fields = [
+            key,
+            artifactTarget.operatingSystem.rawValue,
+            artifactTarget.architecture.rawValue,
+            artifactTarget.abi ?? "",
+            artifactTarget.androidAPILevel.map(String.init) ?? "",
+            role,
+        ]
+        return fields.map { "\($0.utf8.count):\($0)" }.joined(separator: ":")
+    }
+}
+
+public enum PersistentWorkspaceFilesystem: String, Codable, Hashable, Sendable {
+    case ext4
+}
+
+public struct PersistentWorkspaceJournal: Codable, Hashable, Sendable {
+    public enum Mode: String, Codable, Hashable, Sendable {
+        case writeback
+    }
+
+    public let mode: Mode
+    public let sizeBytes: UInt64
+
+    public init(mode: Mode, sizeBytes: UInt64) {
+        self.mode = mode
+        self.sizeBytes = sizeBytes
+    }
+
+    public static let writeback64MiB = PersistentWorkspaceJournal(
+        mode: .writeback,
+        sizeBytes: 64 * 1_024 * 1_024)
+}
+
+public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
+    public let identity: PersistentWorkspaceIdentity
+    public let capacityBytes: UInt64
+    public let filesystem: PersistentWorkspaceFilesystem
+    public let journal: PersistentWorkspaceJournal
+
+    public init(
+        identity: PersistentWorkspaceIdentity,
+        capacityBytes: UInt64,
+        filesystem: PersistentWorkspaceFilesystem,
+        journal: PersistentWorkspaceJournal
+    ) {
+        self.identity = identity
+        self.capacityBytes = capacityBytes
+        self.filesystem = filesystem
+        self.journal = journal
+    }
+}
+
+public struct OCIPersistentWorkspaceMount: Hashable, Sendable {
+    public let workspace: PersistentWorkspaceDeclaration
+    public let target: String
+    public let access: OCIMount.Access
+
+    public init(
+        workspace: PersistentWorkspaceDeclaration,
+        target: String,
+        access: OCIMount.Access
+    ) {
+        self.workspace = workspace
+        self.target = target
+        self.access = access
+    }
+}
+
 public struct OCIUserPolicy: Codable, Hashable, Sendable {
     public let userID: UInt32
     public let groupID: UInt32
@@ -209,6 +294,7 @@ public struct OCIExecution: Hashable, Sendable {
     public let workingDirectory: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
+    public let persistentWorkspaceMounts: [OCIPersistentWorkspaceMount]
     public let temporaryDirectory: FilePath?
     public let userPolicy: OCIUserPolicy
     public let capabilityPolicy: OCICapabilityPolicy
@@ -229,6 +315,7 @@ public struct OCIExecution: Hashable, Sendable {
         workingDirectory: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
+        persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
         temporaryDirectory: FilePath? = nil,
         userPolicy: OCIUserPolicy,
         capabilityPolicy: OCICapabilityPolicy,
@@ -248,6 +335,7 @@ public struct OCIExecution: Hashable, Sendable {
         self.workingDirectory = workingDirectory
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
+        self.persistentWorkspaceMounts = persistentWorkspaceMounts
         self.temporaryDirectory = temporaryDirectory
         self.userPolicy = userPolicy
         self.capabilityPolicy = capabilityPolicy

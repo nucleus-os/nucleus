@@ -378,6 +378,28 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
             mounts.append(tag: 3, string: mount.access.rawValue)
         }
         encoder.append(tag: 12, bytes: mounts.bytes)
+        var persistentWorkspaces = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
+        for mount in execution.persistentWorkspaceMounts {
+            persistentWorkspaces.append(tag: 1, string: mount.workspace.identity.key)
+            persistentWorkspaces.append(
+                tag: 2,
+                string: mount.workspace.identity.artifactTarget.operatingSystem.rawValue)
+            persistentWorkspaces.append(
+                tag: 3,
+                string: mount.workspace.identity.artifactTarget.architecture.rawValue)
+            persistentWorkspaces.append(
+                tag: 4,
+                string: mount.workspace.identity.artifactTarget.abi ?? "")
+            persistentWorkspaces.append(
+                tag: 5,
+                integer: UInt64(
+                    mount.workspace.identity.artifactTarget.androidAPILevel ?? 0))
+            persistentWorkspaces.append(tag: 6, string: mount.workspace.identity.role)
+            persistentWorkspaces.append(tag: 7, string: mount.target)
+            persistentWorkspaces.append(tag: 8, string: mount.access.rawValue)
+        }
+        encoder.append(tag: 14, bytes: persistentWorkspaces.bytes)
         encoder.append(tag: 13, string: execution.temporaryDirectory?.string ?? "")
         encoder.append(tag: 15, integer: UInt64(execution.userPolicy.userID))
         encoder.append(tag: 16, integer: UInt64(execution.userPolicy.groupID))
@@ -475,10 +497,16 @@ public struct OCIExecutionPipeline: Sendable {
         }
 
         var effects: [ActionEffect] = []
+        var persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect] = []
         for execution in executions {
-            for effect in ociActionRequirements(execution: execution).effects
+            let executionRequirements = ociActionRequirements(execution: execution)
+            for effect in executionRequirements.effects
             where !effects.contains(effect) {
                 effects.append(effect)
+            }
+            for effect in executionRequirements.persistentWorkspaceEffects
+            where !persistentWorkspaceEffects.contains(effect) {
+                persistentWorkspaceEffects.append(effect)
             }
         }
 
@@ -486,6 +514,7 @@ public struct OCIExecutionPipeline: Sendable {
         identity = OCIExecutionPipelineIdentity(executions)
         requirements = ActionRequirements(
             effects: effects,
+            persistentWorkspaceEffects: persistentWorkspaceEffects,
             lane: .oci,
             networkAccess: .none,
             executionPlatform: first.executionPlatform,
@@ -522,8 +551,15 @@ public func ociActionRequirements(
             scope: .scratch(temporaryDirectory))
         if !effects.contains(effect) { effects.append(effect) }
     }
+    let persistentWorkspaceEffects = execution.persistentWorkspaceMounts.map {
+        ActionPersistentWorkspaceEffect(
+            workspace: $0.workspace,
+            target: $0.target,
+            access: $0.access)
+    }
     return ActionRequirements(
         effects: effects,
+        persistentWorkspaceEffects: persistentWorkspaceEffects,
         lane: .oci,
         networkAccess: .none,
         executionPlatform: execution.executionPlatform,
@@ -570,9 +606,26 @@ public struct ActionEffect: Hashable, Sendable {
     }
 }
 
+public struct ActionPersistentWorkspaceEffect: Hashable, Sendable {
+    public let workspace: PersistentWorkspaceDeclaration
+    public let target: String
+    public let access: OCIMount.Access
+
+    public init(
+        workspace: PersistentWorkspaceDeclaration,
+        target: String,
+        access: OCIMount.Access
+    ) {
+        self.workspace = workspace
+        self.target = target
+        self.access = access
+    }
+}
+
 public struct ActionRequirements: Hashable, Sendable {
     public let tools: [ActionToolRequirement]
     public let effects: [ActionEffect]
+    public let persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect]
     public let lane: TaskExecutionLane
     public let networkAccess: ActionNetworkAccess
     public let executionPlatform: ExecutionPlatform
@@ -581,6 +634,7 @@ public struct ActionRequirements: Hashable, Sendable {
     public init(
         tools: [ActionToolRequirement] = [],
         effects: [ActionEffect] = [],
+        persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect] = [],
         lane: TaskExecutionLane? = nil,
         networkAccess: ActionNetworkAccess = .none,
         executionPlatform: ExecutionPlatform,
@@ -588,6 +642,7 @@ public struct ActionRequirements: Hashable, Sendable {
     ) {
         self.tools = tools
         self.effects = effects
+        self.persistentWorkspaceEffects = persistentWorkspaceEffects
         self.lane =
             lane
             ?? (executionPlatform.environment == .oci ? .oci : .lightweight)
@@ -611,6 +666,17 @@ public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
     case conflictingToolRole(CommandSpec.Executable)
     case duplicateEffect(ActionEffect)
     case relativeEffectRoot(FilePath)
+    case invalidPersistentWorkspaceKey(String)
+    case invalidPersistentWorkspaceRole(String)
+    case invalidPersistentWorkspaceCapacity(PersistentWorkspaceIdentity)
+    case invalidPersistentWorkspaceJournal(PersistentWorkspaceIdentity)
+    case duplicatePersistentWorkspace(PersistentWorkspaceIdentity)
+    case conflictingPersistentWorkspaceDeclaration(PersistentWorkspaceIdentity)
+    case persistentWorkspaceTargetMismatch(
+        workspace: PersistentWorkspaceIdentity,
+        artifactTarget: ArtifactTarget?)
+    case invalidPersistentWorkspaceMountTarget(String)
+    case overlappingPersistentWorkspaceMountTargets(String, String)
 
     public var description: String {
         switch self {
@@ -624,6 +690,24 @@ public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
             "action effect '\(effect)' is duplicated"
         case .relativeEffectRoot(let root):
             "action effect root must be absolute: \(root)"
+        case .invalidPersistentWorkspaceKey(let key):
+            "persistent workspace key is invalid: \(key)"
+        case .invalidPersistentWorkspaceRole(let role):
+            "persistent workspace role is invalid: \(role)"
+        case .invalidPersistentWorkspaceCapacity(let identity):
+            "persistent workspace capacity must be positive: \(identity.key)"
+        case .invalidPersistentWorkspaceJournal(let identity):
+            "persistent workspace journal must be nonempty and smaller than its capacity: \(identity.key)"
+        case .duplicatePersistentWorkspace(let identity):
+            "persistent workspace is mounted more than once by one action: \(identity.key)"
+        case .conflictingPersistentWorkspaceDeclaration(let identity):
+            "persistent workspace has conflicting declarations: \(identity.key)"
+        case .persistentWorkspaceTargetMismatch(let workspace, let artifactTarget):
+            "persistent workspace target does not match action artifact target: \(workspace.key) (\(String(describing: artifactTarget)))"
+        case .invalidPersistentWorkspaceMountTarget(let target):
+            "persistent workspace mount target must be an absolute normalized guest path: \(target)"
+        case .overlappingPersistentWorkspaceMountTargets(let first, let second):
+            "persistent workspace mount targets overlap: \(first) and \(second)"
         }
     }
 }
@@ -706,6 +790,53 @@ public struct AnyColliderAction: Hashable, Sendable {
                 throw ActionDeclarationFailure.relativeEffectRoot(effect.scope.root)
             }
         }
+        var workspaces: [PersistentWorkspaceIdentity: PersistentWorkspaceDeclaration] = [:]
+        var mountTargets: [FilePath] = []
+        for effect in requirements.persistentWorkspaceEffects {
+            let identity = effect.workspace.identity
+            guard isValidPersistentWorkspaceField(identity.key) else {
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceKey(identity.key)
+            }
+            guard isValidPersistentWorkspaceField(identity.role) else {
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceRole(identity.role)
+            }
+            guard effect.workspace.capacityBytes > 0 else {
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceCapacity(identity)
+            }
+            guard effect.workspace.journal.sizeBytes > 0,
+                effect.workspace.journal.sizeBytes < effect.workspace.capacityBytes
+            else {
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceJournal(identity)
+            }
+            guard identity.artifactTarget == requirements.artifactTarget else {
+                throw ActionDeclarationFailure.persistentWorkspaceTargetMismatch(
+                    workspace: identity,
+                    artifactTarget: requirements.artifactTarget)
+            }
+            if let declared = workspaces[identity] {
+                guard declared == effect.workspace else {
+                    throw ActionDeclarationFailure.conflictingPersistentWorkspaceDeclaration(
+                        identity)
+                }
+                throw ActionDeclarationFailure.duplicatePersistentWorkspace(identity)
+            }
+            workspaces[identity] = effect.workspace
+
+            let target = FilePath(effect.target).lexicallyNormalized()
+            guard effect.target.hasPrefix("/"), effect.target != "/",
+                !effect.target.split(separator: "/").contains(".."),
+                target.string == effect.target
+            else {
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceMountTarget(
+                    effect.target)
+            }
+            if let overlapping = mountTargets.first(where: { $0.overlaps(target) }) {
+                throw ActionDeclarationFailure.overlappingPersistentWorkspaceMountTargets(
+                    overlapping.string,
+                    target.string)
+            }
+            mountTargets.append(target)
+        }
     }
 
     public func execute(in context: ActionContext) async throws {
@@ -735,6 +866,20 @@ public struct AnyColliderAction: Hashable, Sendable {
         hasher.combine(identity)
         hasher.combine(requirements)
         hasher.combine(environment)
+    }
+}
+
+private func isValidPersistentWorkspaceField(_ value: String) -> Bool {
+    guard !value.isEmpty, value.utf8.count <= 128,
+        let first = value.utf8.first,
+        (first >= 97 && first <= 122) || (first >= 48 && first <= 57)
+    else { return false }
+    return value.utf8.allSatisfy {
+        ($0 >= 97 && $0 <= 122)
+            || ($0 >= 48 && $0 <= 57)
+            || $0 == 46
+            || $0 == 95
+            || $0 == 45
     }
 }
 

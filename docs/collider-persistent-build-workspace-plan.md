@@ -145,6 +145,8 @@ Apple container volumes.
 
 ## Phase 1: Add the Engine Contract
 
+Status: complete.
+
 Add persistent workspace declarations, mount access, logical capacity,
 filesystem requirements, and target/role identity to `ColliderCore`. Extend
 action requirements with a persistent-workspace effect and teach graph

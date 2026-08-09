@@ -133,6 +133,60 @@ import Testing
     }
 }
 
+@Test func ociExecutionRejectsHostAndPersistentWorkspaceMountOverlap() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-persistent-workspace-overlap-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let imageID = root.appendingPathComponent("image-id")
+    try Data(("sha256:" + String(repeating: "b", count: 64) + "\n").utf8)
+        .write(to: imageID)
+    let workspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "fixture-build",
+            artifactTarget: .linuxARM64,
+            role: "build"),
+        capacityBytes: 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: PersistentWorkspaceJournal(
+            mode: .writeback,
+            sizeBytes: 64 * 1_024))
+
+    await #expect(throws: RuntimeFailure.self) {
+        try await ColliderRuntime().runOCI(
+            OCIExecution(
+                executionPlatform: .linuxARM64OCI,
+                artifactTarget: .linuxARM64,
+                imageID: FilePath(imageID.path),
+                hostname: "fixture-builder",
+                workingDirectory: "/src",
+                hostWorkingDirectory: FilePath(root.path),
+                mounts: [
+                    OCIMount(
+                        source: FilePath(root.path),
+                        target: "/build/source",
+                        access: .readOnly)
+                ],
+                persistentWorkspaceMounts: [
+                    OCIPersistentWorkspaceMount(
+                        workspace: workspace,
+                        target: "/build",
+                        access: .readWrite)
+                ],
+                userPolicy: .builder,
+                capabilityPolicy: .dropAll,
+                privilegePolicy: .prohibitAcquisition,
+                processFilesystemPolicy: .standard,
+                resourceLimits: .build,
+                containerEnvironment: [:],
+                command: ["fixture"],
+                environment: [:],
+                output: .logged),
+            stage: TaskID(rawValue: "fixture.persistent-workspace-overlap"))
+    }
+}
+
 @Test func runtimeExecutesOCIThroughTheInjectedBackend() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-oci-backend-\(UUID().uuidString)",

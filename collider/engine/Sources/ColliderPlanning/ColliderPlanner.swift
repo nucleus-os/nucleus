@@ -252,6 +252,13 @@ public struct ColliderPlanner {
                         effect.scope.root.lexicallyNormalized().string),
                     access: effect.access == .read ? .shared : .exclusive))
         }
+        for effect in task.action?.requirements.persistentWorkspaceEffects ?? [] {
+            insert(
+                PlannedTaskClaim(
+                    subject: .named(
+                        "persistent-workspace:\(effect.workspace.identity.schedulingKey)"),
+                    access: .exclusive))
+        }
         return claims.values.sorted { $0.canonicalKey < $1.canonicalKey }
     }
 

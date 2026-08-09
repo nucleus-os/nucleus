@@ -63,15 +63,22 @@ extension ColliderRuntime {
                 "invalid OCI execution contract")
         }
 
-        var targets: Set<String> = ["/tmp", ociConfiguration.guestHome]
-        for mount in execution.mounts {
-            guard mount.target.hasPrefix("/"),
-                !mount.target.contains(".."),
-                targets.insert(mount.target).inserted
+        var targets = [FilePath("/tmp"), FilePath(ociConfiguration.guestHome)]
+        func validateMountTarget(_ rawTarget: String) throws -> FilePath {
+            let target = FilePath(rawTarget).lexicallyNormalized()
+            guard rawTarget.hasPrefix("/"), rawTarget != "/",
+                !rawTarget.split(separator: "/").contains(".."),
+                target.string == rawTarget,
+                !targets.contains(where: { $0.overlaps(target) })
             else {
                 throw RuntimeFailure.invalidOutput(
-                    "invalid or duplicate OCI mount: \(mount.target)")
+                    "invalid, duplicate, or overlapping OCI mount: \(rawTarget)")
             }
+            targets.append(target)
+            return target
+        }
+        for mount in execution.mounts {
+            _ = try validateMountTarget(mount.target)
             if mount.access == .readWrite {
                 try FileManager.default.createDirectory(
                     atPath: mount.source.string,
@@ -80,6 +87,9 @@ extension ColliderRuntime {
                 throw RuntimeFailure.invalidOutput(
                     "read-only OCI input is missing: \(mount.source)")
             }
+        }
+        for mount in execution.persistentWorkspaceMounts {
+            _ = try validateMountTarget(mount.target)
         }
 
         let temporaryDirectory: FilePath?
