@@ -94,18 +94,18 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
             $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
         }))
 
-    let migration = aospProductOCIExecution(
+    let entrypointOverride = aospProductOCIExecution(
         build: build,
         writableMounts: [],
         readOnlyMounts: [],
         command: ["-c", "true"],
         imageEntrypointOverride: "/bin/bash")
-    let migrationFlags = try appleContainerFlags(
-        migration,
-        name: appleContainerName(for: migration),
+    let entrypointOverrideFlags = try appleContainerFlags(
+        entrypointOverride,
+        name: appleContainerName(for: entrypointOverride),
         temporaryDirectory: nil,
         configuration: runtimeConfiguration)
-    #expect(migration.command == ["-c", "true"])
-    #expect(migrationFlags.management.entrypoint == "/bin/bash")
+    #expect(entrypointOverride.command == ["-c", "true"])
+    #expect(entrypointOverrideFlags.management.entrypoint == "/bin/bash")
 }
 #endif

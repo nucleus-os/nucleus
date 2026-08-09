@@ -1,0 +1,4 @@
+interface:
+  display_name: "Collider"
+  short_description: "Build, test, and operate Nucleus with Collider"
+  default_prompt: "Use $collider to build or test the appropriate Nucleus component."

@@ -19,9 +19,8 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. Finish Phase 4 of [Android application integration](android-application-integration-plan.md).
-2. [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md)
-3. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
+1. Continue [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md) at Phase 4.
+2. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).

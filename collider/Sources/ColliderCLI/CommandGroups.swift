@@ -1,5 +1,6 @@
 import ArgumentParser
 import ColliderWorkspaceCommands
+import Foundation
 
 #if os(Linux)
 import ColliderLinuxOperations
@@ -11,11 +12,34 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     commands.append(contentsOf: LinuxOperationCommandSet.root)
     #endif
     commands.append(Install.self)
+    commands.append(Skill.self)
     #if os(Linux)
     commands.append(AndroidRuntime.self)
     #endif
     commands.append(contentsOf: WorkspaceCommandSet.rootSuffix)
     return commands
+}
+
+package struct Skill: ParsableCommand {
+    package static let configuration = CommandConfiguration(
+        abstract: "Maintain the repository-scoped Collider agent skill.",
+        subcommands: [GenerateColliderSkill.self])
+
+    package init() {}
+}
+
+private struct GenerateColliderSkill: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "generate",
+        abstract: "Regenerate the Collider agent skill from the current CLI grammar.")
+
+    mutating func run() throws {
+        let root = try resolveWorkspaceRoot(
+            environment: ProcessInfo.processInfo.environment)
+        try ColliderSkillDocumentation.write(to: root)
+        throw CleanExit.message(
+            "generated .agents/skills/collider from the current Collider grammar")
+    }
 }
 
 package struct Install: AsyncParsableCommand {

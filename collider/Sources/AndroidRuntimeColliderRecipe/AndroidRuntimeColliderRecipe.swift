@@ -576,9 +576,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             source: source,
             sourceProvenance: sourceProvenance.path,
             artifactRoot: buildRoot,
-            legacyOutput: buildRoot.appending("out"),
-            legacyCompilerCache: aospLegacyCompilerCache(
-                environment: environment),
             outputWorkspace: aospOutputWorkspace(apiLevel: lock.platformSDK),
             compilerCacheWorkspace: aospCompilerCacheWorkspace(
                 apiLevel: lock.platformSDK),
@@ -818,16 +815,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             return root.appending(".aosp-build")
         }
         return FilePath(buildRoot).appending("nucleus/aosp-build")
-    }
-
-    private static func aospLegacyCompilerCache(
-        environment: [String: String]
-    ) -> FilePath? {
-        if let cacheRoot = environment["XDG_CACHE_HOME"], !cacheRoot.isEmpty {
-            return FilePath(cacheRoot).appending("nucleus/aosp-ccache")
-        }
-        guard let home = environment["HOME"], !home.isEmpty else { return nil }
-        return FilePath(home).appending(".cache/nucleus/aosp-ccache")
     }
 
     private static func aospRepoLauncherPath(

@@ -51,7 +51,7 @@ Status as of 2026-08-08:
 | 1. Production Android runtime | Implemented; agent-runnable build, image, and test gates pass | Validate owner-death cleanup and abandoned-runtime reconciliation in the next standard interactive session |
 | 2. Platform-signed Android bridge | Implemented; the bridge connects after unlock and publishes two real launcher activities | Validate the new native-input handshake in the next standard interactive session |
 | 3. Shell application model | Implemented; provider-neutral catalog, launch routing, dynamic provider lifecycle, namespaced identity, desktop provider, and unified icon resolution pass the Linux shell lane | Attach the Android broker as the second provider in Phase 4 |
-| 4. Android application publication | Implementation complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane; the first full AOSP image build has entered the main platform graph | Complete the full AOSP image build and validate publication on the running Android guest |
+| 4. Android application publication | Complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane, and the full signed AOSP image graph passes | Confirm publication in the next standard interactive Android session |
 | 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout; obsolete Composer and RuntimeBridge presentation ownership is deleted | Validate the desktop path interactively, then add the framework-owned application-display factory and pass the two-presentation gate |
 | 6. Android activity launch and tracking | Not started | Depends on Phase 5 |
 | 7. Input and focus | Primary-display pointer/keyboard transport implemented through display-targeted Android input injection; native virtual-device, focus, gesture-generation, and presentation-scoped completion remains | Depends on Phase 6 |
@@ -476,7 +476,7 @@ desktop discovery, icon, shell, and broader Linux test graph.
 
 ## Phase 4: Publish Android Applications
 
-Status: implementation complete; full AOSP image compile in progress.
+Status: complete. Interactive runtime confirmation remains a user-owned handoff.
 
 After unlock, the bridge queries enabled exported activities matching
 `ACTION_MAIN` plus `CATEGORY_LAUNCHER` for the unlocked user. It publishes
@@ -522,11 +522,11 @@ to PNG and sends each content-addressed asset before any record references it.
 Android bridge validation, Android catalog publication, icon lifecycle, shell,
 and broader Linux test graph. The canonical AOSP remote, exact manifest lock,
 translated x86_64 Soong bootstrap on the arm64 Linux guest, and case-sensitive
-AOSP output ownership are corrected. `collider build android-image` now passes
-source synchronization, Soong bootstrap, case-sensitivity validation, Soong
-graph generation, and Kati generation and has entered the main platform build.
-Completing that image and validating publication on the running guest closes
-the phase.
+AOSP output ownership are corrected. `collider build android-image` completes
+the full platform compile, release signing, image assembly, package/APEX/AVB
+validation, and immutable generation publication. Publication behavior can be
+confirmed in the next standard interactive Android session; that user-owned
+confirmation does not keep the implementation phase open.
 
 ## Phase 5: Make Presentations Window-First
 

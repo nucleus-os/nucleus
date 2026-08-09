@@ -38,8 +38,6 @@ struct AOSPProductBuild: Hashable, Sendable {
     let source: FilePath
     let sourceProvenance: FilePath
     let artifactRoot: FilePath
-    let legacyOutput: FilePath?
-    let legacyCompilerCache: FilePath?
     let outputWorkspace: PersistentWorkspaceDeclaration
     let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     let containerImageID: FilePath
@@ -60,8 +58,6 @@ struct AOSPProductBuild: Hashable, Sendable {
         source: FilePath,
         sourceProvenance: FilePath,
         artifactRoot: FilePath,
-        legacyOutput: FilePath? = nil,
-        legacyCompilerCache: FilePath? = nil,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
@@ -81,8 +77,6 @@ struct AOSPProductBuild: Hashable, Sendable {
         self.source = source
         self.sourceProvenance = sourceProvenance
         self.artifactRoot = artifactRoot
-        self.legacyOutput = legacyOutput
-        self.legacyCompilerCache = legacyCompilerCache
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
         self.containerImageID = containerImageID

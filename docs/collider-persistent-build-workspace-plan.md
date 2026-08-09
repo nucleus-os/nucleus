@@ -198,12 +198,13 @@ an unrelated volume.
 
 ## Phase 3: Hard-Migrate AOSP
 
-Status: in progress. The AOSP action chain declares and attaches its target-
+Status: complete. The AOSP action chain declares and attaches its target-
 specific output and compiler-cache workspaces, keeps the Repo checkout and
 first-party product inputs read-only, and limits host writes to the artifact
-generation boundary. Existing warm output and ccache state are migrated into
-their volumes. The full product build gate and removal of the temporary
-migration path remain.
+generation boundary. The migrated workspaces completed the full compile,
+release signing, image assembly, validation, and publication graph. The
+temporary migration implementation and superseded host-backed intermediates
+are removed.
 
 Create separate `nucleus_x86_64` output and ccache workspace declarations. Keep
 the exact Repo source on the host as a read-only `/src` mount. Attach the output

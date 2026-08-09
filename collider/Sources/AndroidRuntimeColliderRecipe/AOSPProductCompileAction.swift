@@ -44,12 +44,6 @@ struct CompileAOSPProductAction: ColliderAction {
             encoder.append(
                 tag: 19,
                 integer: build.compilerCacheWorkspace.capacityBytes)
-            if let legacyOutput = build.legacyOutput {
-                encoder.append(tag: 20, string: legacyOutput.string)
-            }
-            if let legacyCompilerCache = build.legacyCompilerCache {
-                encoder.append(tag: 21, string: legacyCompilerCache.string)
-            }
         }
     }
 
@@ -70,10 +64,6 @@ struct CompileAOSPProductAction: ColliderAction {
         for overlay in build.sourceOverlays {
             let effect = ActionEffect(.read, scope: .input(overlay.source))
             if !effects.contains(effect) { effects.append(effect) }
-        }
-        if let legacyCompilerCache = build.legacyCompilerCache {
-            effects.append(
-                ActionEffect(.read, scope: .input(legacyCompilerCache)))
         }
         return ActionRequirements(
             effects: effects,
@@ -144,7 +134,6 @@ private struct AOSPProductCompileWorkflow {
         }
         try context.files.createDirectory(build.artifactRoot)
         try assembleProductInput()
-        try await migrateLegacyWorkspaceIfNeeded()
 
         let distribution = build.artifactRoot.appending("dist")
         let unsigned = build.artifactRoot.appending("unsigned")
@@ -241,57 +230,6 @@ private struct AOSPProductCompileWorkflow {
         }
         try context.files.remove(build.assembledProductSource)
         try context.files.move(from: candidate, to: build.assembledProductSource)
-    }
-
-    private func migrateLegacyWorkspaceIfNeeded() async throws {
-        guard let legacyOutput = build.legacyOutput,
-            let legacyCompilerCache = build.legacyCompilerCache,
-            try context.files.metadata(for: legacyOutput)?.type == .directory,
-            try context.files.metadata(for: legacyCompilerCache)?.type == .directory
-        else { return }
-
-        let migration = try await context.containers.execute(
-            aospProductOCIExecution(
-                build: build,
-                writableMounts: [],
-                readOnlyMounts: [
-                    (legacyOutput, "/legacy-output"),
-                    (legacyCompilerCache, "/legacy-ccache"),
-                ],
-                persistentWorkspaceMounts: [
-                    build.outputMount,
-                    build.compilerCacheMount,
-                ],
-                command: [
-                    "-eu", "-o", "pipefail", "-c",
-                    """
-                    marker=/src/out/.nucleus-aosp-migration-complete
-                    if [[ -e \"$marker\" ]]; then
-                      if [[ -f /src/out/out/build-\(build.product).ninja \
-                            && ! -e /src/out/build-\(build.product).ninja ]]; then
-                        find /src/out/out -mindepth 1 -maxdepth 1 \
-                          -exec mv -t /src/out -- {} +
-                        rmdir /src/out/out
-                      fi
-                      exit 0
-                    fi
-                    find /src/out -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-                    find /ccache -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-                    tar -C /legacy-output --sparse \
-                      --exclude=.path_interposer_log \
-                      --exclude=.ninja_fifo \
-                      -cf - . | tar -C /src/out --sparse -xf -
-                    tar -C /legacy-ccache --sparse -cf - . \
-                      | tar -C /ccache --sparse -xf -
-                    test -f /src/out/build-\(build.product).ninja
-                    ccache --show-stats
-                    touch \"$marker\"
-                    """,
-                ],
-                imageEntrypointOverride: "/bin/bash",
-                workingDirectory: "/src",
-                output: .combined(limit: 4 * 1_024 * 1_024)))
-        try requireAOSPBuildSuccess(migration.status)
     }
 
     private func failure(_ message: String) -> AOSPProductCompileFailure {
