@@ -1,5 +1,5 @@
 import NucleusConfig
-import NucleusSessionProtocol
+package import NucleusSessionProtocol
 
 package enum ShellFeedbackState: Sendable, Equatable {
     case hidden

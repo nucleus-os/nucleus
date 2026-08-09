@@ -85,6 +85,13 @@ case "${1:-}" in
     fi
     shift
     ;;
+  aosp)
+    if [[ ! -d /src/.repo ]]; then
+      echo "error: /src is not the complete read-only AOSP checkout" >&2
+      exit 64
+    fi
+    shift
+    ;;
   wayland)
     if [[ ! -d /build || ! -w /build ]]; then
       echo "error: /build is not the writable external Wayland build root" >&2
@@ -103,7 +110,7 @@ case "${1:-}" in
     shift
     ;;
   *)
-    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, or wayland" >&2
+    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, aosp, or wayland" >&2
     exit 64
     ;;
 esac

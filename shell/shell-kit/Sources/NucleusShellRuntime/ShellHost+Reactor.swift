@@ -17,6 +17,7 @@ extension ShellHost {
         displayNeedsWrite: Bool,
         nowNanoseconds: UInt64
     ) -> ShellReactorWaitPlan {
+        remoteApplicationProviders?.scan(nowNanoseconds: nowNanoseconds)
         if renderWorkDue, nextPresentationDeadlineNs == nil {
             nextPresentationDeadlineNs = nowNanoseconds
         }
@@ -47,6 +48,8 @@ extension ShellHost {
         let authDescriptors = authenticator?.pollDescriptors ?? []
         let pasteboardDescriptors = pasteboardAdapter?.pollDescriptors ?? []
         let dragDescriptors = dragDropAdapter?.pollDescriptors ?? []
+        let applicationProviderDescriptors =
+            remoteApplicationProviders?.pollDescriptors ?? []
         var interests: [LinuxReactorInterest] = []
         interests.reserveCapacity(
             8 + pasteboardDescriptors.count + dragDescriptors.count)
@@ -85,6 +88,20 @@ extension ShellHost {
                     events: Int16(POLLIN),
                     mode: .multishot))
         }
+        for descriptor in applicationProviderDescriptors {
+            interests.append(
+                LinuxReactorInterest(
+                    token: Self.reactorToken(
+                        .applicationProvider,
+                        instance: descriptor.token),
+                    fileDescriptor: descriptor.fileDescriptor,
+                    events: Int16(POLLIN),
+                    mode: .multishot))
+        }
+        deadlines.add(
+            relativeNanoseconds:
+                remoteApplicationProviders?.nanosecondsUntilScan(
+                    nowNanoseconds: nowNanoseconds))
         for descriptor in authDescriptors {
             interests.append(
                 LinuxReactorInterest(
@@ -297,6 +314,17 @@ extension ShellHost {
                 } else if result.isReadable {
                     receiveShellPolicyPublication()
                     outcome.hadHostEvent = true
+                }
+            case .applicationProvider:
+                if result.isTerminal {
+                    remoteApplicationProviders?.disconnect(token: instance)
+                    outcome.hadHostEvent = true
+                    requestRender(nativeSceneChanged: true)
+                } else if result.isReadable,
+                    remoteApplicationProviders?.process(token: instance) == true
+                {
+                    outcome.hadHostEvent = true
+                    requestRender(nativeSceneChanged: true)
                 }
             }
             if outcome.shouldStop { break }

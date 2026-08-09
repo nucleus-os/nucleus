@@ -62,6 +62,8 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
+    #expect(execution.command == ["aosp", "/bin/true"])
+    #expect(aospProductContainerToolEnvironment()["REPO_TRACE"] == "0")
     #expect(
         flags.management.networks
             == [nucleusOCIRuntimeConfiguration.isolatedNetwork])

@@ -89,6 +89,20 @@ package final class IconThemeResolver {
         return search(name, size: size)
     }
 
+    /// Resolves both freedesktop theme icons and provider-owned raster assets
+    /// through the same shell-facing API.
+    package func resolve(
+        _ reference: ApplicationIconReference,
+        size: Int = 22
+    ) -> String? {
+        switch reference {
+        case .theme(let name):
+            resolve(name, size: size)
+        case .rasterAsset(_, let path):
+            fileExists(path) ? path : nil
+        }
+    }
+
     private func search(_ name: String, size: Int) -> String? {
         for theme in themeChain() {
             var exactBitmap: String?

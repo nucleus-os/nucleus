@@ -425,7 +425,7 @@ import Testing
             downloads: ActionDownloader { _, _ in },
             containers: ActionContainerExecutor(run: { execution in
                 executions.withLock { $0.append(execution) }
-                if execution.command.first == "/usr/bin/unzip" {
+                if execution.command.dropFirst().first == "/usr/bin/unzip" {
                     for name in aospRequiredProductImages {
                         let bytes: [UInt8] =
                             name == "system.img"
@@ -434,7 +434,7 @@ import Testing
                         try Data(bytes).write(
                             to: imageCandidate.appendingPathComponent(name))
                     }
-                } else if execution.command.first?.hasSuffix("simg2img") == true {
+                } else if execution.command.dropFirst().first?.hasSuffix("simg2img") == true {
                     try Data("normalized-image".utf8).write(
                         to: imageCandidate.appendingPathComponent("system.img.raw"))
                 } else {

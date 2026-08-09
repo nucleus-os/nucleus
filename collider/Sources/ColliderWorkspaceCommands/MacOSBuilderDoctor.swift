@@ -43,6 +43,7 @@ struct MacOSBuilderContract: Codable, Sendable {
     }
 
     struct Environment: Codable, Sendable {
+        let buildRoot: String
         let xdgCacheHome: String
         let nativeSDKRoot: String
         let androidSDKRoot: String
@@ -116,6 +117,8 @@ struct MacOSBuilderContract: Codable, Sendable {
             }
         }
         guard
+            let build = storage.first(where: { $0.name == "NucleusBuild" }),
+            isDescendant(environment.buildRoot, of: build.mountPath),
             let cache = storage.first(where: { $0.name == "NucleusCache" }),
             isDescendant(environment.xdgCacheHome, of: cache.mountPath),
             isDescendant(environment.nativeSDKRoot, of: cache.mountPath),
@@ -420,11 +423,13 @@ struct MacOSBuilderDoctor {
                 normalizedPath(
                     context.environment["NUCLEUS_NATIVE_SDK_ROOT"] ?? "")
                     == normalizedPath(contract.environment.nativeSDKRoot),
+                normalizedPath(context.environment["NUCLEUS_BUILD_ROOT"] ?? "")
+                    == normalizedPath(contract.environment.buildRoot),
                 normalizedPath(context.environment["ANDROID_SDK_ROOT"] ?? "")
                     == normalizedPath(contract.environment.androidSDKRoot)
             else { return nil }
             return
-                "XDG cache \(contract.environment.xdgCacheHome), native SDK \(contract.environment.nativeSDKRoot)"
+                "build root \(contract.environment.buildRoot), XDG cache \(contract.environment.xdgCacheHome), native SDK \(contract.environment.nativeSDKRoot)"
         }
     }
 

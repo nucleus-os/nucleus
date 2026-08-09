@@ -45,6 +45,15 @@ extension ShellHost {
     }
 
     func setupServices() {
+        if let runtimePath = ProcessInfo.processInfo.environment[
+            "NUCLEUS_SESSION_RUNTIME_DIR"
+        ], runtimePath.hasPrefix("/") {
+            remoteApplicationProviders = RemoteApplicationProviderService(
+                launcher: actionDispatcher.launcher,
+                sessionRuntimeDirectory: URL(
+                    fileURLWithPath: runtimePath,
+                    isDirectory: true))
+        }
         guard let bus = try? DBusConnection(.system) else {
             writeErr("shell: no system bus; running without system services")
             return

@@ -207,7 +207,7 @@ func aospProductOCIExecution(
         intelBinaryTranslationPolicy: .required,
         resourceLimits: .build,
         containerEnvironment: containerEnvironment,
-        command: command,
+        command: ["aosp"] + command,
         environment: build.environment,
         output: output)
 }
@@ -223,6 +223,9 @@ func aospProductContainerToolEnvironment() -> [String: String] {
         "PATH": "\(javaHome)/bin:"
             + "/src/out/nucleus/host/linux-x86/bin:"
             + "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "REPO_TRACE": "0",
+        "SOONG_BOOTSTRAP_PREBUILT_TAG": "linux-x86",
+        "SOONG_OUTER_SANDBOX": "1",
         "TZ": "UTC",
     ]
 }

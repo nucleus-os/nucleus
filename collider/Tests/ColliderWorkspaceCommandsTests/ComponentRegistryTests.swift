@@ -195,7 +195,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
 
     #expect(
         Set(withoutLinuxOperations.storage.map(\.id)) == [
-            "android-aosp-build", "android-aosp-builder-metadata", "android-aosp-ccache",
+            "android-aosp-build", "android-aosp-ccache",
             "android-aosp-signing-identity", "android-aosp-source", "android-aosp-tools",
             "android-gfxstream-build-linux-arm64", "android-gfxstream-build-linux-x86_64",
             "android-sdk", "benchmark-results", "browser-builder-metadata",
@@ -1642,13 +1642,24 @@ private func fixtureReactNativeNodeModules(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+    var imageBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.native-builder"),
+        component: ComponentID(rawValue: "fixture"))
+    let builderImage: ArtifactReference<FileArtifact> = try imageBuilder.output(
+        "image",
+        path: FilePath("/cache/native-builder/image-id"),
+        validation: .regularFile)
     let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
         root: FilePath(
             workspace.appendingPathComponent(
                 "android-runtime"
             ).path),
         cacheRoot: FilePath("/cache"),
-        environment: ["PATH": "/usr/bin"]
+        builderImage: builderImage,
+        environment: [
+            "NUCLEUS_BUILD_ROOT": "/build-root",
+            "PATH": "/usr/bin",
+        ]
     ).tasks
     let pipelineIDs = tasks.map(\.id.rawValue).filter {
         $0.hasPrefix("android-runtime.aosp-")
@@ -1659,9 +1670,7 @@ private func fixtureReactNativeNodeModules(
             AndroidRuntimeTaskIDs.aospSource,
             AndroidRuntimeTaskIDs.aospImage,
         ]))
-    #expect(
-        pipelineIDs.contains(
-            "android-runtime.aosp-builder-image"))
+    #expect(!pipelineIDs.contains("android-runtime.aosp-builder-image"))
     #expect(
         pipelineIDs.suffix(5) == [
             "android-runtime.aosp-compile",
@@ -1670,27 +1679,16 @@ private func fixtureReactNativeNodeModules(
             "android-runtime.aosp-validate",
             "android-runtime.aosp-image",
         ])
-    let builderImage = try #require(
-        tasks.first {
-            $0.id.rawValue == "android-runtime.aosp-builder-image"
-        })
-    #expect(
-        {
-            guard let action = builderImage.action else {
-                return false
-            }
-            return action.kind == "android-runtime.prepare-aosp-builder-image"
-        }())
     let operations = Array(tasks.suffix(5)).map(\.action)
     let publication = try #require(tasks.last)
+    let publicationPaths = publication.outputs.map(\.path)
     #expect(
-        publication.outputs.contains {
-            $0.path.string.hasSuffix(".aosp-build/current")
-        })
+        publicationPaths.contains(
+            FilePath("/build-root/nucleus/aosp-build/current")))
     #expect(
-        publication.outputs.contains {
-            $0.path.string.contains(".aosp-build/generations/")
-                && $0.path.string.hasSuffix("/images/system.img")
+        publicationPaths.contains {
+            $0.string.contains("/build-root/nucleus/aosp-build/generations/")
+                && $0.string.hasSuffix("/images/system.img")
         })
     #expect(
         {

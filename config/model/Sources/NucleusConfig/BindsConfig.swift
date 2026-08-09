@@ -10,57 +10,60 @@ public enum DefaultBinds {
         var binds: [KeyBind] = [
             // Applications.
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 20), // T
+                keys: KeyChord(modifiers: .superKey, keyCode: 20),  // T
                 action: .launch(
                     appIDs: [
-                        "kitty.desktop",
-                        "org.wezfurlong.wezterm.desktop",
-                        "foot.desktop",
+                        "desktop:kitty.desktop",
+                        "desktop:org.wezfurlong.wezterm.desktop",
+                        "desktop:foot.desktop",
                     ],
                     command: ["kitty"])),
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 33), // F
+                keys: KeyChord(modifiers: .superKey, keyCode: 33),  // F
                 action: .launch(
-                    appIDs: ["foot.desktop", "kitty.desktop"],
+                    appIDs: ["desktop:foot.desktop", "desktop:kitty.desktop"],
                     command: ["foot"])),
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 31), // S
+                keys: KeyChord(modifiers: .superKey, keyCode: 31),  // S
                 action: .launch(
                     appIDs: [
-                        "sublime_text.desktop",
-                        "com.sublimetext.three.desktop",
-                        "code.desktop",
+                        "desktop:sublime_text.desktop",
+                        "desktop:com.sublimetext.three.desktop",
+                        "desktop:code.desktop",
                     ],
                     command: ["subl"])),
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 46), // C
+                keys: KeyChord(modifiers: .superKey, keyCode: 46),  // C
                 action: .launch(
-                    appIDs: ["google-chrome.desktop", "chromium.desktop"],
+                    appIDs: [
+                        "desktop:google-chrome.desktop",
+                        "desktop:chromium.desktop",
+                    ],
                     command: ["google-chrome"])),
 
             // Session.
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 16), // Q
+                keys: KeyChord(modifiers: .superKey, keyCode: 16),  // Q
                 action: .closeWindow),
             KeyBind(
                 keys: KeyChord(
-                    modifiers: [.superKey, .shift], keyCode: 50), // M
+                    modifiers: [.superKey, .shift], keyCode: 50),  // M
                 action: .showWindowMenu),
             KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: 53), // Slash
+                keys: KeyChord(modifiers: .superKey, keyCode: 53),  // Slash
                 action: .toggleHotkeyOverlay),
             KeyBind(
-                keys: KeyChord(keyCode: 1), // Escape
+                keys: KeyChord(keyCode: 1),  // Escape
                 action: .dismissHotkeyOverlay),
 
             // Backdrop intensity.
             KeyBind(
                 keys: KeyChord(
-                    modifiers: [.superKey, .alt], keyCode: 26), // LeftBracket
+                    modifiers: [.superKey, .alt], keyCode: 26),  // LeftBracket
                 action: .adjustBackdropIntensity(-0.2)),
             KeyBind(
                 keys: KeyChord(
-                    modifiers: [.superKey, .alt], keyCode: 27), // RightBracket
+                    modifiers: [.superKey, .alt], keyCode: 27),  // RightBracket
                 action: .adjustBackdropIntensity(0.2)),
 
             // Tiling. Arrows half-tile; U/I/J/K corner-tile as a positional
@@ -78,16 +81,16 @@ public enum DefaultBinds {
                 keys: KeyChord(modifiers: [.control, .alt], keyCode: 108),
                 action: .tile(.bottom)),
             KeyBind(
-                keys: KeyChord(modifiers: [.control, .alt], keyCode: 22), // U
+                keys: KeyChord(modifiers: [.control, .alt], keyCode: 22),  // U
                 action: .tile(.topLeft)),
             KeyBind(
-                keys: KeyChord(modifiers: [.control, .alt], keyCode: 23), // I
+                keys: KeyChord(modifiers: [.control, .alt], keyCode: 23),  // I
                 action: .tile(.topRight)),
             KeyBind(
-                keys: KeyChord(modifiers: [.control, .alt], keyCode: 36), // J
+                keys: KeyChord(modifiers: [.control, .alt], keyCode: 36),  // J
                 action: .tile(.bottomLeft)),
             KeyBind(
-                keys: KeyChord(modifiers: [.control, .alt], keyCode: 37), // K
+                keys: KeyChord(modifiers: [.control, .alt], keyCode: 37),  // K
                 action: .tile(.bottomRight)),
             KeyBind(
                 keys: KeyChord(modifiers: [.control, .alt], keyCode: 28),
@@ -99,13 +102,15 @@ public enum DefaultBinds {
         for index in UInt32(1)...9 {
             // evdev puts KEY_1…KEY_9 at 2…10.
             let code = index + 1
-            binds.append(KeyBind(
-                keys: KeyChord(modifiers: .superKey, keyCode: code),
-                action: .activateWorkspace(index)))
-            binds.append(KeyBind(
-                keys: KeyChord(
-                    modifiers: [.superKey, .shift], keyCode: code),
-                action: .moveWindowToWorkspace(index)))
+            binds.append(
+                KeyBind(
+                    keys: KeyChord(modifiers: .superKey, keyCode: code),
+                    action: .activateWorkspace(index)))
+            binds.append(
+                KeyBind(
+                    keys: KeyChord(
+                        modifiers: [.superKey, .shift], keyCode: code),
+                    action: .moveWindowToWorkspace(index)))
         }
         return binds
     }()

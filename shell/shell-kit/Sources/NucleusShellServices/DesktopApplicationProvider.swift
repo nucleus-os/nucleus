@@ -4,72 +4,63 @@ package import Foundation
 import Glibc
 #endif
 
-package typealias LaunchableAppID = String
-
-package struct LaunchableAppRecord: Sendable, Equatable {
-    package var id: LaunchableAppID
-    package var name: String
-    package var desktopFileID: String
-    package var iconName: String
-    package var executable: [String]
-    package var categories: [String]
-
-    package init(
-        id: LaunchableAppID,
-        name: String,
-        desktopFileID: String,
-        iconName: String = "",
-        executable: [String],
-        categories: [String] = []
-    ) {
-        self.id = id
-        self.name = name
-        self.desktopFileID = desktopFileID
-        self.iconName = iconName
-        self.executable = executable
-        self.categories = categories
-    }
+private struct DesktopApplicationEntry: Sendable {
+    var record: ApplicationRecord
+    var arguments: [String]
 }
 
-package struct DesktopApplicationIndex: Sendable {
-    package var applications: [LaunchableAppRecord]
-
-    package init(applications: [LaunchableAppRecord] = []) {
-        self.applications = applications
+@MainActor
+package final class DesktopApplicationProvider: ApplicationProvider {
+    package let id = ApplicationProviderID.desktop
+    package var applications: [ApplicationRecord] {
+        entries.map(\.record)
     }
 
-    package static func resolved(
+    private var entries: [DesktopApplicationEntry]
+    private let launcher = DesktopProcessLauncher()
+    private var catalogChangeHandler: (@MainActor @Sendable (ApplicationCatalogChange) -> Void)?
+
+    package init(
         environment: [String: String]? = nil,
         fileManager: FileManager = .default
-    ) -> DesktopApplicationIndex {
-        DesktopApplicationIndex(
-            applications: scanApplications(
-                environment: environment ?? appDiscoveryEnvironment(),
-                fileManager: fileManager))
+    ) {
+        entries = Self.scanApplications(
+            environment: environment ?? Self.appDiscoveryEnvironment(),
+            fileManager: fileManager)
     }
 
-    package func app(id: LaunchableAppID) -> LaunchableAppRecord? {
-        applications.first { $0.id == id }
+    package func setCatalogChangeHandler(
+        _ handler: (@MainActor @Sendable (ApplicationCatalogChange) -> Void)?
+    ) {
+        catalogChangeHandler = handler
     }
 
-    package func preferredApp(matching ids: [String], executable fallbackExecutable: String? = nil)
-        -> LaunchableAppRecord?
-    {
-        for id in ids {
-            if let app = app(id: id) { return app }
-            if let app = applications.first(where: { $0.desktopFileID == id }) { return app }
+    package func launch(_ request: ApplicationLaunchRequest) -> ApplicationLaunchResult {
+        guard let entry = entries.first(where: { $0.record.id == request.applicationID }) else {
+            return .failed(.applicationUnavailable(request.applicationID))
         }
-        if let fallbackExecutable {
-            return applications.first { $0.executable.first == fallbackExecutable }
-        }
-        return nil
+        return launcher.launch(entry.arguments, application: entry.record)
+    }
+
+    package func launchCommand(_ command: [String]) -> ApplicationLaunchResult {
+        launcher.launch(command, application: nil)
+    }
+
+    package func reload(
+        environment: [String: String]? = nil,
+        fileManager: FileManager = .default
+    ) {
+        entries = Self.scanApplications(
+            environment: environment ?? Self.appDiscoveryEnvironment(),
+            fileManager: fileManager)
+        catalogChangeHandler?(.replace(applications))
     }
 
     private static func scanApplications(
         environment: [String: String],
         fileManager: FileManager
-    ) -> [LaunchableAppRecord] {
-        var records: [LaunchableAppRecord] = []
+    ) -> [DesktopApplicationEntry] {
+        var records: [DesktopApplicationEntry] = []
         for directory in applicationDirectories(environment: environment) {
             for url in desktopFiles(in: directory, fileManager: fileManager) {
                 if let record = parseDesktopFile(
@@ -79,11 +70,11 @@ package struct DesktopApplicationIndex: Sendable {
                 }
             }
         }
-        var seen: Set<LaunchableAppID> = []
+        var seen: Set<ApplicationID> = []
         return
             records
-            .filter { seen.insert($0.id).inserted }
-            .sorted { naturalNameLessThan($0.name, $1.name) }
+            .filter { seen.insert($0.record.id).inserted }
+            .sorted { naturalNameLessThan($0.record.name, $1.record.name) }
     }
 
     private static func naturalNameLessThan(
@@ -174,7 +165,7 @@ package struct DesktopApplicationIndex: Sendable {
         return dirs
     }
 
-    package static func appDiscoveryEnvironment(
+    nonisolated package static func appDiscoveryEnvironment(
         base: [String: String] = ProcessInfo.processInfo.environment,
         currentValue: ((String) -> String?)? = nil
     ) -> [String: String] {
@@ -190,7 +181,7 @@ package struct DesktopApplicationIndex: Sendable {
         return environment
     }
 
-    private static func currentCEnvironmentValue(_ key: String) -> String? {
+    nonisolated private static func currentCEnvironmentValue(_ key: String) -> String? {
         #if os(Linux)
         // Nucleus treats the process environment as immutable after bring-up.
         // `getenv` therefore returns a live NUL-terminated value for the duration
@@ -202,14 +193,14 @@ package struct DesktopApplicationIndex: Sendable {
         #endif
     }
 
-    private static let appDiscoveryEnvironmentKeys = [
+    nonisolated private static let appDiscoveryEnvironmentKeys = [
         "HOME",
         "XDG_DATA_HOME",
         "XDG_DATA_DIRS",
     ]
 
     private static func parseDesktopFile(url: URL, root: URL, fileManager: FileManager)
-        -> LaunchableAppRecord?
+        -> DesktopApplicationEntry?
     {
         guard let data = fileManager.contents(atPath: url.path),
             let text = String(data: data, encoding: .utf8)
@@ -246,13 +237,16 @@ package struct DesktopApplicationIndex: Sendable {
             .split(separator: ";")
             .map(String.init)
             .filter { !$0.isEmpty } ?? []
-        return LaunchableAppRecord(
-            id: desktopID,
-            name: name,
-            desktopFileID: desktopID,
-            iconName: fields["Icon"] ?? "",
-            executable: executable,
-            categories: categories
+        let iconName = fields["Icon"] ?? ""
+        return DesktopApplicationEntry(
+            record: ApplicationRecord(
+                id: ApplicationID(provider: .desktop, localID: desktopID),
+                name: name,
+                icon: iconName.isEmpty ? nil : .theme(name: iconName),
+                categories: categories,
+                providerID: .desktop,
+                providerLaunchID: desktopID),
+            arguments: executable
         )
     }
 

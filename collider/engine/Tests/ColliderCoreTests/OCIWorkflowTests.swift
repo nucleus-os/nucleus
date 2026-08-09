@@ -61,8 +61,8 @@ import Testing
             "nproc=32768:32768",
             "nofile=131072:131072",
         ])
-    #expect(flags.resource.cpus == 20)
-    #expect(flags.resource.memory == String(96 * 1_024 * 1_024 * 1_024))
+    #expect(flags.resource.cpus == 24)
+    #expect(flags.resource.memory == String(128 * 1_024 * 1_024 * 1_024))
     #expect(
         flags.management.mounts.contains(
             "type=bind,source=/var/nucleus/source,target=/src,readonly"))

@@ -44,14 +44,14 @@ launching remain fully functional when no Android application provider connects.
 
 ## Implementation Status
 
-Status as of 2026-07-30:
+Status as of 2026-08-08:
 
 | Phase | Status | Remaining gate |
 | --- | --- | --- |
 | 1. Production Android runtime | Implemented; agent-runnable build, image, and test gates pass | Validate owner-death cleanup and abandoned-runtime reconciliation in the next standard interactive session |
 | 2. Platform-signed Android bridge | Implemented; the bridge connects after unlock and publishes two real launcher activities | Validate the new native-input handshake in the next standard interactive session |
-| 3. Shell application model | Not started | Begin after the Phase 2 image and protocol gates pass |
-| 4. Android application publication | Not started | Depends on Phase 3 |
+| 3. Shell application model | Implemented; provider-neutral catalog, launch routing, dynamic provider lifecycle, namespaced identity, desktop provider, and unified icon resolution pass the Linux shell lane | Attach the Android broker as the second provider in Phase 4 |
+| 4. Android application publication | Implementation complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane; the first full AOSP image build has entered the main platform graph | Complete the full AOSP image build and validate publication on the running Android guest |
 | 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout; obsolete Composer and RuntimeBridge presentation ownership is deleted | Validate the desktop path interactively, then add the framework-owned application-display factory and pass the two-presentation gate |
 | 6. Android activity launch and tracking | Not started | Depends on Phase 5 |
 | 7. Input and focus | Primary-display pointer/keyboard transport implemented through display-targeted Android input injection; native virtual-device, focus, gesture-generation, and presentation-scoped completion remains | Depends on Phase 6 |
@@ -433,6 +433,8 @@ Verification gate:
 
 ## Phase 3: Generalize the Shell Application Model
 
+Status: complete.
+
 Replace the executable-shaped `LaunchableAppRecord` model in
 `DesktopApplicationIndex.swift` with the provider-neutral contracts above.
 Rename the merged index to `ApplicationCatalog`. Move desktop-file parsing and
@@ -462,7 +464,19 @@ Verification gate:
 - Theme icons and content-addressed raster icons render through one shell icon
   API.
 
+Complete. `ApplicationCatalog` owns deterministic records from dynamically
+attached providers and routes activation-bearing launch requests to the owning
+provider. `DesktopApplicationProvider` exclusively owns desktop-file parsing,
+opaque executable arguments, process launch, and launched-process lifetime.
+Application IDs are namespaced, provider detach removes only that namespace,
+and `LauncherService` no longer knows about desktop files or executable-shaped
+records. Theme icons and content-addressed raster assets resolve through one
+shell API. `collider test shell` passes the provider lifecycle, launch routing,
+desktop discovery, icon, shell, and broader Linux test graph.
+
 ## Phase 4: Publish Android Applications
+
+Status: implementation complete; full AOSP image compile in progress.
 
 After unlock, the bridge queries enabled exported activities matching
 `ACTION_MAIN` plus `CATEGORY_LAUNCHER` for the unlocked user. It publishes
@@ -487,6 +501,32 @@ Verification gate:
 - Duplicate labels do not collide because component identity is authoritative.
 - Icon cache replacement and garbage collection never leave a catalog record
   pointing at a missing asset.
+
+Implemented. The session protocol now owns a same-UID, provider-neutral
+`SOCK_SEQPACKET` publication channel. The Android broker publishes the
+`android` provider through that channel, translates full and package-scoped
+bridge snapshots into deterministic catalog changes, and stores bounded PNG
+assets by content digest under the session runtime directory. Publication
+precedes icon garbage collection, so a live record never references a removed
+asset. Lock, user-stop, bridge-disconnect, and provider-disconnect paths
+withdraw Android records without disturbing the desktop provider.
+
+The platform-signed bridge now uses `LauncherApps.getActivityList` for the
+current unlocked user, filters disabled, suspended, non-exported, fallback, and
+non-launcher activities, preserves component identity independently of labels,
+and emits package-scoped replacements for install, update, removal, enablement,
+suspension, label, and icon changes. The bridge renders bounded launcher icons
+to PNG and sends each content-addressed asset before any record references it.
+
+`collider test shell` passes the provider transport, remote-provider lifecycle,
+Android bridge validation, Android catalog publication, icon lifecycle, shell,
+and broader Linux test graph. The canonical AOSP remote, exact manifest lock,
+translated x86_64 Soong bootstrap on the arm64 Linux guest, and case-sensitive
+AOSP output ownership are corrected. `collider build android-image` now passes
+source synchronization, Soong bootstrap, case-sensitivity validation, Soong
+graph generation, and Kati generation and has entered the main platform build.
+Completing that image and validating publication on the running guest closes
+the phase.
 
 ## Phase 5: Make Presentations Window-First
 

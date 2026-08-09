@@ -131,8 +131,24 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
         AndroidRuntimeBridgeActivity(
             packageName: "org.example",
             activityName: "org.example.MainActivity",
-            label: "Example"),
+            label: "Example",
+            categories: ["productivity"],
+            iconDigest: String(repeating: "a", count: 64))
     ]
+    let icon = AndroidRuntimeBridgeIconAsset(
+        digest: String(repeating: "a", count: 64),
+        bytes: Data([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00,
+        ]))
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .iconAsset,
+            generation: generation,
+            userUnlocked: true,
+            userSerial: 42,
+            iconAsset: icon),
+        over: connection)
     try send(
         AndroidRuntimeBridgeEnvelope(
             kind: .replaceActivities,
@@ -140,6 +156,15 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
             userUnlocked: true,
             userSerial: 42,
             activities: activities),
+        over: connection)
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .replacePackageActivities,
+            generation: generation,
+            userUnlocked: true,
+            userSerial: 42,
+            packageName: "org.example",
+            activities: []),
         over: connection)
     let cursor = try AndroidCursorShapeUpdate(
         displayID: 0,
@@ -150,25 +175,43 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
             generation: generation,
             cursorShape: cursor),
         over: connection)
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .runtimeState,
+            generation: generation,
+            userUnlocked: false,
+            userSerial: 42),
+        over: connection)
 
     let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-    while await recorder.events.count < 5,
+    while await recorder.events.count < 8,
         ContinuousClock.now < deadline
     {
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    #expect(await recorder.events == [
-        .connected(generation: generation),
-        .inputReady(generation: generation),
-        .userUnlocked(generation: generation, userSerial: 42),
-        .activitiesReplaced(
-            generation: generation,
-            userSerial: 42,
-            activities: activities),
-        .cursorShapeChanged(
-            generation: generation,
-            update: cursor),
-    ])
+    #expect(
+        await recorder.events == [
+            .connected(generation: generation),
+            .inputReady(generation: generation),
+            .userUnlocked(generation: generation, userSerial: 42),
+            .iconAsset(
+                generation: generation,
+                userSerial: 42,
+                asset: icon),
+            .activitiesReplaced(
+                generation: generation,
+                userSerial: 42,
+                activities: activities),
+            .packageActivitiesReplaced(
+                generation: generation,
+                userSerial: 42,
+                packageName: "org.example",
+                activities: []),
+            .cursorShapeChanged(
+                generation: generation,
+                update: cursor),
+            .userLocked(generation: generation, userSerial: 42),
+        ])
 }
 
 @Test
@@ -224,10 +267,11 @@ func bridgeKeepsRuntimeStateAvailableWhenNativeInputInitializationFails()
         }
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    #expect(await recorder.events == [
-        .connected(generation: generation),
-        .inputFailed(generation: generation, error: failure),
-    ])
+    #expect(
+        await recorder.events == [
+            .connected(generation: generation),
+            .inputFailed(generation: generation, error: failure),
+        ])
 }
 
 @Test
@@ -358,17 +402,18 @@ func bridgeAcceptsAReplacementConnectionInTheSameBrokerGeneration()
     {
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    #expect(await recorder.events == [
-        .connected(generation: generation),
-        .disconnected(generation: generation),
-        .connected(generation: generation),
-        .inputReady(generation: generation),
-        .userUnlocked(generation: generation, userSerial: 9),
-        .activitiesReplaced(
-            generation: generation,
-            userSerial: 9,
-            activities: []),
-    ])
+    #expect(
+        await recorder.events == [
+            .connected(generation: generation),
+            .disconnected(generation: generation),
+            .connected(generation: generation),
+            .inputReady(generation: generation),
+            .userUnlocked(generation: generation, userSerial: 9),
+            .activitiesReplaced(
+                generation: generation,
+                userSerial: 9,
+                activities: []),
+        ])
 }
 
 private func send(

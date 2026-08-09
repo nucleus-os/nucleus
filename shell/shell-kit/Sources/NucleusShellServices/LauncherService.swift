@@ -6,44 +6,81 @@ import Glibc
 
 @MainActor
 package final class LauncherService {
-    private var applicationIndex: DesktopApplicationIndex
-    private var launched: [Process] = []
+    package let catalog: ApplicationCatalog
+    private let desktopProvider: DesktopApplicationProvider?
 
-    package init(applicationIndex: DesktopApplicationIndex = .resolved()) {
-        self.applicationIndex = applicationIndex
+    package init(
+        catalog: ApplicationCatalog = ApplicationCatalog(),
+        desktopProvider: DesktopApplicationProvider? = DesktopApplicationProvider()
+    ) {
+        self.catalog = catalog
+        self.desktopProvider = desktopProvider
+        if let desktopProvider {
+            catalog.attach(desktopProvider)
+        }
     }
 
-    package func reloadApplications(_ index: DesktopApplicationIndex = .resolved()) {
-        applicationIndex = index
+    package func reloadDesktopApplications() {
+        desktopProvider?.reload()
     }
 
-    package func launchableApps() -> [LaunchableAppRecord] {
-        applicationIndex.applications
+    package func applications() -> [ApplicationRecord] {
+        catalog.applications
     }
 
-    @discardableResult
-    package func launch(_ app: LaunchableAppRecord) -> Bool {
-        spawn(arguments(for: app))
+    package func attach(_ provider: any ApplicationProvider) {
+        catalog.attach(provider)
     }
 
-    @discardableResult
-    package func launchApp(id: LaunchableAppID) -> Bool {
-        guard let app = applicationIndex.app(id: id) else { return false }
-        return launch(app)
+    package func detach(providerID: ApplicationProviderID) {
+        catalog.detach(providerID: providerID)
+    }
+
+    package func launch(
+        applicationID: ApplicationID,
+        activationToken: String? = nil
+    ) -> ApplicationLaunchResult {
+        catalog.launch(
+            ApplicationLaunchRequest(
+                applicationID: applicationID,
+                activationToken: activationToken))
     }
 
     @discardableResult
     package func launchPreferred(ids: [String], fallback: [String]) -> Bool {
-        if let app = applicationIndex.preferredApp(matching: ids, executable: fallback.first) {
-            return launch(app)
+        for rawID in ids {
+            guard let applicationID = ApplicationID(rawValue: rawID) else { continue }
+            let result = launch(applicationID: applicationID)
+            if result.succeeded {
+                return true
+            }
         }
-        return spawn(fallback)
+        guard let desktopProvider else { return false }
+        return desktopProvider.launchCommand(fallback).succeeded
+    }
+}
+
+@MainActor
+final class DesktopProcessLauncher {
+    private var launched: [Process] = []
+
+    func launch(
+        _ arguments: [String],
+        application: ApplicationRecord?
+    ) -> ApplicationLaunchResult {
+        let launchArguments: [String]
+        if let application, isFirefox(application, arguments: arguments) {
+            launchArguments = Self.adjustedFirefoxArguments(arguments)
+        } else {
+            launchArguments = arguments
+        }
+        return spawn(launchArguments)
     }
 
-    @discardableResult
-    package func spawn(_ args: [String], logLaunch: Bool = true) -> Bool {
-        _ = logLaunch
-        guard !args.isEmpty else { return false }
+    private func spawn(_ args: [String]) -> ApplicationLaunchResult {
+        guard !args.isEmpty else {
+            return .failed(.launchFailed("the launch command is empty"))
+        }
         let launchArgs = Self.adjustedArguments(args)
 
         let process = Process()
@@ -63,27 +100,20 @@ package final class LauncherService {
         do {
             try process.run()
             launched.append(process)
-            return true
+            return .created
         } catch {
-            return false
+            return .failed(.launchFailed(String(describing: error)))
         }
     }
 
-    private func arguments(for app: LaunchableAppRecord) -> [String] {
-        if Self.isFirefox(app) {
-            return Self.adjustedFirefoxArguments(app.executable)
-        }
-        return app.executable
-    }
-
-    private static func isFirefox(_ app: LaunchableAppRecord) -> Bool {
-        let ids = [app.id, app.desktopFileID]
+    private func isFirefox(_ app: ApplicationRecord, arguments: [String]) -> Bool {
+        let ids = [app.id.rawValue, app.providerLaunchID]
         return ids.contains { value in
             let lower = value.lowercased()
             return lower == "firefox" || lower == "firefox.desktop"
                 || lower.hasSuffix("-firefox.desktop")
                 || lower.contains("org.mozilla.firefox")
-        } || app.executable.first.map(isFirefoxExecutable) == true
+        } || arguments.first.map(Self.isFirefoxExecutable) == true
     }
 
     static func adjustedArguments(_ args: [String]) -> [String] {

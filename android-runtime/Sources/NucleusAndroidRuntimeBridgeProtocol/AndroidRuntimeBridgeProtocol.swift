@@ -16,7 +16,9 @@ package enum AndroidRuntimeBridgeMessageKind:
     case bridgeHello
     case brokerHello
     case runtimeState
+    case iconAsset
     case replaceActivities
+    case replacePackageActivities
     case inputState
     case inputEvent
     case cursorShape
@@ -147,15 +149,33 @@ package struct AndroidRuntimeBridgeActivity:
     package let packageName: String
     package let activityName: String
     package let label: String
+    package let categories: [String]?
+    package let iconDigest: String?
 
     package init(
         packageName: String,
         activityName: String,
-        label: String
+        label: String,
+        categories: [String]? = nil,
+        iconDigest: String? = nil
     ) {
         self.packageName = packageName
         self.activityName = activityName
         self.label = label
+        self.categories = categories
+        self.iconDigest = iconDigest
+    }
+}
+
+package struct AndroidRuntimeBridgeIconAsset:
+    Codable, Equatable, Sendable
+{
+    package let digest: String
+    package let bytes: Data
+
+    package init(digest: String, bytes: Data) {
+        self.digest = digest
+        self.bytes = bytes
     }
 }
 
@@ -166,7 +186,9 @@ package struct AndroidRuntimeBridgeEnvelope:
     package let generation: String?
     package let userUnlocked: Bool?
     package let userSerial: Int64?
+    package let packageName: String?
     package let activities: [AndroidRuntimeBridgeActivity]?
+    package let iconAsset: AndroidRuntimeBridgeIconAsset?
     package let inputReady: Bool?
     package let inputError: String?
     package let inputEvent: AndroidInputEvent?
@@ -177,7 +199,9 @@ package struct AndroidRuntimeBridgeEnvelope:
         generation: String? = nil,
         userUnlocked: Bool? = nil,
         userSerial: Int64? = nil,
+        packageName: String? = nil,
         activities: [AndroidRuntimeBridgeActivity]? = nil,
+        iconAsset: AndroidRuntimeBridgeIconAsset? = nil,
         inputReady: Bool? = nil,
         inputError: String? = nil,
         inputEvent: AndroidInputEvent? = nil,
@@ -187,7 +211,9 @@ package struct AndroidRuntimeBridgeEnvelope:
         self.generation = generation
         self.userUnlocked = userUnlocked
         self.userSerial = userSerial
+        self.packageName = packageName
         self.activities = activities
+        self.iconAsset = iconAsset
         self.inputReady = inputReady
         self.inputError = inputError
         self.inputEvent = inputEvent
@@ -211,19 +237,62 @@ package struct AndroidRuntimeBridgeEnvelope:
                     "invalid Android bridge generation")
             }
         }
-        guard (activities?.count ?? 0)
-            <= AndroidRuntimeBridgeProtocol.maximumActivities
+        guard
+            (activities?.count ?? 0)
+                <= AndroidRuntimeBridgeProtocol.maximumActivities
         else {
             throw AndroidRuntimeFailure(
                 "Android bridge activity snapshot is oversized")
         }
-        guard activities?.allSatisfy({
-            Self.validActivityField($0.packageName)
-                && Self.validActivityField($0.activityName)
-                && Self.validActivityField($0.label)
-        }) ?? true else {
+        if let packageName, !Self.validActivityField(packageName) {
+            throw AndroidRuntimeFailure(
+                "Android bridge package identity is invalid")
+        }
+        guard
+            activities?.allSatisfy({
+                Self.validActivityField($0.packageName)
+                    && Self.validActivityField($0.activityName)
+                    && Self.validActivityField($0.label)
+            }) ?? true
+        else {
             throw AndroidRuntimeFailure(
                 "Android bridge activity metadata is invalid")
+        }
+        guard
+            activities.map({ activities in
+                Set(
+                    activities.map {
+                        "\($0.packageName)\u{0}\($0.activityName)"
+                    }
+                ).count == activities.count
+            }) ?? true
+        else {
+            throw AndroidRuntimeFailure(
+                "Android bridge activity snapshot contains duplicate components")
+        }
+        guard
+            activities?.allSatisfy({ activity in
+                (activity.categories?.count ?? 0) <= 64
+                    && (activity.categories?.allSatisfy({
+                        Self.validActivityField($0)
+                    }) ?? true)
+                    && (activity.iconDigest.map(Self.validDigest) ?? true)
+            }) ?? true
+        else {
+            throw AndroidRuntimeFailure(
+                "Android bridge activity catalog metadata is invalid")
+        }
+        if let iconAsset {
+            guard Self.validDigest(iconAsset.digest),
+                !iconAsset.bytes.isEmpty,
+                iconAsset.bytes.count <= 128 * 1_024,
+                iconAsset.bytes.starts(with: [
+                    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+                ])
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android bridge icon asset is invalid")
+            }
         }
         guard inputError?.utf8.count ?? 0 <= 16_384,
             !(inputError?.contains("\0") ?? false)
@@ -236,7 +305,9 @@ package struct AndroidRuntimeBridgeEnvelope:
             guard generation == nil,
                 userUnlocked == nil,
                 userSerial == nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
@@ -249,7 +320,9 @@ package struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked == nil,
                 userSerial == nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
@@ -262,7 +335,9 @@ package struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked != nil,
                 userSerial != nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
@@ -271,11 +346,28 @@ package struct AndroidRuntimeBridgeEnvelope:
                 throw AndroidRuntimeFailure(
                     "invalid Android bridge runtime state")
             }
+        case .iconAsset:
+            guard generation != nil,
+                userUnlocked == true,
+                userSerial != nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset != nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android icon asset")
+            }
         case .replaceActivities:
             guard generation != nil,
                 userUnlocked == true,
                 userSerial != nil,
+                packageName == nil,
                 activities != nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
@@ -284,11 +376,29 @@ package struct AndroidRuntimeBridgeEnvelope:
                 throw AndroidRuntimeFailure(
                     "invalid Android activity snapshot")
             }
+        case .replacePackageActivities:
+            guard generation != nil,
+                userUnlocked == true,
+                userSerial != nil,
+                packageName != nil,
+                activities != nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activities?.allSatisfy({ $0.packageName == packageName }) == true
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android package activity replacement")
+            }
         case .inputState:
             guard generation != nil,
                 userUnlocked == nil,
                 userSerial == nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 let inputReady,
                 inputReady ? inputError == nil : inputError?.isEmpty == false,
                 inputEvent == nil,
@@ -301,7 +411,9 @@ package struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked == nil,
                 userSerial == nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 let inputEvent,
@@ -315,7 +427,9 @@ package struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked == nil,
                 userSerial == nil,
+                packageName == nil,
                 activities == nil,
+                iconAsset == nil,
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
@@ -333,6 +447,11 @@ package struct AndroidRuntimeBridgeEnvelope:
             && value.utf8.count <= 4_096
             && !value.contains("\0")
     }
+
+    private static func validDigest(_ value: String) -> Bool {
+        value.count == 64
+            && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    }
 }
 
 package enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
@@ -340,10 +459,20 @@ package enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
     case inputReady(generation: String)
     case inputFailed(generation: String, error: String)
     case userUnlocked(generation: String, userSerial: Int64)
+    case userLocked(generation: String, userSerial: Int64)
     case activitiesReplaced(
         generation: String,
         userSerial: Int64,
         activities: [AndroidRuntimeBridgeActivity])
+    case packageActivitiesReplaced(
+        generation: String,
+        userSerial: Int64,
+        packageName: String,
+        activities: [AndroidRuntimeBridgeActivity])
+    case iconAsset(
+        generation: String,
+        userSerial: Int64,
+        asset: AndroidRuntimeBridgeIconAsset)
     case cursorShapeChanged(
         generation: String,
         update: AndroidCursorShapeUpdate)
@@ -385,9 +514,10 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
     }
 
     package func run(
-        onEvent: @escaping @Sendable (
-            AndroidRuntimeBridgeEvent
-        ) async -> Void
+        onEvent:
+            @escaping @Sendable (
+                AndroidRuntimeBridgeEvent
+            ) async -> Void
     ) async throws {
         while true {
             try Task.checkCancellation()
@@ -420,9 +550,10 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
 
     private func serve(
         _ connection: PacketConnection,
-        onEvent: @escaping @Sendable (
-            AndroidRuntimeBridgeEvent
-        ) async -> Void
+        onEvent:
+            @escaping @Sendable (
+                AndroidRuntimeBridgeEvent
+            ) async -> Void
     ) async throws {
         let hello = try receive(connection)
         guard hello.kind == .bridgeHello else {
@@ -444,7 +575,7 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
             over: connection)
         await onEvent(.connected(generation: generation))
         var inputStatePublished = false
-        var unlockedPublished = false
+        var unlockedUserSerial: Int64?
         while true {
             try Task.checkCancellation()
             guard try waitUntilReadable(connection.fileDescriptor) else {
@@ -467,11 +598,13 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                 if ready {
                     await onEvent(.inputReady(generation: generation))
                 } else {
-                    let error = envelope.inputError
+                    let error =
+                        envelope.inputError
                         ?? "Android omitted the input-service error"
-                    await onEvent(.inputFailed(
-                        generation: generation,
-                        error: error))
+                    await onEvent(
+                        .inputFailed(
+                            generation: generation,
+                            error: error))
                 }
             case .runtimeState:
                 guard inputStatePublished else {
@@ -479,37 +612,74 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                         "Android bridge published runtime state before input")
                 }
                 if envelope.userUnlocked == true {
-                    guard !unlockedPublished,
-                        let serial = envelope.userSerial
-                    else {
+                    guard let serial = envelope.userSerial else {
                         throw AndroidRuntimeFailure(
-                            "Android bridge duplicated user unlock")
+                            "Android bridge omitted unlocked user identity")
                     }
-                    unlockedPublished = true
-                    await onEvent(.userUnlocked(
-                        generation: generation,
-                        userSerial: serial))
+                    if unlockedUserSerial != serial {
+                        unlockedUserSerial = serial
+                        await onEvent(
+                            .userUnlocked(
+                                generation: generation,
+                                userSerial: serial))
+                    }
+                } else if let serial = unlockedUserSerial {
+                    unlockedUserSerial = nil
+                    await onEvent(
+                        .userLocked(
+                            generation: generation,
+                            userSerial: serial))
                 }
             case .replaceActivities:
-                guard unlockedPublished,
-                    let serial = envelope.userSerial,
+                guard let serial = unlockedUserSerial,
+                    envelope.userSerial == serial,
                     let activities = envelope.activities
                 else {
                     throw AndroidRuntimeFailure(
                         "Android bridge published activities before unlock")
                 }
-                await onEvent(.activitiesReplaced(
-                    generation: generation,
-                    userSerial: serial,
-                    activities: activities))
+                await onEvent(
+                    .activitiesReplaced(
+                        generation: generation,
+                        userSerial: serial,
+                        activities: activities))
+            case .replacePackageActivities:
+                guard let serial = unlockedUserSerial,
+                    envelope.userSerial == serial,
+                    let packageName = envelope.packageName,
+                    let activities = envelope.activities
+                else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge published package activities before unlock")
+                }
+                await onEvent(
+                    .packageActivitiesReplaced(
+                        generation: generation,
+                        userSerial: serial,
+                        packageName: packageName,
+                        activities: activities))
+            case .iconAsset:
+                guard let serial = unlockedUserSerial,
+                    envelope.userSerial == serial,
+                    let asset = envelope.iconAsset
+                else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge published an icon before unlock")
+                }
+                await onEvent(
+                    .iconAsset(
+                        generation: generation,
+                        userSerial: serial,
+                        asset: asset))
             case .cursorShape:
                 guard let update = envelope.cursorShape else {
                     throw AndroidRuntimeFailure(
                         "Android bridge omitted cursor-shape update")
                 }
-                await onEvent(.cursorShapeChanged(
-                    generation: generation,
-                    update: update))
+                await onEvent(
+                    .cursorShapeChanged(
+                        generation: generation,
+                        update: update))
             case .bridgeHello, .brokerHello, .inputEvent:
                 throw AndroidRuntimeFailure(
                     "unexpected Android bridge handshake message")
@@ -522,8 +692,9 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
         over connection: PacketConnection
     ) throws {
         let bytes = try JSONEncoder().encode(envelope)
-        guard bytes.count
-            <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
+        guard
+            bytes.count
+                <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
         else {
             throw AndroidRuntimeFailure(
                 "Android bridge packet is oversized")
@@ -600,9 +771,7 @@ package enum AndroidDisplayInteractionEvent: Sendable {
 package final class AndroidDisplayInteractionServer: @unchecked Sendable {
     private struct State {
         var connection: PacketConnection?
-        var latestCursorShapeByDisplay: [
-            Int32: AndroidCursorShapeUpdate
-        ] = [:]
+        var latestCursorShapeByDisplay: [Int32: AndroidCursorShapeUpdate] = [:]
     }
 
     private let listener: PacketListener
@@ -618,9 +787,10 @@ package final class AndroidDisplayInteractionServer: @unchecked Sendable {
     }
 
     package func run(
-        onEvent: @escaping @Sendable (
-            AndroidDisplayInteractionEvent
-        ) throws -> Void
+        onEvent:
+            @escaping @Sendable (
+                AndroidDisplayInteractionEvent
+            ) throws -> Void
     ) async throws {
         while true {
             try Task.checkCancellation()
@@ -717,8 +887,9 @@ package final class AndroidDisplayInteractionServer: @unchecked Sendable {
     ) throws -> Data {
         let bytes = try JSONEncoder().encode(
             AndroidDisplayInteractionEnvelope(cursorShape: update))
-        guard bytes.count
-            <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
+        guard
+            bytes.count
+                <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
         else {
             throw AndroidRuntimeFailure(
                 "Android display interaction packet is oversized")
@@ -757,8 +928,9 @@ package final class AndroidDisplayInteractionClient: @unchecked Sendable {
         _ envelope: AndroidDisplayInteractionEnvelope
     ) throws {
         let bytes = try JSONEncoder().encode(envelope)
-        guard bytes.count
-            <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
+        guard
+            bytes.count
+                <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
         else {
             throw AndroidRuntimeFailure(
                 "Android display-input packet is oversized")

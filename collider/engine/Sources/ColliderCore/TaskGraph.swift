@@ -189,8 +189,8 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
     }
 
     public static let build = OCIResourceLimits(
-        cpuCount: 20,
-        memoryBytes: 96 * 1_024 * 1_024 * 1_024,
+        cpuCount: 24,
+        memoryBytes: 128 * 1_024 * 1_024 * 1_024,
         processCount: 32_768,
         openFileCount: 131_072)
 

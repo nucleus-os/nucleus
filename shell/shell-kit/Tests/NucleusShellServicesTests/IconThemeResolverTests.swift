@@ -1,12 +1,14 @@
+import Foundation
+import NucleusUI
+import Testing
+
+@testable import NucleusShellServices
+
 #if canImport(Glibc)
 import Glibc
 #else
 import Darwin
 #endif
-import Foundation
-import NucleusUI
-import Testing
-@testable import NucleusShellServices
 
 /// XDG icon-theme resolution, against a real theme tree built in a temporary
 /// directory — the filesystem layout *is* the thing under test, so faking it
@@ -34,8 +36,9 @@ import Testing
             let path = "\(root)/\(theme)/\(directory)/\(category)"
             try? FileManager.default.createDirectory(
                 atPath: path, withIntermediateDirectories: true)
-            precondition(FileManager.default.createFile(
-                atPath: "\(path)/\(name).\(ext)", contents: Data([0])))
+            precondition(
+                FileManager.default.createFile(
+                    atPath: "\(path)/\(name).\(ext)", contents: Data([0])))
         }
 
         func makeResolver(theme: String = "Adwaita") -> IconThemeResolver {
@@ -65,6 +68,17 @@ import Testing
 
         let resolved = fixture.makeResolver().resolve("firefox", size: 22)
         #expect(resolved?.contains("22x22") == true)
+    }
+
+    @Test func providerRasterAssetsUseTheSameResolutionAPI() throws {
+        let fixture = Fixture()
+        let path = "\(fixture.root)/012345.png"
+        try Data([0]).write(to: URL(fileURLWithPath: path))
+
+        let resolved = fixture.makeResolver().resolve(
+            .rasterAsset(digest: "012345", path: path),
+            size: 48)
+        #expect(resolved == path)
     }
 
     /// The smallest size at or above the target, so any rescale is a gentle
@@ -119,8 +133,9 @@ import Testing
         let path = "\(fixture.root)/Adwaita/apps/48"
         try? FileManager.default.createDirectory(
             atPath: path, withIntermediateDirectories: true)
-        #expect(FileManager.default.createFile(
-            atPath: "\(path)/thunar.png", contents: Data([0])))
+        #expect(
+            FileManager.default.createFile(
+                atPath: "\(path)/thunar.png", contents: Data([0])))
 
         #expect(fixture.makeResolver().resolve("thunar", size: 48) != nil)
     }
@@ -142,9 +157,10 @@ import Testing
         let child = "\(fixture.root)/Child"
         try? FileManager.default.createDirectory(
             atPath: child, withIntermediateDirectories: true)
-        #expect(FileManager.default.createFile(
-            atPath: "\(child)/index.theme",
-            contents: Data("[Icon Theme]\nInherits=Parent\n".utf8)))
+        #expect(
+            FileManager.default.createFile(
+                atPath: "\(child)/index.theme",
+                contents: Data("[Icon Theme]\nInherits=Parent\n".utf8)))
 
         let resolved = fixture.makeResolver(theme: "Child")
             .resolve("inherited", size: 48)
@@ -166,21 +182,24 @@ import Testing
     @Test func anAbsolutePathIsUsedDirectly() {
         let fixture = Fixture()
         let direct = "\(fixture.root)/direct.png"
-        #expect(FileManager.default.createFile(
-            atPath: direct, contents: Data([0])))
+        #expect(
+            FileManager.default.createFile(
+                atPath: direct, contents: Data([0])))
 
         let resolver = fixture.makeResolver()
         #expect(resolver.resolve(direct) == direct)
-        #expect(resolver.resolve("\(fixture.root)/absent.png") == nil,
-                "an absolute path that does not exist is still a miss")
+        #expect(
+            resolver.resolve("\(fixture.root)/absent.png") == nil,
+            "an absolute path that does not exist is still a miss")
     }
 
     /// A flat directory with no theme structure, which is what
     /// /usr/share/pixmaps is.
     @Test func aFlatRootIsSearchedLast() {
         let fixture = Fixture()
-        #expect(FileManager.default.createFile(
-            atPath: "\(fixture.root)/legacy.png", contents: Data([0])))
+        #expect(
+            FileManager.default.createFile(
+                atPath: "\(fixture.root)/legacy.png", contents: Data([0])))
         #expect(fixture.makeResolver().resolve("legacy", size: 22) != nil)
     }
 
@@ -197,8 +216,9 @@ import Testing
             theme: "Adwaita",
             directory: "48x48",
             name: "appears-later")
-        #expect(resolver.resolve("appears-later", size: 48) == nil,
-                "the newly created directory is outside retained discovery")
+        #expect(
+            resolver.resolve("appears-later", size: 48) == nil,
+            "the newly created directory is outside retained discovery")
 
         resolver.invalidate()
         #expect(resolver.resolve("appears-later", size: 48) != nil)
@@ -231,11 +251,12 @@ import Testing
     @Test func theDefaultSearchPathIsOrderedUserFirst() {
         let roots = IconThemeResolver.defaultRoots()
         #expect(roots.first?.hasSuffix("/.icons") == true)
-        #expect(roots.contains { $0 == "/usr/share/pixmaps" },
-                "the legacy location older applications still use")
+        #expect(
+            roots.contains { $0 == "/usr/share/pixmaps" },
+            "the legacy location older applications still use")
 
         guard let userIndex = roots.firstIndex(where: { $0.hasSuffix("/.icons") }),
-              let systemIndex = roots.firstIndex(where: { $0.hasPrefix("/usr/share") })
+            let systemIndex = roots.firstIndex(where: { $0.hasPrefix("/usr/share") })
         else {
             Issue.record("expected both a user and a system root")
             return
@@ -246,11 +267,12 @@ import Testing
     @Test func aMissingHomeEnvironmentUsesOnlySystemRoots() {
         let roots = IconThemeResolver.defaultRoots(environment: [:])
 
-        #expect(roots == [
-            "/usr/local/share/icons",
-            "/usr/share/icons",
-            "/usr/share/pixmaps",
-        ])
+        #expect(
+            roots == [
+                "/usr/local/share/icons",
+                "/usr/share/icons",
+                "/usr/share/pixmaps",
+            ])
     }
 
     @Test func portableImageQueriesResolveOffTheUIActor() async {

@@ -3,8 +3,9 @@ import Testing
 
 @testable import NucleusShellServices
 
-@Suite("Desktop application index")
-struct DesktopApplicationIndexTests {
+@MainActor
+@Suite("Desktop application provider")
+struct DesktopApplicationProviderTests {
     @Test("discovery is recursive, precedence-aware, filtered, and naturally sorted")
     func discoveryContract() throws {
         let fileManager = FileManager.default
@@ -39,19 +40,23 @@ struct DesktopApplicationIndexTests {
             to: systemApplications.appendingPathComponent("hidden.desktop"),
             name: "Hidden", executable: "/usr/bin/hidden", hidden: true)
 
-        let index = DesktopApplicationIndex.resolved(
+        let provider = DesktopApplicationProvider(
             environment: [
                 "XDG_DATA_HOME": userData.path,
                 "XDG_DATA_DIRS": systemData.path,
             ],
             fileManager: fileManager)
 
-        #expect(index.applications.map(\.name) == ["App 2", "App 10", "User Shared"])
-        #expect(index.app(id: "shared.desktop")?.executable == ["/usr/bin/user-shared"])
+        #expect(provider.applications.map(\.name) == ["App 2", "App 10", "User Shared"])
         #expect(
-            index.app(id: "nested-app-10.desktop")?.executable
-                == ["/usr/bin/app-ten", "--mode=test"])
-        #expect(index.applications.allSatisfy { $0.name != "Hidden" })
+            provider.applications.map(\.id.rawValue) == [
+                "desktop:nested-app-2.desktop",
+                "desktop:nested-app-10.desktop",
+                "desktop:shared.desktop",
+            ])
+        #expect(
+            provider.applications.last?.icon == nil)
+        #expect(provider.applications.allSatisfy { $0.name != "Hidden" })
     }
 
     private func writeDesktopFile(

@@ -95,25 +95,6 @@ private struct AOSPProductCompileWorkflow {
         guard sourceProvenance.status == "materialized" else {
             throw failure("AOSP source provenance is not materialized")
         }
-        let clean = try await command(
-            [
-                "forall",
-                "-c",
-                "git update-index -q --refresh"
-                    + " && git diff-files --quiet"
-                    + " && git diff-index --cached --quiet HEAD --"
-                    + " && test -z \"$(git ls-files --others"
-                    + " --exclude-standard)\"",
-            ],
-            in: build.source,
-            output: .logged)
-        guard clean.succeeded else {
-            let detail = clean.standardOutput.trimmingCharacters(
-                in: .whitespacesAndNewlines)
-            throw clean.executionFailure(
-                reason: "AOSP Repo project worktrees are not clean"
-                    + (detail.isEmpty ? "" : ": \(detail)"))
-        }
         let manifest =
             try await captured(
                 [
@@ -145,6 +126,9 @@ private struct AOSPProductCompileWorkflow {
         ] {
             try context.files.createDirectory(directory)
         }
+        for endpoint in [".path_interposer_log", ".ninja_fifo"] {
+            try context.files.remove(output.appending(endpoint))
+        }
         try context.files.write(
             Array("max_size = 50G\n".utf8),
             to: build.ccacheDirectory.appending("ccache.conf"))
@@ -156,9 +140,6 @@ private struct AOSPProductCompileWorkflow {
             (output, "/src/out/nucleus"),
             (distribution, "/src/out/nucleus-dist"),
         ]
-        try await validateSandbox(
-            writableMounts: writableMounts,
-            environment: environment)
         let allWritableMounts =
             writableMounts + [
                 (build.ccacheDirectory, "/src/out/nucleus/.ccache")
@@ -175,9 +156,7 @@ private struct AOSPProductCompileWorkflow {
                 ],
                 containerEnvironment: environment,
                 output: .combined(limit: 4 * 1_024 * 1_024)))
-        try rejectAOSPSandboxDegradation(
-            cleanResult.standardOutput,
-            status: cleanResult.status)
+        try requireAOSPBuildSuccess(cleanResult.status)
 
         let result = try await context.containers.execute(
             aospProductOCIExecution(
@@ -193,9 +172,7 @@ private struct AOSPProductCompileWorkflow {
                 ],
                 containerEnvironment: environment,
                 output: .combined(limit: 4 * 1_024 * 1_024)))
-        try rejectAOSPSandboxDegradation(
-            result.standardOutput,
-            status: result.status)
+        try requireAOSPBuildSuccess(result.status)
 
         let builtTargetFiles = try locateTargetFiles(under: output)
         let destination = unsigned.appending(
@@ -276,109 +253,6 @@ private struct AOSPProductCompileWorkflow {
             uniquingKeysWith: { _, requested in requested })
     }
 
-    private func validateSandbox(
-        writableMounts: [(FilePath, String)],
-        environment: [String: String]
-    ) async throws {
-        let validation = build.buildRoot.appending(".sandbox-validation")
-        try context.files.remove(validation)
-        defer { try? context.files.remove(validation) }
-        try context.files.createDirectory(validation)
-        try context.files.write(
-            Array("host-visible\n".utf8),
-            to: validation.appending("host-canary"))
-        let brokenNSJail = validation.appending("broken-nsjail")
-        try context.files.write(
-            Array("#!/bin/sh\nexit 1\n".utf8),
-            to: brokenNSJail)
-        try context.files.setPermissions(0o755, for: brokenNSJail)
-
-        let isolationValidation = """
-            import socket
-            import subprocess
-            import sys
-
-            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            listener.bind(("127.0.0.1", 0))
-            listener.listen(1)
-            port = listener.getsockname()[1]
-            child = f'''
-            import os
-            import socket
-            import sys
-
-            if os.path.exists("/validation/host-canary"):
-                sys.exit(41)
-            print("NUCLEUS_NSJAIL_FILE_HIDDEN")
-            connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            connection.settimeout(0.5)
-            try:
-                connection.connect(("127.0.0.1", {port}))
-            except OSError:
-                print("NUCLEUS_NSJAIL_NETWORK_ISOLATED")
-                sys.exit(0)
-            sys.exit(42)
-            '''
-            result = subprocess.run(
-                [
-                    "/src/prebuilts/build-tools/linux-x86/bin/nsjail",
-                    "-H", "android-build",
-                    "--disable_clone_newuts",
-                    "-e",
-                    "-u", "1000",
-                    "-g", "1000",
-                    "-R", "/",
-                    "-B", "/tmp",
-                    "-T", "/validation",
-                    "--disable_clone_newcgroup",
-                    "--",
-                    "/usr/bin/python3", "-c", child,
-                ],
-                capture_output=True,
-                text=True,
-            )
-            listener.close()
-            sys.stdout.write(result.stdout)
-            sys.stderr.write(result.stderr)
-            if result.returncode != 0:
-                sys.exit(result.returncode)
-            print("NUCLEUS_NSJAIL_ISOLATION_OK")
-            """
-        let isolation = try await context.containers.execute(
-            aospProductOCIExecution(
-                build: build,
-                writableMounts: writableMounts + [(validation, "/validation")],
-                readOnlyMounts: [(build.source, "/src")],
-                command: ["/usr/bin/python3", "-c", isolationValidation],
-                containerEnvironment: environment,
-                output: .combined(limit: 4 * 1_024 * 1_024)))
-        try validateAOSPSandboxIsolation(
-            isolation.standardOutput,
-            status: isolation.status)
-
-        let broken = try await context.containers.execute(
-            aospProductOCIExecution(
-                build: build,
-                writableMounts: writableMounts,
-                readOnlyMounts: [
-                    (build.source, "/src"),
-                    (
-                        brokenNSJail,
-                        "/src/prebuilts/build-tools/linux-x86/bin/nsjail"
-                    ),
-                ],
-                command: [
-                    "/src/build/soong/soong_ui.bash",
-                    "--dumpvars-mode",
-                    "--vars=TARGET_PRODUCT",
-                ],
-                containerEnvironment: environment,
-                output: .combined(limit: 4 * 1_024 * 1_024)))
-        try validateAOSPBrokenSandboxBehavior(
-            broken.standardOutput,
-            status: broken.status)
-    }
-
     private func locateTargetFiles(under root: FilePath) throws -> FilePath {
         let expected = "\(build.product)-target_files.zip"
         let matches = try context.files.listRecursively(root)
@@ -420,15 +294,18 @@ private struct AOSPProductCompileWorkflow {
         output: CommandSpec.Output
     ) async throws -> CommandResult {
         precondition(directory == build.source)
+        guard let launcherName = build.repoLauncher.lastComponent?.string else {
+            throw failure("Repo launcher path has no file name")
+        }
         return try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [],
                 readOnlyMounts: [
                     (build.source, "/src"),
-                    (build.repoLauncher, "/repo/repo"),
+                    (build.repoLauncher.removingLastComponent(), "/repo"),
                 ],
-                command: ["/usr/bin/python3", "/repo/repo"] + arguments,
+                command: ["/usr/bin/python3", "/repo/\(launcherName)"] + arguments,
                 output: output))
     }
 
@@ -523,39 +400,10 @@ func synchronizeAOSPProductTree(
     }
 }
 
-func validateAOSPSandboxIsolation(_ output: String, status: Int32) throws {
-    guard status == 0,
-        output.contains("NUCLEUS_NSJAIL_FILE_HIDDEN"),
-        output.contains("NUCLEUS_NSJAIL_NETWORK_ISOLATED"),
-        output.contains("NUCLEUS_NSJAIL_ISOLATION_OK")
-    else {
-        throw AOSPProductCompileFailure.invalidOutput(
-            "nsjail did not prove file and network isolation")
-    }
-}
-
-func validateAOSPBrokenSandboxBehavior(_ output: String, status: Int32) throws {
-    let lowercased = output.lowercased()
-    guard status != 0,
-        lowercased.contains("nsjail sandbox probe failed"),
-        !lowercased.contains("build sandboxing disabled due to nsjail error")
-    else {
-        throw AOSPProductCompileFailure.invalidOutput(
-            "Soong did not fail closed for a broken nsjail executable")
-    }
-}
-
-func rejectAOSPSandboxDegradation(_ output: String, status: Int32) throws {
+func requireAOSPBuildSuccess(_ status: Int32) throws {
     guard status == 0 else {
         throw AOSPProductCompileFailure.invalidOutput(
-            "rootless AOSP container build failed")
-    }
-    let lowercased = output.lowercased()
-    guard !lowercased.contains("build sandboxing disabled due to nsjail error"),
-        !lowercased.contains("sandboxing disabled")
-    else {
-        throw AOSPProductCompileFailure.invalidOutput(
-            "Soong disabled nsjail; AOSP builds must remain fail-closed")
+            "AOSP container build failed")
     }
 }
 

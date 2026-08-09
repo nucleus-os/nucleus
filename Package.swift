@@ -231,6 +231,7 @@ let targets: [Target] = [
         dependencies: [
             "NucleusAndroidRuntimeBridgeProtocol",
             "NucleusAndroidRuntimeCore",
+            "NucleusSessionProtocol",
         ],
         path: "android-runtime/Sources/NucleusAndroidRuntimeBrokerCore"),
     .target(
@@ -333,7 +334,9 @@ let targets: [Target] = [
         name: "NucleusAndroidRuntimeBridgeProtocolTests",
         dependencies: [
             "NucleusAndroidRuntimeBridgeProtocol",
+            "NucleusAndroidRuntimeBrokerCore",
             "NucleusIPCTransport",
+            "NucleusSessionProtocol",
         ],
         path:
             "android-runtime/Tests/NucleusAndroidRuntimeBridgeProtocolTests"),
@@ -1629,11 +1632,12 @@ let targets: [Target] = [
         path: "core/platform-android/swift-deployment",
         linkerSettings: [
             .linkedLibrary("android", .when(platforms: [.android])),
-            .unsafeFlags([
-                "-Xlinker", "-soname", "-Xlinker", "libnucleus-android.so", "-Xlinker", "-z",
-                "-Xlinker",
-                "max-page-size=16384",
-            ], .when(platforms: [.android])),
+            .unsafeFlags(
+                [
+                    "-Xlinker", "-soname", "-Xlinker", "libnucleus-android.so", "-Xlinker", "-z",
+                    "-Xlinker",
+                    "max-page-size=16384",
+                ], .when(platforms: [.android])),
         ]),
 ]
 

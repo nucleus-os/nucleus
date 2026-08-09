@@ -33,6 +33,7 @@
     "memoryBytes": 137438953472
   },
   "environment": {
+    "buildRoot": "/Volumes/NucleusBuild",
     "xdgCacheHome": "/Volumes/NucleusCache",
     "nativeSDKRoot": "/Volumes/NucleusCache/nucleus/nucleus-native-sdk/linux-arm64",
     "androidSDKRoot": "/Volumes/NucleusCache/android-sdk"

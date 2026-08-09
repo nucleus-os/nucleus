@@ -97,6 +97,9 @@ package func nucleusWorkspaceEnvironment(
     resolved["NUCLEUS_WORKSPACE_ROOT"] = root.string
     #if os(macOS)
     if let contract = try? MacOSBuilderContract.load(root: root) {
+        if resolved["NUCLEUS_BUILD_ROOT"]?.isEmpty != false {
+            resolved["NUCLEUS_BUILD_ROOT"] = contract.environment.buildRoot
+        }
         if resolved["XDG_CACHE_HOME"]?.isEmpty != false {
             resolved["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
         }

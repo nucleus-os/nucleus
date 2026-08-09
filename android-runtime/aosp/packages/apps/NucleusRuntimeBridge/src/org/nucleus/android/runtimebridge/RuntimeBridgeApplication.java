@@ -5,20 +5,29 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.LauncherActivityInfo;
+import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.hardware.input.InputManager;
 import android.hardware.input.IPointerIconChangedListener;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
 import android.view.InputDevice;
 import android.os.Process;
+import android.os.UserHandle;
 import android.os.UserManager;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 import android.system.StructPollfd;
 import android.util.Log;
+import android.util.Base64;
+import android.util.DisplayMetrics;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -30,12 +39,16 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,8 +59,9 @@ public final class RuntimeBridgeApplication extends Application {
     private static final int MAXIMUM_PACKET_BYTES = 256 * 1024;
     private static final AtomicBoolean STARTED = new AtomicBoolean();
 
-    private final AtomicBoolean unlockObserved = new AtomicBoolean();
-    private final AtomicBoolean catalogDirty = new AtomicBoolean();
+    private final AtomicBoolean userStateDirty = new AtomicBoolean();
+    private final Set<String> dirtyPackages =
+            ConcurrentHashMap.newKeySet();
     private final Map<Integer, Integer> pointerButtonStates =
             new HashMap<>();
     private final Map<Integer, Long> pointerDownTimesMillis =
@@ -85,11 +99,14 @@ public final class RuntimeBridgeApplication extends Application {
         getSystemService(InputManager.class)
                 .registerPointerIconChangedListener(
                         pointerIconChangedListener);
-        IntentFilter filter = new IntentFilter(Intent.ACTION_USER_UNLOCKED);
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_USER_UNLOCKED);
+        filter.addAction(Intent.ACTION_USER_LOCKED);
+        filter.addAction(Intent.ACTION_USER_STOPPED);
         registerReceiver(new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
-                unlockObserved.set(true);
+                userStateDirty.set(true);
             }
         }, filter, Context.RECEIVER_NOT_EXPORTED);
         IntentFilter packages = new IntentFilter();
@@ -101,9 +118,31 @@ public final class RuntimeBridgeApplication extends Application {
         registerReceiver(new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
-                catalogDirty.set(true);
+                String packageName = intent.getData() == null
+                        ? null : intent.getData().getSchemeSpecificPart();
+                if (packageName != null && !packageName.isEmpty()) {
+                    dirtyPackages.add(packageName);
+                }
             }
         }, packages, Context.RECEIVER_NOT_EXPORTED);
+        IntentFilter suspension = new IntentFilter();
+        suspension.addAction(Intent.ACTION_PACKAGES_SUSPENDED);
+        suspension.addAction(Intent.ACTION_PACKAGES_UNSUSPENDED);
+        registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context ignored, Intent intent) {
+                String[] packageNames = intent.getStringArrayExtra(
+                        Intent.EXTRA_CHANGED_PACKAGE_LIST);
+                if (packageNames == null) {
+                    return;
+                }
+                for (String packageName : packageNames) {
+                    if (packageName != null && !packageName.isEmpty()) {
+                        dirtyPackages.add(packageName);
+                    }
+                }
+            }
+        }, suspension, Context.RECEIVER_NOT_EXPORTED);
         Thread thread = new Thread(this::connectionLoop,
                 "nucleus-runtime-bridge");
         thread.setDaemon(true);
@@ -173,10 +212,10 @@ public final class RuntimeBridgeApplication extends Application {
         long serial = users.getSerialNumberForUser(Process.myUserHandle());
         boolean unlocked = users.isUserUnlocked();
         sendRuntimeState(output, generation, unlocked, serial);
-        boolean snapshotSent = false;
+        boolean catalogPublished = false;
         if (unlocked) {
             sendActivitySnapshot(output, generation, serial);
-            snapshotSent = true;
+            catalogPublished = true;
         }
 
         StructPollfd descriptor = new StructPollfd();
@@ -215,14 +254,27 @@ public final class RuntimeBridgeApplication extends Application {
                             error);
                 }
             }
-            if (!snapshotSent
-                    && (unlockObserved.get() || users.isUserUnlocked())) {
-                sendRuntimeState(output, generation, true, serial);
-                sendActivitySnapshot(output, generation, serial);
-                snapshotSent = true;
-                catalogDirty.set(false);
-            } else if (snapshotSent && catalogDirty.getAndSet(false)) {
-                sendActivitySnapshot(output, generation, serial);
+            boolean currentlyUnlocked = users.isUserUnlocked();
+            if (userStateDirty.getAndSet(false)
+                    || currentlyUnlocked != catalogPublished) {
+                if (currentlyUnlocked && !catalogPublished) {
+                    sendRuntimeState(output, generation, true, serial);
+                    sendActivitySnapshot(output, generation, serial);
+                    catalogPublished = true;
+                    dirtyPackages.clear();
+                } else if (!currentlyUnlocked && catalogPublished) {
+                    sendRuntimeState(output, generation, false, serial);
+                    catalogPublished = false;
+                    dirtyPackages.clear();
+                }
+            }
+            if (catalogPublished) {
+                for (String packageName : new ArrayList<>(dirtyPackages)) {
+                    if (dirtyPackages.remove(packageName)) {
+                        sendPackageActivitySnapshot(
+                                output, generation, serial, packageName);
+                    }
+                }
             }
             sendPendingPointerIcons(output, generation);
         }
@@ -596,40 +648,152 @@ public final class RuntimeBridgeApplication extends Application {
             OutputStream output,
             String generation,
             long serial) throws IOException, JSONException {
-        Intent launcher = new Intent(Intent.ACTION_MAIN);
-        launcher.addCategory(Intent.CATEGORY_LAUNCHER);
-        PackageManager packages = getPackageManager();
-        List<ResolveInfo> resolved = new ArrayList<>();
-        for (ResolveInfo value : packages.queryIntentActivities(
-                    launcher,
-                    PackageManager.MATCH_DIRECT_BOOT_AWARE
-                            | PackageManager.MATCH_DIRECT_BOOT_UNAWARE)) {
-            if (value.activityInfo != null
-                    && value.activityInfo.packageName != null
-                    && value.activityInfo.name != null) {
-                resolved.add(value);
-            }
-        }
-        resolved.sort(Comparator
-                .comparing((ResolveInfo value) ->
-                        value.activityInfo.packageName)
-                .thenComparing(value -> value.activityInfo.name));
-        JSONArray activities = new JSONArray();
-        for (ResolveInfo value : resolved) {
-            CharSequence label = value.loadLabel(packages);
-            activities.put(new JSONObject()
-                    .put("packageName", value.activityInfo.packageName)
-                    .put("activityName", value.activityInfo.name)
-                    .put("label", label == null
-                            ? value.activityInfo.name
-                            : label.toString()));
-        }
+        JSONArray activities = collectActivities(output, generation, serial, null);
         send(output, new JSONObject()
                 .put("kind", "replaceActivities")
                 .put("generation", generation)
                 .put("userUnlocked", true)
                 .put("userSerial", serial)
                 .put("activities", activities));
+    }
+
+    private void sendPackageActivitySnapshot(
+            OutputStream output,
+            String generation,
+            long serial,
+            String packageName) throws IOException, JSONException {
+        JSONArray activities = collectActivities(
+                output, generation, serial, packageName);
+        send(output, new JSONObject()
+                .put("kind", "replacePackageActivities")
+                .put("generation", generation)
+                .put("userUnlocked", true)
+                .put("userSerial", serial)
+                .put("packageName", packageName)
+                .put("activities", activities));
+    }
+
+    private JSONArray collectActivities(
+            OutputStream output,
+            String generation,
+            long serial,
+            String packageName) throws IOException, JSONException {
+        LauncherApps launcherApps = getSystemService(LauncherApps.class);
+        PackageManager packageManager = getPackageManager();
+        UserHandle user = Process.myUserHandle();
+        List<LauncherActivityInfo> resolved = new ArrayList<>(
+                launcherApps.getActivityList(packageName, user));
+        resolved.sort(Comparator
+                .comparing((LauncherActivityInfo value) ->
+                        value.getComponentName().getPackageName())
+                .thenComparing(value ->
+                        value.getComponentName().getClassName()));
+        JSONArray activities = new JSONArray();
+        Set<String> publishedIcons = new java.util.HashSet<>();
+        for (LauncherActivityInfo value : resolved) {
+            String resolvedPackage = value.getComponentName().getPackageName();
+            String activityName = value.getComponentName().getClassName();
+            if (activityName.endsWith(".FallbackHome")) {
+                continue;
+            }
+            ApplicationInfo application = value.getApplicationInfo();
+            if (!application.enabled
+                    || (application.flags & ApplicationInfo.FLAG_SUSPENDED) != 0) {
+                continue;
+            }
+            try {
+                ActivityInfo activity = packageManager.getActivityInfo(
+                        value.getComponentName(),
+                        PackageManager.MATCH_DIRECT_BOOT_AWARE
+                                | PackageManager.MATCH_DIRECT_BOOT_UNAWARE);
+                if (!activity.enabled || !activity.exported) {
+                    continue;
+                }
+            } catch (PackageManager.NameNotFoundException error) {
+                continue;
+            }
+            JSONObject record = new JSONObject()
+                    .put("packageName", resolvedPackage)
+                    .put("activityName", activityName)
+                    .put("label", value.getLabel() == null
+                            ? activityName : value.getLabel().toString());
+            String category = applicationCategory(application.category);
+            if (category != null) {
+                record.put("categories", new JSONArray().put(category));
+            }
+            IconAsset icon = renderIcon(value);
+            if (icon != null) {
+                record.put("iconDigest", icon.digest);
+                if (publishedIcons.add(icon.digest)) {
+                    send(output, new JSONObject()
+                            .put("kind", "iconAsset")
+                            .put("generation", generation)
+                            .put("userUnlocked", true)
+                            .put("userSerial", serial)
+                            .put("iconAsset", new JSONObject()
+                                    .put("digest", icon.digest)
+                                    .put("bytes", Base64.encodeToString(
+                                            icon.bytes, Base64.NO_WRAP))));
+                }
+            }
+            activities.put(record);
+        }
+        return activities;
+    }
+
+    private static String applicationCategory(int category) {
+        switch (category) {
+            case ApplicationInfo.CATEGORY_GAME: return "game";
+            case ApplicationInfo.CATEGORY_AUDIO: return "audio";
+            case ApplicationInfo.CATEGORY_VIDEO: return "video";
+            case ApplicationInfo.CATEGORY_IMAGE: return "image";
+            case ApplicationInfo.CATEGORY_SOCIAL: return "social";
+            case ApplicationInfo.CATEGORY_NEWS: return "news";
+            case ApplicationInfo.CATEGORY_MAPS: return "maps";
+            case ApplicationInfo.CATEGORY_PRODUCTIVITY: return "productivity";
+            case ApplicationInfo.CATEGORY_ACCESSIBILITY: return "accessibility";
+            default: return null;
+        }
+    }
+
+    private static IconAsset renderIcon(LauncherActivityInfo activity) {
+        Drawable drawable = activity.getIcon(DisplayMetrics.DENSITY_XHIGH);
+        if (drawable == null) {
+            return null;
+        }
+        Bitmap bitmap = Bitmap.createBitmap(
+                96, 96, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, bitmap.getWidth(), bitmap.getHeight());
+        drawable.draw(canvas);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)) {
+            return null;
+        }
+        byte[] encoded = bytes.toByteArray();
+        if (encoded.length == 0 || encoded.length > 128 * 1024) {
+            return null;
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(encoded);
+            StringBuilder hexadecimal = new StringBuilder(64);
+            for (byte value : digest) {
+                hexadecimal.append(String.format("%02x", value & 0xff));
+            }
+            return new IconAsset(hexadecimal.toString(), encoded);
+        } catch (NoSuchAlgorithmException error) {
+            throw new AssertionError("Android lacks SHA-256", error);
+        }
+    }
+
+    private static final class IconAsset {
+        final String digest;
+        final byte[] bytes;
+
+        IconAsset(String digest, byte[] bytes) {
+            this.digest = digest;
+            this.bytes = bytes;
+        }
     }
 
     private static void send(OutputStream output, JSONObject message)

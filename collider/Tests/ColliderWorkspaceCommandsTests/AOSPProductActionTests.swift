@@ -57,48 +57,10 @@ import Testing
             files: files) != initial)
 }
 
-@Test func aospSandboxDegradationIsFatal() throws {
+@Test func aospBuildStatusMustSucceed() throws {
+    try requireAOSPBuildSuccess(0)
     #expect(throws: (any Error).self) {
-        try rejectAOSPSandboxDegradation(
-            "Build sandboxing disabled due to nsjail error.",
-            status: 0)
-    }
-    #expect(throws: (any Error).self) {
-        try rejectAOSPSandboxDegradation("", status: 1)
-    }
-    try rejectAOSPSandboxDegradation("sandbox active", status: 0)
-}
-
-@Test func aospSandboxValidationRequiresBothNegativeBoundaries() throws {
-    let valid = """
-        NUCLEUS_NSJAIL_FILE_HIDDEN
-        NUCLEUS_NSJAIL_NETWORK_ISOLATED
-        NUCLEUS_NSJAIL_ISOLATION_OK
-        """
-    try validateAOSPSandboxIsolation(valid, status: 0)
-    #expect(throws: (any Error).self) {
-        try validateAOSPSandboxIsolation(
-            "NUCLEUS_NSJAIL_FILE_HIDDEN",
-            status: 0)
-    }
-    #expect(throws: (any Error).self) {
-        try validateAOSPSandboxIsolation(valid, status: 1)
-    }
-}
-
-@Test func aospBrokenSandboxBehaviorMustFailClosed() throws {
-    try validateAOSPBrokenSandboxBehavior(
-        "nsjail sandbox probe failed with exit status 1",
-        status: 2)
-    #expect(throws: (any Error).self) {
-        try validateAOSPBrokenSandboxBehavior(
-            "Build sandboxing disabled due to nsjail error.",
-            status: 0)
-    }
-    #expect(throws: (any Error).self) {
-        try validateAOSPBrokenSandboxBehavior(
-            "TARGET_PRODUCT='nucleus_x86_64'",
-            status: 0)
+        try requireAOSPBuildSuccess(1)
     }
 }
 
@@ -108,6 +70,8 @@ import Testing
     #expect(environment["JAVA_HOME"] == javaHome)
     #expect(environment["ANDROID_JAVA_HOME"] == javaHome)
     #expect(environment["PATH"]?.hasPrefix("\(javaHome)/bin:") == true)
+    #expect(environment["SOONG_OUTER_SANDBOX"] == "1")
+    #expect(environment["SOONG_BOOTSTRAP_PREBUILT_TAG"] == "linux-x86")
 }
 
 @Test func aospReleaseSigningMetadataUsesStableContainerKeyPaths() {

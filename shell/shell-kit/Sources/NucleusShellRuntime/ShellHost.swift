@@ -58,6 +58,7 @@ package final class ShellHost {
         case dragTransfer
         case configService
         case shellPolicy
+        case applicationProvider
     }
 
     static let reactorKindShift: UInt64 = 56
@@ -86,6 +87,7 @@ package final class ShellHost {
     let iconSourceResolver = ShellIconSourceResolver()
     let actionDispatcher: ShellActionDispatcher
     let notifications = NotificationService()
+    var remoteApplicationProviders: RemoteApplicationProviderService?
 
     var nativePublicationContext: WindowScenePublicationContext?
     var surfaceRegistry: NativeSurfaceRegistry?
