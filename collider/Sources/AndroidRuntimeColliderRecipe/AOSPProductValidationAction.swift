@@ -123,8 +123,6 @@ private struct AOSPProductValidationWorkflow {
         let imageArchive = staged.appending("\(build.product)-images.zip")
         let imagesRoot = staged.appending("images")
         let environment = productEnvironment()
-        let releasePEM = build.signingIdentity.appending("releasekey.pem")
-        let avbTool = hostTools.appending("avbtool")
 
         var images: [AOSPImageProvenance.Image] = []
         for name in aospRequiredProductImages {
@@ -141,30 +139,16 @@ private struct AOSPProductValidationWorkflow {
                     storageFormat: "raw",
                     sha256: try context.files.digest(file: image).hexadecimal))
         }
-        try await checked(
-            .path(avbTool),
-            [
-                "verify_image",
-                "--image", imagesRoot.appending("vbmeta.img").string,
-                "--key", releasePEM.string,
-                "--follow_chain_partitions",
-            ],
-            in: imagesRoot,
-            environment: environment)
-
-        let systemBuildProperties = try await archiveEntry(
+        let summary = try await containerValidationSummary(
             archive: targetFiles,
-            candidates: ["SYSTEM/build.prop"],
+            imagesRoot: imagesRoot,
+            hostTools: hostTools,
             environment: environment)
-        let vendorBuildProperties = try await archiveEntry(
-            archive: targetFiles,
-            candidates: ["VENDOR/build.prop"],
-            environment: environment)
-        let systemProperties = aospProperties(systemBuildProperties)
-        let vendorProperties = aospProperties(vendorBuildProperties)
-        try await requireFontContract(
-            archive: targetFiles,
-            environment: environment)
+        let systemProperties = aospProperties(summary.systemBuildProperties)
+        let vendorProperties = aospProperties(summary.vendorBuildProperties)
+        try validateAOSPFontContract(
+            archiveEntries: summary.archiveEntries,
+            configurations: summary.fontConfigurations)
         guard
             systemProperties["ro.build.version.sdk"]
                 == String(build.expectedPlatformSDK)
@@ -192,10 +176,10 @@ private struct AOSPProductValidationWorkflow {
             throw failure(
                 "signed production product fingerprint is invalid: \(fingerprint)")
         }
-        try await requireReleaseSigning(
-            archive: targetFiles,
-            hostTools: hostTools,
-            environment: environment)
+        guard aospReleaseSigningMetadataUsesContainerKeys(summary.miscInfo) else {
+            throw failure(
+                "signed target-files do not declare the Nucleus release keys")
+        }
 
         let signing = try JSONDecoder().decode(
             AOSPSigningIdentity.self,
@@ -226,45 +210,19 @@ private struct AOSPProductValidationWorkflow {
             to: staged.appending("image-provenance.json"))
     }
 
-    private func requireReleaseSigning(
+    private func containerValidationSummary(
         archive: FilePath,
+        imagesRoot: FilePath,
         hostTools: FilePath,
         environment: [String: String]
-    ) async throws {
+    ) async throws -> AOSPContainerValidationSummary {
         let releaseKey = build.signingIdentity.appending("releasekey")
         let releasePEM = FilePath(releaseKey.string + ".pem")
         let releaseCertificate = FilePath(releaseKey.string + ".x509.pem")
-        let metadata = try await archiveEntry(
-            archive: archive,
-            candidates: ["META/misc_info.txt"],
-            environment: environment)
-        guard aospReleaseSigningMetadataUsesContainerKeys(metadata) else {
-            throw failure(
-                "signed target-files do not declare the Nucleus release keys")
-        }
-
         let apksigner = hostTools.appending("apksigner")
         let avbTool = hostTools.appending("avbtool")
-        let certificateOutput = try await captured(
-            .named("openssl"),
-            [
-                "x509", "-in", releaseCertificate.string,
-                "-noout", "-fingerprint", "-sha256",
-            ],
-            in: build.signingIdentity,
-            environment: environment)
-        guard let separator = certificateOutput.firstIndex(of: "=") else {
-            throw failure(
-                "could not read the Nucleus release certificate fingerprint")
-        }
-        let expectedCertificateDigest = certificateOutput[
-            certificateOutput.index(after: separator)...
-        ]
-        .replacingOccurrences(of: ":", with: "")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-
         let program = validationRoot.appending("validate-aosp-packages.py")
+        let summary = validationRoot.appending("summary.json")
         try context.files.write(
             Array(aospPackageValidationProgram.utf8),
             to: program)
@@ -277,63 +235,21 @@ private struct AOSPProductValidationWorkflow {
                 "--apksigner", apksigner.string,
                 "--avbtool", avbTool.string,
                 "--release-key", releasePEM.string,
-                "--certificate-sha256", expectedCertificateDigest,
+                "--release-certificate", releaseCertificate.string,
+                "--vbmeta-image", imagesRoot.appending("vbmeta.img").string,
                 "--minimum-sdk", String(build.expectedPlatformSDK),
                 "--workers", String(build.buildJobs),
+                "--summary", summary.string,
             ],
             in: validationRoot,
             environment: environment)
-    }
-
-    private func requireFontContract(
-        archive: FilePath,
-        environment: [String: String]
-    ) async throws {
-        let entries = try await captured(
-            .named("unzip"),
-            ["-Z1", archive.string],
-            in: archive.removingLastComponent(),
-            environment: environment
-        ).split(whereSeparator: \.isNewline).map(String.init)
-        let configurations = [
-            "SYSTEM/etc/fonts.xml",
-            "SYSTEM/etc/font_fallback.xml",
-        ]
-        for path in configurations where !entries.contains(path) {
-            throw failure("signed Android font contract is missing \(path)")
+        let decoded = try JSONDecoder().decode(
+            AOSPContainerValidationSummary.self,
+            from: Data(try context.files.read(summary)))
+        guard decoded.packageCount > 0, decoded.apexCount > 0 else {
+            throw failure("signed target-files package summary is empty")
         }
-        var contents: [String: String] = [:]
-        for path in configurations {
-            contents[path] = try await archiveEntry(
-                archive: archive,
-                candidates: [path],
-                environment: environment)
-        }
-        try validateAOSPFontContract(
-            archiveEntries: entries,
-            configurations: contents)
-    }
-
-    private func archiveEntry(
-        archive: FilePath,
-        candidates: [String],
-        environment: [String: String]
-    ) async throws -> String {
-        var output = ""
-        for candidate in candidates {
-            let result = try await command(
-                .named("unzip"),
-                ["-p", archive.string, candidate],
-                in: archive.removingLastComponent(),
-                environment: environment)
-            if result.status == 0, !result.standardOutput.isEmpty {
-                output += result.standardOutput + "\n"
-            }
-        }
-        guard !output.isEmpty else {
-            throw failure("required metadata is missing from \(archive)")
-        }
-        return output
+        return decoded
     }
 
     private func checked(
@@ -354,25 +270,6 @@ private struct AOSPProductValidationWorkflow {
                 reason: "\(arguments.first ?? "command") failed"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
-    }
-
-    private func captured(
-        _ executable: CommandSpec.Executable,
-        _ arguments: [String],
-        in directory: FilePath,
-        environment: [String: String]
-    ) async throws -> String {
-        let result = try await command(
-            executable,
-            arguments,
-            in: directory,
-            environment: environment)
-        guard result.succeeded else {
-            throw result.executionFailure(
-                reason: "\(arguments.first ?? "command") failed")
-        }
-        return result.standardOutput.trimmingCharacters(
-            in: .whitespacesAndNewlines)
     }
 
     private func command(
@@ -595,6 +492,16 @@ private struct AOSPValidationSourceProvenance: Decodable {
     let manifestCommit: String
     let superprojectCommit: String
     let resolvedManifestSHA256: String
+}
+
+private struct AOSPContainerValidationSummary: Decodable {
+    let archiveEntries: [String]
+    let systemBuildProperties: String
+    let vendorBuildProperties: String
+    let fontConfigurations: [String: String]
+    let miscInfo: String
+    let packageCount: Int
+    let apexCount: Int
 }
 
 private struct AOSPImageProvenance: Encodable {

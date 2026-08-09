@@ -100,6 +100,26 @@ struct CompileAOSPProductAction: ColliderAction {
             context: context
         ).execute()
     }
+
+    func validateOutputs(using files: ActionFileSystem) throws {
+        let unsigned = build.artifactRoot.appending("unsigned")
+        let name = "\(build.product)-target_files.zip"
+        let archive = unsigned.appending(name)
+        let checksum = unsigned.appending("\(name).sha256")
+        guard try files.metadata(for: archive)?.type == .regular,
+            try files.metadata(for: checksum)?.type == .regular
+        else {
+            throw AOSPProductCompileFailure.invalidOutput(
+                "AOSP unsigned target-files output is missing")
+        }
+        let expected =
+            "\(try files.digest(file: archive).hexadecimal)  \(name)\n"
+        let recorded = String(decoding: try files.read(checksum), as: UTF8.self)
+        guard recorded == expected else {
+            throw AOSPProductCompileFailure.invalidOutput(
+                "AOSP unsigned target-files checksum does not match")
+        }
+    }
 }
 
 private struct AOSPProductCompileWorkflow {

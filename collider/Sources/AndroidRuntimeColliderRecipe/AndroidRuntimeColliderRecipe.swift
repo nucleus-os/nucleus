@@ -630,7 +630,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            assessmentPolicy: .always,
             action:
                 try AnyColliderAction(
                     CompileAOSPProductAction(build: build))

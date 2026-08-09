@@ -46,7 +46,8 @@ private func runAOSPValidationFixturePython(
     try Data(
         """
         #!/bin/sh
-        printf '%s\\n' 'Signer #1 certificate SHA-256 digest: abc123'
+        printf 'Signer #1 certificate SHA-256 digest: %s\\n' \
+          "${AOSP_TEST_CERTIFICATE_DIGEST:-abc123}"
         """.utf8
     ).write(to: apksigner)
     let avbtool = root.appendingPathComponent("avbtool")
@@ -56,7 +57,14 @@ private func runAOSPValidationFixturePython(
         printf 'verified\\n' >> "$AOSP_VALIDATION_MARKER"
         """.utf8
     ).write(to: avbtool)
-    for tool in [apksigner, avbtool] {
+    let openssl = root.appendingPathComponent("openssl")
+    try Data(
+        """
+        #!/bin/sh
+        printf '%s\\n' 'sha256 Fingerprint=AB:C1:23'
+        """.utf8
+    ).write(to: openssl)
+    for tool in [apksigner, avbtool, openssl] {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755], ofItemAtPath: tool.path)
     }
@@ -74,6 +82,17 @@ private func runAOSPValidationFixturePython(
             with zipfile.ZipFile(root / "target-files.zip", "w") as output:
                 output.writestr("SYSTEM/app/Test.apk", b"apk")
                 output.write(apex, "SYSTEM/apex/Test.apex")
+                output.writestr("SYSTEM/build.prop", b"ro.build.version.sdk=37")
+                output.writestr("VENDOR/build.prop", b"ro.vendor.api_level=37")
+                output.writestr(
+                    "SYSTEM/etc/fonts.xml",
+                    b"<familyset><family><font>Roboto-Regular.ttf</font></family></familyset>",
+                )
+                output.writestr(
+                    "SYSTEM/etc/font_fallback.xml",
+                    b"<familyset><family><font>Roboto-Regular.ttf</font></family></familyset>",
+                )
+                output.writestr("META/misc_info.txt", b"fixture=true")
             """,
             root.path,
         ],
@@ -82,6 +101,12 @@ private func runAOSPValidationFixturePython(
 
     let scratch = root.appendingPathComponent("scratch")
     let marker = root.appendingPathComponent("avbtool-invocations")
+    let summary = scratch.appendingPathComponent("summary.json")
+    let environment = [
+        "AOSP_VALIDATION_MARKER": marker.path,
+        "PATH": root.path + ":"
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
+    ]
     try FileManager.default.createDirectory(
         at: scratch, withIntermediateDirectories: true)
     let result = try runAOSPValidationFixturePython(
@@ -92,29 +117,44 @@ private func runAOSPValidationFixturePython(
             "--apksigner", apksigner.path,
             "--avbtool", avbtool.path,
             "--release-key", root.appendingPathComponent("release.pem").path,
-            "--certificate-sha256", "abc123",
+            "--release-certificate",
+            root.appendingPathComponent("release.x509.pem").path,
+            "--vbmeta-image", root.appendingPathComponent("vbmeta.img").path,
             "--minimum-sdk", "37",
             "--workers", "4",
+            "--summary", summary.path,
         ],
-        environment: ["AOSP_VALIDATION_MARKER": marker.path])
+        environment: environment)
     #expect(result.status == 0, Comment(rawValue: result.output))
     #expect(result.output.contains("verified 2 packages (1 APEX payload)"))
     #expect(
-        (try? String(contentsOf: marker, encoding: .utf8)) == "verified\n")
+        (try? String(contentsOf: marker, encoding: .utf8))
+            == "verified\nverified\n")
+    let summaryObject = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: summary))
+            as? [String: Any])
+    #expect(summaryObject["packageCount"] as? Int == 2)
+    #expect(summaryObject["apexCount"] as? Int == 1)
 
+    let rejectedRoot = root.appendingPathComponent("rejected")
     let rejected = try runAOSPValidationFixturePython(
         arguments: [
             program.path,
             "--archive", archive.path,
-            "--scratch", root.appendingPathComponent("rejected").path,
+            "--scratch", rejectedRoot.path,
             "--apksigner", apksigner.path,
             "--avbtool", avbtool.path,
             "--release-key", root.appendingPathComponent("release.pem").path,
-            "--certificate-sha256", "deadbeef",
+            "--release-certificate",
+            root.appendingPathComponent("release.x509.pem").path,
+            "--vbmeta-image", root.appendingPathComponent("vbmeta.img").path,
             "--minimum-sdk", "37",
             "--workers", "4",
+            "--summary", rejectedRoot.appendingPathComponent("summary.json").path,
         ],
-        environment: ["AOSP_VALIDATION_MARKER": marker.path])
+        environment: environment.merging(
+            ["AOSP_TEST_CERTIFICATE_DIGEST": "deadbeef"],
+            uniquingKeysWith: { _, rejected in rejected }))
     #expect(rejected.status != 0)
     #expect(rejected.output.contains("does not carry exactly"))
 }

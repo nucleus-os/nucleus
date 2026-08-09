@@ -1681,7 +1681,9 @@ private func fixtureReactNativeNodeModules(
             "android-runtime.aosp-validate",
             "android-runtime.aosp-image",
         ])
-    let operations = Array(tasks.suffix(5)).map(\.action)
+    let productTasks = Array(tasks.suffix(5))
+    let operations = productTasks.map(\.action)
+    #expect(productTasks[0].assessmentPolicy == .incremental)
     let publication = try #require(tasks.last)
     let publicationPaths = publication.outputs.map(\.path)
     #expect(

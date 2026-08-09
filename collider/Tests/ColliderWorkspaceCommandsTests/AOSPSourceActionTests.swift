@@ -415,9 +415,11 @@ import Testing
         environment: fixture.environment)
     let executions = Mutex<[OCIExecution]>([])
 
-    try await CompileAOSPProductAction(build: build).execute(
+    let action = CompileAOSPProductAction(build: build)
+    let files = ColliderRuntime().actionFileSystem()
+    try await action.execute(
         in: ActionContext(
-            files: ColliderRuntime().actionFileSystem(),
+            files: files,
             cancellation: ActionCancellation {},
             logger: ActionLogger { _ in },
             commands: ActionCommandExecutor { _ in
@@ -443,6 +445,14 @@ import Testing
     #expect(recorded.allSatisfy { !$0.command.contains("installclean") })
     #expect(recorded.allSatisfy { !$0.command.contains("manifest") })
     #expect(recorded[1].command.contains("/bin/cp"))
+
+    try action.validateOutputs(using: files)
+    try Data("modified-target-files".utf8).write(
+        to: artifactRoot.appendingPathComponent(
+            "unsigned/\(product)-target_files.zip"))
+    #expect(throws: (any Error).self) {
+        try action.validateOutputs(using: files)
+    }
 }
 
 @Test func aospProductAssemblyNormalizesSparseImagesAndStagesOutputs() async throws {
@@ -657,7 +667,7 @@ import Testing
     #expect(recorded.command.contains("--avb_vbmeta_key"))
     #expect(recorded.command.contains("/keys/releasekey.pem"))
     let threadsIndex = try #require(recorded.command.firstIndex(of: "--threads"))
-    #expect(recorded.command[threadsIndex + 1] == "24")
+    #expect(recorded.command[threadsIndex + 1] == "8")
     #expect(!recorded.command.contains("--allow_gsi_debug_sepolicy"))
     #expect(
         recorded.mounts.contains {

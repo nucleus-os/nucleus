@@ -1,6 +1,8 @@
 let aospPackageValidationProgram = #"""
     import argparse
     import concurrent.futures
+    import json
+    import os
     import pathlib
     import re
     import shutil
@@ -16,9 +18,11 @@ let aospPackageValidationProgram = #"""
         parser.add_argument("--apksigner", required=True)
         parser.add_argument("--avbtool", required=True)
         parser.add_argument("--release-key", required=True)
-        parser.add_argument("--certificate-sha256", required=True)
+        parser.add_argument("--release-certificate", required=True)
+        parser.add_argument("--vbmeta-image", required=True)
         parser.add_argument("--minimum-sdk", required=True)
         parser.add_argument("--workers", required=True, type=int)
+        parser.add_argument("--summary", required=True)
         return parser.parse_args()
 
 
@@ -64,7 +68,7 @@ let aospPackageValidationProgram = #"""
         return packages
 
 
-    def verify_package(index, package, arguments):
+    def verify_package(index, package, arguments, expected_digest):
         output = checked(
             [
                 arguments.apksigner,
@@ -81,7 +85,7 @@ let aospPackageValidationProgram = #"""
                 r"certificate SHA-256 digest:\s*([0-9a-fA-F]+)", output
             )
         ]
-        if digests != [arguments.certificate_sha256.lower()]:
+        if digests != [expected_digest]:
             raise RuntimeError(
                 "package does not carry exactly the Nucleus release certificate: "
                 f"{package}"
@@ -119,7 +123,53 @@ let aospPackageValidationProgram = #"""
         scratch = pathlib.Path(arguments.scratch)
         packages_root = scratch / "packages"
         packages_root.mkdir(parents=True, exist_ok=True)
+        checked(
+            [
+                arguments.avbtool,
+                "verify_image",
+                "--image",
+                arguments.vbmeta_image,
+                "--key",
+                arguments.release_key,
+                "--follow_chain_partitions",
+            ]
+        )
+        certificate_output = checked(
+            [
+                "openssl",
+                "x509",
+                "-in",
+                arguments.release_certificate,
+                "-noout",
+                "-fingerprint",
+                "-sha256",
+            ]
+        )
+        if "=" not in certificate_output:
+            raise RuntimeError("could not read the release certificate fingerprint")
+        expected_digest = (
+            certificate_output.split("=", 1)[1]
+            .replace(":", "")
+            .strip()
+            .lower()
+        )
+        required_entries = [
+            "SYSTEM/build.prop",
+            "VENDOR/build.prop",
+            "SYSTEM/etc/fonts.xml",
+            "SYSTEM/etc/font_fallback.xml",
+            "META/misc_info.txt",
+        ]
         with zipfile.ZipFile(arguments.archive) as archive:
+            archive_entries = archive.namelist()
+            contents = {}
+            for name in required_entries:
+                try:
+                    contents[name] = archive.read(name).decode("utf-8")
+                except KeyError as error:
+                    raise RuntimeError(
+                        f"required target-files entry is missing: {name}"
+                    ) from error
             packages = extract_packages(
                 archive, safe_package_entries(archive), packages_root
             )
@@ -128,11 +178,37 @@ let aospPackageValidationProgram = #"""
         ) as executor:
             list(
                 executor.map(
-                    lambda item: verify_package(item[0], item[1], arguments),
+                    lambda item: verify_package(
+                        item[0], item[1], arguments, expected_digest
+                    ),
                     enumerate(packages),
                 )
             )
         apex_count = sum(package.suffix.lower() == ".apex" for package in packages)
+        summary = pathlib.Path(arguments.summary)
+        candidate = summary.with_name(f".{summary.name}.candidate")
+        with candidate.open("w", encoding="utf-8") as output:
+            json.dump(
+                {
+                    "archiveEntries": archive_entries,
+                    "systemBuildProperties": contents["SYSTEM/build.prop"],
+                    "vendorBuildProperties": contents["VENDOR/build.prop"],
+                    "fontConfigurations": {
+                        name: contents[name]
+                        for name in [
+                            "SYSTEM/etc/fonts.xml",
+                            "SYSTEM/etc/font_fallback.xml",
+                        ]
+                    },
+                    "miscInfo": contents["META/misc_info.txt"],
+                    "packageCount": len(packages),
+                    "apexCount": apex_count,
+                },
+                output,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        os.replace(candidate, summary)
         payload_label = "APEX payload" if apex_count == 1 else "APEX payloads"
         print(f"verified {len(packages)} packages ({apex_count} {payload_label})")
 
