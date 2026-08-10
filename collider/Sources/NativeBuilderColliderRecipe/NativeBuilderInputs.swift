@@ -7,28 +7,29 @@ struct NativeBuilderInputManifest: Decodable, Hashable, Sendable {
         let name: String
         let url: String
         let sha256: String
-        let maximumResponseSize: Int64
     }
 
-    struct APTIndex: Decodable, Hashable, Sendable {
-        let name: String
-        let url: String
-        let sha256: String
-        let size: Int64
+    struct APTRepository: Decodable, Hashable, Sendable {
+        let suite: String
+        let inReleaseSHA256: String
     }
 
     let ubuntuSnapshot: String
     let archives: [Archive]
-    let aptIndexes: [APTIndex]
+    let aptRepositories: [APTRepository]
 
     static func load(from path: FilePath) throws -> Self {
         let data = try Data(contentsOf: URL(filePath: path.string))
         let manifest = try JSONDecoder().decode(Self.self, from: data)
         guard !manifest.ubuntuSnapshot.isEmpty,
             !manifest.archives.isEmpty,
-            !manifest.aptIndexes.isEmpty,
+            !manifest.aptRepositories.isEmpty,
             Set(manifest.archives.map(\.name)).count == manifest.archives.count,
-            Set(manifest.aptIndexes.map(\.name)).count == manifest.aptIndexes.count
+            Set(manifest.aptRepositories.map(\.suite)).count
+                == manifest.aptRepositories.count,
+            manifest.aptRepositories.allSatisfy({
+                !$0.suite.isEmpty && ArtifactDigest(sha256Hex: $0.inReleaseSHA256) != nil
+            })
         else {
             throw NativeBuilderInputFailure.invalidManifest
         }
@@ -39,6 +40,7 @@ struct NativeBuilderInputManifest: Decodable, Hashable, Sendable {
 struct NativeBuilderDownload: Hashable, Sendable {
     enum Placement: Hashable, Sendable {
         case archive(String)
+        case aptRelease(snapshot: String, suite: String)
         case aptIndex(String)
         case aptPackage(role: String, digest: String)
     }
@@ -54,22 +56,84 @@ extension NativeBuilderInputManifest {
                 identity: DownloadActionIdentity(
                     specification: try nativeBuilderDownloadSpec(
                         url: archive.url,
-                        sha256: archive.sha256,
-                        maximumResponseSize: archive.maximumResponseSize),
+                        sha256: archive.sha256),
                     destination: root.appending(archive.name)),
                 placement: .archive(archive.name))
         }
-            + aptIndexes.map { index in
+            + aptRepositories.map { repository in
                 NativeBuilderDownload(
                     identity: DownloadActionIdentity(
                         specification: try nativeBuilderDownloadSpec(
-                            url: index.url,
-                            sha256: index.sha256,
-                            maximumResponseSize: index.size),
-                        destination: root.appending("indexes/\(index.name)")),
-                    placement: .aptIndex(index.name))
+                            url: "https://snapshot.ubuntu.com/ubuntu/"
+                                + "\(ubuntuSnapshot)/dists/\(repository.suite)/InRelease",
+                            sha256: repository.inReleaseSHA256),
+                        destination: root.appending(
+                            "releases/\(repository.suite).InRelease")),
+                    placement: .aptRelease(
+                        snapshot: ubuntuSnapshot,
+                        suite: repository.suite))
             }
     }
+}
+
+func nativeBuilderAPTIndexDownloads(
+    releases: [NativeBuilderDownload],
+    root: FilePath,
+    files: ActionFileSystem
+) throws -> [NativeBuilderDownload] {
+    try releases.flatMap { download -> [NativeBuilderDownload] in
+        guard case .aptRelease(let snapshot, let suite) = download.placement else {
+            return []
+        }
+        let contents = String(
+            decoding: try files.read(download.identity.destination),
+            as: UTF8.self)
+        let records = try ubuntuSnapshotIndexRecords(contents)
+        return try ["main", "universe"].flatMap { component in
+            try ["arm64", "amd64"].map { architecture in
+                let relativePath =
+                    "\(component)/binary-\(architecture)/Packages.gz"
+                guard let record = records[relativePath] else {
+                    throw NativeBuilderInputFailure.invalidPackageIndex
+                }
+                let name = "\(suite)_\(component)_\(architecture).Packages.gz"
+                return NativeBuilderDownload(
+                    identity: DownloadActionIdentity(
+                        specification: try nativeBuilderDownloadSpec(
+                            url: "https://snapshot.ubuntu.com/ubuntu/\(snapshot)/dists/"
+                                + "\(suite)/\(relativePath)",
+                            sha256: record.digest,
+                            maximumResponseSize: record.size),
+                        destination: root.appending("indexes/\(name)")),
+                    placement: .aptIndex(name))
+            }
+        }
+    }
+}
+
+private func ubuntuSnapshotIndexRecords(
+    _ inRelease: String
+) throws -> [String: (digest: String, size: Int64)] {
+    guard let section = inRelease.range(of: "\nSHA256:\n") else {
+        throw NativeBuilderInputFailure.invalidPackageIndex
+    }
+    var records: [String: (digest: String, size: Int64)] = [:]
+    for line in inRelease[section.upperBound...].split(separator: "\n") {
+        guard line.first == " " else { break }
+        let fields = line.split(whereSeparator: \.isWhitespace)
+        guard fields.count == 3,
+            let size = Int64(fields[1]),
+            size > 0,
+            ArtifactDigest(sha256Hex: String(fields[0])) != nil
+        else {
+            throw NativeBuilderInputFailure.invalidPackageIndex
+        }
+        records[String(fields[2])] = (String(fields[0]), size)
+    }
+    guard !records.isEmpty else {
+        throw NativeBuilderInputFailure.invalidPackageIndex
+    }
+    return records
 }
 
 func nativeBuilderPackageDownloads(
@@ -101,7 +165,7 @@ func nativeBuilderPackageDownloads(
 private func nativeBuilderDownloadSpec(
     url urlString: String,
     sha256: String,
-    maximumResponseSize: Int64
+    maximumResponseSize: Int64 = .max
 ) throws -> DownloadSpec {
     guard let url = URL(string: urlString),
         let digest = ArtifactDigest(sha256Hex: sha256)
@@ -127,6 +191,7 @@ private func nativeBuilderDownloadSpec(
             "application/vnd.debian.binary-package",
             "application/x-debian-package",
             "application/x-gzip",
+            "text/plain",
             "application/x-xz",
             "application/x-zip-compressed",
             "application/zip",
@@ -139,5 +204,6 @@ private func nativeBuilderDownloadSpec(
 
 enum NativeBuilderInputFailure: Error {
     case invalidManifest
+    case invalidPackageIndex
     case invalidPackageClosure
 }

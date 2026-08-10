@@ -13,6 +13,11 @@ access. Each product and target receives an independent persistent EXT4 GN
 output at `/build` and ccache at `/ccache`; final artifacts cross back to the
 host only through bounded candidate mounts.
 
+The human-maintained package input is only `packages.txt`. The compact builder
+manifest pins an Ubuntu snapshot and one `InRelease` digest per suite; Collider
+derives package-index paths, sizes, and digests from that release metadata and
+resolves the exact transitive package closure offline.
+
 `Dependencies.Containerfile` defines the stable, content-addressed dependency
 image. Collider derives two independent thin images from that exact local
 digest: `build-entrypoint.sh` owns source materialization, configuration,

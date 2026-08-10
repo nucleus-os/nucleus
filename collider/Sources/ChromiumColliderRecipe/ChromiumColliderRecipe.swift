@@ -420,6 +420,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                         inputRoot: builderInputRoot,
                         generatedContext: generatedBuilderDependencyContext,
                         resolverOutput: builderResolverOutput,
+                        ubuntuSnapshot: builderInputManifest.ubuntuSnapshot,
+                        ubuntuSuites: builderInputManifest.aptRepositories.map(\.suite),
                         initialDownloads: builderInputManifest.downloads(
                             root: builderInputRoot),
                         resolverPreparation: OCIImagePreparation(
@@ -860,6 +862,8 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
         let inputRoot: FilePath
         let generatedContext: FilePath
         let resolverOutput: FilePath
+        let ubuntuSnapshot: String
+        let ubuntuSuites: [String]
         let resolverPreparation: OCIImagePreparation
         let dependencyPreparation: OCIImagePreparation
 
@@ -868,6 +872,8 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
             encoder.append(tag: 2, string: inputRoot.string)
             encoder.append(tag: 3, string: generatedContext.string)
             encoder.append(tag: 4, string: resolverOutput.string)
+            encoder.append(tag: 7, string: ubuntuSnapshot)
+            encoder.append(tag: 8, string: ubuntuSuites.joined(separator: "\n"))
             encoder.append(
                 tag: 5,
                 nested: OCIImagePreparationActionIdentity(resolverPreparation))
@@ -883,6 +889,8 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
     let inputRoot: FilePath
     let generatedContext: FilePath
     let resolverOutput: FilePath
+    let ubuntuSnapshot: String
+    let ubuntuSuites: [String]
     let initialDownloads: [ChromiumBuilderDownload]
     let resolverPreparation: OCIImagePreparation
     let dependencyPreparation: OCIImagePreparation
@@ -893,6 +901,8 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
             inputRoot: inputRoot,
             generatedContext: generatedContext,
             resolverOutput: resolverOutput,
+            ubuntuSnapshot: ubuntuSnapshot,
+            ubuntuSuites: ubuntuSuites,
             resolverPreparation: resolverPreparation,
             dependencyPreparation: dependencyPreparation)
     }
@@ -940,6 +950,11 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(inputRoot)
         try await download(initialDownloads, in: context)
+        let indexDownloads = try chromiumBuilderAPTIndexDownloads(
+            releases: initialDownloads,
+            root: inputRoot,
+            files: context.files)
+        try await download(indexDownloads, in: context)
 
         try await context.containers.prepareImage(resolverPreparation)
         try context.files.remove(resolverOutput)
@@ -990,7 +1005,12 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
                 cpuCount: 2,
                 memoryBytes: 4 * 1_024 * 1_024 * 1_024,
                 processCount: 1_024),
-            containerEnvironment: ["LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"],
+            containerEnvironment: [
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "NUCLEUS_UBUNTU_SNAPSHOT": ubuntuSnapshot,
+                "NUCLEUS_UBUNTU_SUITES": ubuntuSuites.joined(separator: " "),
+            ],
             command: ["/usr/local/bin/resolve-chromium-apt-packages"],
             environment: environment,
             output: .logged)
@@ -1031,7 +1051,7 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
             from: sourceContext.appending("Dependencies.Containerfile"),
             to: candidateContext.appending("Containerfile"))
         for download in packageDownloads {
-            guard let digest = download.digest else { continue }
+            guard case .aptPackage(let digest) = download.placement else { continue }
             let destination = candidateContext.appending(
                 "inputs/apt/install/\(digest).deb")
             try files.createDirectory(destination.removingLastComponent())

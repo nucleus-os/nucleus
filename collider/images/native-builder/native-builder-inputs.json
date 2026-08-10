@@ -1,127 +1,49 @@
 {
-  "ubuntuSnapshot": "20260807T000000Z",
+  "ubuntuSnapshot": "20260730T000000Z",
   "archives": [
     {
       "name": "swift-arm64.tar.gz",
       "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz",
-      "sha256": "0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34",
-      "maximumResponseSize": 1500000000
+      "sha256": "0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34"
     },
     {
       "name": "swift-amd64.tar.gz",
       "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz",
-      "sha256": "05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5",
-      "maximumResponseSize": 1500000000
+      "sha256": "05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5"
     },
     {
       "name": "cmake-arm64.tar.gz",
       "url": "https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz",
-      "sha256": "d18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026",
-      "maximumResponseSize": 100000000
+      "sha256": "d18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026"
     },
     {
       "name": "node-arm64.tar.xz",
       "url": "https://nodejs.org/dist/v26.6.0/node-v26.6.0-linux-arm64.tar.xz",
-      "sha256": "974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923",
-      "maximumResponseSize": 100000000
+      "sha256": "974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923"
     },
     {
       "name": "bun-arm64.zip",
       "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip",
-      "sha256": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b",
-      "maximumResponseSize": 100000000
-    },
-    {
-      "name": "vulkan-headers.tar.gz",
-      "url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.350.tar.gz",
-      "sha256": "6dd105e5cc7ddab6e7b611ae2c1872740d1727557cc8bf9daf13d6de1e4b3999",
-      "maximumResponseSize": 20000000
-    },
-    {
-      "name": "vulkan-loader.tar.gz",
-      "url": "https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v1.4.350.tar.gz",
-      "sha256": "fe472f15c49b1915137c065d997dbce86e31750f5bfb56c5c9a3b5b4919e44eb",
-      "maximumResponseSize": 20000000
+      "sha256": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
     },
     {
       "name": "android-ndk-r30-beta2-linux.zip",
       "url": "https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip",
-      "sha256": "3827b0acab65a4559d92bc07b05a409d57d1925c835b8e6fd741cda08ca41515",
-      "maximumResponseSize": 737229785
+      "sha256": "3827b0acab65a4559d92bc07b05a409d57d1925c835b8e6fd741cda08ca41515"
     }
   ],
-  "aptIndexes": [
+  "aptRepositories": [
     {
-      "name": "noble-security_main_amd64.Packages.gz",
-      "sha256": "afbcc8228611224c3cdd8c3320e17cb94e7073ba3e7031d3c13a206d917f6e7f",
-      "size": 1144902,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-security/main/binary-amd64/Packages.gz"
+      "suite": "resolute",
+      "inReleaseSHA256": "45f95ce276cdba3e41870516a130e03c58b8b7a79e9546b0efe9e526d255740c"
     },
     {
-      "name": "noble-security_main_arm64.Packages.gz",
-      "sha256": "ac39a409aa18042391517eae94526898ebcfd20ee9d178637890d3bb1e41e13a",
-      "size": 1195112,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-security/main/binary-arm64/Packages.gz"
+      "suite": "resolute-updates",
+      "inReleaseSHA256": "b6cb5a6f083b457f7340fc01ae858cfd097f95a703f5da41fe749dfb80e9e7f9"
     },
     {
-      "name": "noble-security_universe_amd64.Packages.gz",
-      "sha256": "946133cd8641b373c32fa032595d6905f6923952fc4357b1ef880f107a769ae0",
-      "size": 1522423,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-security/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "noble-security_universe_arm64.Packages.gz",
-      "sha256": "4a1993565209330890ed930bace071bb6ec39fba19ebaa8ee0aca4884a6b4d05",
-      "size": 1591684,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-security/universe/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "noble-updates_main_amd64.Packages.gz",
-      "sha256": "a014491727b84d228a596b9bbcfcdb916caf3eaf8b7c7013ae89f3b1589ecd19",
-      "size": 1470304,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-updates/main/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "noble-updates_main_arm64.Packages.gz",
-      "sha256": "1cf6058489d80fd84b99a6bdc28fe4ba786f888795493a0b6e01e930b8bf234f",
-      "size": 1512753,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-updates/main/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "noble-updates_universe_amd64.Packages.gz",
-      "sha256": "2ff317967661284d5bffdbf8f3c86e67aa8ac9589b415a3f9281118dcf10abd9",
-      "size": 2139827,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-updates/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "noble-updates_universe_arm64.Packages.gz",
-      "sha256": "503683b5474399c593f76976fe8414e2dbfdd1b031597476c202e775bc3c014b",
-      "size": 2167166,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble-updates/universe/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "noble_main_amd64.Packages.gz",
-      "sha256": "e0d7e4cbb09d2aa7f9e104a1488817417bc9d85f3e5d9a21156a52ec641ae531",
-      "size": 1808488,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble/main/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "noble_main_arm64.Packages.gz",
-      "sha256": "86d8c27108110e8ebceb4b8548e2995c422cff642666b4ca0307be7358c68b21",
-      "size": 1775784,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble/main/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "noble_universe_amd64.Packages.gz",
-      "sha256": "ce57756edcce0a5f7993ceb89057e1510148e04e3b85a066d780e4bc00485c8a",
-      "size": 19315644,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "noble_universe_arm64.Packages.gz",
-      "sha256": "b8408fe3d33d80c5f9b958ae19dc20f2a19ff65b0d1522e1e86d44316f552307",
-      "size": 19026623,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260807T000000Z/dists/noble/universe/binary-arm64/Packages.gz"
+      "suite": "resolute-security",
+      "inReleaseSHA256": "09bf49fd1722dc81c550dfd38f9bdb3ea91d7f99c0a083ece3f9a8e6b23a04f2"
     }
   ]
 }

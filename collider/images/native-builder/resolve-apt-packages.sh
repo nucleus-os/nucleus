@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-snapshot=20260807T000000Z
+snapshot=${NUCLEUS_UBUNTU_SNAPSHOT:?}
+suites=${NUCLEUS_UBUNTU_SUITES:?}
 root=/tmp/nucleus-apt-resolution
 lists="$root/lists"
 sources="$root/sources.list"
@@ -12,7 +13,7 @@ rm -rf "$root"
 mkdir -p "$lists/partial"
 : > "$status"
 
-for suite in noble noble-updates noble-security; do
+for suite in $suites; do
     for component in main universe; do
         for architecture in arm64 amd64; do
             source="/indexes/${suite}_${component}_${architecture}.Packages.gz"
@@ -38,11 +39,11 @@ awk -v snapshot="$snapshot" '
     }
 ' "$lists"/*_Packages | sort -u > "$catalog"
 
-cat > "$sources" <<EOF
-deb [arch=arm64,amd64 trusted=yes] https://snapshot.ubuntu.com/ubuntu/$snapshot noble main universe
-deb [arch=arm64,amd64 trusted=yes] https://snapshot.ubuntu.com/ubuntu/$snapshot noble-updates main universe
-deb [arch=arm64,amd64 trusted=yes] https://snapshot.ubuntu.com/ubuntu/$snapshot noble-security main universe
-EOF
+: > "$sources"
+for suite in $suites; do
+    printf 'deb [arch=arm64,amd64 trusted=yes] https://snapshot.ubuntu.com/ubuntu/%s %s main universe\n' \
+        "$snapshot" "$suite" >> "$sources"
+done
 
 apt_options="
     -o Dir::Etc::sourcelist=$sources

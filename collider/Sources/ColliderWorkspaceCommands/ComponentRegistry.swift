@@ -746,7 +746,6 @@ package struct ComponentRegistry {
                             "android/gfxstream/lib/libvulkan_gfxstream.so"
                         ).string,
                     "LD_LIBRARY_PATH": [
-                        "/opt/nucleus-vulkan-loader/\(target.gnuArchitecture)/lib",
                         guestTargetSDK + "/usr/lib/swift/linux",
                         targetRuntimeLibraryDirectory,
                         waylandSDK.appending("lib").string,

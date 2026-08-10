@@ -1,77 +1,17 @@
 {
   "ubuntuSnapshot": "20260730T000000Z",
-  "aptIndexes": [
+  "aptRepositories": [
     {
-      "name": "resolute-security_main_amd64.Packages.gz",
-      "sha256": "979fb270055a373fe3c0446d3c48af3c96a68c59c45da35d69f59abb41e6fc5e",
-      "size": 419425,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-security/main/binary-amd64/Packages.gz"
+      "suite": "resolute",
+      "inReleaseSHA256": "45f95ce276cdba3e41870516a130e03c58b8b7a79e9546b0efe9e526d255740c"
     },
     {
-      "name": "resolute-security_main_arm64.Packages.gz",
-      "sha256": "dfa5f728f44bdc51bdfaee02e60489874025d45b5259f1bf10ae9e119b8eb6d6",
-      "size": 439663,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-security/main/binary-arm64/Packages.gz"
+      "suite": "resolute-updates",
+      "inReleaseSHA256": "b6cb5a6f083b457f7340fc01ae858cfd097f95a703f5da41fe749dfb80e9e7f9"
     },
     {
-      "name": "resolute-security_universe_amd64.Packages.gz",
-      "sha256": "c057c0d6e1fe09da4a6c9e88960d6cd911d4da7786c72af76475aa49d1a404cc",
-      "size": 185164,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-security/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "resolute-security_universe_arm64.Packages.gz",
-      "sha256": "a806c022f9df174ee5159abddff3bbbcaef25cdf583a75a00d9285b5d20c3b39",
-      "size": 179875,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-security/universe/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "resolute-updates_main_amd64.Packages.gz",
-      "sha256": "0c6a00eaeec4e7163bb25fa7ed2591ef1f9fadaf87bbd99385e5b299d161fdb6",
-      "size": 497064,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-updates/main/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "resolute-updates_main_arm64.Packages.gz",
-      "sha256": "6aa0caee06b8a4463e2c7c33b88ef80f349823458f861655c376868369c2b255",
-      "size": 517867,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-updates/main/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "resolute-updates_universe_amd64.Packages.gz",
-      "sha256": "8e0b5949df22f8af401ea46dd5f13e61814b5461354a4a6ee9c0b1e3faffa107",
-      "size": 279731,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-updates/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "resolute-updates_universe_arm64.Packages.gz",
-      "sha256": "a79f0c379ec9c61e4ff2e74ac3c531ade7650f8c90ec6e5c0f715ffb5feed4cf",
-      "size": 273141,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute-updates/universe/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "resolute_main_amd64.Packages.gz",
-      "sha256": "73a7cee8168c3d3a72ef49e268b2cbb8e73652b732af6b074d632071e8e9c594",
-      "size": 1874082,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute/main/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "resolute_main_arm64.Packages.gz",
-      "sha256": "1095e9e8f2be837e0b3b3c2415b2f892ca4fd896048833799d51e6adeb3ce297",
-      "size": 1860484,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute/main/binary-arm64/Packages.gz"
-    },
-    {
-      "name": "resolute_universe_amd64.Packages.gz",
-      "sha256": "9dd6e056941dd060e14a12b9981df7a711c9a857b035a943893999bd37c94fbd",
-      "size": 20128002,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute/universe/binary-amd64/Packages.gz"
-    },
-    {
-      "name": "resolute_universe_arm64.Packages.gz",
-      "sha256": "6041e93bfd06bbf6dc8e255fc98d617520601d9e8b819b74eab6790a0cde5c3f",
-      "size": 19917257,
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/dists/resolute/universe/binary-arm64/Packages.gz"
+      "suite": "resolute-security",
+      "inReleaseSHA256": "09bf49fd1722dc81c550dfd38f9bdb3ea91d7f99c0a083ece3f9a8e6b23a04f2"
     }
   ]
 }

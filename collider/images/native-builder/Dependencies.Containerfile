@@ -1,4 +1,4 @@
-FROM docker.io/library/ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -22,6 +22,10 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         -o Dir::Etc::sourcelist=/dev/null \
         -o Dir::Etc::sourceparts=/tmp/nucleus-empty-apt-sources \
         install /tmp/nucleus-apt/install/*.deb \
+    && dpkg --compare-versions "$(pkg-config --modversion vulkan)" ge 1.4 \
+    && dpkg --compare-versions \
+        "$(PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig pkg-config --modversion vulkan)" \
+        ge 1.4 \
     && mkdir -p /tmp/nucleus-amd64-libcxx \
     && for package in \
         /tmp/nucleus-apt/extract/*.deb; do \
@@ -112,77 +116,6 @@ RUN echo 'a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b  /tmp
     && install --mode=0755 /tmp/bun/bun-linux-aarch64/bun /opt/bun/bin/bun \
     && rm -rf /tmp/bun /tmp/bun.zip \
     && /opt/bun/bin/bun --version | grep --fixed-strings '1.3.14'
-
-# Ubuntu 24.04's packaged loader only advertises Vulkan 1.3. Build the Khronos
-# loader matching Nucleus's vendored Vulkan 1.4.350 headers for both Linux
-# architecture lanes. The loader only enables the Wayland WSI used by Nucleus;
-# headless operation needs no WSI extension.
-COPY inputs/archives/vulkan-headers.tar.gz /tmp/vulkan-headers.tar.gz
-COPY inputs/archives/vulkan-loader.tar.gz /tmp/vulkan-loader.tar.gz
-RUN echo '6dd105e5cc7ddab6e7b611ae2c1872740d1727557cc8bf9daf13d6de1e4b3999  /tmp/vulkan-headers.tar.gz' \
-        | sha256sum --check --strict \
-    && echo 'fe472f15c49b1915137c065d997dbce86e31750f5bfb56c5c9a3b5b4919e44eb  /tmp/vulkan-loader.tar.gz' \
-        | sha256sum --check --strict \
-    && mkdir -p /tmp/vulkan-source \
-    && tar --extract --gzip --file /tmp/vulkan-headers.tar.gz \
-        --directory /tmp/vulkan-source \
-    && tar --extract --gzip --file /tmp/vulkan-loader.tar.gz \
-        --directory /tmp/vulkan-source \
-    && /opt/cmake/bin/cmake \
-        -S /tmp/vulkan-source/Vulkan-Headers-1.4.350 \
-        -B /tmp/vulkan-headers-build \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/tmp/vulkan-headers-install \
-    && /opt/cmake/bin/cmake --build /tmp/vulkan-headers-build \
-        --target install \
-    && /opt/cmake/bin/cmake \
-        -S /tmp/vulkan-source/Vulkan-Loader-1.4.350 \
-        -B /tmp/vulkan-loader-arm64 \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DVULKAN_HEADERS_INSTALL_DIR=/tmp/vulkan-headers-install \
-        -DCMAKE_INSTALL_PREFIX=/opt/nucleus-vulkan-loader/aarch64-linux-gnu \
-        -DBUILD_TESTS=OFF \
-        -DBUILD_WSI_XCB_SUPPORT=OFF \
-        -DBUILD_WSI_XLIB_SUPPORT=OFF \
-        -DBUILD_WSI_WAYLAND_SUPPORT=ON \
-    && /opt/cmake/bin/cmake --build /tmp/vulkan-loader-arm64 \
-        --target install \
-    && PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
-        /opt/cmake/bin/cmake \
-        -S /tmp/vulkan-source/Vulkan-Loader-1.4.350 \
-        -B /tmp/vulkan-loader-x86_64 \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DVULKAN_HEADERS_INSTALL_DIR=/tmp/vulkan-headers-install \
-        -DCMAKE_INSTALL_PREFIX=/opt/nucleus-vulkan-loader/x86_64-linux-gnu \
-        -DCMAKE_SYSTEM_NAME=Linux \
-        -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
-        -DCMAKE_C_COMPILER=clang \
-        -DCMAKE_C_FLAGS=--target=x86_64-linux-gnu \
-        -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
-        -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
-        -DBUILD_TESTS=OFF \
-        -DBUILD_WSI_XCB_SUPPORT=OFF \
-        -DBUILD_WSI_XLIB_SUPPORT=OFF \
-        -DBUILD_WSI_WAYLAND_SUPPORT=ON \
-    && /opt/cmake/bin/cmake --build /tmp/vulkan-loader-x86_64 \
-        --target install \
-    && readelf -h \
-        /opt/nucleus-vulkan-loader/aarch64-linux-gnu/lib/libvulkan.so.1 \
-        | grep --fixed-strings 'AArch64' \
-    && readelf -h \
-        /opt/nucleus-vulkan-loader/x86_64-linux-gnu/lib/libvulkan.so.1 \
-        | grep --fixed-strings 'Advanced Micro Devices X86-64' \
-    && rm -rf \
-        /tmp/vulkan-headers-build \
-        /tmp/vulkan-headers-install \
-        /tmp/vulkan-loader-arm64 \
-        /tmp/vulkan-loader-x86_64 \
-        /tmp/vulkan-source \
-        /tmp/vulkan-headers.tar.gz \
-        /tmp/vulkan-loader.tar.gz
 
 # Android's NDK host tools remain x86_64. The ARM guest executes them through
 # the same explicit Intel-translation policy used by the Linux amd64 test lane.

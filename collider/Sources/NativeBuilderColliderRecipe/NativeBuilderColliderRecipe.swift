@@ -85,6 +85,8 @@ public enum NativeBuilderColliderRecipe {
                         generatedContext: dependencyContext,
                         resolverOutput: resolverOutput,
                         ccache: ccache,
+                        ubuntuSnapshot: manifest.ubuntuSnapshot,
+                        ubuntuSuites: manifest.aptRepositories.map(\.suite),
                         initialDownloads: downloads,
                         resolverPreparation: resolverPreparation,
                         dependencyPreparation: dependencyPreparation)))
@@ -165,6 +167,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
         let generatedContext: FilePath
         let resolverOutput: FilePath
         let cache: FilePath
+        let ubuntuSnapshot: String
+        let ubuntuSuites: [String]
         let resolverPreparation: OCIImagePreparation
         let dependencyPreparation: OCIImagePreparation
 
@@ -174,6 +178,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
             encoder.append(tag: 3, string: generatedContext.string)
             encoder.append(tag: 4, string: resolverOutput.string)
             encoder.append(tag: 5, string: cache.string)
+            encoder.append(tag: 8, string: ubuntuSnapshot)
+            encoder.append(tag: 9, string: ubuntuSuites.joined(separator: "\n"))
             encoder.append(
                 tag: 6,
                 nested: OCIImagePreparationActionIdentity(resolverPreparation))
@@ -190,6 +196,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
     let generatedContext: FilePath
     let resolverOutput: FilePath
     let ccache: FilePath
+    let ubuntuSnapshot: String
+    let ubuntuSuites: [String]
     let initialDownloads: [NativeBuilderDownload]
     let resolverPreparation: OCIImagePreparation
     let dependencyPreparation: OCIImagePreparation
@@ -201,6 +209,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
             generatedContext: generatedContext,
             resolverOutput: resolverOutput,
             cache: ccache,
+            ubuntuSnapshot: ubuntuSnapshot,
+            ubuntuSuites: ubuntuSuites,
             resolverPreparation: resolverPreparation,
             dependencyPreparation: dependencyPreparation)
     }
@@ -257,6 +267,11 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
         try context.files.createDirectory(ccache)
         try context.files.createDirectory(inputRoot)
         try await download(initialDownloads, in: context)
+        let indexDownloads = try nativeBuilderAPTIndexDownloads(
+            releases: initialDownloads,
+            root: inputRoot,
+            files: context.files)
+        try await download(indexDownloads, in: context)
 
         try await context.containers.prepareImage(resolverPreparation)
         try context.files.remove(resolverOutput)
@@ -272,7 +287,7 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
             root: inputRoot)
         try await download(packageDownloads, in: context)
         try assembleContext(
-            downloads: initialDownloads + packageDownloads,
+            downloads: initialDownloads + indexDownloads + packageDownloads,
             files: context.files)
         try await context.containers.prepareImage(dependencyPreparation)
     }
@@ -307,7 +322,12 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
                 cpuCount: 2,
                 memoryBytes: 4 * 1_024 * 1_024 * 1_024,
                 processCount: 1_024),
-            containerEnvironment: ["LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"],
+            containerEnvironment: [
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "NUCLEUS_UBUNTU_SNAPSHOT": ubuntuSnapshot,
+                "NUCLEUS_UBUNTU_SUITES": ubuntuSuites.joined(separator: " "),
+            ],
             command: ["/usr/local/bin/resolve-nucleus-apt-packages"],
             environment: environment,
             output: .logged)
@@ -353,6 +373,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
             switch download.placement {
             case .archive(let name):
                 destination = candidate.appending("inputs/archives/\(name)")
+            case .aptRelease:
+                continue
             case .aptIndex:
                 continue
             case .aptPackage(let role, let digest):

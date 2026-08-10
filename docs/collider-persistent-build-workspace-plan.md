@@ -305,13 +305,14 @@ retain their existing concurrency.
 
 ## Phase 5: Migrate Native SDK Builders
 
-Status: active. The Skia, gfxstream/Mesa, Wayland, Hermes, support-library, and
-React Native C++ workspace implementations are complete. AOSP compilation and
-artifact processing now use separate Android-owned thin images, and gfxstream
-uses its own Android-owned thin image. Their cold and warm build qualification
-and the Vulkan-loader migration remain pending.
+Status: implementation complete; cold and warm qualification remains. The
+Skia, gfxstream/Mesa, Wayland, Hermes, support-library, and React Native C++
+workspace implementations are complete. AOSP compilation and artifact
+processing use separate Android-owned thin images, and gfxstream uses its own
+Android-owned thin image. The native builder uses Ubuntu 26.04's packaged
+Vulkan 1.4 loader instead of compiling or staging a private loader.
 
-Move Skia, gfxstream, Mesa, Vulkan-loader, React Native C++, Hermes, folly, and
+Move Skia, gfxstream, Mesa, React Native C++, Hermes, folly, and
 other CMake/GN/Meson/Ninja intermediates into component-and-target-specific
 workspaces. Keep separate workspaces for components that Collider schedules
 concurrently; never introduce a shared volume that serializes independent
