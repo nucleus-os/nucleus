@@ -68,9 +68,11 @@ invalidation, and ccache persists across ephemeral containers and interrupted
 runs.
 
 Both targets use Chromium's official Linux x86_64 host tools inside the arm64
-builder VM. macOS 27 Intel binary translation executes those tools. They
-generate arm64 or x86_64 target code according to each branch's GN
-configuration; no x86_64 Linux distribution or x86_64 VM is booted.
+builder VM. macOS 27 Intel binary translation executes those tools. The builder
+includes the declared amd64 runtime libraries required by both checked-in and
+generated host executables. They generate arm64 or x86_64 target code according
+to each branch's GN configuration; no x86_64 Linux distribution or x86_64 VM is
+booted.
 
 CEF disables Chromium's allocator shim and BackupRefPtr because `libcef.so`
 loads into another process. The standalone browser retains PartitionAlloc, the

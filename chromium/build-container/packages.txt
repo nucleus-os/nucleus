@@ -79,6 +79,7 @@ zstd
 # Runtime for Chromium's checked-in x86_64 Linux host executables. Target
 # binaries still compile and link against their target sysroot and libc++.
 libc6:amd64
+libexpat1:amd64
 libgcc-s1:amd64
 libstdc++6:amd64
 zlib1g:amd64

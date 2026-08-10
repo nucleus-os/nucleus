@@ -15,10 +15,11 @@ translation first, then a no-hooks Linux x86_64 build-host synchronization.
 The host-side CIPD client materializes Chromium's official Linux x86_64 graph
 through an explicit platform adapter. Offline arm64 builder VMs execute those
 tools through macOS 27 Intel translation while producing both target
-architectures. Collider imports the resulting immutable generation into one
-EXT4 source workspace per architecture. Only that import reads the host
-generation; both products' build and qualification actions mount the imported
-source read-only.
+architectures. The builder's pinned amd64 runtime closure covers checked-in and
+generated host executables. Collider imports the resulting immutable generation
+into one EXT4 source workspace per architecture. Only that import reads the
+host generation; both products' build and qualification actions mount the
+imported source read-only.
 
 CEF and Nucleus Browser retain separate GN outputs because their allocator and
 process-boundary contracts differ. Each architecture has one source workspace
@@ -39,6 +40,8 @@ implemented. This plan owns product qualification only.
 
 ## Phase 1 — Qualify cold product builds
 
+Status: active.
+
 From empty persistent workspaces, prepare the selected builder image,
 materialize the exact source generation, generate all four production GN graphs
 offline, build and publish arm64 and x86_64 CEF, and then build and publish
@@ -47,8 +50,9 @@ remain concurrent.
 
 Gate: both architectures of both products validate from their read-only EXT4
 source workspaces, the source-pinned Linux host tools execute through macOS 27
-translation, and no compiler output or generated state appears beneath the host
-source generation or a host-backed intermediate tree.
+translation with their complete declared runtime closure, and no compiler
+output or generated state appears beneath the host source generation or a
+host-backed intermediate tree.
 
 ## Phase 2 — Qualify artifacts and focused tests
 
