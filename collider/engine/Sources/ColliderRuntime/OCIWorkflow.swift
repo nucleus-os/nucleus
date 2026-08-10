@@ -15,9 +15,30 @@ extension ColliderRuntime {
         let base = contents.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first { $0.hasPrefix("FROM ") }
-        guard let base, base.contains("@sha256:") else {
+        guard let base else {
             throw RuntimeFailure.invalidOutput(
-                "build Containerfile must select its base image by digest")
+                "build Containerfile must select a base image")
+        }
+        let baseReference = base.dropFirst("FROM ".count)
+            .split(whereSeparator: \.isWhitespace)
+            .first
+            .map(String.init)
+        switch preparation.baseImageSource {
+        case .registry:
+            guard preparation.localBaseImageID == nil,
+                let baseReference,
+                baseReference.contains("@sha256:"),
+                !baseReference.hasPrefix("localhost/")
+            else {
+                throw RuntimeFailure.invalidOutput(
+                    "registry-backed Containerfile must select its base image by digest")
+            }
+        case .local:
+            let localBase = try ociLocalBaseImage(preparation)
+            guard baseReference == localBase.buildReference else {
+                throw RuntimeFailure.invalidOutput(
+                    "local Containerfile must select its verified digest tag")
+            }
         }
 
         let parent = preparation.imageID.removingLastComponent()
@@ -211,6 +232,48 @@ extension ColliderRuntime {
             throw failure
         }
     }
+}
+
+package struct OCILocalBaseImage: Hashable, Sendable {
+    package let sourceReference: String
+    package let digest: String
+    package let buildReference: String
+}
+
+package func ociLocalBaseImage(
+    _ preparation: OCIImagePreparation
+) throws -> OCILocalBaseImage {
+    guard preparation.baseImageSource == .local,
+        let identifier = preparation.localBaseImageID
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "local OCI base image ID is missing")
+    }
+    let components = try String(
+        contentsOfFile: identifier.string,
+        encoding: .utf8
+    ).split(whereSeparator: \.isNewline).map(String.init)
+    guard components.count == 2 else {
+        throw RuntimeFailure.invalidOutput(
+            "local OCI base image ID is invalid")
+    }
+    let sourceReference = components[0]
+    let digest = components[1]
+    guard sourceReference.hasPrefix("localhost/"),
+        !sourceReference.contains(":"),
+        !sourceReference.contains(where: { $0.isWhitespace || $0 == "@" }),
+        digest.hasPrefix("sha256:"),
+        digest.count == 71,
+        digest.dropFirst("sha256:".count).allSatisfy({ $0.isHexDigit })
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "local OCI base image ID is invalid")
+    }
+    return OCILocalBaseImage(
+        sourceReference: sourceReference,
+        digest: digest,
+        buildReference: sourceReference + ":digest-"
+            + digest.dropFirst("sha256:".count))
 }
 
 func validOCIImageDigest(in identifier: String) -> String? {

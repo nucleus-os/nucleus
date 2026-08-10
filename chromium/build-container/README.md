@@ -13,6 +13,11 @@ access. Each product and target receives an independent persistent EXT4 GN
 output at `/build` and ccache at `/ccache`; final artifacts cross back to the
 host only through bounded candidate mounts.
 
+`Dependencies.Containerfile` defines the stable, content-addressed dependency
+image. Collider adds `entrypoint.sh` in a separate thin image layer based on the
+exact local dependency-image digest. Editing orchestration code therefore does
+not reinstall the Linux package closure or rebuild the tool environment.
+
 The VM remains arm64. Chromium's official x86_64 Linux host tools use macOS 27
 Intel binary translation. Target binaries are generated against their matching
 Chromium sysroot. Automated validation executes arm64 artifacts natively and

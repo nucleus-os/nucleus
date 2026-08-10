@@ -160,6 +160,7 @@ private struct AOSPProductCompileWorkflow {
                     "target-files-package",
                     "otatools",
                 ],
+                mode: .build,
                 containerEnvironment: environment,
                 output: .logged))
         try requireAOSPBuildSuccess(result.status)

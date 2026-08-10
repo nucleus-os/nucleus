@@ -163,12 +163,18 @@ let aospRequiredProductImages = [
     "vbmeta_system.img",
 ]
 
+enum AOSPContainerMode: String, Sendable {
+    case build = "aosp-build"
+    case tools = "aosp-tools"
+}
+
 func aospProductOCIExecution(
     build: AOSPProductBuild,
     writableMounts: [(FilePath, String)],
     readOnlyMounts: [(FilePath, String)],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
     command: [String],
+    mode: AOSPContainerMode = .tools,
     imageEntrypointOverride: String? = nil,
     workingDirectory: String = "/src",
     containerEnvironment: [String: String] = aospProductContainerToolEnvironment(),
@@ -196,7 +202,7 @@ func aospProductOCIExecution(
         resourceLimits: .build,
         containerEnvironment: containerEnvironment,
         imageEntrypointOverride: imageEntrypointOverride,
-        command: imageEntrypointOverride == nil ? ["aosp"] + command : command,
+        command: imageEntrypointOverride == nil ? [mode.rawValue] + command : command,
         environment: build.environment,
         output: output)
 }

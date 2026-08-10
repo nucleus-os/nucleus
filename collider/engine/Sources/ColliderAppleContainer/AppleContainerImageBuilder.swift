@@ -9,11 +9,24 @@ import ContainerCommands
 struct AppleContainerImageBuilder: Sendable {
     func build(_ preparation: OCIImagePreparation) async throws -> String {
         try validateOCIPlatform(preparation.executionPlatform)
+        let configuration = try await Application.loadContainerSystemConfig()
+        if preparation.baseImageSource == .local {
+            let base = try ociLocalBaseImage(preparation)
+            let image = try await ClientImage.get(
+                reference: base.sourceReference,
+                containerSystemConfig: configuration)
+            guard image.digest == base.digest else {
+                throw AppleContainerFailure.invalidImageDigest
+            }
+            let tagged = try await image.tag(new: base.buildReference)
+            guard tagged.digest == base.digest else {
+                throw AppleContainerFailure.invalidImageDigest
+            }
+        }
         let command = try Application.BuildCommand.parse(
             appleContainerBuildArguments(preparation))
         try await command.run()
 
-        let configuration = try await Application.loadContainerSystemConfig()
         let image = try await ClientImage.get(
             reference: preparation.imageName,
             containerSystemConfig: configuration)
@@ -27,14 +40,19 @@ struct AppleContainerImageBuilder: Sendable {
 func appleContainerBuildArguments(
     _ preparation: OCIImagePreparation
 ) -> [String] {
-    [
+    var arguments = [
         "--platform", ociPlatformName(preparation.executionPlatform),
         "--network", "none",
-        "--pull",
+    ]
+    if preparation.baseImageSource == .registry {
+        arguments.append("--pull")
+    }
+    arguments += [
         "--progress", "plain",
         "--tag", preparation.imageName,
         "--file", preparation.containerFile.string,
         preparation.context.string,
     ]
+    return arguments
 }
 #endif

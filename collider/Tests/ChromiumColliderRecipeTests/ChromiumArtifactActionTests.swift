@@ -6,6 +6,94 @@ import Foundation
 import SystemPackage
 import Testing
 
+@Test
+func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-chromium-build-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("source")
+    let chromium = source.appendingPathComponent("chromium/src")
+    let clang = chromium.appendingPathComponent(
+        "third_party/llvm-build/Linux_x64/bin/clang")
+    let metadata = directory.appendingPathComponent("metadata")
+    let imageID = directory.appendingPathComponent("image-id")
+    try FileManager.default.createDirectory(
+        at: clang.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: metadata,
+        withIntermediateDirectories: true)
+    try Data("clang".utf8).write(to: clang)
+    try Data("fixture-image".utf8).write(to: imageID)
+    try JSONSerialization.data(
+        withJSONObject: ["sourceID": "0123456789abcdef01234567"],
+        options: [.sortedKeys]
+    ).write(to: source.appendingPathComponent("source-provenance.json"))
+
+    let target = ChromiumLinuxTarget(architecture: .arm64)
+    let action = BuildChromiumProductAction(
+        build: ChromiumProductBuild(
+            product: .browser,
+            target: target,
+            sourceRoot: FilePath(source.path),
+            buildManifest: FilePath(
+                metadata.appendingPathComponent("build-manifest.json").path),
+            inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
+            sourceWorkspace: chromiumSourceWorkspace(
+                target: target),
+            outputWorkspace: chromiumOutputWorkspace(
+                product: .browser,
+                target: target),
+            compilerCacheWorkspace: chromiumCompilerCacheWorkspace(
+                product: .browser,
+                target: target),
+            containerImageID: FilePath(imageID.path),
+            gnArguments: "is_debug=false",
+            targets: ["chrome"],
+            jobs: 12,
+            environment: ["PATH": "/usr/bin:/bin"]))
+    let executions = OCIExecutionRecorder()
+    try await execute(
+        action,
+        recording: executions,
+        containerRun: { execution in
+            switch execution.command.first {
+            case "materialize-source", "configure", "build":
+                return CommandResult(status: 0)
+            case "clang-version":
+                return CommandResult(
+                    status: 0,
+                    standardOutput: "clang version 23.0.0\n")
+            case "gn-args":
+                return CommandResult(
+                    status: 0,
+                    standardOutput: "is_debug = false\n")
+            default:
+                Issue.record(
+                    "unexpected Chromium build command: \(execution.command)")
+                return CommandResult(status: 64)
+            }
+        })
+    let recorded = await executions.values()
+    #expect(
+        recorded.map(\.command.first) == [
+            "materialize-source", "configure", "clang-version", "gn-args",
+            "build", "clang-version", "gn-args",
+        ])
+    let materialization = try #require(recorded.first)
+    #expect(materialization.mounts.map(\.target) == ["/host-source"])
+    #expect(materialization.persistentWorkspaceMounts.map(\.target) == ["/source"])
+    #expect(materialization.persistentWorkspaceMounts.first?.access == .readWrite)
+    #expect(materialization.intelBinaryTranslationPolicy == .disabled)
+    for execution in recorded.dropFirst() {
+        #expect(!execution.mounts.contains { $0.target == "/source" })
+        #expect(
+            execution.persistentWorkspaceMounts.first?.target == "/source")
+        #expect(
+            execution.persistentWorkspaceMounts.first?.access == .readOnly)
+    }
+}
+
 @Test(arguments: PlatformArchitecture.allCases)
 func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
     architecture: PlatformArchitecture
@@ -65,6 +153,8 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
         target: target,
         chromiumSource: FilePath(source.path),
         buildManifest: FilePath(buildManifest.path),
+        sourceWorkspace: chromiumSourceWorkspace(
+            target: target),
         outputWorkspace: chromiumOutputWorkspace(
             product: .browser,
             target: target),
@@ -233,6 +323,8 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         target: target,
         chromiumSource: FilePath(chromium.path),
         buildManifest: FilePath(buildManifest.path),
+        sourceWorkspace: chromiumSourceWorkspace(
+            target: target),
         outputWorkspace: chromiumOutputWorkspace(
             product: .cef,
             target: target),

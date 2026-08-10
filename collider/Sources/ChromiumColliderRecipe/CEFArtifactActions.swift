@@ -44,15 +44,14 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             hostWorkingDirectory: assembly.chromiumSource,
             mounts: [
                 OCIMount(
-                    source: assembly.chromiumSource,
-                    target: "/source/chromium/src",
-                    access: .readOnly),
-                OCIMount(
                     source: distributionCandidate,
                     target: "/distribution",
-                    access: .readWrite),
+                    access: .readWrite)
             ],
-            persistentWorkspaceMounts: [assembly.readOnlyOutputMount],
+            persistentWorkspaceMounts: [
+                assembly.readOnlySourceMount,
+                assembly.readOnlyOutputMount,
+            ],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
             environment: commandEnvironment,
@@ -118,12 +117,8 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             command: ["cef-version-check"],
             workingDirectory: "/source/chromium/src/cef",
             hostWorkingDirectory: assembly.chromiumSource.appending("cef"),
-            mounts: [
-                OCIMount(
-                    source: assembly.chromiumSource,
-                    target: "/source/chromium/src",
-                    access: .readOnly)
-            ],
+            mounts: [],
+            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
             environment: commandEnvironment,
@@ -191,6 +186,7 @@ private func encodeCEFArtifactIdentity(
     encoder.append(tag: 5, string: assembly.chromiumVersion)
     encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
     encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
+    encoder.append(tag: 8, string: assembly.sourceWorkspace.identity.key)
 }
 
 private func cefArtifactRequirements(
@@ -214,9 +210,13 @@ private func cefArtifactRequirements(
         ],
         persistentWorkspaceEffects: [
             ActionPersistentWorkspaceEffect(
+                workspace: assembly.sourceWorkspace,
+                target: "/source",
+                access: .readOnly),
+            ActionPersistentWorkspaceEffect(
                 workspace: assembly.outputWorkspace,
                 target: "/build",
-                access: .readOnly)
+                access: .readOnly),
         ],
         executionPlatform: .linuxARM64OCI,
         artifactTarget: assembly.target.artifactTarget)
@@ -273,13 +273,10 @@ private func validateCEFSDK(
             workingDirectory: "/sdk",
             hostWorkingDirectory: sdk,
             mounts: [
-                OCIMount(
-                    source: assembly.chromiumSource,
-                    target: "/source/chromium/src",
-                    access: .readOnly),
                 OCIMount(source: sdk, target: "/sdk", access: .readOnly),
                 OCIMount(source: smoke, target: "/smoke", access: .readWrite),
             ],
+            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
             command: ["validate-cef", assembly.target.architecture.rawValue],

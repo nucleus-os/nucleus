@@ -27,8 +27,6 @@ RUN usermod \
         --comment 'Nucleus Chromium Build' \
         nucleus-build
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-chromium-build
-
 USER nucleus-build
 WORKDIR /source/chromium/src
 
@@ -39,4 +37,3 @@ ENV HOME=/tmp/nucleus-home \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=UTC
 
-ENTRYPOINT ["/usr/local/bin/nucleus-chromium-build"]

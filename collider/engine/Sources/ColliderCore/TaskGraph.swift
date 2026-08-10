@@ -95,12 +95,19 @@ public struct DirectoryRetentionPlan: Hashable, Sendable {
     }
 }
 
+public enum OCIBaseImageSource: String, Hashable, Sendable {
+    case registry
+    case local
+}
+
 public struct OCIImagePreparation: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let context: FilePath
     public let containerFile: FilePath
     public let imageID: FilePath
     public let imageName: String
+    public let baseImageSource: OCIBaseImageSource
+    public let localBaseImageID: FilePath?
     public let environment: [String: String]
 
     public init(
@@ -109,6 +116,8 @@ public struct OCIImagePreparation: Hashable, Sendable {
         containerFile: FilePath,
         imageID: FilePath,
         imageName: String,
+        baseImageSource: OCIBaseImageSource = .registry,
+        localBaseImageID: FilePath? = nil,
         environment: [String: String]
     ) {
         self.executionPlatform = executionPlatform
@@ -116,6 +125,8 @@ public struct OCIImagePreparation: Hashable, Sendable {
         self.containerFile = containerFile
         self.imageID = imageID
         self.imageName = imageName
+        self.baseImageSource = baseImageSource
+        self.localBaseImageID = localBaseImageID
         self.environment = environment
     }
 }

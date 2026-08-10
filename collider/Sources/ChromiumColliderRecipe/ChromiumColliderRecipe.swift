@@ -2,6 +2,10 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+private enum ChromiumEntrypointImageActionKind: OCIEntrypointImageActionKind {
+    static let actionKind: ActionKind = "browser.prepare-entrypoint-image"
+}
+
 package enum ChromiumTaskIDs {
     package static let source = TaskID(rawValue: "browser.source")
     package static let retention = TaskID(rawValue: "browser.retention")
@@ -138,7 +142,9 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             StorageDeclaration(
                 id: "browser-builder-metadata",
                 owner: descriptor.id,
-                producers: producers(TaskID(rawValue: "browser.builder")),
+                producers: producers(
+                    TaskID(rawValue: "browser.builder-dependencies"),
+                    TaskID(rawValue: "browser.builder")),
                 storageClass: .cache,
                 root: cacheRoot.appending("build-container"),
                 safetyRoot: cacheRoot,
@@ -271,9 +277,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let builderContext = chromium.appending("build-container")
         let builderCache = cache.appending("build-container")
         let builderInputRoot = builderCache.appending("inputs")
+        let generatedBuilderDependencyContext = builderCache.appending(
+            "dependency-context")
         let generatedBuilderContext = builderCache.appending("context")
         let builderResolverOutput = builderCache.appending("apt-resolution")
         let builderResolverImageID = builderCache.appending("resolver-image-id")
+        let builderDependencyImageID = builderCache.appending(
+            "dependency-image-id")
         let builderImageID = builderCache.appending("image-id")
         let builderInputManifest = try ChromiumBuilderInputManifest.load(
             from: builderContext.appending("builder-inputs.json"))
@@ -382,24 +392,24 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     PrepareChromiumSourceAction(
                         preparation: sourcePreparation)))
-        var imageBuilder = TaskBuilder(
-            id: TaskID(rawValue: "browser.builder"),
+        var dependencyImageBuilder = TaskBuilder(
+            id: TaskID(rawValue: "browser.builder-dependencies"),
             component: ComponentID(rawValue: "browser"))
-        let builderImage: ArtifactReference<FileArtifact> = try imageBuilder.output(
-            "image-id",
-            path: builderImageID,
-            validation: .regularFile)
-        let builderTask = imageBuilder.build(
-            inputs: [
-                .sourceCheckout(builderContext)
-            ],
+        let dependencyImage: ArtifactReference<FileArtifact> =
+            try dependencyImageBuilder.output(
+                "image-id",
+                path: builderDependencyImageID,
+                validation: .regularFile)
+        let builderDependencyTask = dependencyImageBuilder.build(
+            inputs: chromiumBuilderDependencyInputs(
+                sourceContext: builderContext),
             locks: [.shared(cache.appending("locks/builder.lock"))],
             action:
                 try AnyColliderAction(
-                    PrepareChromiumBuilderImageAction(
+                    PrepareChromiumBuilderDependencyImageAction(
                         sourceContext: builderContext,
                         inputRoot: builderInputRoot,
-                        generatedContext: generatedBuilderContext,
+                        generatedContext: generatedBuilderDependencyContext,
                         resolverOutput: builderResolverOutput,
                         initialDownloads: builderInputManifest.downloads(
                             root: builderInputRoot),
@@ -411,13 +421,43 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             imageID: builderResolverImageID,
                             imageName: "localhost/nucleus-chromium-apt-resolver",
                             environment: childEnvironment),
-                        finalPreparation: OCIImagePreparation(
+                        dependencyPreparation: OCIImagePreparation(
+                            executionPlatform: .linuxARM64OCI,
+                            context: generatedBuilderDependencyContext,
+                            containerFile: generatedBuilderDependencyContext.appending(
+                                "Containerfile"),
+                            imageID: builderDependencyImageID,
+                            imageName:
+                                "localhost/nucleus-chromium-build-dependencies",
+                            environment: childEnvironment))))
+        var imageBuilder = TaskBuilder(
+            id: TaskID(rawValue: "browser.builder"),
+            component: ComponentID(rawValue: "browser"))
+        imageBuilder.consume(dependencyImage)
+        let builderImage: ArtifactReference<FileArtifact> = try imageBuilder.output(
+            "image-id",
+            path: builderImageID,
+            validation: .regularFile)
+        let builderTask = imageBuilder.build(
+            inputs: [.file(builderContext.appending("entrypoint.sh"))],
+            locks: [.shared(cache.appending("locks/builder.lock"))],
+            action:
+                try AnyColliderAction(
+                    PrepareOCIEntrypointImageAction<ChromiumEntrypointImageActionKind>(
+                        baseImageID: builderDependencyImageID,
+                        entrypoint: builderContext.appending("entrypoint.sh"),
+                        entrypointDestination:
+                            "/usr/local/bin/nucleus-chromium-build",
+                        generatedContext: generatedBuilderContext,
+                        preparation: OCIImagePreparation(
                             executionPlatform: .linuxARM64OCI,
                             context: generatedBuilderContext,
                             containerFile: generatedBuilderContext.appending(
                                 "Containerfile"),
                             imageID: builderImageID,
                             imageName: "localhost/nucleus-chromium-build",
+                            baseImageSource: .local,
+                            localBaseImageID: builderDependencyImageID,
                             environment: childEnvironment))))
         var buildTasks: [TaskDeclaration] = []
         var artifactTasks: [TaskDeclaration] = []
@@ -431,6 +471,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 let metadata = buildMetadata.appending(
                     "\(target.identifier)/\(product.rawValue)")
                 let manifest = metadata.appending("build-manifest.json")
+                let sourceWorkspace = chromiumSourceWorkspace(target: target)
                 let outputWorkspace = chromiumOutputWorkspace(
                     product: product,
                     target: target)
@@ -450,6 +491,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     sourceRoot: source,
                     buildManifest: manifest,
                     inputRoot: metadata.appending("inputs"),
+                    sourceWorkspace: sourceWorkspace,
                     outputWorkspace: outputWorkspace,
                     compilerCacheWorkspace: compilerCacheWorkspace,
                     containerImageID: builderImageID,
@@ -513,6 +555,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 target: target,
                                 chromiumSource: chromiumSource,
                                 buildManifest: manifest,
+                                sourceWorkspace: sourceWorkspace,
                                 outputWorkspace: outputWorkspace,
                                 containerImageID: builderImageID,
                                 distributionRoot: distributionRoot,
@@ -526,6 +569,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 target: target,
                                 chromiumSource: chromiumSource,
                                 buildManifest: manifest,
+                                sourceWorkspace: sourceWorkspace,
                                 outputWorkspace: outputWorkspace,
                                 containerImageID: builderImageID,
                                 distributionRoot: distributionRoot,
@@ -628,6 +672,9 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         inputRoot: manifest.path
                                             .removingLastComponent()
                                             .appending("inputs"),
+                                        sourceWorkspace:
+                                            chromiumSourceWorkspace(
+                                                target: target),
                                         outputWorkspace: workspace,
                                         compilerCacheWorkspace:
                                             chromiumCompilerCacheWorkspace(
@@ -670,7 +717,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             environment: childEnvironment))))
         return [
             depotToolsTask, depotBootstrap,
-            sourceTask, builderTask,
+            sourceTask, builderDependencyTask, builderTask,
         ] + buildTasks + artifactTasks + [retention] + testTasks + [install]
     }
 
@@ -748,14 +795,26 @@ public enum ChromiumColliderRecipe: ColliderComponent {
     }
 }
 
-private struct PrepareChromiumBuilderImageAction: ColliderAction {
+private func chromiumBuilderDependencyInputs(
+    sourceContext: FilePath
+) -> [ArtifactInput] {
+    [
+        "Dependencies.Containerfile",
+        "Resolver.Containerfile",
+        "builder-inputs.json",
+        "packages.txt",
+        "resolve-apt-packages.sh",
+    ].map { .file(sourceContext.appending($0)) }
+}
+
+private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let sourceContext: FilePath
         let inputRoot: FilePath
         let generatedContext: FilePath
         let resolverOutput: FilePath
         let resolverPreparation: OCIImagePreparation
-        let finalPreparation: OCIImagePreparation
+        let dependencyPreparation: OCIImagePreparation
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: sourceContext.string)
@@ -767,11 +826,11 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
                 nested: OCIImagePreparationActionIdentity(resolverPreparation))
             encoder.append(
                 tag: 6,
-                nested: OCIImagePreparationActionIdentity(finalPreparation))
+                nested: OCIImagePreparationActionIdentity(dependencyPreparation))
         }
     }
 
-    static let kind: ActionKind = "browser.prepare-builder-image"
+    static let kind: ActionKind = "browser.prepare-builder-dependency-image"
 
     let sourceContext: FilePath
     let inputRoot: FilePath
@@ -779,7 +838,7 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
     let resolverOutput: FilePath
     let initialDownloads: [ChromiumBuilderDownload]
     let resolverPreparation: OCIImagePreparation
-    let finalPreparation: OCIImagePreparation
+    let dependencyPreparation: OCIImagePreparation
 
     var identity: Identity {
         Identity(
@@ -788,13 +847,31 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
             generatedContext: generatedContext,
             resolverOutput: resolverOutput,
             resolverPreparation: resolverPreparation,
-            finalPreparation: finalPreparation)
+            dependencyPreparation: dependencyPreparation)
     }
 
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(sourceContext)),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("Dependencies.Containerfile"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("Resolver.Containerfile"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("builder-inputs.json"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(sourceContext.appending("packages.txt"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("resolve-apt-packages.sh"))),
                 ActionEffect(.readWrite, scope: .scratch(inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(generatedContext)),
                 ActionEffect(.readWrite, scope: .scratch(candidateContext)),
@@ -804,14 +881,14 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
                     scope: .scratch(resolverPreparation.imageID)),
                 ActionEffect(
                     .readWrite,
-                    scope: .output(finalPreparation.imageID)),
+                    scope: .output(dependencyPreparation.imageID)),
             ],
             lane: .hostExclusive,
             networkAccess: .contentAddressed,
             executionPlatform: .linuxARM64OCI)
     }
 
-    var environment: [String: String] { finalPreparation.environment }
+    var environment: [String: String] { dependencyPreparation.environment }
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(inputRoot)
@@ -833,7 +910,7 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
         try assembleContext(
             packageDownloads: packageDownloads,
             files: context.files)
-        try await context.containers.prepareImage(finalPreparation)
+        try await context.containers.prepareImage(dependencyPreparation)
     }
 
     private func resolverExecution() -> OCIExecution {
@@ -904,11 +981,8 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
         try files.remove(candidateContext)
         try files.createDirectory(candidateContext)
         try files.copy(
-            from: sourceContext.appending("Containerfile"),
+            from: sourceContext.appending("Dependencies.Containerfile"),
             to: candidateContext.appending("Containerfile"))
-        try files.copy(
-            from: sourceContext.appending("entrypoint.sh"),
-            to: candidateContext.appending("entrypoint.sh"))
         for download in packageDownloads {
             guard let digest = download.digest else { continue }
             let destination = candidateContext.appending(
@@ -921,7 +995,8 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
     }
 
     private var candidateContext: FilePath {
-        generatedContext.removingLastComponent().appending("context.candidate")
+        generatedContext.removingLastComponent().appending(
+            "\(generatedContext.lastComponent?.string ?? "dependency-context").candidate")
     }
 }
 
@@ -1200,6 +1275,7 @@ private func chromiumBuildExecution(
     imageID: FilePath,
     source: FilePath,
     inputRoot: FilePath,
+    sourceWorkspace: PersistentWorkspaceDeclaration,
     outputWorkspace: PersistentWorkspaceDeclaration,
     compilerCacheWorkspace: PersistentWorkspaceDeclaration,
     jobs: Int,
@@ -1216,15 +1292,15 @@ private func chromiumBuildExecution(
         hostWorkingDirectory: source.appending("chromium/src"),
         mounts: [
             OCIMount(
-                source: source,
-                target: "/source",
-                access: .readOnly),
-            OCIMount(
                 source: inputRoot,
                 target: "/inputs",
-                access: .readOnly),
+                access: .readOnly)
         ],
         persistentWorkspaceMounts: [
+            OCIPersistentWorkspaceMount(
+                workspace: sourceWorkspace,
+                target: "/source",
+                access: .readOnly),
             OCIPersistentWorkspaceMount(
                 workspace: outputWorkspace,
                 target: "/build",

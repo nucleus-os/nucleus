@@ -41,12 +41,19 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
                 ChromiumTaskIDs.source,
                 ChromiumTaskIDs.retention,
                 ChromiumTaskIDs.install,
+                TaskID(rawValue: "browser.builder-dependencies"),
+                TaskID(rawValue: "browser.builder"),
             ] + chromiumLinuxTargets.map(ChromiumTaskIDs.test)))
     let orderedBuildTasks = try graph.orderedTasks(selecting: [
         ChromiumTaskIDs.retention
     ]).map(\.id)
-    #expect(orderedBuildTasks.count == 13)
     #expect(orderedBuildTasks.last == ChromiumTaskIDs.retention)
+    let dependencyBuilderIndex = try #require(
+        orderedBuildTasks.firstIndex(
+            of: TaskID(rawValue: "browser.builder-dependencies")))
+    let builderIndex = try #require(
+        orderedBuildTasks.firstIndex(of: TaskID(rawValue: "browser.builder")))
+    #expect(dependencyBuilderIndex < builderIndex)
 
     #expect(
         Set(tasks.compactMap(\.action).map(\.kind)).isSuperset(of: [
@@ -63,7 +70,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         productActions.allSatisfy {
             $0.requirements.executionPlatform == .linuxARM64OCI
                 && $0.requirements.lane == .oci
-                && $0.requirements.persistentWorkspaceEffects.count == 2
+                && $0.requirements.persistentWorkspaceEffects.count == 3
         })
     #expect(
         Set(productActions.compactMap(\.requirements.artifactTarget))
@@ -84,9 +91,10 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             "test-ozone", "16", x86Target.architecture.rawValue,
         ])
     #expect(!execution.mounts.contains { $0.target == "/build" })
+    #expect(!execution.mounts.contains { $0.target == "/source" })
     #expect(
         execution.persistentWorkspaceMounts.map(\.target)
-            == ["/build", "/ccache"])
+            == ["/source", "/build", "/ccache"])
 
     let buildIDs = chromiumLinuxTargets.flatMap { target in
         ChromiumProduct.allCases.map { product in

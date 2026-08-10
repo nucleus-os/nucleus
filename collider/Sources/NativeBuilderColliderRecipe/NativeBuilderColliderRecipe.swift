@@ -3,12 +3,17 @@ import Foundation
 import SystemPackage
 
 package enum NativeBuilderTaskIDs {
+    package static let dependencies = TaskID(rawValue: "native.builder-dependencies")
     package static let prepare = TaskID(rawValue: "native.builder")
 }
 
 package struct NativeBuilderArtifacts: Sendable {
     package let component: ComponentDefinition
     package let configuration: NativeOCIBaseConfiguration
+}
+
+private enum NativeEntrypointImageActionKind: OCIEntrypointImageActionKind {
+    static let actionKind: ActionKind = "native.prepare-entrypoint-image"
 }
 
 public enum NativeBuilderColliderRecipe {
@@ -25,9 +30,11 @@ public enum NativeBuilderColliderRecipe {
         environment: [String: String]
     ) throws -> NativeBuilderArtifacts {
         let inputRoot = cacheRoot.appending("inputs")
+        let dependencyContext = cacheRoot.appending("dependency-context")
         let generatedContext = cacheRoot.appending("context")
         let resolverOutput = cacheRoot.appending("apt-resolution")
         let resolverImageID = cacheRoot.appending("resolver-image-id")
+        let dependencyImageID = cacheRoot.appending("dependency-image-id")
         let manifest = try NativeBuilderInputManifest.load(
             from: sourceContext.appending("native-builder-inputs.json"))
         let downloads = try manifest.downloads(root: inputRoot)
@@ -38,23 +45,33 @@ public enum NativeBuilderColliderRecipe {
             imageID: resolverImageID,
             imageName: "localhost/nucleus-apt-resolver",
             environment: environment)
+        let dependencyPreparation = OCIImagePreparation(
+            executionPlatform: .linuxARM64OCI,
+            context: dependencyContext,
+            containerFile: dependencyContext.appending("Containerfile"),
+            imageID: dependencyImageID,
+            imageName: "localhost/nucleus-linux-build-dependencies",
+            environment: environment)
         let finalPreparation = OCIImagePreparation(
             executionPlatform: .linuxARM64OCI,
             context: generatedContext,
             containerFile: generatedContext.appending("Containerfile"),
             imageID: imageID,
             imageName: "localhost/nucleus-linux-build",
+            baseImageSource: .local,
+            localBaseImageID: dependencyImageID,
             environment: environment)
 
-        var builder = TaskBuilder(
-            id: NativeBuilderTaskIDs.prepare,
+        var dependencyBuilder = TaskBuilder(
+            id: NativeBuilderTaskIDs.dependencies,
             component: descriptor.id)
-        let image: ArtifactReference<FileArtifact> = try builder.output(
-            "image-id",
-            path: imageID,
-            validation: .regularFile)
-        let task = builder.build(
-            inputs: [.tree(sourceContext)],
+        let dependencyImage: ArtifactReference<FileArtifact> =
+            try dependencyBuilder.output(
+                "image-id",
+                path: dependencyImageID,
+                validation: .regularFile)
+        let dependencyTask = dependencyBuilder.build(
+            inputs: nativeBuilderDependencyInputs(sourceContext: sourceContext),
             postconditions: [
                 PathPostcondition(path: ccache, validation: .exists)
             ],
@@ -62,15 +79,35 @@ public enum NativeBuilderColliderRecipe {
             assessmentPolicy: .incremental,
             action:
                 try AnyColliderAction(
-                    PrepareNativeBuilderImageAction(
+                    PrepareNativeBuilderDependencyImageAction(
                         sourceContext: sourceContext,
                         inputRoot: inputRoot,
-                        generatedContext: generatedContext,
+                        generatedContext: dependencyContext,
                         resolverOutput: resolverOutput,
                         ccache: ccache,
                         initialDownloads: downloads,
                         resolverPreparation: resolverPreparation,
-                        finalPreparation: finalPreparation)))
+                        dependencyPreparation: dependencyPreparation)))
+        var builder = TaskBuilder(
+            id: NativeBuilderTaskIDs.prepare,
+            component: descriptor.id)
+        builder.consume(dependencyImage)
+        let image: ArtifactReference<FileArtifact> = try builder.output(
+            "image-id",
+            path: imageID,
+            validation: .regularFile)
+        let task = builder.build(
+            inputs: [.file(sourceContext.appending("entrypoint.sh"))],
+            locks: [.checkout("native-builder-image")],
+            assessmentPolicy: .incremental,
+            action:
+                try AnyColliderAction(
+                    PrepareOCIEntrypointImageAction<NativeEntrypointImageActionKind>(
+                        baseImageID: dependencyImageID,
+                        entrypoint: sourceContext.appending("entrypoint.sh"),
+                        entrypointDestination: "/usr/local/bin/nucleus-build",
+                        generatedContext: generatedContext,
+                        preparation: finalPreparation)))
         let configuration = NativeOCIBaseConfiguration(
             context: generatedContext,
             image: image,
@@ -79,7 +116,7 @@ public enum NativeBuilderColliderRecipe {
         return NativeBuilderArtifacts(
             component: try ComponentDefinition(
                 descriptor: descriptor,
-                tasks: [task],
+                tasks: [dependencyTask, task],
                 entrypoints: [
                     ComponentEntrypoint(id: .bootstrap, roots: [task.id])
                 ],
@@ -87,7 +124,7 @@ public enum NativeBuilderColliderRecipe {
                     StorageDeclaration(
                         id: "native-builder-metadata",
                         owner: descriptor.id,
-                        producers: [.task(task.id)],
+                        producers: [.task(dependencyTask.id), .task(task.id)],
                         storageClass: .cache,
                         root: cacheRoot,
                         safetyRoot: cacheRoot.removingLastComponent(),
@@ -96,7 +133,7 @@ public enum NativeBuilderColliderRecipe {
                     StorageDeclaration(
                         id: "native-builder-ccache",
                         owner: descriptor.id,
-                        producers: [.task(task.id)],
+                        producers: [.task(dependencyTask.id)],
                         storageClass: .cache,
                         root: ccache,
                         safetyRoot: ccache.removingLastComponent(),
@@ -107,7 +144,20 @@ public enum NativeBuilderColliderRecipe {
     }
 }
 
-private struct PrepareNativeBuilderImageAction: ColliderAction {
+private func nativeBuilderDependencyInputs(
+    sourceContext: FilePath
+) -> [ArtifactInput] {
+    [
+        "Dependencies.Containerfile",
+        "Resolver.Containerfile",
+        "apt-extract-packages.txt",
+        "apt-install-packages.txt",
+        "native-builder-inputs.json",
+        "resolve-apt-packages.sh",
+    ].map { .file(sourceContext.appending($0)) }
+}
+
+private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let sourceContext: FilePath
         let inputRoot: FilePath
@@ -115,7 +165,7 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
         let resolverOutput: FilePath
         let cache: FilePath
         let resolverPreparation: OCIImagePreparation
-        let finalPreparation: OCIImagePreparation
+        let dependencyPreparation: OCIImagePreparation
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: sourceContext.string)
@@ -128,11 +178,11 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
                 nested: OCIImagePreparationActionIdentity(resolverPreparation))
             encoder.append(
                 tag: 7,
-                nested: OCIImagePreparationActionIdentity(finalPreparation))
+                nested: OCIImagePreparationActionIdentity(dependencyPreparation))
         }
     }
 
-    static let kind: ActionKind = "native.prepare-builder-image"
+    static let kind: ActionKind = "native.prepare-builder-dependency-image"
 
     let sourceContext: FilePath
     let inputRoot: FilePath
@@ -141,7 +191,7 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
     let ccache: FilePath
     let initialDownloads: [NativeBuilderDownload]
     let resolverPreparation: OCIImagePreparation
-    let finalPreparation: OCIImagePreparation
+    let dependencyPreparation: OCIImagePreparation
 
     var identity: Identity {
         Identity(
@@ -151,13 +201,36 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
             resolverOutput: resolverOutput,
             cache: ccache,
             resolverPreparation: resolverPreparation,
-            finalPreparation: finalPreparation)
+            dependencyPreparation: dependencyPreparation)
     }
 
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(sourceContext)),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("Dependencies.Containerfile"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("Resolver.Containerfile"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("apt-extract-packages.txt"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("apt-install-packages.txt"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("native-builder-inputs.json"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(
+                        sourceContext.appending("resolve-apt-packages.sh"))),
                 ActionEffect(.readWrite, scope: .scratch(inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(generatedContext)),
                 ActionEffect(
@@ -170,14 +243,14 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
                 ActionEffect(.readWrite, scope: .scratch(ccache)),
                 ActionEffect(
                     .readWrite,
-                    scope: .output(finalPreparation.imageID)),
+                    scope: .output(dependencyPreparation.imageID)),
             ],
             lane: .hostExclusive,
             networkAccess: .contentAddressed,
             executionPlatform: .linuxARM64OCI)
     }
 
-    var environment: [String: String] { finalPreparation.environment }
+    var environment: [String: String] { dependencyPreparation.environment }
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(ccache)
@@ -200,7 +273,7 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
         try assembleContext(
             downloads: initialDownloads + packageDownloads,
             files: context.files)
-        try await context.containers.prepareImage(finalPreparation)
+        try await context.containers.prepareImage(dependencyPreparation)
     }
 
     private func resolverExecution() -> OCIExecution {
@@ -272,11 +345,8 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
         try files.remove(candidate)
         try files.createDirectory(candidate)
         try files.copy(
-            from: sourceContext.appending("Containerfile"),
+            from: sourceContext.appending("Dependencies.Containerfile"),
             to: candidate.appending("Containerfile"))
-        try files.copy(
-            from: sourceContext.appending("entrypoint.sh"),
-            to: candidate.appending("entrypoint.sh"))
         for download in downloads {
             let destination: FilePath
             switch download.placement {
@@ -298,6 +368,7 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
     }
 
     private var candidateContext: FilePath {
-        generatedContext.removingLastComponent().appending("context.candidate")
+        generatedContext.removingLastComponent().appending(
+            "\(generatedContext.lastComponent?.string ?? "dependency-context").candidate")
     }
 }

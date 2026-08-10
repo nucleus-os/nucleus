@@ -6,6 +6,13 @@ readonly contract="$script_directory/contract.json"
 readonly starter_source="$script_directory/container-system-start"
 readonly plist_template="$script_directory/com.nucleus.container-system-start.plist.in"
 readonly service_label="com.nucleus.container-system-start"
+readonly app_root="$(
+  /usr/bin/plutil -extract appleContainer.appRoot raw -o - "$contract"
+)"
+readonly volume_root="$(
+  /usr/bin/plutil -extract appleContainer.volumeRoot raw -o - "$contract"
+)"
+readonly service_volume_root="$app_root/volumes"
 
 if [[ $EUID -eq 0 ]]; then
   echo "error: run this installer as the logged-in builder user, without sudo" >&2
@@ -81,7 +88,8 @@ if [[ "$installed_container_version" != "$expected_container_version" ]]; then
 fi
 
 for required_path in \
-  /Volumes/NucleusOCI/apple-container \
+  "$app_root" \
+  "$volume_root" \
   /Volumes/NucleusLogs
 do
   if [[ ! -d "$required_path" ]]; then
@@ -93,6 +101,12 @@ do
     exit 77
   fi
 done
+if [[ ! -L "$service_volume_root" \
+    || "$(/usr/bin/readlink "$service_volume_root")" != "$volume_root" ]]; then
+  echo "error: Apple container volumes are not rooted at $volume_root" >&2
+  echo "run $script_directory/migrate-container-volumes.sh" >&2
+  exit 78
+fi
 
 /bin/launchctl bootout "gui/$service_uid/$service_label" >/dev/null 2>&1 || true
 /usr/bin/install -d -m 0755 "$starter_directory"

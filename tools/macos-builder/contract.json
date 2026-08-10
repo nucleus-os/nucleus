@@ -18,6 +18,7 @@
     "executable": "/usr/local/bin/container",
     "apiServerExecutable": "/usr/local/bin/container-apiserver",
     "appRoot": "/Volumes/NucleusOCI/apple-container",
+    "volumeRoot": "/Volumes/NucleusBuild/apple-container-volumes",
     "installRoot": "/usr/local",
     "network": "nucleus-build-internal"
   },

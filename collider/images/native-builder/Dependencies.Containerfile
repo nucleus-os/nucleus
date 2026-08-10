@@ -204,8 +204,6 @@ RUN usermod \
         --comment 'Nucleus Linux Build' \
         nucleus-build
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-build
-
 USER nucleus-build
 WORKDIR /src
 
@@ -217,5 +215,3 @@ ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
     LC_ALL=C.UTF-8 \
     PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=UTC
-
-ENTRYPOINT ["/usr/local/bin/nucleus-build"]

@@ -366,7 +366,10 @@ The source-controlled host contract is also the environment authority. It maps
 `NucleusCache`; shell startup files are not the build-system source of truth.
 The persistent development workspace remains on `NucleusDev`, protected source
 snapshots remain on `NucleusSnapshots`, and host-worker materializations remain
-on `NucleusBuild`.
+on `NucleusBuild`. Apple Container keeps images, snapshots, and service state in
+`NucleusOCI`, while its `appRoot/volumes` directory is a contract-managed link
+to `NucleusBuild/apple-container-volumes`. This makes the EXT4 workspace images
+part of reconstructible build storage rather than consuming the OCI quota.
 
 Collider validates typed owner, storage-class, cleanup-policy, quota, reserve,
 and mount evidence. `collider cache status` combines that APFS evidence with

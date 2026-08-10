@@ -178,12 +178,26 @@ package func chromiumCompilerCacheWorkspace(
         journal: .writeback64MiB)
 }
 
+package func chromiumSourceWorkspace(
+    target: ChromiumLinuxTarget
+) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "chromium-source",
+            artifactTarget: target.artifactTarget,
+            role: "source"),
+        capacityBytes: 64 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
 package struct ChromiumProductBuild: Hashable, Sendable {
     package let product: ChromiumProduct
     package let target: ChromiumLinuxTarget
     package let sourceRoot: FilePath
     package let buildManifest: FilePath
     package let inputRoot: FilePath
+    package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
@@ -198,6 +212,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         sourceRoot: FilePath,
         buildManifest: FilePath,
         inputRoot: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
@@ -211,6 +226,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         self.sourceRoot = sourceRoot
         self.buildManifest = buildManifest
         self.inputRoot = inputRoot
+        self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
         self.containerImageID = containerImageID
@@ -224,6 +240,20 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
             target: "/build",
+            access: .readWrite)
+    }
+
+    package var sourceMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: sourceWorkspace,
+            target: "/source",
+            access: .readOnly)
+    }
+
+    package var writableSourceMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: sourceWorkspace,
+            target: "/source",
             access: .readWrite)
     }
 
@@ -246,6 +276,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
     package let buildManifest: FilePath
+    package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
     package let distributionRoot: FilePath
@@ -257,6 +288,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
         buildManifest: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         distributionRoot: FilePath,
@@ -267,6 +299,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         self.target = target
         self.chromiumSource = chromiumSource
         self.buildManifest = buildManifest
+        self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
@@ -281,12 +314,20 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
             target: "/build",
             access: .readOnly)
     }
+
+    package var readOnlySourceMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: sourceWorkspace,
+            target: "/source",
+            access: .readOnly)
+    }
 }
 
 package struct CEFArtifactAssembly: Hashable, Sendable {
     package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
     package let buildManifest: FilePath
+    package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
     package let distributionRoot: FilePath
@@ -298,6 +339,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
         buildManifest: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         distributionRoot: FilePath,
@@ -308,6 +350,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         self.target = target
         self.chromiumSource = chromiumSource
         self.buildManifest = buildManifest
+        self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
@@ -320,6 +363,13 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
             target: "/build",
+            access: .readOnly)
+    }
+
+    package var readOnlySourceMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: sourceWorkspace,
+            target: "/source",
             access: .readOnly)
     }
 }

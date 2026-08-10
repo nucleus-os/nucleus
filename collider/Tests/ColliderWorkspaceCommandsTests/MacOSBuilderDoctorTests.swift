@@ -25,6 +25,9 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
     #expect(
+        contract.appleContainer.volumeRoot
+            == "/Volumes/NucleusBuild/apple-container-volumes")
+    #expect(
         contract.launchd.starterRelativePath
             == "Library/Application Support/Nucleus/bin/container-system-start")
     #expect(contract.launchd.maximumOpenFileCount == 245_760)

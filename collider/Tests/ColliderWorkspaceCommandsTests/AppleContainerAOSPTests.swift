@@ -49,6 +49,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         readOnlyMounts: aospProductSourceMounts(build: build),
         persistentWorkspaceMounts: [build.outputMount, build.compilerCacheMount],
         command: ["/bin/true"],
+        mode: .build,
         containerEnvironment: ["TZ": "UTC"])
     let runtimeConfiguration = nucleusOCIRuntimeConfiguration(
         workspaceRoot: FilePath(root.path))
@@ -66,7 +67,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
-    #expect(execution.command == ["aosp", "/bin/true"])
+    #expect(execution.command == ["aosp-build", "/bin/true"])
     #expect(flags.management.entrypoint == nil)
     #expect(aospProductContainerToolEnvironment()["REPO_TRACE"] == "0")
     #expect(
@@ -93,6 +94,14 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         !flags.process.env.contains(where: {
             $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
         }))
+
+    let toolsExecution = aospProductOCIExecution(
+        build: build,
+        writableMounts: [],
+        readOnlyMounts: [(build.source, "/src")],
+        persistentWorkspaceMounts: [build.readOnlyOutputMount],
+        command: ["/bin/true"])
+    #expect(toolsExecution.command == ["aosp-tools", "/bin/true"])
 
     let entrypointOverride = aospProductOCIExecution(
         build: build,

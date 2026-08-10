@@ -85,9 +85,20 @@ case "${1:-}" in
     fi
     shift
     ;;
-  aosp)
-    if [[ ! -d /src/.repo ]]; then
-      echo "error: /src is not the complete read-only AOSP checkout" >&2
+  aosp-build)
+    if [[ ! -d /src/.repo \
+        || ! -d /src/out \
+        || ! -w /src/out \
+        || ! -d /ccache \
+        || ! -w /ccache ]]; then
+      echo "error: aosp-build requires source plus writable output and compiler-cache workspaces" >&2
+      exit 64
+    fi
+    shift
+    ;;
+  aosp-tools)
+    if [[ ! -d /src/.repo || ! -d /src/out ]]; then
+      echo "error: aosp-tools requires source and built host tools" >&2
       exit 64
     fi
     shift
@@ -110,7 +121,7 @@ case "${1:-}" in
     shift
     ;;
   *)
-    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, aosp, or wayland" >&2
+    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, aosp-build, aosp-tools, or wayland" >&2
     exit 64
     ;;
 esac

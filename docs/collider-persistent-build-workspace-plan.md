@@ -18,6 +18,11 @@ rebuilding every product from declared host inputs. Final products remain
 ordinary host files with normal Collider fingerprints, retention, inspection,
 and publication behavior.
 
+On the macOS builder, Apple Container's volume API remains the sole owner of
+workspace creation and attachment. Its service volume directory resolves to
+`/Volumes/NucleusBuild/apple-container-volumes`; OCI images, VM snapshots, and
+the remainder of the service application root stay on `NucleusOCI`.
+
 ## Outcome
 
 Collider provides one backend-neutral persistent-workspace contract. The Apple
@@ -122,6 +127,7 @@ Initial declarations are:
 | --- | ---: |
 | AOSP product output | 300 GiB |
 | AOSP ccache | 50 GiB |
+| Chromium immutable source per architecture | 64 GiB |
 | Chromium or CEF output per architecture | 150 GiB |
 | Chromium or CEF compiler cache per architecture | 30 GiB |
 | Swift target-SDK build root per architecture | 200 GiB |
@@ -253,11 +259,11 @@ leaves no AOSP build intermediates under the host checkout or build root.
 
 Status: implementation complete; build qualification active.
 
-Move Chromium/CEF Ninja output and compiler cache to target-specific persistent
-workspaces. Keep Chromium, CEF, depot-tools inputs, downloaded archives, and
-generated configuration owned by their existing host source/cache boundaries.
-Export only distributable Chromium/CEF products, symbols, manifests, and
-provenance.
+Move Chromium/CEF source snapshots, Ninja output, and compiler cache to
+target-specific persistent workspaces. Keep Chromium, CEF,
+depot-tools inputs, downloaded archives, and generated configuration owned by
+their existing host source/cache boundaries. Export only distributable
+Chromium/CEF products, symbols, manifests, and provenance.
 
 Materialize the shared source generation entirely on the host in two explicit
 passes. The first pass uses native macOS tools for Chromium hooks and CEF source
@@ -266,22 +272,36 @@ build-host graph. A target-platform CIPD adapter keeps its downloads on macOS,
 and macOS 27 Intel binary translation executes those tools in the arm64 builder
 VM without booting an x86_64 distribution.
 
-Give arm64 and x86_64 independent output and compiler-cache volumes so their
-builds remain concurrent. Every sequential packaging or validation action that
-needs host tools attaches the corresponding output volume instead of importing
-the build tree onto APFS.
+Import that prepared generation once into each architecture source workspace,
+keyed by its source-provenance identity. Only this bounded materialization step
+mounts the host generation. Configure, compile, package, validate, and test
+attach the imported source read-only and never traverse Chromium source through
+VirtioFS.
+
+Give arm64 and x86_64 independent source workspaces, and give CEF and Browser
+independent output and compiler-cache workspaces. The architecture lanes remain
+concurrent while each architecture reuses one immutable source copy across its
+products. Every sequential packaging or validation action attaches the
+corresponding source and output volumes instead of importing either tree onto
+APFS.
 
 Run each concurrent build at the 12-way Siso concurrency of its 12-vCPU VM. The
-shared Apple container API server inherits the host contract's maximum
-245,760-descriptor process limit so both Chromium source graphs can remain open
-without exhausting the service boundary.
+shared Apple container API server retains the host contract's maximum
+245,760-descriptor process limit, but build correctness does not depend on
+serving Chromium's high-fanout compiler reads from a host directory share.
+
+Prepare the stable Chromium dependency image independently from its operational
+entrypoint. Build the thin entrypoint image from the exact local dependency
+image digest without pulling or repeating package installation. Entrypoint
+changes invalidate only this final layer.
 
 Delete the host-backed Chromium/CEF intermediate path after one successful hard
 migration. Extend the existing product build and test lanes to verify cold
 reconstruction, warm reuse, interruption recovery, and final artifact equality.
 
-Gate: Chromium and CEF products build and package without a writable host output
-mount, and both architecture lanes retain their existing concurrency.
+Gate: Chromium and CEF products build and package without a host source or
+writable host output mount during build execution, and both architecture lanes
+retain their existing concurrency.
 
 ## Phase 5: Migrate Native SDK Builders
 
@@ -296,6 +316,12 @@ artifact boundary. Each native builder exports only installed headers,
 libraries, pkg-config metadata, tools, digests, and provenance into its owning
 SDK candidate. Generated source that SwiftPM consumes remains under the owning
 first-party package.
+
+Prepare the stable native dependency image independently from its operational
+entrypoint. Build the thin entrypoint image from the exact local dependency
+image digest without pulling or repeating package installation. AOSP build and
+AOSP tool operations use distinct entrypoint modes with mount preconditions
+that match their actual writable state.
 
 Move compiler caches into the same component concurrency partition. Remove
 `core/.skia-build`, `react-native/.rn-build`, `react-native/.cxx-build`, and

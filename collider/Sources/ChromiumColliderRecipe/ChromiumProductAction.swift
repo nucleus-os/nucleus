@@ -28,6 +28,8 @@ package struct BuildChromiumProductAction: ColliderAction {
             encoder.append(
                 tag: 12,
                 integer: build.compilerCacheWorkspace.capacityBytes)
+            encoder.append(tag: 13, string: build.sourceWorkspace.identity.key)
+            encoder.append(tag: 14, integer: build.sourceWorkspace.capacityBytes)
         }
     }
 
@@ -52,6 +54,10 @@ package struct BuildChromiumProductAction: ColliderAction {
             ],
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
+                    workspace: build.sourceWorkspace,
+                    target: "/source",
+                    access: .readWrite),
+                ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
                     target: "/build",
                     access: .readWrite),
@@ -72,6 +78,11 @@ package struct BuildChromiumProductAction: ColliderAction {
             throw failure(
                 "Chromium source manifest is missing: \(sourceManifest)")
         }
+        let sourceID = try sourceID(
+            in: sourceManifest,
+            files: context.files)
+        try await context.containers.run(
+            sourceMaterializationExecution(sourceID: sourceID))
         let gnArguments = try stagedGNArguments(files: context.files)
         try await context.containers.run(
             containerExecution(command: ["configure", gnArguments]))
@@ -157,15 +168,12 @@ package struct BuildChromiumProductAction: ColliderAction {
             hostWorkingDirectory: chromium,
             mounts: [
                 OCIMount(
-                    source: build.sourceRoot,
-                    target: "/source",
-                    access: .readOnly),
-                OCIMount(
                     source: build.inputRoot,
                     target: "/inputs",
-                    access: .readOnly),
+                    access: .readOnly)
             ],
             persistentWorkspaceMounts: [
+                build.sourceMount,
                 build.outputMount,
                 build.compilerCacheMount,
             ],
@@ -189,20 +197,44 @@ package struct BuildChromiumProductAction: ColliderAction {
             output: output)
     }
 
+    private func sourceMaterializationExecution(sourceID: String) -> OCIExecution {
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: build.target.artifactTarget,
+            imageID: build.containerImageID,
+            hostname: "chromium-source-materialization",
+            workingDirectory: "/",
+            hostWorkingDirectory: build.sourceRoot,
+            mounts: [
+                OCIMount(
+                    source: build.sourceRoot,
+                    target: "/host-source",
+                    access: .readOnly)
+            ],
+            persistentWorkspaceMounts: [build.writableSourceMount],
+            temporaryDirectory: nil,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: .disabled,
+            resourceLimits: chromiumToolResourceLimits,
+            containerEnvironment: [
+                "HOME": "/tmp/nucleus-home",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "TZ": "UTC",
+            ],
+            command: ["materialize-source", sourceID],
+            environment: build.environment,
+            output: .logged)
+    }
+
     private func buildManifest(
         sourceManifest: FilePath,
         context: ActionContext
     ) async throws -> ChromiumBuildManifest {
-        let sourceObject = try JSONSerialization.jsonObject(
-            with: Data(context.files.read(sourceManifest)))
-        guard let source = sourceObject as? [String: Any],
-            let sourceID = source["sourceID"] as? String
-                ?? source["source_id"] as? String
-        else {
-            throw failure(
-                "Chromium source manifest has no source identity: "
-                    + sourceManifest.string)
-        }
+        let sourceID = try sourceID(in: sourceManifest, files: context.files)
         let clang = chromium.appending(
             "\(chromiumLinuxClangRoot)/bin/clang")
         guard try context.files.metadata(for: clang)?.type == .regular else {
@@ -251,6 +283,23 @@ package struct BuildChromiumProductAction: ColliderAction {
         return ChromiumBuildManifest(
             identity: identity,
             buildID: String(digest.hexadecimal.prefix(24)))
+    }
+
+    private func sourceID(
+        in manifest: FilePath,
+        files: ActionFileSystem
+    ) throws -> String {
+        let sourceObject = try JSONSerialization.jsonObject(
+            with: Data(files.read(manifest)))
+        guard let source = sourceObject as? [String: Any],
+            let sourceID = source["sourceID"] as? String
+                ?? source["source_id"] as? String
+        else {
+            throw failure(
+                "Chromium source manifest has no source identity: "
+                    + manifest.string)
+        }
+        return sourceID
     }
 
     private func pgoProfile(

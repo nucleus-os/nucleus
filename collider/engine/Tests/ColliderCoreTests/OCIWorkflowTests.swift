@@ -9,6 +9,10 @@ import Testing
 @testable import ColliderAppleContainer
 @testable import ColliderRuntime
 
+private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
+    static let actionKind: ActionKind = "fixture.prepare-entrypoint-image"
+}
+
 @Test func nativeAppleContainerFlagsEnforceTheHermeticBoundary() throws {
     let execution = OCIExecution(
         executionPlatform: .linuxARM64OCI,
@@ -596,6 +600,17 @@ import Testing
     #expect(buildArguments.contains(preparation.containerFile.string))
     #expect(buildArguments.last == preparation.context.string)
 
+    let localPreparation = OCIImagePreparation(
+        executionPlatform: .linuxARM64OCI,
+        context: root.appending("entrypoint-context"),
+        containerFile: root.appending("entrypoint-context/Containerfile"),
+        imageID: root.appending("entrypoint-image-id"),
+        imageName: "localhost/nucleus-build",
+        baseImageSource: .local,
+        localBaseImageID: root.appending("dependency-image-id"),
+        environment: [:])
+    #expect(!appleContainerBuildArguments(localPreparation).contains("--pull"))
+
     let digest = "sha256:" + String(repeating: "d", count: 64)
     let name = "localhost/nucleus-build:latest"
 
@@ -703,6 +718,68 @@ import Testing
         name: appleContainerName(for: untranslatedIntelArtifact),
         temporaryDirectory: nil)
     #expect(!untranslatedFlags.management.rosetta)
+}
+
+@Test func entrypointImageLayersOntoAnExactLocalDependencyImage() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-entrypoint-image-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let baseImageID = root.appendingPathComponent("base-image-id")
+    let entrypoint = root.appendingPathComponent("entrypoint.sh")
+    let generatedContext = root.appendingPathComponent("context")
+    let imageID = root.appendingPathComponent("image-id")
+    let digest = "sha256:" + String(repeating: "a", count: 64)
+    try Data("localhost/nucleus-dependencies\n\(digest)\n".utf8).write(
+        to: baseImageID)
+    try Data("#!/bin/sh\nexec \"$@\"\n".utf8).write(to: entrypoint)
+    let preparation = OCIImagePreparation(
+        executionPlatform: .linuxARM64OCI,
+        context: FilePath(generatedContext.path),
+        containerFile: FilePath(
+            generatedContext.appendingPathComponent("Containerfile").path),
+        imageID: FilePath(imageID.path),
+        imageName: "localhost/nucleus-build",
+        baseImageSource: .local,
+        localBaseImageID: FilePath(baseImageID.path),
+        environment: [:])
+    let action = PrepareOCIEntrypointImageAction<FixtureEntrypointImageActionKind>(
+        baseImageID: FilePath(baseImageID.path),
+        entrypoint: FilePath(entrypoint.path),
+        entrypointDestination: "/usr/local/bin/nucleus-build",
+        generatedContext: FilePath(generatedContext.path),
+        preparation: preparation)
+    let runtime = ColliderRuntime()
+    let files = runtime.actionFileSystem()
+    try await action.execute(
+        in: ActionContext(
+            files: files,
+            cancellation: ActionCancellation {},
+            logger: ActionLogger { _ in },
+            commands: ActionCommandExecutor { _ in
+                throw ActionContainerExecutorFailure.unavailable
+            },
+            downloads: ActionDownloader { _, _ in },
+            containers: ActionContainerExecutor(
+                prepareImage: { received in
+                    #expect(received == preparation)
+                    let contents = try String(
+                        contentsOfFile: received.containerFile.string,
+                        encoding: .utf8)
+                    #expect(
+                        contents.contains(
+                            "FROM localhost/nucleus-dependencies:digest-"
+                                + String(repeating: "a", count: 64)))
+                    #expect(
+                        contents.contains(
+                            "ENTRYPOINT [\"/usr/local/bin/nucleus-build\"]"))
+                    try Data("localhost/nucleus-build\n\(digest)\n".utf8).write(
+                        to: imageID)
+                })))
+    try action.validateOutputs(using: files)
+    #expect(
+        try Data(contentsOf: generatedContext.appendingPathComponent("entrypoint"))
+            == Data("#!/bin/sh\nexec \"$@\"\n".utf8))
 }
 
 private actor AppleContainerCleanupFixture {

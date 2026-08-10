@@ -345,6 +345,8 @@ public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 5, string: preparation.containerFile.string)
         encoder.append(tag: 6, string: preparation.imageID.string)
         encoder.append(tag: 7, string: preparation.imageName)
+        encoder.append(tag: 8, string: preparation.baseImageSource.rawValue)
+        encoder.append(tag: 9, string: preparation.localBaseImageID?.string ?? "")
     }
 }
 

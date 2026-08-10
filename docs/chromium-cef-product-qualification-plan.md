@@ -15,14 +15,23 @@ translation first, then a no-hooks Linux x86_64 build-host synchronization.
 The host-side CIPD client materializes Chromium's official Linux x86_64 graph
 through an explicit platform adapter. Offline arm64 builder VMs execute those
 tools through macOS 27 Intel translation while producing both target
-architectures.
+architectures. Collider imports the resulting immutable generation into one
+EXT4 source workspace per architecture. Only that import reads the host
+generation; both products' build and qualification actions mount the imported
+source read-only.
 
 CEF and Nucleus Browser retain separate GN outputs because their allocator and
-process-boundary contracts differ. Each product has independent persistent
-Linux arm64 and x86_64 output and compiler-cache workspaces. Compilation,
-packaging, artifact validation, and focused executable tests run offline in the
-selected rootless `chromium-builder`. Hardware qualification runs on the target
-system.
+process-boundary contracts differ. Each architecture has one source workspace
+shared by both products; each product has independent persistent Linux arm64
+and x86_64 output and compiler-cache workspaces. Compilation, packaging,
+artifact validation, and focused executable tests run offline in the selected
+rootless `chromium-builder` without a host source mount. Hardware qualification
+runs on the target system.
+
+The builder is two content-addressed images. A stable dependency image owns the
+Linux package closure and tool environment. A thin operational image adds only
+the current entrypoint onto the exact local dependency-image digest. Container
+orchestration changes cannot invalidate dependency installation.
 
 The fork migration, source materialization, containerized compilation,
 packaging, immutable publication, and focused source-level tests are
@@ -36,10 +45,10 @@ offline, build and publish arm64 and x86_64 CEF, and then build and publish
 arm64 and x86_64 Nucleus Browser. The two architecture branches of each product
 remain concurrent.
 
-Gate: both architectures of both products validate from the read-only source
-mount, the source-pinned Linux host tools execute through macOS 27 translation,
-and no compiler output or generated state appears beneath the source generation
-or a host-backed intermediate tree.
+Gate: both architectures of both products validate from their read-only EXT4
+source workspaces, the source-pinned Linux host tools execute through macOS 27
+translation, and no compiler output or generated state appears beneath the host
+source generation or a host-backed intermediate tree.
 
 ## Phase 2 — Qualify artifacts and focused tests
 

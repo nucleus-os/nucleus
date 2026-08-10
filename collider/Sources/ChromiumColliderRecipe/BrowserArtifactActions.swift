@@ -122,6 +122,7 @@ private func encodeBrowserArtifactIdentity(
     encoder.append(tag: 5, string: assembly.desktopTemplate.string)
     encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
     encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
+    encoder.append(tag: 8, string: assembly.sourceWorkspace.identity.key)
 }
 
 private func browserArtifactRequirements(
@@ -143,9 +144,13 @@ private func browserArtifactRequirements(
         ],
         persistentWorkspaceEffects: [
             ActionPersistentWorkspaceEffect(
+                workspace: assembly.sourceWorkspace,
+                target: "/source",
+                access: .readOnly),
+            ActionPersistentWorkspaceEffect(
                 workspace: assembly.outputWorkspace,
                 target: "/build",
-                access: .readOnly)
+                access: .readOnly),
         ],
         executionPlatform: .linuxARM64OCI,
         artifactTarget: assembly.target.artifactTarget)
@@ -194,14 +199,11 @@ private func validateBrowserGeneration(
             hostWorkingDirectory: generation,
             mounts: [
                 OCIMount(
-                    source: assembly.chromiumSource,
-                    target: "/source/chromium/src",
-                    access: .readOnly),
-                OCIMount(
                     source: generation,
                     target: "/artifact",
-                    access: .readOnly),
+                    access: .readOnly)
             ],
+            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
             command: ["validate-browser", assembly.target.architecture.rawValue],

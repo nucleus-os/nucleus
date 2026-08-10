@@ -25,6 +25,7 @@ struct MacOSBuilderContract: Codable, Sendable {
         let executable: String
         let apiServerExecutable: String
         let appRoot: String
+        let volumeRoot: String
         let installRoot: String
         let network: String
     }
@@ -124,6 +125,7 @@ struct MacOSBuilderContract: Codable, Sendable {
         guard
             let build = storage.first(where: { $0.name == "NucleusBuild" }),
             isDescendant(environment.buildRoot, of: build.mountPath),
+            isDescendant(appleContainer.volumeRoot, of: build.mountPath),
             let cache = storage.first(where: { $0.name == "NucleusCache" }),
             isDescendant(environment.xdgCacheHome, of: cache.mountPath),
             isDescendant(environment.nativeSDKRoot, of: cache.mountPath),
@@ -177,6 +179,7 @@ struct MacOSBuilderDoctor {
             xcode(contract, scope: scope),
             swiftBootstrap(contract, scope: scope),
             resources(contract, scope: scope),
+            containerVolumeStorage(contract, scope: scope),
             persistentService(contract, scope: scope),
             containerSystem(contract, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
@@ -325,6 +328,32 @@ struct MacOSBuilderDoctor {
                     contract: contract)
             else { return nil }
             return serviceDetail
+        }
+    }
+
+    private func containerVolumeStorage(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "macos-builder:container-volume-storage",
+            scope: scope,
+            description: "Apple container volumes rooted in NucleusBuild",
+            remediation: "run tools/macos-builder/migrate-container-volumes.sh"
+        ) {
+            let serviceRoot = URL(
+                fileURLWithPath: contract.appleContainer.appRoot,
+                isDirectory: true
+            ).appendingPathComponent("volumes").path
+            guard
+                let destination = try? FileManager.default.destinationOfSymbolicLink(
+                    atPath: serviceRoot),
+                normalizedPath(destination)
+                    == normalizedPath(contract.appleContainer.volumeRoot),
+                FileManager.default.fileExists(
+                    atPath: contract.appleContainer.volumeRoot)
+            else { return nil }
+            return contract.appleContainer.volumeRoot
         }
     }
 

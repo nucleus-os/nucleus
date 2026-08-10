@@ -54,6 +54,26 @@ runtime_library_path() {
 }
 
 case "${1:-}" in
+  materialize-source)
+    if [[ $# -ne 2 \
+        || ! "$2" =~ ^[0-9a-f]{24}$ \
+        || ! -f /host-source/source-provenance.json \
+        || ! -w /source ]]; then
+      echo "error: materialize-source requires an immutable host source and writable workspace" >&2
+      exit 64
+    fi
+    source_id="$2"
+    marker=/source/.nucleus-source-id
+    if [[ -f "$marker" ]] && [[ "$(<"$marker")" == "$source_id" ]]; then
+      exit 0
+    fi
+    find /source -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    tar -C /host-source -cf - chromium source-provenance.json \
+      | tar -C /source --no-same-owner -xf -
+    printf '%s\n' "$source_id" > /source/.nucleus-source-id.preparing
+    mv /source/.nucleus-source-id.preparing "$marker"
+    exit 0
+    ;;
   run-test)
     if [[ $# -lt 2 ]]; then
       echo "error: run-test requires an executable under /build" >&2
