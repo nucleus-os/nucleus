@@ -348,7 +348,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                             sourceGenerationExecution(
                                 root: root,
                                 generatedDirectories: stagedDirectories,
-                                generatorScratch: swiftPM.scratchPath,
+                                generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
@@ -365,7 +365,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                             sourceGenerationExecution(
                                 root: root,
                                 generatedDirectories: stagedDirectories,
-                                generatorScratch: swiftPM.scratchPath,
+                                generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
@@ -381,7 +381,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                             sourceGenerationExecution(
                                 root: root,
                                 generatedDirectories: stagedDirectories,
-                                generatorScratch: swiftPM.scratchPath,
+                                generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
@@ -644,7 +644,7 @@ private func sourceGenerationExecution(
                 access: .readOnly),
         ]
             + generatedDirectories.map {
-                OCIMount(source: $0, target: $0.string, access: .readWrite)
+                OCIMount(boundedExport: $0, target: $0.string)
             },
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
@@ -738,9 +738,8 @@ private func nativeExecution(
     var mounts = [
         OCIMount(source: source, target: "/src", access: .readOnly),
         OCIMount(
-            source: sdk,
-            target: target.architecture == .arm64 ? "/native-wayland" : "/sdk",
-            access: .readWrite),
+            boundedExport: sdk,
+            target: target.architecture == .arm64 ? "/native-wayland" : "/sdk"),
         OCIMount(
             source: root.appending("build-support"),
             target: "/build-support",

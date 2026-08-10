@@ -248,7 +248,6 @@ private actor FixtureAppleVolumeStore {
     let flags = try appleContainerFlags(
         execution,
         name: "fixture",
-        temporaryDirectory: nil,
         configuration: fixtureVolumeConfiguration(),
         persistentWorkspaceNames: [
             output.identity: "output-volume",
@@ -313,7 +312,6 @@ func appleContainerPersistentWorkspaceSurvivesContainersAndCancellation() async 
         return OCIRuntimeExecutionRequest(
             execution: execution,
             imageReference: imageReference,
-            temporaryDirectory: nil,
             output: execution.output,
             logging: nil,
             stage: nil,

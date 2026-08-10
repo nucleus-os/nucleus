@@ -692,8 +692,8 @@ package struct ComponentRegistry {
         let waylandSDK = nativeSDK.appending("wayland")
         let swiftPMRoot = context.cacheRoot.appending(
             "nucleus/swiftpm/\(target.identifier)")
-        let swiftPMUserRoot = context.cacheRoot.appending(
-            "nucleus/swiftpm-user/\(target.identifier)")
+        let swiftPMDependencyCache = context.cacheRoot.appending(
+            "nucleus/swiftpm-user/cache")
         let guestTargetSDK =
             guestSDKRoot
             + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
@@ -712,29 +712,29 @@ package struct ComponentRegistry {
                 hostWorkingDirectory: root,
                 mounts: [
                     OCIMount(source: root, target: root.string, access: .readOnly),
-                    OCIMount(
-                        source: swiftPMRoot,
-                        target: swiftPMRoot.string,
-                        access: .readWrite),
                     OCIMount(source: nativeSDK, target: nativeSDK.string, access: .readOnly),
-                    OCIMount(
-                        source: builder.ccache(for: target),
-                        target: "/ccache",
-                        access: .readWrite),
-                    OCIMount(
-                        source: swiftPMUserRoot.appending("cache"),
-                        target: "/home/nucleus-build/.cache",
-                        access: .readWrite),
-                    OCIMount(
-                        source: swiftPMUserRoot.appending("configuration"),
-                        target: "/home/nucleus-build/.swiftpm",
-                        access: .readWrite),
                     OCIMount(
                         source: builder.swiftSDKRoot,
                         target: guestSDKRoot,
                         access: .readOnly),
                 ],
-                hostDependencyCache: swiftPMUserRoot.appending("cache"),
+                buildWorkspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "nucleus-swiftpm",
+                        artifactTarget: resolvedArtifactTarget,
+                        role: "build"),
+                    capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: .writeback64MiB),
+                compilerCacheWorkspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "nucleus-swiftpm-ccache",
+                        artifactTarget: resolvedArtifactTarget,
+                        role: "compiler-cache"),
+                    capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: .writeback64MiB),
+                hostDependencyCache: swiftPMDependencyCache,
                 intelBinaryTranslationPolicy: resolvedTranslation,
                 resourceLimits: .parallelBuild,
                 containerEnvironment: [
@@ -791,8 +791,8 @@ package struct ComponentRegistry {
         let packageRoot = root.appending("collider")
         let scratchRoot = context.cacheRoot.appending(
             "nucleus/swiftpm-tools/runtime-assembler")
-        let userRoot = context.cacheRoot.appending(
-            "nucleus/swiftpm-user/runtime-assembler")
+        let swiftPMDependencyCache = context.cacheRoot.appending(
+            "nucleus/swiftpm-user/cache")
         let execution = SwiftPMExecution.oci(
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
@@ -801,21 +801,17 @@ package struct ComponentRegistry {
                 hostname: "nucleus-runtime-assembler",
                 hostWorkingDirectory: packageRoot,
                 mounts: [
-                    OCIMount(source: root, target: root.string, access: .readOnly),
-                    OCIMount(
-                        source: scratchRoot,
-                        target: scratchRoot.string,
-                        access: .readWrite),
-                    OCIMount(
-                        source: userRoot.appending("cache"),
-                        target: "/home/nucleus-build/.cache",
-                        access: .readWrite),
-                    OCIMount(
-                        source: userRoot.appending("configuration"),
-                        target: "/home/nucleus-build/.swiftpm",
-                        access: .readWrite),
+                    OCIMount(source: root, target: root.string, access: .readOnly)
                 ],
-                hostDependencyCache: userRoot.appending("cache"),
+                buildWorkspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "collider-swiftpm-tools",
+                        artifactTarget: .linuxARM64,
+                        role: "build"),
+                    capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: .writeback64MiB),
+                hostDependencyCache: swiftPMDependencyCache,
                 resourceLimits: .build,
                 containerEnvironment: [
                     "HOME": "/home/nucleus-build",
@@ -992,13 +988,26 @@ package struct ComponentRegistry {
                 runtimeBuilderContext: runtimeBuilderContext,
                 runtimePreset: runtimePreset,
                 sysrootPreparer: sysrootPreparer)
-            let root = paths.runtimeBuildRoot.appending(
-                "\(target.architecture.rawValue)/\(buildID)")
+            let root = paths.artifactRoot.appending(
+                "runtime-inputs/\(target.architecture.rawValue)/\(buildID)")
             return SwiftLinuxTargetBuildConfiguration(
                 target: target,
-                runtimeBuildWorkspace: root.appending("build"),
-                runtimeCompilerCache: paths.runtimeCompilerCache.appending(
-                    target.architecture.rawValue),
+                runtimeBuildWorkspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "swift-target-runtime-intermediates",
+                        artifactTarget: target.architecture.artifactTarget,
+                        role: "build"),
+                    capacityBytes: 200 * 1_024 * 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: .writeback64MiB),
+                runtimeCompilerCacheWorkspace: PersistentWorkspaceDeclaration(
+                    identity: PersistentWorkspaceIdentity(
+                        key: "swift-target-runtime-ccache",
+                        artifactTarget: target.architecture.artifactTarget,
+                        role: "compiler-cache"),
+                    capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                    filesystem: .ext4,
+                    journal: .writeback64MiB),
                 runtimeInstall: root.appending("install"),
                 sysroot: root.appending("sysroot"))
         }

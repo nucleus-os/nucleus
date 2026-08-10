@@ -441,9 +441,8 @@ public enum ReactNativeColliderRecipe {
                                 workspaces: workspaces,
                                 additionalMounts: [
                                     OCIMount(
-                                        source: artifacts,
-                                        target: "/export",
-                                        access: .readWrite)
+                                        boundedExport: artifacts,
+                                        target: "/export")
                                 ]),
                         ]))
         )
@@ -545,9 +544,8 @@ public enum ReactNativeColliderRecipe {
                                 workspaces: workspaces,
                                 additionalMounts: [
                                     OCIMount(
-                                        source: artifacts,
-                                        target: "/export",
-                                        access: .readWrite)
+                                        boundedExport: artifacts,
+                                        target: "/export")
                                 ]),
                         ]))
         )
@@ -700,9 +698,8 @@ public enum ReactNativeColliderRecipe {
                                 workspaces: workspaces,
                                 additionalMounts: [
                                     OCIMount(
-                                        source: artifacts,
-                                        target: "/export",
-                                        access: .readWrite)
+                                        boundedExport: artifacts,
+                                        target: "/export")
                                 ]),
                         ]))
         )
@@ -1233,14 +1230,7 @@ private struct RunReactNativeNativeBuildAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: pipeline.requirements.effects
-                + artifactRoots.map {
-                    ActionEffect(.readWrite, scope: .output($0))
-                },
-            lane: pipeline.requirements.lane,
-            executionPlatform: pipeline.requirements.executionPlatform,
-            artifactTarget: pipeline.requirements.artifactTarget)
+        pipeline.requirements
     }
 
     var environment: [String: String] { pipeline.environment }

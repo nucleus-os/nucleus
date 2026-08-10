@@ -43,17 +43,16 @@ package final class SkiaTextLayoutBackend: TextLayoutBackend {
 
     package func resolveFont(_ descriptor: FontDescriptor) -> ResolvedFontDescriptor? {
         let service = nucleus.text.TextLayoutService()
-        var resolved = nucleus.text.ResolvedFontDescriptor()
         return unsafe withUTF8View(descriptor.familyName) { familyView -> ResolvedFontDescriptor? in
-            let status = unsafe service.resolveFont(
-                familyView,
-                descriptor.pointSize,
-                descriptor.weight.cValue,
-                descriptor.width.cValue,
-                descriptor.slant.cValue,
-                &resolved
-            )
-            guard status else {
+            guard
+                let resolved = unsafe service.resolveFont(
+                    familyView,
+                    descriptor.pointSize,
+                    descriptor.weight.cValue,
+                    descriptor.width.cValue,
+                    descriptor.slant.cValue
+                ).value
+            else {
                 return nil
             }
             return ResolvedFontDescriptor(
@@ -73,17 +72,16 @@ package final class SkiaTextLayoutBackend: TextLayoutBackend {
 
     package func fontMetrics(for descriptor: FontDescriptor) -> FontMetrics? {
         let service = nucleus.text.TextLayoutService()
-        var metrics = nucleus.text.FontMetrics()
         return unsafe withUTF8View(descriptor.familyName) { familyView -> FontMetrics? in
-            let status = unsafe service.queryFontMetrics(
-                familyView,
-                descriptor.pointSize,
-                descriptor.weight.cValue,
-                descriptor.width.cValue,
-                descriptor.slant.cValue,
-                &metrics
-            )
-            guard status else {
+            guard
+                let metrics = unsafe service.queryFontMetrics(
+                    familyView,
+                    descriptor.pointSize,
+                    descriptor.weight.cValue,
+                    descriptor.width.cValue,
+                    descriptor.slant.cValue
+                ).value
+            else {
                 return nil
             }
             return FontMetrics(
@@ -164,18 +162,19 @@ package final class SkiaTextLayoutBackend: TextLayoutBackend {
                 resolvedRuns,
                 localeIdentifier: paragraphStyle.localeIdentifier
             ) { cRuns in
-                var handle: UInt64 = 0
-                var metrics = nucleus.text.ParagraphMetrics()
-                let status = unsafe nucleus.text.TextLayoutService().createRuns(
-                    cRuns.baseAddress,
-                    cRuns.count,
-                    &cParagraphStyle,
-                    &handle,
-                    &metrics
-                )
-                guard status, handle != 0 else {
+                // `createRuns` yields nothing unless it registered a live
+                // paragraph, so a returned handle is always non-zero.
+                guard
+                    let created = unsafe nucleus.text.TextLayoutService().createRuns(
+                        cRuns.baseAddress,
+                        cRuns.count,
+                        &cParagraphStyle
+                    ).value
+                else {
                     return nil
                 }
+                let handle = created.handle
+                var metrics = created.metrics
                 let service = nucleus.text.TextLayoutService()
                 let lineCount = Int(metrics.lineCount)
                 var lineMetrics = Array(
@@ -241,14 +240,12 @@ package final class SkiaTextLayoutBackend: TextLayoutBackend {
         at point: Point,
         in handle: TextLayoutHandle
     ) -> TextGlyphPosition? {
-        var position = nucleus.text.TextPosition()
         guard
-            unsafe nucleus.text.TextLayoutService().glyphPositionAt(
+            let position = nucleus.text.TextLayoutService().glyphPositionAt(
                 handle.rawValue,
                 Float(point.x),
-                Float(point.y),
-                &position
-            )
+                Float(point.y)
+            ).value
         else {
             return nil
         }
@@ -263,14 +260,12 @@ package final class SkiaTextLayoutBackend: TextLayoutBackend {
         affinity: TextAffinity,
         in handle: TextLayoutHandle
     ) -> TextCaretGeometry? {
-        var caret = nucleus.text.TextCaret()
         guard
-            unsafe nucleus.text.TextLayoutService().caretForOffset(
+            let caret = nucleus.text.TextLayoutService().caretForOffset(
                 handle.rawValue,
                 offset.clampedUInt32,
-                affinity.cValue,
-                &caret
-            )
+                affinity.cValue
+            ).value
         else {
             return nil
         }

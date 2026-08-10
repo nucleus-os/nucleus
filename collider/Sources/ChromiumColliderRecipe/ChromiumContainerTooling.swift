@@ -14,7 +14,6 @@ func chromiumToolExecution(
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
-    temporaryDirectory: FilePath,
     command: [String],
     environment: [String: String],
     output: CommandSpec.Output = .logged
@@ -28,7 +27,6 @@ func chromiumToolExecution(
         hostWorkingDirectory: hostWorkingDirectory,
         mounts: mounts,
         persistentWorkspaceMounts: persistentWorkspaceMounts,
-        temporaryDirectory: temporaryDirectory,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

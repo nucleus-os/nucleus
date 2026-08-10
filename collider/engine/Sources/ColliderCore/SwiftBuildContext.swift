@@ -36,8 +36,9 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
+    public let buildWorkspace: PersistentWorkspaceDeclaration?
+    public let compilerCacheWorkspace: PersistentWorkspaceDeclaration?
     public let hostDependencyCache: FilePath
-    public let temporaryDirectory: FilePath?
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
     public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
     public let resourceLimits: OCIResourceLimits
@@ -52,8 +53,9 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
+        buildWorkspace: PersistentWorkspaceDeclaration? = nil,
+        compilerCacheWorkspace: PersistentWorkspaceDeclaration? = nil,
         hostDependencyCache: FilePath,
-        temporaryDirectory: FilePath? = nil,
         processFilesystemPolicy: OCIProcessFilesystemPolicy = .standard,
         intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
         resourceLimits: OCIResourceLimits = .build,
@@ -68,8 +70,9 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.hostname = hostname
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
+        self.buildWorkspace = buildWorkspace
+        self.compilerCacheWorkspace = compilerCacheWorkspace
         self.hostDependencyCache = hostDependencyCache
-        self.temporaryDirectory = temporaryDirectory
         self.processFilesystemPolicy = processFilesystemPolicy
         self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
         self.resourceLimits = resourceLimits
@@ -221,7 +224,13 @@ public struct SwiftBuildContext: Hashable, Sendable {
             for mount in configuration.mounts {
                 encoder.append(tag: 21, string: mount.source.string)
                 encoder.append(tag: 22, string: mount.target)
-                encoder.append(tag: 23, string: mount.access.rawValue)
+                encoder.append(tag: 23, string: mount.purpose.rawValue)
+            }
+            if let workspace = configuration.buildWorkspace {
+                append(workspace, tag: 28, into: &encoder)
+            }
+            if let workspace = configuration.compilerCacheWorkspace {
+                append(workspace, tag: 29, into: &encoder)
             }
             for argument in configuration.commandPrefix {
                 encoder.append(tag: 24, string: argument)
@@ -289,6 +298,14 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     /// after every successful invocation.
     public var productsDirectory: FilePath {
         scratchPath.appending(".collider/products")
+    }
+
+    public var executionScratchPath: FilePath {
+        guard case .oci(let configuration) = context.execution,
+            configuration.buildWorkspace != nil
+        else { return scratchPath }
+        let identity = ArtifactDigest.sha256(context.identityBytes).hexadecimal
+        return FilePath("/swiftpm-workspace").appending(identity)
     }
 
     public func executable(_ product: String) -> FilePath {
@@ -367,6 +384,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         containerEnvironment.merge(
             configuration.containerEnvironment,
             uniquingKeysWith: { _, configured in configured })
+        configurePersistentWorkspaceEnvironment(
+            &containerEnvironment,
+            configuration: configuration)
         return OCIExecution(
             executionPlatform: configuration.executionPlatform,
             artifactTarget: configuration.artifactTarget,
@@ -374,8 +394,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             hostname: configuration.hostname,
             workingDirectory: workingDirectory.string,
             hostWorkingDirectory: configuration.hostWorkingDirectory,
-            mounts: configuration.mounts,
-            temporaryDirectory: configuration.temporaryDirectory,
+            mounts: ociMounts(configuration),
+            persistentWorkspaceMounts: ociPersistentWorkspaceMounts(configuration),
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -430,6 +450,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         containerEnvironment.merge(
             configuration.containerEnvironment,
             uniquingKeysWith: { _, configured in configured })
+        configurePersistentWorkspaceEnvironment(
+            &containerEnvironment,
+            configuration: configuration)
         return OCIExecution(
             executionPlatform: configuration.executionPlatform,
             artifactTarget: configuration.artifactTarget,
@@ -437,8 +460,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             hostname: configuration.hostname,
             workingDirectory: workingDirectory.string,
             hostWorkingDirectory: configuration.hostWorkingDirectory,
-            mounts: configuration.mounts,
-            temporaryDirectory: configuration.temporaryDirectory,
+            mounts: ociMounts(configuration),
+            persistentWorkspaceMounts: ociPersistentWorkspaceMounts(configuration),
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -469,7 +492,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             "--build-system", "swiftbuild",
             "--configuration", context.configuration.rawValue,
             "--jobs", String(context.maximumParallelism),
-            "--scratch-path", scratchPath.string,
+            "--scratch-path", executionScratchPath.string,
             "--package-path", context.packageRoot.string,
         ]
         if case .triple(let triple) = context.target {
@@ -506,6 +529,51 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             arguments += ["-Xlinker", flag]
         }
         return arguments
+    }
+
+    private func ociMounts(_ configuration: SwiftPMOCIExecution) -> [OCIMount] {
+        guard configuration.buildWorkspace != nil else { return configuration.mounts }
+        return configuration.mounts + [
+            OCIMount(
+                source: scratchPath,
+                target: "/swiftpm-input",
+                access: .readOnly),
+            OCIMount(
+                boundedExport: productsDirectory,
+                target: "/swiftpm-products"),
+        ]
+    }
+
+    private func ociPersistentWorkspaceMounts(
+        _ configuration: SwiftPMOCIExecution
+    ) -> [OCIPersistentWorkspaceMount] {
+        var mounts: [OCIPersistentWorkspaceMount] = []
+        if let workspace = configuration.buildWorkspace {
+            mounts.append(
+                OCIPersistentWorkspaceMount(
+                    workspace: workspace,
+                    target: "/swiftpm-workspace",
+                    access: .readWrite))
+        }
+        if let workspace = configuration.compilerCacheWorkspace {
+            mounts.append(
+                OCIPersistentWorkspaceMount(
+                    workspace: workspace,
+                    target: "/ccache",
+                    access: .readWrite))
+        }
+        return mounts
+    }
+
+    private func configurePersistentWorkspaceEnvironment(
+        _ environment: inout [String: String],
+        configuration: SwiftPMOCIExecution
+    ) {
+        guard configuration.buildWorkspace != nil else { return }
+        environment["NUCLEUS_SWIFTPM_INPUT"] = "/swiftpm-input"
+        environment["NUCLEUS_SWIFTPM_SCRATCH"] = executionScratchPath.string
+        environment["NUCLEUS_SWIFTPM_PRODUCTS"] = "/swiftpm-products"
+        environment["NUCLEUS_SWIFTPM_HOST_PRODUCTS"] = productsDirectory.string
     }
 }
 
@@ -601,4 +669,31 @@ private func append(
     for value in values {
         encoder.append(tag: tag, string: value)
     }
+}
+
+private func append(
+    _ workspace: PersistentWorkspaceDeclaration,
+    tag: UInt8,
+    into encoder: inout CanonicalDigestEncoder
+) {
+    var workspaceEncoder = CanonicalDigestEncoder()
+    workspaceEncoder.append(tag: 1, string: workspace.identity.key)
+    workspaceEncoder.append(
+        tag: 2,
+        string: workspace.identity.artifactTarget.operatingSystem.rawValue)
+    workspaceEncoder.append(
+        tag: 3,
+        string: workspace.identity.artifactTarget.architecture.rawValue)
+    workspaceEncoder.append(
+        tag: 4,
+        string: workspace.identity.artifactTarget.abi ?? "")
+    workspaceEncoder.append(
+        tag: 5,
+        string: workspace.identity.artifactTarget.androidAPILevel.map(String.init) ?? "")
+    workspaceEncoder.append(tag: 6, string: workspace.identity.role)
+    workspaceEncoder.append(tag: 7, integer: workspace.capacityBytes)
+    workspaceEncoder.append(tag: 8, string: workspace.filesystem.rawValue)
+    workspaceEncoder.append(tag: 9, string: workspace.journal.mode.rawValue)
+    workspaceEncoder.append(tag: 10, integer: workspace.journal.sizeBytes)
+    encoder.append(tag: tag, bytes: workspaceEncoder.bytes)
 }

@@ -49,13 +49,10 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
                 hostWorkingDirectory: candidate,
                 mounts: [
                     OCIMount(
-                        source: candidate,
-                        target: "/candidate",
-                        access: .readWrite)
+                        boundedExport: candidate,
+                        target: "/candidate")
                 ],
                 persistentWorkspaceMounts: [assembly.readOnlyOutputMount],
-                temporaryDirectory: assembly.distributionRoot.appending(
-                    ".container-temporary"),
                 command: ["browser-stage"],
                 environment: assembly.environment))
         guard staging.succeeded else {
@@ -204,8 +201,6 @@ private func validateBrowserGeneration(
                     access: .readOnly)
             ],
             persistentWorkspaceMounts: [assembly.readOnlySourceMount],
-            temporaryDirectory: assembly.distributionRoot.appending(
-                ".container-temporary"),
             command: ["validate-browser", assembly.target.architecture.rawValue],
             environment: environment,
             output: .captured(limit: 4 * 1_024 * 1_024)))

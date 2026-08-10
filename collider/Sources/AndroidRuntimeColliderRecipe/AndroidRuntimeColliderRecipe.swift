@@ -1198,7 +1198,7 @@ private func gfxstreamExecution(
         mounts: [
             OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
             OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
-            OCIMount(source: artifactRoot, target: "/export", access: .readWrite),
+            OCIMount(boundedExport: artifactRoot, target: "/export"),
             OCIMount(
                 source: root.appending("build-support"),
                 target: "/build-support",
@@ -1265,13 +1265,7 @@ private struct RunGfxstreamBuildAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: pipeline.requirements.effects + [
-                ActionEffect(.readWrite, scope: .output(artifactRoot))
-            ],
-            lane: pipeline.requirements.lane,
-            executionPlatform: pipeline.requirements.executionPlatform,
-            artifactTarget: pipeline.requirements.artifactTarget)
+        pipeline.requirements
     }
 
     var environment: [String: String] { pipeline.environment }

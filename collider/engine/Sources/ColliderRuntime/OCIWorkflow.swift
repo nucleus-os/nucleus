@@ -85,7 +85,7 @@ extension ColliderRuntime {
         }
 
         let reservedTargets = [FilePath("/tmp"), FilePath(ociConfiguration.guestHome)]
-        var bindTargets: [(path: FilePath, access: OCIMount.Access)] = []
+        var bindTargets: [(path: FilePath, isReadOnly: Bool)] = []
         var persistentTargets: [FilePath] = []
         func normalizedMountTarget(_ rawTarget: String) throws -> FilePath {
             let target = FilePath(rawTarget).lexicallyNormalized()
@@ -105,14 +105,14 @@ extension ColliderRuntime {
                 !bindTargets.contains(where: {
                     $0.path == target
                         || ($0.path.overlaps(target)
-                            && ($0.access != .readOnly || mount.access != .readOnly))
+                            && (!$0.isReadOnly || !mount.isReadOnly))
                 })
             else {
                 throw RuntimeFailure.invalidOutput(
                     "invalid, duplicate, or overlapping OCI mount: \(mount.target)")
             }
-            bindTargets.append((target, mount.access))
-            if mount.access == .readWrite {
+            bindTargets.append((target, mount.isReadOnly))
+            if !mount.isReadOnly {
                 try FileManager.default.createDirectory(
                     atPath: mount.source.string,
                     withIntermediateDirectories: true)
@@ -126,7 +126,7 @@ extension ColliderRuntime {
             guard
                 !bindTargets.contains(where: {
                     guard $0.path.overlaps(target) else { return false }
-                    return $0.access != .readOnly
+                    return !$0.isReadOnly
                         || $0.path == target
                         || !target.string.hasPrefix($0.path.string + "/")
                 }),
@@ -136,26 +136,6 @@ extension ColliderRuntime {
                     "invalid, duplicate, or overlapping OCI mount: \(mount.target)")
             }
             persistentTargets.append(target)
-        }
-
-        let temporaryDirectory: FilePath?
-        if let root = execution.temporaryDirectory {
-            try FileManager.default.createDirectory(
-                atPath: root.string,
-                withIntermediateDirectories: true)
-            let candidate = root.appending(UUID().uuidString)
-            try FileManager.default.createDirectory(
-                atPath: candidate.string,
-                withIntermediateDirectories: false)
-            temporaryDirectory = candidate
-        } else {
-            temporaryDirectory = nil
-        }
-        defer {
-            if let temporaryDirectory {
-                try? FileManager.default.removeItem(
-                    atPath: temporaryDirectory.string)
-            }
         }
 
         let output =
@@ -186,7 +166,6 @@ extension ColliderRuntime {
         let request = OCIRuntimeExecutionRequest(
             execution: execution,
             imageReference: ociImageReference(imageID),
-            temporaryDirectory: temporaryDirectory,
             output: output,
             logging: logging,
             stage: stage,

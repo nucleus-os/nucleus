@@ -310,9 +310,8 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
                     target: "/indexes",
                     access: .readOnly),
                 OCIMount(
-                    source: resolverOutput,
-                    target: "/output",
-                    access: .readWrite),
+                    boundedExport: resolverOutput,
+                    target: "/output"),
             ],
             userPolicy: OCIUserPolicy(userID: 0, groupID: 0),
             capabilityPolicy: .dropAll,

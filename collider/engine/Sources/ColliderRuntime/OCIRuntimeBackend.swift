@@ -101,7 +101,6 @@ public struct OCIPersistentWorkspaceState: Codable, Equatable, Sendable {
 public struct OCIRuntimeExecutionRequest: Sendable {
     public let execution: OCIExecution
     public let imageReference: String
-    public let temporaryDirectory: FilePath?
     public let output: CommandSpec.Output
     public let logging: CommandLogging?
     public let stage: TaskID?
@@ -111,7 +110,6 @@ public struct OCIRuntimeExecutionRequest: Sendable {
     public init(
         execution: OCIExecution,
         imageReference: String,
-        temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?,
@@ -120,7 +118,6 @@ public struct OCIRuntimeExecutionRequest: Sendable {
     ) {
         self.execution = execution
         self.imageReference = imageReference
-        self.temporaryDirectory = temporaryDirectory
         self.output = output
         self.logging = logging
         self.stage = stage

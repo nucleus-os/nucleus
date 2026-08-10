@@ -14,13 +14,16 @@ Architecture and contract documents describe the current system. An implementati
 - [Shell architecture](../shell/docs/shell-architecture.md)
 - [Direct scanout](../compositor/compositor-core/docs/direct-scanout.md)
 - [Render benchmarking](../compositor/docs/render-benchmarking.md)
+- [Collider build storage](collider-build-storage-architecture.md)
 
 ## Active execution plans
 
 Execute the implementation plans in this order:
 
-1. Continue [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md) at Phase 5.
-2. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
+1. Finish Phase 6 and 7 qualification, then complete Phase 9 of
+   [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md).
+2. Begin [macOS remote development](macos-remote-development-plan.md) at Phase 1.
+3. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
@@ -44,7 +47,7 @@ implementation inputs are available:
 ## Deferred product plans
 
 - [Linux distribution portability qualification](linux-distribution-portability-plan.md)
-- [Remote development and build hosts](github-actions-macos-builder-and-self-hosted-runner-plan.md)
+- [GitHub Actions self-hosted runners](github-actions-self-hosted-runner-plan.md)
 - [Collider ratatui TUI](collider-ratatui-tui-plan.md)
 - [Browser custom UI](nucleus-browser-custom-ui-plan.md)
 

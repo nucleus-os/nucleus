@@ -37,7 +37,7 @@ private func fixtureWorkspace(
 private func fixtureWorkspaceEffect(
     workspace: PersistentWorkspaceDeclaration = fixtureWorkspace(),
     target: String = "/build",
-    access: OCIMount.Access = .readWrite
+    access: OCIPersistentWorkspaceMount.Access = .readWrite
 ) -> ActionPersistentWorkspaceEffect {
     ActionPersistentWorkspaceEffect(
         workspace: workspace,
@@ -221,4 +221,34 @@ func persistentWorkspaceRejectsInvalidLogicalKeys(_ key: String) {
     #expect(
         ociActionRequirements(execution: execution).persistentWorkspaceEffects
             == [fixtureWorkspaceEffect(workspace: workspace)])
+}
+
+@Test func OCIRequirementsDistinguishInputsFromBoundedExports() {
+    let input = FilePath("/fixture/source")
+    let output = FilePath("/fixture/artifact")
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath("/fixture/image-id"),
+        hostname: "fixture",
+        workingDirectory: "/src",
+        hostWorkingDirectory: FilePath("/fixture"),
+        mounts: [
+            OCIMount(source: input, target: "/src", access: .readOnly),
+            OCIMount(boundedExport: output, target: "/export"),
+        ],
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["true"],
+        environment: [:],
+        output: .logged)
+
+    let effects = ociActionRequirements(execution: execution).effects
+    #expect(effects.contains(ActionEffect(.read, scope: .input(input))))
+    #expect(effects.contains(ActionEffect(.readWrite, scope: .output(output))))
+    #expect(!effects.contains(ActionEffect(.readWrite, scope: .scratch(output))))
 }

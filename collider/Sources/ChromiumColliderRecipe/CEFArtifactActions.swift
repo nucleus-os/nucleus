@@ -44,16 +44,13 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             hostWorkingDirectory: assembly.chromiumSource,
             mounts: [
                 OCIMount(
-                    source: distributionCandidate,
-                    target: "/distribution",
-                    access: .readWrite)
+                    boundedExport: distributionCandidate,
+                    target: "/distribution")
             ],
             persistentWorkspaceMounts: [
                 assembly.readOnlySourceMount,
                 assembly.readOnlyOutputMount,
             ],
-            temporaryDirectory: assembly.distributionRoot.appending(
-                ".container-temporary"),
             environment: commandEnvironment,
             assembly: assembly,
             context: context)
@@ -122,13 +119,8 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             workingDirectory: "/candidate",
             hostWorkingDirectory: candidate,
             mounts: [
-                OCIMount(
-                    source: candidate,
-                    target: "/candidate",
-                    access: .readWrite)
+                OCIMount(boundedExport: candidate, target: "/candidate")
             ],
-            temporaryDirectory: assembly.distributionRoot.appending(
-                ".container-temporary"),
             environment: commandEnvironment,
             assembly: assembly,
             context: context)
@@ -257,11 +249,9 @@ private func validateCEFSDK(
             hostWorkingDirectory: sdk,
             mounts: [
                 OCIMount(source: sdk, target: "/sdk", access: .readOnly),
-                OCIMount(source: smoke, target: "/smoke", access: .readWrite),
+                OCIMount(boundedExport: smoke, target: "/smoke"),
             ],
             persistentWorkspaceMounts: [assembly.readOnlySourceMount],
-            temporaryDirectory: assembly.distributionRoot.appending(
-                ".container-temporary"),
             command: ["validate-cef", assembly.target.architecture.rawValue],
             environment: environment,
             output: .logged))
@@ -294,7 +284,6 @@ private func requireCEFContainerSuccess(
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
-    temporaryDirectory: FilePath,
     environment: [String: String],
     assembly: CEFArtifactAssembly,
     context: ActionContext
@@ -308,7 +297,6 @@ private func requireCEFContainerSuccess(
             hostWorkingDirectory: hostWorkingDirectory,
             mounts: mounts,
             persistentWorkspaceMounts: persistentWorkspaceMounts,
-            temporaryDirectory: temporaryDirectory,
             command: command,
             environment: environment))
     guard result.succeeded else {

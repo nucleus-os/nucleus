@@ -22,10 +22,22 @@ import Testing
     let linuxTargets = inputs.linuxTargets.map { target in
         SwiftLinuxTargetBuildConfiguration(
             target: target,
-            runtimeBuildWorkspace: temporary.appending(
-                "runtime-\(target.architecture.rawValue)/build"),
-            runtimeCompilerCache: temporary.appending(
-                "runtime-\(target.architecture.rawValue)/ccache"),
+            runtimeBuildWorkspace: PersistentWorkspaceDeclaration(
+                identity: PersistentWorkspaceIdentity(
+                    key: "swift-target-runtime-intermediates",
+                    artifactTarget: target.architecture.artifactTarget,
+                    role: "build"),
+                capacityBytes: 200 * 1_024 * 1_024 * 1_024,
+                filesystem: .ext4,
+                journal: .writeback64MiB),
+            runtimeCompilerCacheWorkspace: PersistentWorkspaceDeclaration(
+                identity: PersistentWorkspaceIdentity(
+                    key: "swift-target-runtime-ccache",
+                    artifactTarget: target.architecture.artifactTarget,
+                    role: "compiler-cache"),
+                capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                filesystem: .ext4,
+                journal: .writeback64MiB),
             runtimeInstall: temporary.appending(
                 "runtime-\(target.architecture.rawValue)/install"),
             sysroot: temporary.appending(
@@ -106,6 +118,22 @@ import Testing
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
     #expect(executions.allSatisfy { $0.resourceLimits == .parallelBuild })
     #expect(Set(executions.map(\.artifactTarget)) == [.linuxARM64, .linuxX86_64])
+    #expect(
+        executions.allSatisfy {
+            Set($0.persistentWorkspaceMounts.map(\.target)) == ["/build", "/ccache"]
+        })
+    let runtimeWorkspaceIdentities = executions.map {
+        Set($0.persistentWorkspaceMounts.map(\.workspace.identity))
+    }
+    #expect(runtimeWorkspaceIdentities.count == 2)
+    #expect(runtimeWorkspaceIdentities[0].isDisjoint(with: runtimeWorkspaceIdentities[1]))
+    for task in runtimeTasks {
+        let action = try #require(task.action)
+        let execution = try #require(try await ociExecutions(in: action).first)
+        #expect(
+            Set(action.requirements.persistentWorkspaceEffects.map(\.workspace.identity))
+                == Set(execution.persistentWorkspaceMounts.map(\.workspace.identity)))
+    }
 
     for target in linuxTargets {
         let architecture = target.target.architecture

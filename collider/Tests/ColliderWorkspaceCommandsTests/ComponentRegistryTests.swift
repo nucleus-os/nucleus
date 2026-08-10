@@ -213,9 +213,10 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             "native-builder-ccache", "native-builder-metadata", "rn-javascript-cache",
             "rn-boost-inputs", "rn-node-modules", "rn-sdk-linux-arm64",
             "rn-sdk-linux-x86_64",
-            "run-records", "swift-package-cache", "swift-package-graphs", "swift-runtime-build",
-            "swift-runtime-builder-metadata", "swift-runtime-ccache", "swift-sdk-generator-build",
-            "swift-target-sdk-generations", "swiftpm-builds", "swiftpm-tool-builds",
+            "run-records", "swift-package-cache", "swift-package-graphs",
+            "swift-runtime-builder-metadata", "swift-sdk-generator-build",
+            "swift-target-sdk-generations", "swiftpm-host-boundaries",
+            "swiftpm-tool-host-boundaries",
             "wayland-sdk-linux-arm64", "wayland-sdk-linux-x86_64",
         ])
     #expect(withoutLinuxOperations.storage.allSatisfy { !$0.producers.isEmpty })
@@ -386,11 +387,6 @@ private func fixtureReactNativeNodeModules(
         Issue.record("Linux SwiftPM builds must execute in OCI")
         return
     }
-    let armWritable = armExecution.mounts.filter { $0.access == .readWrite }
-        .map(\.source)
-    let x86Writable = x86Execution.mounts.filter { $0.access == .readWrite }
-        .map(\.source)
-
     #expect(
         arm64.swiftExecutable
             == .path(FilePath("/opt/swift/usr/bin/swift")))
@@ -413,12 +409,22 @@ private func fixtureReactNativeNodeModules(
                 source: fixtureRepositoryRoot,
                 target: fixtureRepositoryRoot.string,
                 access: .readOnly)))
-    #expect(armWritable.contains { arm64.scratchPath.isContained(in: $0) })
-    #expect(x86Writable.contains { amd64.scratchPath.isContained(in: $0) })
+    #expect(armExecution.mounts.allSatisfy { $0.isReadOnly })
+    #expect(x86Execution.mounts.allSatisfy { $0.isReadOnly })
+    #expect(armExecution.hostDependencyCache == x86Execution.hostDependencyCache)
     #expect(
-        armWritable.allSatisfy { armPath in
-            x86Writable.allSatisfy { !$0.overlaps(armPath) }
-        })
+        armExecution.hostDependencyCache.string.hasSuffix(
+            "/nucleus/swiftpm-user/cache"))
+    let armBuildWorkspace = try #require(armExecution.buildWorkspace)
+    let x86BuildWorkspace = try #require(x86Execution.buildWorkspace)
+    let armCacheWorkspace = try #require(armExecution.compilerCacheWorkspace)
+    let x86CacheWorkspace = try #require(x86Execution.compilerCacheWorkspace)
+    #expect(armBuildWorkspace.identity.artifactTarget == .linuxARM64)
+    #expect(x86BuildWorkspace.identity.artifactTarget == .linuxX86_64)
+    #expect(armCacheWorkspace.identity.artifactTarget == .linuxARM64)
+    #expect(x86CacheWorkspace.identity.artifactTarget == .linuxX86_64)
+    #expect(armBuildWorkspace.identity != x86BuildWorkspace.identity)
+    #expect(armCacheWorkspace.identity != x86CacheWorkspace.identity)
 }
 
 @Test func reactNativeDependencyInstallRunsOnHostForLinuxMultiarch() async throws {
@@ -716,7 +722,7 @@ private func fixtureReactNativeNodeModules(
                     && execution.command.first == "bash"
                     && !execution.command.contains("gfxstream")
                     && execution.mounts.contains {
-                        $0.target == "/export" && $0.access == .readWrite
+                        $0.target == "/export" && $0.purpose == .boundedExport
                     }
                     && Set(execution.persistentWorkspaceMounts.map(\.target))
                         == ["/build", "/ccache"]
@@ -1241,7 +1247,7 @@ private func fixtureReactNativeNodeModules(
         downloads: ActionDownloader { _, _ in },
         containers: ActionContainerExecutor(run: { execution in
             for mount in execution.mounts
-            where mount.access == .readWrite
+            where mount.purpose == .boundedExport
                 && mount.source.string.hasSuffix(".collider-candidate")
             {
                 try Data("generated".utf8).write(
@@ -1340,8 +1346,10 @@ private func fixtureReactNativeNodeModules(
             })
         #expect(
             executions.allSatisfy {
-                let writableTargets = $0.mounts.filter { $0.access == .readWrite }
-                    .map(\.target)
+                let writableTargets = $0.mounts.filter {
+                    $0.purpose == .boundedExport
+                }
+                .map(\.target)
                 let persistentTargets = $0.persistentWorkspaceMounts
                     .filter { $0.access == .readWrite }
                     .map(\.target)
@@ -1466,10 +1474,10 @@ private func fixtureReactNativeNodeModules(
     for (armTask, x86Task) in architecturePairs {
         #expect(Set(armTask.locks).isDisjoint(with: Set(x86Task.locks)))
         let armWritable = try await ociExecutions(in: armTask.action).flatMap {
-            $0.mounts.filter { $0.access == .readWrite }.map(\.source)
+            $0.mounts.filter { $0.purpose == .boundedExport }.map(\.source)
         }
         let x86Writable = try await ociExecutions(in: x86Task.action).flatMap {
-            $0.mounts.filter { $0.access == .readWrite }.map(\.source)
+            $0.mounts.filter { $0.purpose == .boundedExport }.map(\.source)
         }
         #expect(
             armWritable.allSatisfy { armPath in
@@ -1547,10 +1555,12 @@ private func fixtureReactNativeNodeModules(
                     && Set($0.persistentWorkspaceMounts.map(\.target))
                         == ["/build", "/ccache"]
             })
-        #expect(
-            nativeOperations.contains {
-                $0.mounts.contains { $0.target == "/export" && $0.access == .readWrite }
-            })
+        let exportsArtifacts = nativeOperations.contains { operation in
+            operation.mounts.contains { mount in
+                mount.target == "/export" && mount.purpose == .boundedExport
+            }
+        }
+        #expect(exportsArtifacts)
         #expect(
             Set(
                 nativeOperations.flatMap(\.persistentWorkspaceMounts).map {
@@ -1728,12 +1738,12 @@ private func fixtureReactNativeNodeModules(
     #expect(
         Set(x86Configure.persistentWorkspaceMounts.map(\.workspace.identity.key))
             == ["wayland-native-intermediates", "wayland-native-ccache"])
+    let buildScannerMount = try #require(
+        x86Configure.mounts.first { $0.target == "/native-wayland" })
     #expect(
-        x86Configure.mounts.contains {
-            $0.source == FilePath("/cache/native-sdk/linux-arm64/wayland")
-                && $0.target == "/native-wayland"
-                && $0.access == .readOnly
-        })
+        buildScannerMount.source
+            == FilePath("/cache/native-sdk/linux-arm64/wayland"))
+    #expect(buildScannerMount.isReadOnly)
     #expect(
         x86Configure.containerEnvironment["PKG_CONFIG_PATH_FOR_BUILD"]
             == "/native-wayland/lib/pkgconfig")

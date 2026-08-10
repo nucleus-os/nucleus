@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -183,30 +184,33 @@ struct ResolvedFontDescriptor final {
   uint32_t slant{FontSlantUpright};
 };
 
+// The handle and the metrics of the layout pass that produced it, returned
+// together so a caller cannot observe one without the other.
+struct CreatedLayout final {
+  uint64_t handle{0};
+  ParagraphMetrics metrics;
+};
+
 class TextLayoutService final {
  public:
-  bool resolveFont(
+  std::optional<ResolvedFontDescriptor> resolveFont(
       TextStringView familyName,
       float pointSize,
       uint32_t weight,
       uint32_t width,
-      uint32_t slant,
-      ResolvedFontDescriptor *outDescriptor) const;
+      uint32_t slant) const;
 
-  bool queryFontMetrics(
+  std::optional<FontMetrics> queryFontMetrics(
       TextStringView familyName,
       float pointSize,
       uint32_t weight,
       uint32_t width,
-      uint32_t slant,
-      FontMetrics *outMetrics) const;
+      uint32_t slant) const;
 
-  bool createRuns(
+  std::optional<CreatedLayout> createRuns(
       const TextRunView *runs,
       size_t runCount,
-      const ParagraphStyle *style,
-      uint64_t *outHandle,
-      ParagraphMetrics *outMetrics) const;
+      const ParagraphStyle *style) const;
 
   bool measureRuns(
       const TextRunView *runs,
@@ -225,17 +229,13 @@ class TextLayoutService final {
       size_t lineCapacity,
       ParagraphMetrics *outMetrics) const;
 
-  bool glyphPositionAt(
-      uint64_t handle,
-      float x,
-      float y,
-      TextPosition *outPosition) const;
+  std::optional<TextPosition> glyphPositionAt(uint64_t handle, float x, float y)
+      const;
 
-  bool caretForOffset(
+  std::optional<TextCaret> caretForOffset(
       uint64_t handle,
       uint32_t utf16Offset,
-      uint32_t affinity,
-      TextCaret *outCaret) const;
+      uint32_t affinity) const;
 
   bool rectsForRange(
       uint64_t handle,
@@ -245,7 +245,7 @@ class TextLayoutService final {
       size_t rectCapacity,
       uint32_t *outRectCount) const;
 
-  bool inkBounds(uint64_t handle, TextBounds *outBounds) const;
+  std::optional<TextBounds> inkBounds(uint64_t handle) const;
 
   bool graphemeBreaks(TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const;
   void invalidateFontCollection() const;

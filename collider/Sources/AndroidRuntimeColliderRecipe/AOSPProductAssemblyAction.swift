@@ -190,7 +190,7 @@ func aospProductOCIExecution(
             OCIMount(source: $0.0, target: $0.1, access: .readOnly)
         }
             + writableMounts.map {
-                OCIMount(source: $0.0, target: $0.1, access: .readWrite)
+                OCIMount(boundedExport: $0.0, target: $0.1)
             },
         persistentWorkspaceMounts: persistentWorkspaceMounts,
         userPolicy: .builder,

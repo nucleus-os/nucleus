@@ -673,12 +673,10 @@ import Testing
     let threadsIndex = try #require(recorded.command.firstIndex(of: "--threads"))
     #expect(recorded.command[threadsIndex + 1] == "8")
     #expect(!recorded.command.contains("--allow_gsi_debug_sepolicy"))
-    #expect(
-        recorded.mounts.contains {
-            $0.source == FilePath(signing.path)
-                && $0.target == "/keys"
-                && $0.access == .readOnly
-        })
+    let signingMount = try #require(
+        recorded.mounts.first { $0.target == "/keys" })
+    #expect(signingMount.source == FilePath(signing.path))
+    #expect(signingMount.isReadOnly)
 }
 
 @Test func aospProductPublicationCommitsOutputsThenActivatesTheGeneration() async throws {

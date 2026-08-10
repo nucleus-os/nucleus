@@ -177,7 +177,6 @@ package struct BuildChromiumProductAction: ColliderAction {
                 build.outputMount,
                 build.compilerCacheMount,
             ],
-            temporaryDirectory: nil,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -212,7 +211,6 @@ package struct BuildChromiumProductAction: ColliderAction {
                     access: .readOnly)
             ],
             persistentWorkspaceMounts: [build.writableSourceMount],
-            temporaryDirectory: nil,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,

@@ -27,9 +27,8 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
                 target: "/src",
                 access: .readOnly),
             OCIMount(
-                source: FilePath("/var/nucleus/output"),
-                target: "/build",
-                access: .readWrite),
+                boundedExport: FilePath("/var/nucleus/output"),
+                target: "/build"),
         ],
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
@@ -44,8 +43,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
 
     let flags = try appleContainerFlags(
         execution,
-        name: "fixture-builder-id",
-        temporaryDirectory: FilePath("/var/nucleus/temporary"))
+        name: "fixture-builder-id")
     try flags.management.validate()
 
     #expect(flags.management.networks == ["collider-internal"])
@@ -55,7 +53,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     #expect(flags.management.readOnly)
     #expect(flags.management.rosetta)
     #expect(flags.management.name == "fixture-builder-id")
-    #expect(flags.management.tmpFs == ["/home/collider"])
+    #expect(flags.management.tmpFs == ["/home/collider", "/tmp"])
     #expect(flags.process.uid == 1000)
     #expect(flags.process.gid == 1000)
     #expect(flags.process.env == ["BUILD_MODE=fixture"])
@@ -73,9 +71,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     #expect(
         flags.management.mounts.contains(
             "type=bind,source=/var/nucleus/output,target=/build"))
-    #expect(
-        flags.management.mounts.contains(
-            "type=bind,source=/var/nucleus/temporary,target=/tmp"))
+    #expect(!flags.management.mounts.contains { $0.contains("target=/tmp") })
 
     let alternateConfiguration = OCIRuntimeConfiguration(
         isolatedNetwork: "alternate-isolated",
@@ -87,7 +83,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     let alternateFlags = try appleContainerFlags(
         execution,
         name: "alternate-builder-id",
-        temporaryDirectory: nil,
         configuration: alternateConfiguration)
     #expect(alternateFlags.management.networks == ["alternate-isolated"])
     #expect(alternateFlags.management.labels == ["example.alternate.managed=true"])
@@ -204,7 +199,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     let context = root.appendingPathComponent("context", isDirectory: true)
     let product = root.appendingPathComponent("product", isDirectory: true)
     let output = root.appendingPathComponent("output", isDirectory: true)
-    let temporary = root.appendingPathComponent("temporary", isDirectory: true)
     try FileManager.default.createDirectory(
         at: context,
         withIntermediateDirectories: true)
@@ -257,9 +251,8 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
                 target: "/src/device/nucleus/product",
                 access: .readOnly),
             OCIMount(
-                source: FilePath(output.path),
-                target: "/output",
-                access: .readWrite),
+                boundedExport: FilePath(output.path),
+                target: "/output"),
         ],
         persistentWorkspaceMounts: [
             OCIPersistentWorkspaceMount(
@@ -276,7 +269,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
                 target: "/src/out",
                 access: .readWrite)
         ],
-        temporaryDirectory: FilePath(temporary.path),
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -300,11 +292,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     #expect(request.execution.persistentWorkspaceMounts.first?.target == "/src/out")
     #expect(request.configuration == configuration)
     #expect(request.stage == TaskID(rawValue: "fixture.execute"))
-    #expect(request.temporaryDirectory != nil)
-    #expect(
-        request.temporaryDirectory.map {
-            !FileManager.default.fileExists(atPath: $0.string)
-        } == true)
     await request.cancellation.interruptAll()
     #expect(await runtime.cancellation.wasInterrupted())
 
@@ -549,8 +536,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         workingDirectory: "/source",
         hostWorkingDirectory: FilePath(root.path),
         mounts: [],
-        temporaryDirectory: FilePath(
-            root.appendingPathComponent("temporary").path),
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -627,9 +612,8 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
                 target: "/source",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("output"),
-                target: "/output",
-                access: .readWrite),
+                boundedExport: root.appending("output"),
+                target: "/output"),
         ],
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
@@ -654,8 +638,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
 
     let flags = try appleContainerFlags(
         execution,
-        name: executionName,
-        temporaryDirectory: nil)
+        name: executionName)
     #expect(flags.management.rosetta)
     #expect(flags.management.networks == ["collider-internal"])
     #expect(flags.management.dnsDisabled)
@@ -691,8 +674,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         output: .logged)
     let armFlags = try appleContainerFlags(
         armExecution,
-        name: appleContainerName(for: armExecution),
-        temporaryDirectory: nil)
+        name: appleContainerName(for: armExecution))
     #expect(armFlags.management.platform == "linux/arm64")
     #expect(!armFlags.management.rosetta)
 
@@ -715,8 +697,7 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         output: .logged)
     let untranslatedFlags = try appleContainerFlags(
         untranslatedIntelArtifact,
-        name: appleContainerName(for: untranslatedIntelArtifact),
-        temporaryDirectory: nil)
+        name: appleContainerName(for: untranslatedIntelArtifact))
     #expect(!untranslatedFlags.management.rosetta)
 }
 

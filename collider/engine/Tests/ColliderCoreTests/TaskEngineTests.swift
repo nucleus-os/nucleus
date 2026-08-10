@@ -79,7 +79,7 @@ private struct ParallelismProbeAction: ColliderAction {
 private func schedulerWorkspace(
     key: String,
     target: ArtifactTarget = .linuxARM64,
-    access: OCIMount.Access = .readWrite
+    access: OCIPersistentWorkspaceMount.Access = .readWrite
 ) -> ActionPersistentWorkspaceEffect {
     ActionPersistentWorkspaceEffect(
         workspace: PersistentWorkspaceDeclaration(

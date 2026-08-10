@@ -41,9 +41,18 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         }
 
         var mounts = runtimeOCI.mounts
+        let runtimeProducts = OCIMount(
+            source: runtimeSwiftPM.productsDirectory,
+            target: runtimeSwiftPM.productsDirectory.string,
+            access: .readOnly)
+        guard !mounts.contains(where: { $0.target == runtimeProducts.target }) else {
+            throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
+                runtimeProducts.target)
+        }
+        mounts.append(runtimeProducts)
         let assemblerProducts = OCIMount(
-            source: assemblerSwiftPM.scratchPath,
-            target: assemblerSwiftPM.scratchPath.string,
+            source: assemblerSwiftPM.productsDirectory,
+            target: assemblerSwiftPM.productsDirectory.string,
             access: .readOnly)
         guard !mounts.contains(where: { $0.target == assemblerProducts.target }) else {
             throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
@@ -51,9 +60,8 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         }
         mounts.append(assemblerProducts)
         let artifactMount = OCIMount(
-            source: artifactRoot,
-            target: artifactRoot.string,
-            access: .readWrite)
+            boundedExport: artifactRoot,
+            target: artifactRoot.string)
         guard !mounts.contains(where: { $0.target == artifactMount.target }) else {
             throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
                 artifactMount.target)

@@ -127,10 +127,14 @@ public struct AttributedText: Sendable, Equatable {
 }
 
 /// Opaque token understood only by the backend that created it.
-public struct TextLayoutHandle: RawRepresentable, Sendable, Hashable {
-    public let rawValue: UInt64
+///
+/// Handles carry manual retain counts, so they stay inside the package: every
+/// balanced retain lives in `TextLayoutStorage` and `TextLayoutLease`, and no
+/// consumer outside this package can reach one to unbalance it.
+package struct TextLayoutHandle: RawRepresentable, Sendable, Hashable {
+    package let rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
@@ -155,13 +159,13 @@ public struct TextCaretGeometry: Sendable, Equatable {
 ///
 /// The handle must already carry one retain. NucleusUI transfers that retain
 /// into its actor-confined storage and releases it exactly once.
-public struct TextBackendLayout: Sendable, Equatable {
-    public var handle: TextLayoutHandle
-    public var usedRect: Rect
-    public var lines: [TextLayoutLine]
-    public var didExceedMaximumLineCount: Bool
+package struct TextBackendLayout: Sendable, Equatable {
+    package var handle: TextLayoutHandle
+    package var usedRect: Rect
+    package var lines: [TextLayoutLine]
+    package var didExceedMaximumLineCount: Bool
 
-    public init(
+    package init(
         handle: TextLayoutHandle,
         usedRect: Rect,
         lines: [TextLayoutLine],
@@ -181,7 +185,7 @@ public struct TextBackendLayout: Sendable, Equatable {
 /// synchronize internally with its renderer, but resource lifetime never
 /// escapes onto an arbitrary Swift executor.
 @MainActor
-public protocol TextLayoutBackend: AnyObject {
+package protocol TextLayoutBackend: AnyObject {
     /// Changes when cached layouts must be recreated, such as after font
     /// collection invalidation.
     var generation: UInt64 { get }
@@ -339,18 +343,13 @@ public final class TextSystem {
     /// Install the process host's backend. Reinstalling deliberately invalidates
     /// new queries against old cached layouts while their existing resources
     /// remain safely owned by the backend that created them.
-    public func installBackend(_ backend: any TextLayoutBackend) {
+    package func installBackend(_ backend: any TextLayoutBackend) {
         self.backend = backend
         installationGeneration &+= 1
         reportedIssues.removeAll(keepingCapacity: true)
     }
 
-    public func removeBackend() {
-        backend = nil
-        installationGeneration &+= 1
-    }
-
-    public var hasInstalledBackend: Bool {
+    package var hasInstalledBackend: Bool {
         backend != nil
     }
 

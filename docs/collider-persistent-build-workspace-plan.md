@@ -342,6 +342,13 @@ one volume.
 
 ## Phase 6: Migrate Swift Target-SDK Builders
 
+Status: implementation complete; cold and warm rebuild qualification remains.
+The arm64-native and amd64-cross runtime lanes now attach distinct 200 GiB
+build workspaces and 50 GiB compiler-cache workspaces. Source, bootstrap
+compilers, downloaded packages, sysroots, and assembled runtime exports remain
+host-owned inputs or artifact boundaries; no runtime intermediate or compiler
+cache is bind-mounted from macOS.
+
 Create independent arm64 and amd64 Linux target-SDK build and compiler-cache
 workspaces. Keep the pinned `swift-sdk/source` closure on the host and mount it
 read-only. Keep the official bootstrap compiler and downloaded Android Swift SDK
@@ -359,6 +366,16 @@ warm reuse, and still produces one relocatable dual-architecture SDK artifact.
 
 ## Phase 7: Migrate Linux SwiftPM Product and Test Builds
 
+Status: implementation complete; cold and warm build/test qualification
+remains. Linux SwiftPM compilation and linking now use target-specific 100 GiB
+workspaces with independent compiler-cache volumes. The runtime assembler uses
+its own tool workspace. Locked dependency acquisition remains a network-capable
+host action backed by one architecture-neutral package cache; Collider copies
+only the resolved dependency graph into the Linux workspace when the manifest
+or lockfile digest changes. The final bin directory is exported to the bounded
+host products directory, so downstream recipes never traverse the volume-backed
+`.build` tree.
+
 Move architecture-specific Linux SwiftPM `.build` state into persistent
 workspaces. Keep package sources, manifests, generated first-party source, and
 resolved dependency inputs host-owned and read-only. Run compilation, linking,
@@ -375,20 +392,29 @@ writable through VirtioFS.
 
 ## Phase 8: Apply the Boundary to Remote Development
 
-Keep a remote developer's editable checkout in its declared source boundary.
-Attach persistent Linux build workspaces for native, SwiftPM, browser, and AOSP
-intermediates rather than storing them beside source. Reuse the same logical
-workspace contract locally and on a future remote builder backend; backend
-storage mechanics may differ, but ownership and artifact export do not.
+Status: architecture complete; operational cutover is tracked by the
+[macOS Remote Development Plan](macos-remote-development-plan.md).
 
-Do not move editor state, user home data, credentials, or runtime VM disks into
-Collider build workspaces. Those remain under their own remote-development and
-virtualization lifecycle contracts.
+Remote development uses the authoritative macOS checkout and the same Collider
+process used locally. It does not add a Linux development machine, remote
+builder backend, source-snapshot service, or worker daemon. The persistent
+workspace boundary from the preceding phases therefore applies unchanged:
+source and user state remain host-owned, while Linux build intermediates remain
+inside Collider-owned persistent volumes.
 
-Gate: deleting a remote development environment's build workspaces preserves
-source and user state while forcing a complete reproducible rebuild.
+Gate: the remote-development plan can delete every reconstructible Linux build
+workspace without deleting or relocating the authoritative checkout,
+uncommitted work, editor state, credentials, or user home data.
 
 ## Phase 9: Complete the Cutover
+
+Implementation complete. Collider's type model now separates read-only host
+inputs, bounded host exports, persistent Linux workspaces, and tmpfs. General
+writable host mounts and host-backed container temporary directories no longer
+exist. The durable boundary is recorded in
+[Collider Build Storage Architecture](collider-build-storage-architecture.md).
+Cold/warm qualification and removal of the now-unused physical legacy
+directories remain before this plan can be marked complete and deleted.
 
 Remove replaced host intermediate declarations, bind mounts, socket/FIFO host
 cleanup, and storage-retention rules. Update Collider cache status, storage

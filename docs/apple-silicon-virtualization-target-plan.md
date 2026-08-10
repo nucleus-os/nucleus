@@ -893,12 +893,10 @@ remove a base referenced by a machine record, a layer referenced by a retained
 restore branch, or any image held by a running VM.
 
 The initial product creates no DiskImageKit cache layer: its bases are local and
-content-addressed, so an additional read cache has no demonstrated benefit. A
-future VM-based remote-development product may add the single permitted cache
-layer only when its immutable base resides on measured slow or remote storage.
-Apple `container` build execution, its OCI image store, the current OCI remote
-development environment, Collider caches, source snapshots, and build-volume
-APFS layout never pass through DiskImageKit.
+content-addressed, so an additional read cache has no demonstrated benefit.
+Apple `container` build execution, its OCI image store, Collider caches,
+persistent build volumes, and the host-owned macOS remote-development checkout
+never pass through DiskImageKit.
 
 `NucleusMacHostRuntime` creates the full `VZVirtualMachineConfiguration`:
 
@@ -1558,9 +1556,11 @@ Proton, Zink, DXVK, vkd3d-proton, game input/audio, and compatibility-matrix
 contracts. Each role builds and qualifies its own declared artifacts from the
 same source revision; none substitutes for another.
 
-[Remote Development, macOS Builder, and Self-Hosted Runner Plan](github-actions-macos-builder-and-self-hosted-runner-plan.md)
-is updated to distinguish the shipping virtualization qualifier from the
-physical Linux qualifier.
+[GitHub Actions Self-Hosted Runner Plan](github-actions-self-hosted-runner-plan.md)
+distinguishes the shipping virtualization qualifier from the physical Linux
+qualifier. [macOS Remote Development Plan](macos-remote-development-plan.md)
+keeps the shipping VM runtime separate from the host-owned development
+checkout.
 [Manifest Portability Plan](manifest-portability-plan.md)
 is updated with Linux/amd64, Linux/arm64, Android/amd64, Android/arm64, and
 macOS/arm64 artifact destinations plus the distinct x86_64 Apple-guest runtime

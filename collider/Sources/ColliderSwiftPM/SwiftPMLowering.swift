@@ -209,6 +209,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     packageRoot: invocation.context.packageRoot,
                     scratchPath: invocation.scratchPath,
                     dependencyCache: execution.hostDependencyCache,
+                    lock: lock,
                     marker: marker)))
     }
 
@@ -607,6 +608,14 @@ private struct SwiftPMAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
+        if identity.processes.contains(where: {
+            guard case .oci = $0 else { return false }
+            return true
+        }) {
+            try context.files.createDirectory(scratchPath)
+            try context.files.remove(productsDirectory)
+            try context.files.createDirectory(productsDirectory)
+        }
         for (index, process) in identity.processes.enumerated() {
             try context.cancellation.check()
             let result: CommandResult
@@ -633,10 +642,13 @@ private struct SwiftPMAction: ColliderAction {
     ) throws {
         let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = FilePath(value).lexicallyNormalized()
-        guard !value.isEmpty, path.isAbsolute, path.isContained(in: scratchPath)
+        guard !value.isEmpty, path.isAbsolute,
+            path.isContained(in: scratchPath)
+                || path == productsDirectory
         else {
             throw SwiftPMLoweringFailure.invalidBinPath(value)
         }
+        if path == productsDirectory { return }
         try context.files.createDirectory(productsDirectory.removingLastComponent())
         try context.files.replaceSymlink(
             at: productsDirectory,
@@ -687,6 +699,8 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
     let requirements: ActionRequirements
     let environment: [String: String]
     let command: CommandSpec
+    let packageManifest: FilePath
+    let lock: FilePath
     let marker: FilePath
 
     init(
@@ -694,9 +708,12 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         packageRoot: FilePath,
         scratchPath: FilePath,
         dependencyCache: FilePath,
+        lock: FilePath,
         marker: FilePath
     ) throws {
         self.command = command
+        packageManifest = packageRoot.appending("Package.swift")
+        self.lock = lock
         self.marker = marker
         identity = Identity(
             command: command,
@@ -726,7 +743,15 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
             throw result.executionFailure(reason: "Swift package command failed")
         }
         try context.files.createDirectory(marker.removingLastComponent())
-        try context.files.write(Array("resolved\n".utf8), to: marker)
+        var encoder = CanonicalDigestEncoder()
+        encoder.append(
+            tag: 1,
+            string: try context.files.digest(file: packageManifest).description)
+        encoder.append(
+            tag: 2,
+            string: try context.files.digest(file: lock).description)
+        let digest = ArtifactDigest.sha256(encoder.bytes)
+        try context.files.write(Array("\(digest)\n".utf8), to: marker)
     }
 }
 

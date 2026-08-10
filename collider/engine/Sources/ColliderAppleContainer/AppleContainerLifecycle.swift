@@ -96,7 +96,6 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             request.execution,
             name: name,
             imageReference: request.imageReference,
-            temporaryDirectory: request.temporaryDirectory,
             output: request.output,
             logging: request.logging,
             stage: request.stage,
@@ -239,7 +238,6 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             execution,
             name: appleContainerName(for: execution),
             imageReference: request.imageReference,
-            temporaryDirectory: nil,
             output: execution.output,
             logging: request.logging,
             stage: request.stage,
@@ -273,7 +271,6 @@ struct AppleContainerLifecycle: Sendable {
         _ execution: OCIExecution,
         name: String,
         imageReference: String,
-        temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?,
@@ -287,7 +284,6 @@ struct AppleContainerLifecycle: Sendable {
                 execution,
                 name: name,
                 imageReference: imageReference,
-                temporaryDirectory: temporaryDirectory,
                 output: output,
                 logging: logging,
                 stage: stage,
@@ -352,7 +348,6 @@ struct AppleContainerLifecycle: Sendable {
         _ execution: OCIExecution,
         name: String,
         imageReference: String,
-        temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?,
@@ -363,7 +358,6 @@ struct AppleContainerLifecycle: Sendable {
         let flags = try appleContainerFlags(
             execution,
             name: name,
-            temporaryDirectory: temporaryDirectory,
             configuration: configuration,
             persistentWorkspaceNames: persistentWorkspaceNames,
             addedCapabilities: addedCapabilities)
@@ -441,26 +435,19 @@ struct AppleContainerFlags {
 func appleContainerFlags(
     _ execution: OCIExecution,
     name: String,
-    temporaryDirectory: FilePath?,
     configuration: OCIRuntimeConfiguration = .engineDefault,
     persistentWorkspaceNames: [PersistentWorkspaceIdentity: String] = [:],
     addedCapabilities: [String] = []
 ) throws -> AppleContainerFlags {
-    var mounts = execution.mounts.map { mount in
+    let mounts = execution.mounts.map { mount in
         var value =
             "type=bind,source=\(mount.source),target=\(mount.target)"
-        if mount.access == .readOnly {
+        if mount.isReadOnly {
             value += ",readonly"
         }
         return value
     }
-    var temporaryFilesystems = [configuration.guestHome]
-    if let temporaryDirectory {
-        mounts.append(
-            "type=bind,source=\(temporaryDirectory),target=/tmp")
-    } else {
-        temporaryFilesystems.append("/tmp")
-    }
+    let temporaryFilesystems = [configuration.guestHome, "/tmp"]
     let volumes = try execution.persistentWorkspaceMounts.map { mount in
         guard let name = persistentWorkspaceNames[mount.workspace.identity] else {
             throw AppleContainerFailure.persistentWorkspaceResolutionMissing(

@@ -103,7 +103,7 @@ if [[ -r "$fingerprint_file" ]]; then
   recorded_fingerprint="$(<"$fingerprint_file")"
 fi
 if [[ ! -x "$bin" || "$fingerprint" != "$recorded_fingerprint" ]]; then
-  swift build --package-path "$pkg" -c release --product collider --quiet >&2
+  swift build --package-path "$pkg" -c release --product collider >&2
   mkdir -p "$(dirname "$fingerprint_file")"
   fingerprint="$(collider_source_fingerprint)"
   temporary_fingerprint="$fingerprint_file.$$"

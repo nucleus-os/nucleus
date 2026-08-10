@@ -241,6 +241,22 @@ private let fixturePackageRoot = FilePath("/workspace")
         "image-id",
         path: imageID,
         validation: .regularFile)
+    let buildWorkspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "fixture-swiftpm",
+            artifactTarget: .linuxX86_64,
+            role: "build"),
+        capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+    let compilerCacheWorkspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "fixture-swiftpm-ccache",
+            artifactTarget: .linuxX86_64,
+            role: "compiler-cache"),
+        capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
     let execution = SwiftPMOCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64,
@@ -251,8 +267,10 @@ private let fixturePackageRoot = FilePath("/workspace")
             OCIMount(
                 source: fixturePackageRoot,
                 target: fixturePackageRoot.string,
-                access: .readWrite)
+                access: .readOnly)
         ],
+        buildWorkspace: buildWorkspace,
+        compilerCacheWorkspace: compilerCacheWorkspace,
         hostDependencyCache: FilePath("/cache/swiftpm"),
         intelBinaryTranslationPolicy: .required,
         containerEnvironment: ["HOME": "/home/fixture"],
@@ -306,6 +324,31 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(operation.containerEnvironment["PATH"] == nil)
     #expect(operation.containerEnvironment["PROJECT_MODE"] == "debug")
     #expect(operation.containerEnvironment["PROJECT_PRIVATE"] == nil)
+    #expect(invocation.executionScratchPath.string.hasPrefix("/swiftpm-workspace/"))
+    #expect(operation.command.contains(invocation.executionScratchPath.string))
+    #expect(
+        Set(operation.persistentWorkspaceMounts.map(\.target))
+            == ["/swiftpm-workspace", "/ccache"])
+    #expect(
+        Set(operation.persistentWorkspaceMounts.map(\.workspace.identity))
+            == [buildWorkspace.identity, compilerCacheWorkspace.identity])
+    #expect(
+        operation.mounts.contains(
+            OCIMount(
+                source: invocation.scratchPath,
+                target: "/swiftpm-input",
+                access: .readOnly)))
+    #expect(
+        operation.mounts.contains(
+            OCIMount(
+                boundedExport: invocation.productsDirectory,
+                target: "/swiftpm-products")))
+    #expect(
+        operation.containerEnvironment["NUCLEUS_SWIFTPM_SCRATCH"]
+            == invocation.executionScratchPath.string)
+    #expect(
+        operation.containerEnvironment["NUCLEUS_SWIFTPM_HOST_PRODUCTS"]
+            == invocation.productsDirectory.string)
     let product = invocation.product(
         package: "fixture",
         product: "Fixture",

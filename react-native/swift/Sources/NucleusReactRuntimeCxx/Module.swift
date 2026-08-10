@@ -157,9 +157,10 @@ private nonisolated func makeJSWorkWake(
 
     /// Install the JS→native command handler. JS initiates
     /// `NucleusHostCommand.invoke(command, argsJson)` on the JS thread; Swift
-    /// receives the copied values asynchronously on `MainActor`. The C++ shared
-    /// handler owns the retained context and invokes `release` on replacement,
-    /// teardown, or setup failure.
+    /// receives the copied values asynchronously on `MainActor`. The runtime
+    /// owns the closure and drops it once no in-flight invocation can still
+    /// reference it, so replacing the handler or tearing the runtime down
+    /// releases the previous closure's captures exactly once.
     package func setCommandHandler(
         _ handler:
             @escaping @MainActor @Sendable (
@@ -170,9 +171,9 @@ private nonisolated func makeJSWorkWake(
         try requireSuccess(
             unsafe facade.setCommandHandler(
                 .init { command, argsJson in
-                    // Runs on the JS thread. Copy the borrowed C++ strings
-                    // before the task so the typed handler never touches
-                    // storage the runtime may have retired.
+                    // Runs on the JS thread. Both parameters borrow locals the
+                    // TurboModule call destroys on return, so copy them before
+                    // the task rather than capturing the references.
                     let commandValue = String(command)
                     let argsJsonValue = String(argsJson)
                     Task { @MainActor in

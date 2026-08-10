@@ -1109,9 +1109,8 @@ private struct InstallSkiaGNAction: ColliderAction {
                     target: "/archive",
                     access: .readOnly),
                 OCIMount(
-                    source: executable.removingLastComponent(),
-                    target: "/output",
-                    access: .readWrite),
+                    boundedExport: executable.removingLastComponent(),
+                    target: "/output"),
             ],
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
@@ -1133,16 +1132,7 @@ private struct InstallSkiaGNAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        let container = ociActionRequirements(execution: execution)
-        return ActionRequirements(
-            effects: container.effects + [
-                ActionEffect(
-                    .readWrite,
-                    scope: .output(executable.removingLastComponent()))
-            ],
-            lane: container.lane,
-            executionPlatform: container.executionPlatform,
-            artifactTarget: container.artifactTarget)
+        ociActionRequirements(execution: execution)
     }
 
     var environment: [String: String] { execution.environment }
@@ -1276,9 +1266,8 @@ private func skiaTask(
             target: "/src",
             access: .readOnly),
         OCIMount(
-            source: exportDirectory,
-            target: "/export",
-            access: .readWrite),
+            boundedExport: exportDirectory,
+            target: "/export"),
         OCIMount(
             source: builder.swiftSDKRoot,
             target: "/swift-sdk",

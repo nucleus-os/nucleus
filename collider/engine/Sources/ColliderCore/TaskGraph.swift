@@ -134,18 +134,30 @@ public struct OCIImagePreparation: Hashable, Sendable {
 public struct OCIMount: Hashable, Sendable {
     public enum Access: String, Hashable, Sendable {
         case readOnly
-        case readWrite
+    }
+
+    public enum Purpose: String, Hashable, Sendable {
+        case input
+        case boundedExport
     }
 
     public let source: FilePath
     public let target: String
-    public let access: Access
+    public let purpose: Purpose
 
     public init(source: FilePath, target: String, access: Access) {
         self.source = source
         self.target = target
-        self.access = access
+        purpose = .input
     }
+
+    public init(boundedExport source: FilePath, target: String) {
+        self.source = source
+        self.target = target
+        purpose = .boundedExport
+    }
+
+    public var isReadOnly: Bool { purpose == .input }
 }
 
 public struct PersistentWorkspaceIdentity: Codable, Hashable, Sendable {
@@ -218,14 +230,19 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
 }
 
 public struct OCIPersistentWorkspaceMount: Hashable, Sendable {
+    public enum Access: String, Hashable, Sendable {
+        case readOnly
+        case readWrite
+    }
+
     public let workspace: PersistentWorkspaceDeclaration
     public let target: String
-    public let access: OCIMount.Access
+    public let access: Access
 
     public init(
         workspace: PersistentWorkspaceDeclaration,
         target: String,
-        access: OCIMount.Access
+        access: Access
     ) {
         self.workspace = workspace
         self.target = target
@@ -306,7 +323,6 @@ public struct OCIExecution: Hashable, Sendable {
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
     public let persistentWorkspaceMounts: [OCIPersistentWorkspaceMount]
-    public let temporaryDirectory: FilePath?
     public let userPolicy: OCIUserPolicy
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
@@ -328,7 +344,6 @@ public struct OCIExecution: Hashable, Sendable {
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
         persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
-        temporaryDirectory: FilePath? = nil,
         userPolicy: OCIUserPolicy,
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
@@ -349,7 +364,6 @@ public struct OCIExecution: Hashable, Sendable {
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
         self.persistentWorkspaceMounts = persistentWorkspaceMounts
-        self.temporaryDirectory = temporaryDirectory
         self.userPolicy = userPolicy
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy

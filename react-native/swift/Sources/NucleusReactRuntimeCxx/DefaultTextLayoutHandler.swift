@@ -2,10 +2,9 @@ import CxxStdlib
 import NucleusReactRuntimeCxxBridge
 import NucleusTextCxxBridge
 
-// Default Fabric text-measurement handler. Wraps the same Skia text
-// backend (`nucleus::text::measureParagraph`) that the legacy C++
-// `NucleusTextLayoutManager` used; the bridge builds the
-// `TextMeasureRequest` from the RN inputs, this handler measures.
+// Default Fabric text-measurement handler. The bridge builds the
+// `TextMeasureRequest` from the RN inputs and this handler measures it
+// through the Skia text backend (`nucleus::text::measureParagraph`).
 package final class DefaultTextLayoutHandler: Sendable {
     package init() {}
 
@@ -17,7 +16,7 @@ package final class DefaultTextLayoutHandler: Sendable {
         let hasFiniteMaxWidth = request.maximumWidth > 0
         let measuredWidth =
             hasFiniteMaxWidth
-            ? Swift::min(metrics.maxIntrinsicWidth, request.maximumWidth)
+            ? Swift.min(metrics.maxIntrinsicWidth, request.maximumWidth)
             : metrics.maxIntrinsicWidth
         return nucleus.react.TextMeasureResult(
             width: Swift.max(0, measuredWidth),

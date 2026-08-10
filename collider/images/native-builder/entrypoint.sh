@@ -4,6 +4,40 @@ set -euo pipefail
 case "${1:-}" in
   swiftpm)
     shift
+    if [[ -n "${NUCLEUS_SWIFTPM_SCRATCH:-}" ]]; then
+      input=${NUCLEUS_SWIFTPM_INPUT:?}
+      scratch=$NUCLEUS_SWIFTPM_SCRATCH
+      products=${NUCLEUS_SWIFTPM_PRODUCTS:?}
+      host_products=${NUCLEUS_SWIFTPM_HOST_PRODUCTS:?}
+      mkdir -p "$scratch/.collider" "$products"
+      if [[ -f "$input/.collider/dependencies-resolved" ]] \
+          && ! cmp -s \
+              "$input/.collider/dependencies-resolved" \
+              "$scratch/.collider/dependencies-resolved"; then
+        for name in artifacts checkouts repositories workspace-state.json; do
+          rm -rf "$scratch/$name"
+          if [[ -e "$input/$name" ]]; then
+            cp -a "$input/$name" "$scratch/$name"
+          fi
+        done
+        cp "$input/.collider/dependencies-resolved" \
+          "$scratch/.collider/dependencies-resolved"
+      fi
+      export_products=0
+      for argument in "$@"; do
+        if [[ "$argument" == --show-bin-path ]]; then
+          export_products=1
+          break
+        fi
+      done
+      if [[ "$export_products" == 1 ]]; then
+        bin_path=$("$@")
+        find "$products" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        cp -a "$bin_path"/. "$products"/
+        printf '%s\n' "$host_products"
+        exit 0
+      fi
+    fi
     ;;
   javascript)
     if [[ ! -f package.json || ! -f bun.lock ]]; then

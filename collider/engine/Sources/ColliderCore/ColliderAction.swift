@@ -377,7 +377,7 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         for mount in execution.mounts {
             mounts.append(tag: 1, string: mount.source.string)
             mounts.append(tag: 2, string: mount.target)
-            mounts.append(tag: 3, string: mount.access.rawValue)
+            mounts.append(tag: 3, string: mount.purpose.rawValue)
         }
         encoder.append(tag: 12, bytes: mounts.bytes)
         var persistentWorkspaces = CanonicalDigestEncoder(
@@ -402,7 +402,6 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
             persistentWorkspaces.append(tag: 8, string: mount.access.rawValue)
         }
         encoder.append(tag: 14, bytes: persistentWorkspaces.bytes)
-        encoder.append(tag: 13, string: execution.temporaryDirectory?.string ?? "")
         encoder.append(tag: 15, integer: UInt64(execution.userPolicy.userID))
         encoder.append(tag: 16, integer: UInt64(execution.userPolicy.groupID))
         encoder.append(tag: 17, string: execution.capabilityPolicy.rawValue)
@@ -542,15 +541,9 @@ public func ociActionRequirements(
     ]
     for mount in execution.mounts {
         let effect = ActionEffect(
-            mount.access == .readOnly ? .read : .readWrite,
-            scope: mount.access == .readOnly
-                ? .input(mount.source) : .scratch(mount.source))
-        if !effects.contains(effect) { effects.append(effect) }
-    }
-    if let temporaryDirectory = execution.temporaryDirectory {
-        let effect = ActionEffect(
-            .readWrite,
-            scope: .scratch(temporaryDirectory))
+            mount.isReadOnly ? .read : .readWrite,
+            scope: mount.isReadOnly
+                ? .input(mount.source) : .output(mount.source))
         if !effects.contains(effect) { effects.append(effect) }
     }
     let persistentWorkspaceEffects = execution.persistentWorkspaceMounts.map {
@@ -611,12 +604,12 @@ public struct ActionEffect: Hashable, Sendable {
 public struct ActionPersistentWorkspaceEffect: Hashable, Sendable {
     public let workspace: PersistentWorkspaceDeclaration
     public let target: String
-    public let access: OCIMount.Access
+    public let access: OCIPersistentWorkspaceMount.Access
 
     public init(
         workspace: PersistentWorkspaceDeclaration,
         target: String,
-        access: OCIMount.Access
+        access: OCIPersistentWorkspaceMount.Access
     ) {
         self.workspace = workspace
         self.target = target

@@ -94,25 +94,27 @@ enum ColliderStorageComponent {
                     cleanupPolicy: .explicitClean,
                     retention: "locked Swift package sources remain reusable until explicit clean"),
                 StorageDeclaration(
-                    id: "swiftpm-builds",
+                    id: "swiftpm-host-boundaries",
                     owner: owner,
                     producers: [.runtime("swiftpm")],
-                    storageClass: .incremental,
+                    storageClass: .cache,
                     root: cache.appending("swiftpm"),
                     safetyRoot: cache,
                     cleanupPolicy: .explicitClean,
                     retention:
-                        "destination-specific SwiftPM state remains reusable until explicit clean"),
+                        "host-resolved dependency inputs and bounded Linux product exports remain reusable until explicit clean"
+                ),
                 StorageDeclaration(
-                    id: "swiftpm-tool-builds",
+                    id: "swiftpm-tool-host-boundaries",
                     owner: owner,
                     producers: [.runtime("swiftpm")],
-                    storageClass: .incremental,
+                    storageClass: .cache,
                     root: cache.appending("swiftpm-tools"),
                     safetyRoot: cache,
                     cleanupPolicy: .explicitClean,
                     retention:
-                        "Collider-owned Swift tool products remain reusable until explicit clean"),
+                        "host-resolved tool dependency inputs and bounded Linux tool exports remain reusable until explicit clean"
+                ),
                 StorageDeclaration(
                     id: "android-sdk",
                     owner: owner,

@@ -548,21 +548,17 @@ static std::vector<TextRun> collectRuns(const TextRunView *runs, size_t runCount
     return result;
 }
 
-bool TextLayoutService::resolveFont(
+std::optional<ResolvedFontDescriptor> TextLayoutService::resolveFont(
     TextStringView familyName,
     float pointSize,
     uint32_t weight,
     uint32_t width,
-    uint32_t slant,
-    ResolvedFontDescriptor *outDescriptor) const
+    uint32_t slant) const
 {
-    if (!outDescriptor) {
-        return false;
-    }
     const float size = pointSize > 1.0f ? pointSize : 1.0f;
     auto typeface = matchTextTypeface(familyName, weight, width, slant);
     if (!typeface) {
-        return false;
+        return std::nullopt;
     }
 
     SkString resolvedFamily;
@@ -572,55 +568,55 @@ bool TextLayoutService::resolveFont(
         postScriptName = resolvedFamily;
     }
 
-    outDescriptor->familyNameLength = copyFontName(reinterpret_cast<uint8_t*>(outDescriptor->familyName), resolvedFamily);
-    outDescriptor->postScriptNameLength = copyFontName(reinterpret_cast<uint8_t*>(outDescriptor->postScriptName), postScriptName);
-    outDescriptor->pointSize = size;
+    ResolvedFontDescriptor descriptor;
+    descriptor.familyNameLength = copyFontName(reinterpret_cast<uint8_t*>(descriptor.familyName), resolvedFamily);
+    descriptor.postScriptNameLength = copyFontName(reinterpret_cast<uint8_t*>(descriptor.postScriptName), postScriptName);
+    descriptor.pointSize = size;
     const SkFontStyle resolvedStyle = typeface->fontStyle();
-    outDescriptor->weight = nucleusFontWeight(resolvedStyle);
-    outDescriptor->width = nucleusFontWidth(resolvedStyle);
-    outDescriptor->slant = nucleusFontSlant(resolvedStyle);
-    return true;
+    descriptor.weight = nucleusFontWeight(resolvedStyle);
+    descriptor.width = nucleusFontWidth(resolvedStyle);
+    descriptor.slant = nucleusFontSlant(resolvedStyle);
+    return descriptor;
 }
 
-bool TextLayoutService::queryFontMetrics(
+std::optional<FontMetrics> TextLayoutService::queryFontMetrics(
     TextStringView familyName,
     float pointSize,
     uint32_t weight,
     uint32_t width,
-    uint32_t slant,
-    FontMetrics *outMetrics) const
+    uint32_t slant) const
 {
-    if (!outMetrics) {
-        return false;
-    }
     const float size = pointSize > 1.0f ? pointSize : 1.0f;
     auto typeface = matchTextTypeface(familyName, weight, width, slant);
     if (!typeface) {
-        return false;
+        return std::nullopt;
     }
     SkFont font(typeface, size);
     SkFontMetrics metrics;
     font.getMetrics(&metrics);
-    outMetrics->ascender = std::max(0.0f, -metrics.fAscent);
-    outMetrics->descender = std::max(0.0f, metrics.fDescent);
-    outMetrics->leading = std::max(0.0f, metrics.fLeading);
-    outMetrics->capHeight = metrics.fCapHeight > 0.0f ? metrics.fCapHeight : size * 0.7f;
-    outMetrics->xHeight = metrics.fXHeight > 0.0f ? metrics.fXHeight : size * 0.5f;
-    return true;
+    FontMetrics result;
+    result.ascender = std::max(0.0f, -metrics.fAscent);
+    result.descender = std::max(0.0f, metrics.fDescent);
+    result.leading = std::max(0.0f, metrics.fLeading);
+    result.capHeight = metrics.fCapHeight > 0.0f ? metrics.fCapHeight : size * 0.7f;
+    result.xHeight = metrics.fXHeight > 0.0f ? metrics.fXHeight : size * 0.5f;
+    return result;
 }
 
-bool TextLayoutService::createRuns(
+std::optional<CreatedLayout> TextLayoutService::createRuns(
     const TextRunView *runs,
     size_t runCount,
-    const ParagraphStyle *style,
-    uint64_t *outHandle,
-    ParagraphMetrics *outMetrics) const
+    const ParagraphStyle *style) const
 {
-    if (!style || !outHandle || (runCount > 0 && !runs)) {
-        return false;
+    if (!style || (runCount > 0 && !runs)) {
+        return std::nullopt;
     }
-    *outHandle = registerParagraph(collectRuns(runs, runCount), *style, outMetrics);
-    return *outHandle != 0;
+    CreatedLayout created;
+    created.handle = registerParagraph(collectRuns(runs, runCount), *style, &created.metrics);
+    if (created.handle == 0) {
+        return std::nullopt;
+    }
+    return created;
 }
 
 bool TextLayoutService::measureRuns(
@@ -668,40 +664,39 @@ bool TextLayoutService::metrics(
     return true;
 }
 
-bool TextLayoutService::glyphPositionAt(
+std::optional<TextPosition> TextLayoutService::glyphPositionAt(
     uint64_t handle,
     float x,
-    float y,
-    TextPosition *outPosition) const
+    float y) const
 {
     auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !outPosition) {
-        return false;
+    if (!paragraph) {
+        return std::nullopt;
     }
     const auto position = paragraph->getGlyphPositionAtCoordinate(x, y);
-    outPosition->utf16Offset = static_cast<uint32_t>(std::max<int32_t>(0, position.position));
-    outPosition->affinity = position.affinity == skia::textlayout::Affinity::kUpstream
+    TextPosition result;
+    result.utf16Offset = static_cast<uint32_t>(std::max<int32_t>(0, position.position));
+    result.affinity = position.affinity == skia::textlayout::Affinity::kUpstream
         ? TextAffinityUpstream
         : TextAffinityDownstream;
-    return true;
+    return result;
 }
 
-bool TextLayoutService::caretForOffset(
+std::optional<TextCaret> TextLayoutService::caretForOffset(
     uint64_t handle,
     uint32_t utf16Offset,
-    uint32_t affinity,
-    TextCaret *outCaret) const
+    uint32_t affinity) const
 {
     auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !outCaret) return false;
+    if (!paragraph) return std::nullopt;
     const bool upstream = affinity == TextAffinityUpstream;
-    if (upstream && utf16Offset == 0) return false;
+    if (upstream && utf16Offset == 0) return std::nullopt;
     const size_t queryOffset = upstream && utf16Offset > 0 ? utf16Offset - 1 : utf16Offset;
     skia::textlayout::Paragraph::GlyphInfo glyph{};
-    if (!paragraph->getGlyphInfoAtUTF16Offset(queryOffset, &glyph)) return false;
+    if (!paragraph->getGlyphInfoAtUTF16Offset(queryOffset, &glyph)) return std::nullopt;
     const bool rtl = glyph.fDirection == skia::textlayout::TextDirection::kRtl;
     const SkRect bounds = glyph.fGraphemeLayoutBounds;
-    *outCaret = {
+    return TextCaret{
         .x = upstream ? (rtl ? bounds.left() : bounds.right())
                       : (rtl ? bounds.right() : bounds.left()),
         .y = bounds.top(),
@@ -709,7 +704,6 @@ bool TextLayoutService::caretForOffset(
         .direction = rtl ? TextDirectionRtl : TextDirectionLtr,
         .affinity = upstream ? TextAffinityUpstream : TextAffinityDownstream,
     };
-    return true;
 }
 
 bool TextLayoutService::rectsForRange(
@@ -744,10 +738,10 @@ bool TextLayoutService::rectsForRange(
     return true;
 }
 
-bool TextLayoutService::inkBounds(uint64_t handle, TextBounds *outBounds) const
+std::optional<TextBounds> TextLayoutService::inkBounds(uint64_t handle) const
 {
     auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !outBounds) return false;
+    if (!paragraph) return std::nullopt;
     SkRect bounds = SkRect::MakeEmpty();
     paragraph->extendedVisit([&](int, const skia::textlayout::Paragraph::ExtendedVisitorInfo* info) {
         if (!info) return;
@@ -759,14 +753,12 @@ bool TextLayoutService::inkBounds(uint64_t handle, TextBounds *outBounds) const
         }
     });
     if (bounds.isEmpty()) {
-        *outBounds = {};
-    } else {
-        *outBounds = {
-            .left = bounds.left(), .top = bounds.top(),
-            .right = bounds.right(), .bottom = bounds.bottom(),
-        };
+        return TextBounds{};
     }
-    return true;
+    return TextBounds{
+        .left = bounds.left(), .top = bounds.top(),
+        .right = bounds.right(), .bottom = bounds.bottom(),
+    };
 }
 
 bool TextLayoutService::graphemeBreaks(

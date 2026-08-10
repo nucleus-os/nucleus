@@ -50,14 +50,13 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         readOnlyMounts: aospProductSourceMounts(build: build),
         persistentWorkspaceMounts: [build.outputMount, build.compilerCacheMount],
         command: ["/bin/true"],
-        mode: .build,
+        phase: .build,
         containerEnvironment: ["TZ": "UTC"])
     let runtimeConfiguration = nucleusOCIRuntimeConfiguration(
         workspaceRoot: FilePath(root.path))
     let flags = try appleContainerFlags(
         execution,
         name: appleContainerName(for: execution),
-        temporaryDirectory: nil,
         configuration: runtimeConfiguration,
         persistentWorkspaceNames: [
             build.outputWorkspace.identity: "aosp-output-volume",
@@ -68,7 +67,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
-    #expect(execution.command == ["aosp-build", "/bin/true"])
+    #expect(execution.command == ["/bin/true"])
     #expect(flags.management.entrypoint == nil)
     #expect(aospProductContainerToolEnvironment()["REPO_TRACE"] == "0")
     #expect(
@@ -102,20 +101,6 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         readOnlyMounts: [(build.source, "/src")],
         persistentWorkspaceMounts: [build.readOnlyOutputMount],
         command: ["/bin/true"])
-    #expect(toolsExecution.command == ["aosp-tools", "/bin/true"])
-
-    let entrypointOverride = aospProductOCIExecution(
-        build: build,
-        writableMounts: [],
-        readOnlyMounts: [],
-        command: ["-c", "true"],
-        imageEntrypointOverride: "/bin/bash")
-    let entrypointOverrideFlags = try appleContainerFlags(
-        entrypointOverride,
-        name: appleContainerName(for: entrypointOverride),
-        temporaryDirectory: nil,
-        configuration: runtimeConfiguration)
-    #expect(entrypointOverride.command == ["-c", "true"])
-    #expect(entrypointOverrideFlags.management.entrypoint == "/bin/bash")
+    #expect(toolsExecution.command == ["/bin/true"])
 }
 #endif
