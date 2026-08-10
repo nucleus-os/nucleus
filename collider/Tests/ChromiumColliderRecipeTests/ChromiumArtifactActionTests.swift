@@ -6,9 +6,13 @@ import Foundation
 import SystemPackage
 import Testing
 
-@Test func browserArtifactAssemblyPublishesAValidatedImmutableGeneration() async throws {
+@Test(arguments: PlatformArchitecture.allCases)
+func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
+    architecture: PlatformArchitecture
+) async throws {
+    let target = ChromiumLinuxTarget(architecture: architecture)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-browser-artifact-\(UUID().uuidString)")
+        "collider-browser-artifact-\(architecture.rawValue)-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("chromium")
     let output = directory.appendingPathComponent("out")
@@ -45,12 +49,11 @@ import Testing
         "Exec=@NUCLEUS_BROWSER_LAUNCHER@\n".utf8
     ).write(to: desktop)
     let buildID = "abcdefabcdefabcdefabcdef"
+    let buildManifest = directory.appendingPathComponent("build-manifest.json")
     try JSONSerialization.data(
         withJSONObject: ["buildID": buildID],
         options: [.sortedKeys]
-    ).write(
-        to: output.appendingPathComponent(
-            ".nucleus-built-build.json"))
+    ).write(to: buildManifest)
     let tools = directory.appendingPathComponent("tools")
     try FileManager.default.createDirectory(
         at: tools, withIntermediateDirectories: true)
@@ -59,8 +62,12 @@ import Testing
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755], ofItemAtPath: ldd.path)
     let assembly = BrowserArtifactAssembly(
+        target: target,
         chromiumSource: FilePath(source.path),
-        buildOutput: FilePath(output.path),
+        buildManifest: FilePath(buildManifest.path),
+        outputWorkspace: chromiumOutputWorkspace(
+            product: .browser,
+            target: target),
         containerImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         launcher: FilePath(launcher.path),
@@ -75,26 +82,53 @@ import Testing
     try await execute(
         action,
         recording: executions,
-        containerRun: { _ in CommandResult(status: 0) })
-    let validation = try #require(await executions.values().last)
+        containerRun: { execution in
+            if execution.command == ["browser-stage"] {
+                let candidate = try #require(
+                    execution.mounts.first { $0.target == "/candidate" }
+                ).source
+                let runtime = candidate.appending("runtime")
+                try FileManager.default.createDirectory(
+                    atPath: runtime.string,
+                    withIntermediateDirectories: true)
+                for name in required {
+                    try FileManager.default.copyItem(
+                        atPath: output.appendingPathComponent(name).path,
+                        toPath: runtime.appending(name).string)
+                }
+                try FileManager.default.copyItem(
+                    atPath: output.appendingPathComponent("locales").path,
+                    toPath: runtime.appending("locales").string)
+            }
+            return CommandResult(status: 0)
+        })
+    let recorded = await executions.values()
+    #expect(
+        recorded.map(\.command) == [
+            ["browser-stage"], ["validate-browser", architecture.rawValue],
+        ])
+    let validation = try #require(recorded.last)
     #expect(validation.executionPlatform == .linuxARM64OCI)
-    #expect(validation.artifactTarget == .linuxX86_64)
+    #expect(validation.artifactTarget == target.artifactTarget)
     #expect(validation.intelBinaryTranslationPolicy == .required)
-    #expect(validation.command == ["validate-browser"])
+    #expect(validation.command == ["validate-browser", architecture.rawValue])
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: distribution.appendingPathComponent("current").path)
             == "generations/\(buildID)")
 }
 
-@Test func cefArtifactAssemblyPublishesSDKAndChecksummedArchive() async throws {
+@Test(arguments: PlatformArchitecture.allCases)
+func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
+    architecture: PlatformArchitecture
+) async throws {
+    let target = ChromiumLinuxTarget(architecture: architecture)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-cef-artifact-\(UUID().uuidString)")
+        "collider-cef-artifact-\(architecture.rawValue)-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("source")
     let chromium = source.appendingPathComponent("chromium/src")
     let output = chromium.appendingPathComponent("out/Release_GN_x64")
-    let depot = directory.appendingPathComponent("depot_tools")
     let distribution = directory.appendingPathComponent("dist")
     let imageID = directory.appendingPathComponent("image-id")
     try FileManager.default.createDirectory(
@@ -102,15 +136,12 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     try FileManager.default.createDirectory(
         at: output, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(
-        at: depot, withIntermediateDirectories: true)
     let buildID = "1234567890abcdef12345678"
+    let buildManifest = directory.appendingPathComponent("build-manifest.json")
     try JSONSerialization.data(
         withJSONObject: ["buildID": buildID],
         options: [.sortedKeys]
-    ).write(
-        to: output.appendingPathComponent(
-            ".nucleus-built-build.json"))
+    ).write(to: buildManifest)
     let checkout = "abcdefa000000000000000000000000000000000"
     let version = "1.2.3.4"
     let distributor = chromium.appendingPathComponent(
@@ -129,7 +160,7 @@ import Testing
         )
         root = Path(output) / (
             'cef_binary_fixture+gabcdefa+chromium-\(version)'
-            '_linux64_minimal'
+            '_\(target.cefPlatformName)_minimal'
         )
         for path in [
             root / 'Release',
@@ -199,9 +230,12 @@ import Testing
                 ?? "/usr/bin:/bin")
     ]
     let assembly = CEFArtifactAssembly(
+        target: target,
         chromiumSource: FilePath(chromium.path),
-        buildOutput: FilePath(output.path),
-        depotTools: FilePath(depot.path),
+        buildManifest: FilePath(buildManifest.path),
+        outputWorkspace: chromiumOutputWorkspace(
+            product: .cef,
+            target: target),
         containerImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         cefCheckout: checkout,
@@ -220,7 +254,7 @@ import Testing
                 ).source
                 let root = candidate.appending(
                     "cef_binary_fixture+gabcdefa+chromium-\(version)"
-                        + "_linux64_minimal")
+                        + "_\(target.cefPlatformName)_minimal")
                 for relative in ["Release", "Resources", "include"] {
                     try FileManager.default.createDirectory(
                         atPath: root.appending(relative).string,
@@ -262,7 +296,7 @@ import Testing
     #expect(
         recorded.allSatisfy {
             $0.executionPlatform == .linuxARM64OCI
-                && $0.artifactTarget == .linuxX86_64
+                && $0.artifactTarget == target.artifactTarget
                 && $0.intelBinaryTranslationPolicy == .required
         })
     #expect(

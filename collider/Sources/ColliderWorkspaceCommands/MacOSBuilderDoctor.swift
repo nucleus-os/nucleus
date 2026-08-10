@@ -32,9 +32,10 @@ struct MacOSBuilderContract: Codable, Sendable {
     struct Launchd: Codable, Sendable {
         let label: String
         let plistRelativePath: String
-        let starterPath: String
+        let starterRelativePath: String
         let standardOutPath: String
         let standardErrorPath: String
+        let maximumOpenFileCount: UInt64
     }
 
     struct Resources: Codable, Sendable {
@@ -93,6 +94,10 @@ struct MacOSBuilderContract: Codable, Sendable {
         else {
             throw MacOSBuilderContractFailure.invalid(
                 "storage names and mount paths must be unique")
+        }
+        guard launchd.maximumOpenFileCount > 0 else {
+            throw MacOSBuilderContractFailure.invalid(
+                "launchd maximum open-file count must be positive")
         }
         for declaration in storage {
             guard declaration.mountPath.hasPrefix("/"),
@@ -292,27 +297,32 @@ struct MacOSBuilderDoctor {
             scope: scope,
             description: "persistent login-session Apple container service",
             remediation:
-                "stop the user-domain service, then run sudo tools/macos-builder/install-container-service.sh <service-user>"
+                "stop the login-session service, then run tools/macos-builder/install-container-service.sh"
         ) {
             let fileManager = FileManager.default
+            guard let home = context.environment["HOME"] else { return nil }
+            let starterPath = URL(fileURLWithPath: home, isDirectory: true)
+                .appendingPathComponent(contract.launchd.starterRelativePath)
+                .path
             guard
-                let home = context.environment["HOME"],
                 fileManager.isExecutableFile(
-                    atPath: contract.launchd.starterPath),
+                    atPath: starterPath),
                 let plistData = fileManager.contents(
                     atPath: URL(fileURLWithPath: home)
                         .appendingPathComponent(
                             contract.launchd.plistRelativePath
                         ).path),
-                let serviceDetail = Self.persistentServiceDetail(
-                    plistData, contract: contract),
                 let uid = try? await context.run(
                     "/usr/bin/id", ["-u"], capture: true),
                 let launchd = try? await context.run(
                     "/bin/launchctl",
                     ["print", "gui/\(uid)/\(contract.launchd.label)"],
                     capture: true),
-                !launchd.isEmpty
+                let serviceDetail = Self.persistentServiceDetail(
+                    plistData,
+                    launchdOutput: launchd,
+                    starterPath: starterPath,
+                    contract: contract)
             else { return nil }
             return serviceDetail
         }
@@ -435,6 +445,8 @@ struct MacOSBuilderDoctor {
 
     static func persistentServiceDetail(
         _ data: Data,
+        launchdOutput: String,
+        starterPath: String,
         contract: MacOSBuilderContract
     ) -> String? {
         guard
@@ -442,11 +454,19 @@ struct MacOSBuilderDoctor {
                 PersistentServicePlist.self,
                 from: data),
             plist.label == contract.launchd.label,
-            plist.programArguments == [contract.launchd.starterPath],
+            plist.programArguments == [starterPath],
             plist.standardOutPath == contract.launchd.standardOutPath,
             plist.standardErrorPath == contract.launchd.standardErrorPath,
             plist.runAtLoad,
-            Set(plist.limitLoadToSessionType) == ["Aqua", "Background"]
+            Set(plist.limitLoadToSessionType) == ["Aqua", "Background"],
+            plist.softResourceLimits.numberOfFiles
+                == contract.launchd.maximumOpenFileCount,
+            plist.hardResourceLimits.numberOfFiles
+                == contract.launchd.maximumOpenFileCount,
+            launchdOutput.contains(
+                "maxfiles (soft) => \(contract.launchd.maximumOpenFileCount)"),
+            launchdOutput.contains(
+                "maxfiles (hard) => \(contract.launchd.maximumOpenFileCount)")
         else { return nil }
         return "login-session/\(plist.label)"
     }
@@ -483,12 +503,22 @@ struct MacOSBuilderDoctor {
 }
 
 private struct PersistentServicePlist: Decodable {
+    struct ResourceLimits: Decodable {
+        let numberOfFiles: UInt64
+
+        enum CodingKeys: String, CodingKey {
+            case numberOfFiles = "NumberOfFiles"
+        }
+    }
+
     let label: String
     let programArguments: [String]
     let limitLoadToSessionType: [String]
     let runAtLoad: Bool
     let standardOutPath: String
     let standardErrorPath: String
+    let softResourceLimits: ResourceLimits
+    let hardResourceLimits: ResourceLimits
 
     enum CodingKeys: String, CodingKey {
         case label = "Label"
@@ -497,6 +527,8 @@ private struct PersistentServicePlist: Decodable {
         case runAtLoad = "RunAtLoad"
         case standardOutPath = "StandardOutPath"
         case standardErrorPath = "StandardErrorPath"
+        case softResourceLimits = "SoftResourceLimits"
+        case hardResourceLimits = "HardResourceLimits"
     }
 }
 

@@ -26,8 +26,7 @@ package struct AssembleCEFArtifactAction: ColliderAction {
     }
 
     package func execute(in context: ActionContext) async throws {
-        let builtManifest = assembly.buildOutput.appending(
-            ".nucleus-built-build.json")
+        let builtManifest = assembly.buildManifest
         let buildID = try chromiumBuildID(
             manifest: builtManifest,
             files: context.files)
@@ -40,7 +39,7 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         defer { try? context.files.remove(distributionCandidate) }
 
         try await requireCEFContainerSuccess(
-            command: ["cef-make-distrib"],
+            command: ["cef-make-distrib", assembly.target.cefBuildFlag],
             workingDirectory: "/source/chromium/src",
             hostWorkingDirectory: assembly.chromiumSource,
             mounts: [
@@ -49,18 +48,11 @@ package struct AssembleCEFArtifactAction: ColliderAction {
                     target: "/source/chromium/src",
                     access: .readOnly),
                 OCIMount(
-                    source: assembly.buildOutput,
-                    target: "/build",
-                    access: .readOnly),
-                OCIMount(
-                    source: assembly.depotTools,
-                    target: "/depot_tools",
-                    access: .readOnly),
-                OCIMount(
                     source: distributionCandidate,
                     target: "/distribution",
                     access: .readWrite),
             ],
+            persistentWorkspaceMounts: [assembly.readOnlyOutputMount],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
             environment: commandEnvironment,
@@ -69,7 +61,7 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         let checkout = String(assembly.cefCheckout.prefix(7))
         let suffix =
             "+g\(checkout)+chromium-\(assembly.chromiumVersion)"
-            + "_linux64_minimal"
+            + "_\(assembly.target.cefPlatformName)_minimal"
         let matches = try context.files.listRecursively(distributionCandidate)
             .filter {
                 !$0.relativePath.contains("/")
@@ -142,8 +134,9 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         let version = String(
             producedName
                 .dropFirst("cef_binary_".count)
-                .dropLast("_linux64_minimal".count))
-        let tarball = "cef-\(version)-linux64-codecs.tar.gz"
+                .dropLast("_\(assembly.target.cefPlatformName)_minimal".count))
+        let tarball =
+            "cef-\(version)-\(assembly.target.cefPlatformName)-codecs.tar.gz"
         let archive = artifacts.appending(tarball)
         try await requireCEFContainerSuccess(
             command: ["cef-archive", tarball, buildID],
@@ -192,11 +185,12 @@ private func encodeCEFArtifactIdentity(
     into encoder: inout ActionIdentityEncoder
 ) {
     encoder.append(tag: 1, string: assembly.chromiumSource.string)
-    encoder.append(tag: 2, string: assembly.buildOutput.string)
-    encoder.append(tag: 3, string: assembly.depotTools.string)
-    encoder.append(tag: 4, string: assembly.distributionRoot.string)
-    encoder.append(tag: 5, string: assembly.cefCheckout)
-    encoder.append(tag: 6, string: assembly.chromiumVersion)
+    encoder.append(tag: 2, string: assembly.buildManifest.string)
+    encoder.append(tag: 3, string: assembly.distributionRoot.string)
+    encoder.append(tag: 4, string: assembly.cefCheckout)
+    encoder.append(tag: 5, string: assembly.chromiumVersion)
+    encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
+    encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
 }
 
 private func cefArtifactRequirements(
@@ -206,8 +200,7 @@ private func cefArtifactRequirements(
     ActionRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
-            ActionEffect(.read, scope: .input(assembly.buildOutput)),
-            ActionEffect(.read, scope: .input(assembly.depotTools)),
+            ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.containerImageID)),
             ActionEffect(
                 publicationAccess,
@@ -219,8 +212,14 @@ private func cefArtifactRequirements(
                 scope: .scratch(
                     assembly.distributionRoot.appending(".consumer-smoke"))),
         ],
+        persistentWorkspaceEffects: [
+            ActionPersistentWorkspaceEffect(
+                workspace: assembly.outputWorkspace,
+                target: "/build",
+                access: .readOnly)
+        ],
         executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxX86_64)
+        artifactTarget: assembly.target.artifactTarget)
 }
 
 @discardableResult
@@ -228,8 +227,7 @@ private func validateCEFPublicationStructure(
     _ assembly: CEFArtifactAssembly,
     files: ActionFileSystem
 ) throws -> FilePath {
-    let builtManifest = assembly.buildOutput.appending(
-        ".nucleus-built-build.json")
+    let builtManifest = assembly.buildManifest
     let buildID = try chromiumBuildID(manifest: builtManifest, files: files)
     let release = assembly.distributionRoot.appending("current-release")
     guard
@@ -269,17 +267,22 @@ private func validateCEFSDK(
     defer { try? context.files.remove(smoke) }
     let validation = try await context.containers.execute(
         chromiumToolExecution(
+            target: assembly.target,
             imageID: assembly.containerImageID,
             hostname: "chromium-cef-validation",
             workingDirectory: "/sdk",
             hostWorkingDirectory: sdk,
             mounts: [
+                OCIMount(
+                    source: assembly.chromiumSource,
+                    target: "/source/chromium/src",
+                    access: .readOnly),
                 OCIMount(source: sdk, target: "/sdk", access: .readOnly),
                 OCIMount(source: smoke, target: "/smoke", access: .readWrite),
             ],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
-            command: ["validate-cef"],
+            command: ["validate-cef", assembly.target.architecture.rawValue],
             environment: environment,
             output: .captured(limit: 4 * 1_024 * 1_024)))
     guard validation.status == 0,
@@ -312,6 +315,7 @@ private func requireCEFContainerSuccess(
     workingDirectory: String,
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
+    persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
     temporaryDirectory: FilePath,
     environment: [String: String],
     assembly: CEFArtifactAssembly,
@@ -319,11 +323,13 @@ private func requireCEFContainerSuccess(
 ) async throws {
     let result = try await context.containers.execute(
         chromiumToolExecution(
+            target: assembly.target,
             imageID: assembly.containerImageID,
             hostname: "chromium-cef-artifact",
             workingDirectory: workingDirectory,
             hostWorkingDirectory: hostWorkingDirectory,
             mounts: mounts,
+            persistentWorkspaceMounts: persistentWorkspaceMounts,
             temporaryDirectory: temporaryDirectory,
             command: command,
             environment: environment))
@@ -333,12 +339,7 @@ private func requireCEFContainerSuccess(
 }
 
 private func cefEnvironment(_ assembly: CEFArtifactAssembly) -> [String: String] {
-    var value = assembly.environment
-    value["PATH"] =
-        assembly.depotTools.string + ":"
-        + (value["PATH"] ?? "/usr/bin:/bin")
-    value["DEPOT_TOOLS_UPDATE"] = "0"
-    return value
+    assembly.environment
 }
 
 private enum CEFArtifactActionFailure: Error, CustomStringConvertible {

@@ -3,6 +3,7 @@ binutils
 bison
 bzip2
 ca-certificates
+ccache
 curl
 dbus-x11
 devscripts
@@ -74,3 +75,10 @@ x11-utils
 xz-utils
 zip
 zstd
+
+# Runtime for Chromium's checked-in x86_64 Linux host executables. Target
+# binaries still compile and link against their target sysroot and libc++.
+libc6:amd64
+libgcc-s1:amd64
+libstdc++6:amd64
+zlib1g:amd64

@@ -26,8 +26,7 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
     }
 
     package func execute(in context: ActionContext) async throws {
-        let builtManifest = assembly.buildOutput.appending(
-            ".nucleus-built-build.json")
+        let builtManifest = assembly.buildManifest
         let buildID = try chromiumBuildID(
             manifest: builtManifest,
             files: context.files)
@@ -41,64 +40,32 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
             if !succeeded { try? context.files.remove(candidate) }
         }
 
+        let staging = try await context.containers.execute(
+            chromiumToolExecution(
+                target: assembly.target,
+                imageID: assembly.containerImageID,
+                hostname: "chromium-browser-staging",
+                workingDirectory: "/candidate",
+                hostWorkingDirectory: candidate,
+                mounts: [
+                    OCIMount(
+                        source: candidate,
+                        target: "/candidate",
+                        access: .readWrite)
+                ],
+                persistentWorkspaceMounts: [assembly.readOnlyOutputMount],
+                temporaryDirectory: assembly.distributionRoot.appending(
+                    ".container-temporary"),
+                command: ["browser-stage"],
+                environment: assembly.environment))
+        guard staging.succeeded else {
+            throw staging.executionFailure(
+                reason: "browser artifact staging failed")
+        }
         let runtime = candidate.appending("runtime")
-        try context.files.createDirectory(runtime)
-        let required: [(String, String, UInt16?)] = [
-            ("chrome", "nucleus-browser-bin", 0o755),
-            ("chrome_crashpad_handler", "chrome_crashpad_handler", 0o755),
-            ("chrome_sandbox", "chrome_sandbox", 0o755),
-            ("icudtl.dat", "icudtl.dat", nil),
-            ("resources.pak", "resources.pak", nil),
-            ("chrome_100_percent.pak", "chrome_100_percent.pak", nil),
-            ("chrome_200_percent.pak", "chrome_200_percent.pak", nil),
-            ("libEGL.so", "libEGL.so", 0o755),
-            ("libGLESv2.so", "libGLESv2.so", 0o755),
-            ("libvulkan.so.1", "libvulkan.so.1", 0o755),
-        ]
-        for (source, destination, permissions) in required {
-            try copyItem(
-                from: assembly.buildOutput.appending(source),
-                to: runtime.appending(destination),
-                permissions: permissions,
-                files: context.files)
-        }
-        let snapshot = assembly.buildOutput.appending(
-            "v8_context_snapshot.bin")
-        if try exists(snapshot, files: context.files) {
-            try copyItem(
-                from: snapshot,
-                to: runtime.appending("v8_context_snapshot.bin"),
-                files: context.files)
-        } else {
-            try copyItem(
-                from: assembly.buildOutput.appending("snapshot_blob.bin"),
-                to: runtime.appending("snapshot_blob.bin"),
-                files: context.files)
-        }
-        for (name, permissions) in [
-            ("chrome_management_service", UInt16(0o755))
-        ] {
-            let source = assembly.buildOutput.appending(name)
-            if try exists(source, files: context.files) {
-                try copyItem(
-                    from: source,
-                    to: runtime.appending(name),
-                    permissions: permissions,
-                    files: context.files)
-            }
-        }
-        for name in [
-            "locales", "default_apps", "MEIPreload",
-            "PrivacySandboxAttestationsPreloaded",
-        ] {
-            let source = assembly.buildOutput.appending(name)
-            if try exists(source, files: context.files) {
-                try copyItem(
-                    from: source,
-                    to: runtime.appending(name),
-                    files: context.files)
-            }
-        }
+        try context.files.move(
+            from: runtime.appending("chrome"),
+            to: runtime.appending("nucleus-browser-bin"))
         try copyItem(
             from: assembly.launcher,
             to: candidate.appending("bin/nucleus-browser"),
@@ -112,7 +79,6 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
         for size in [16, 22, 24, 32, 48, 64, 128, 256] {
             if let icon = try browserIcon(
                 size: size,
-                output: assembly.buildOutput,
                 source: assembly.chromiumSource,
                 files: context.files)
             {
@@ -150,10 +116,12 @@ private func encodeBrowserArtifactIdentity(
     into encoder: inout ActionIdentityEncoder
 ) {
     encoder.append(tag: 1, string: assembly.chromiumSource.string)
-    encoder.append(tag: 2, string: assembly.buildOutput.string)
+    encoder.append(tag: 2, string: assembly.buildManifest.string)
     encoder.append(tag: 3, string: assembly.distributionRoot.string)
     encoder.append(tag: 4, string: assembly.launcher.string)
     encoder.append(tag: 5, string: assembly.desktopTemplate.string)
+    encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
+    encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
 }
 
 private func browserArtifactRequirements(
@@ -163,7 +131,7 @@ private func browserArtifactRequirements(
     ActionRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
-            ActionEffect(.read, scope: .input(assembly.buildOutput)),
+            ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.containerImageID)),
             ActionEffect(.read, scope: .input(assembly.launcher)),
             ActionEffect(.read, scope: .input(assembly.desktopTemplate)),
@@ -173,8 +141,14 @@ private func browserArtifactRequirements(
                     ? .input(assembly.distributionRoot)
                     : .publication(assembly.distributionRoot)),
         ],
+        persistentWorkspaceEffects: [
+            ActionPersistentWorkspaceEffect(
+                workspace: assembly.outputWorkspace,
+                target: "/build",
+                access: .readOnly)
+        ],
         executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxX86_64)
+        artifactTarget: assembly.target.artifactTarget)
 }
 
 @discardableResult
@@ -182,8 +156,7 @@ private func validateBrowserPublicationStructure(
     _ assembly: BrowserArtifactAssembly,
     files: ActionFileSystem
 ) throws -> FilePath {
-    let builtManifest = assembly.buildOutput.appending(
-        ".nucleus-built-build.json")
+    let builtManifest = assembly.buildManifest
     let buildID = try chromiumBuildID(manifest: builtManifest, files: files)
     let current = assembly.distributionRoot.appending("current")
     guard
@@ -214,19 +187,24 @@ private func validateBrowserGeneration(
     try validateBrowserGenerationStructure(generation, files: context.files)
     let validation = try await context.containers.execute(
         chromiumToolExecution(
+            target: assembly.target,
             imageID: assembly.containerImageID,
             hostname: "chromium-browser-validation",
             workingDirectory: "/artifact",
             hostWorkingDirectory: generation,
             mounts: [
                 OCIMount(
+                    source: assembly.chromiumSource,
+                    target: "/source/chromium/src",
+                    access: .readOnly),
+                OCIMount(
                     source: generation,
                     target: "/artifact",
-                    access: .readOnly)
+                    access: .readOnly),
             ],
             temporaryDirectory: assembly.distributionRoot.appending(
                 ".container-temporary"),
-            command: ["validate-browser"],
+            command: ["validate-browser", assembly.target.architecture.rawValue],
             environment: environment,
             output: .captured(limit: 4 * 1_024 * 1_024)))
     guard validation.status == 0,
@@ -288,12 +266,10 @@ private func copyItem(
 
 private func browserIcon(
     size: Int,
-    output: FilePath,
     source: FilePath,
     files: ActionFileSystem
 ) throws -> FilePath? {
     for candidate in [
-        output.appending("product_logo_\(size).png"),
         source.appending(
             "chrome/app/theme/chromium/linux/product_logo_\(size).png"),
         source.appending(

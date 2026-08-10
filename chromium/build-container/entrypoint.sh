@@ -3,6 +3,56 @@ set -euo pipefail
 
 mkdir -p "$HOME"
 
+target_runtime() {
+  local architecture="$1"
+  local sysroot_arch triple loader_name
+  case "$architecture" in
+    arm64)
+      sysroot_arch="arm64"
+      triple="aarch64-linux-gnu"
+      loader_name="ld-linux-aarch64.so.1"
+      ;;
+    x86_64)
+      sysroot_arch="amd64"
+      triple="x86_64-linux-gnu"
+      loader_name="ld-linux-x86-64.so.2"
+      ;;
+    *)
+      echo "error: unsupported Chromium Linux architecture: $architecture" >&2
+      return 64
+      ;;
+  esac
+
+  local sysroot
+  sysroot="$(find /source/chromium/src/build/linux -maxdepth 1 -type d \
+    -name "*_${sysroot_arch}-sysroot" -print -quit)"
+  if [[ -z "$sysroot" ]]; then
+    echo "error: Chromium $architecture sysroot is unavailable" >&2
+    return 1
+  fi
+
+  local loader
+  loader="$(find "$sysroot" \( -type f -o -type l \) \
+    -name "$loader_name" -print -quit)"
+  if [[ -z "$loader" ]]; then
+    echo "error: Chromium $architecture runtime loader is unavailable" >&2
+    return 1
+  fi
+
+  printf '%s\n%s\n%s\n' "$sysroot" "$triple" "$loader"
+}
+
+runtime_library_path() {
+  local sysroot="$1"
+  local artifact_directory="$2"
+  local path="$artifact_directory"
+  local directory
+  while IFS= read -r directory; do
+    path+="${path:+:}$directory"
+  done < <(find "$sysroot/lib" "$sysroot/usr/lib" -type d -print)
+  printf '%s\n' "$path"
+}
+
 case "${1:-}" in
   run-test)
     if [[ $# -lt 2 ]]; then
@@ -19,28 +69,38 @@ case "${1:-}" in
     ;;
   clang-version)
     if [[ $# -ne 1 \
-        || ! -x /source/chromium/src/third_party/llvm-build/Release+Asserts/bin/clang ]]; then
+        || ! -x /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang ]]; then
       echo "error: clang-version requires the Chromium compiler" >&2
       exit 64
     fi
-    exec /source/chromium/src/third_party/llvm-build/Release+Asserts/bin/clang --version
+    exec /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang --version
     ;;
   validate-browser)
-    if [[ $# -ne 1 \
+    if [[ $# -ne 2 \
         || ! -x /artifact/runtime/nucleus-browser-bin \
-        || ! -f /artifact/bin/nucleus-browser ]]; then
-      echo "error: validate-browser requires a complete browser artifact" >&2
+        || ! -f /artifact/bin/nucleus-browser \
+        || ! -d /source/chromium/src ]]; then
+      echo "error: validate-browser requires an architecture, source, and artifact" >&2
       exit 64
     fi
-    linkage="$(ldd /artifact/runtime/nucleus-browser-bin)"
+    runtime_output="$(target_runtime "$2")"
+    mapfile -t runtime <<<"$runtime_output"
+    sysroot="${runtime[0]}"
+    loader="${runtime[2]}"
+    library_path="$(runtime_library_path "$sysroot" /artifact/runtime)"
+    linkage="$("$loader" --library-path "$library_path" \
+      --list /artifact/runtime/nucleus-browser-bin)"
     printf '%s\n' "$linkage"
     if grep -Fq 'not found' <<<"$linkage"; then
       exit 1
     fi
-    exec bash -n /artifact/bin/nucleus-browser
+    bash -n /artifact/bin/nucleus-browser
+    exec "$loader" --library-path "$library_path" \
+      /artifact/runtime/nucleus-browser-bin --version
     ;;
   cef-make-distrib)
-    if [[ $# -ne 1 \
+    if [[ $# -ne 2 \
+        || ( "$2" != "--arm64-build" && "$2" != "--x64-build" ) \
         || ! -f /source/chromium/src/cef/tools/make_distrib.py \
         || ! -d /build \
         || ! -w /distribution ]]; then
@@ -52,19 +112,51 @@ case "${1:-}" in
       --allow-partial \
       --ninja-build \
       --release-build-dir=/build \
-      --x64-build \
+      "$2" \
       --minimal \
       --no-archive
     ;;
-  validate-cef)
-    if [[ $# -ne 1 \
-        || ! -f /sdk/Release/libcef.so \
-        || ! -f /sdk/include/cef_version_info.h \
-        || ! -w /smoke ]]; then
-      echo "error: validate-cef requires complete SDK and scratch mounts" >&2
+  browser-stage)
+    if [[ $# -ne 1 || ! -d /build || ! -w /candidate ]]; then
+      echo "error: browser-stage requires build and candidate mounts" >&2
       exit 64
     fi
-    linkage="$(ldd /sdk/Release/libcef.so)"
+    mkdir -p /candidate/runtime
+    for name in \
+      chrome chrome_crashpad_handler chrome_sandbox icudtl.dat resources.pak \
+      chrome_100_percent.pak chrome_200_percent.pak libEGL.so libGLESv2.so \
+      libvulkan.so.1; do
+      cp -a "/build/$name" "/candidate/runtime/$name"
+    done
+    if [[ -f /build/v8_context_snapshot.bin ]]; then
+      cp -a /build/v8_context_snapshot.bin /candidate/runtime/
+    else
+      cp -a /build/snapshot_blob.bin /candidate/runtime/
+    fi
+    for name in chrome_management_service locales default_apps MEIPreload \
+      PrivacySandboxAttestationsPreloaded; do
+      if [[ -e "/build/$name" ]]; then
+        cp -a "/build/$name" /candidate/runtime/
+      fi
+    done
+    exit 0
+    ;;
+  validate-cef)
+    if [[ $# -ne 2 \
+        || ! -f /sdk/Release/libcef.so \
+        || ! -f /sdk/include/cef_version_info.h \
+        || ! -w /smoke \
+        || ! -d /source/chromium/src ]]; then
+      echo "error: validate-cef requires an architecture, source, SDK, and scratch mounts" >&2
+      exit 64
+    fi
+    runtime_output="$(target_runtime "$2")"
+    mapfile -t runtime <<<"$runtime_output"
+    sysroot="${runtime[0]}"
+    triple="${runtime[1]}"
+    loader="${runtime[2]}"
+    library_path="$(runtime_library_path "$sysroot" /sdk/Release)"
+    linkage="$("$loader" --library-path "$library_path" --list /sdk/Release/libcef.so)"
     printf '%s\n' "$linkage"
     if grep -Fq 'not found' <<<"$linkage"; then
       exit 1
@@ -73,14 +165,17 @@ case "${1:-}" in
 #include "include/cef_version_info.h"
 int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }
 EOF
-    cc \
+    /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang \
+      --target="$triple" \
+      --sysroot="$sysroot" \
+      -fuse-ld=lld \
       -I /sdk \
       /smoke/consumer.c \
       -L /sdk/Release \
       -Wl,-rpath,/sdk/Release \
       -lcef \
       -o /smoke/consumer
-    exec /smoke/consumer
+    exec "$loader" --library-path "$library_path" /smoke/consumer
     ;;
   cef-version-check)
     if [[ $# -ne 1 \
@@ -115,8 +210,8 @@ esac
 
 if [[ ! -f /source/source-provenance.json \
     || ! -x /source/chromium/src/buildtools/linux64/gn \
-    || ! -x /depot_tools/autoninja ]]; then
-  echo "error: Chromium source and depot_tools must be complete read-only inputs" >&2
+    || ! -x /source/chromium/src/third_party/siso/cipd/siso ]]; then
+  echo "error: Chromium source must contain the complete Linux host-tool closure" >&2
   exit 64
 fi
 if [[ ! -d /build || ! -w /build ]]; then
@@ -134,6 +229,14 @@ case "${1:-}" in
       gen /build \
       "--args=$2"
     ;;
+  gn-args)
+    if [[ $# -ne 1 ]]; then
+      echo "error: gn-args takes no arguments" >&2
+      exit 64
+    fi
+    exec /source/chromium/src/buildtools/linux64/gn \
+      args /build --list --short
+    ;;
   build)
     if [[ $# -lt 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
       echo "error: build requires a positive job count and at least one target" >&2
@@ -141,7 +244,30 @@ case "${1:-}" in
     fi
     jobs="$2"
     shift 2
-    exec /depot_tools/autoninja -j "$jobs" -C /build "$@"
+    exec /source/chromium/src/third_party/siso/cipd/siso \
+      ninja --offline -local_jobs="$jobs" -C /build "$@"
+    ;;
+  test-ozone)
+    if [[ $# -ne 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
+      echo "error: test-ozone requires a positive job count and architecture" >&2
+      exit 64
+    fi
+    /source/chromium/src/third_party/siso/cipd/siso \
+      ninja --offline -local_jobs="$2" -C /build \
+      ui/ozone:ozone_unittests \
+      components/viz/service:output_presenter_ozone_unittests
+    runtime_output="$(target_runtime "$3")"
+    mapfile -t runtime <<<"$runtime_output"
+    sysroot="${runtime[0]}"
+    loader="${runtime[2]}"
+    library_path="$(runtime_library_path "$sysroot" /build)"
+    "$loader" --library-path "$library_path" /build/ozone_unittests \
+      '--gtest_filter=*OzonePresenter*' \
+      --single-process-tests
+    exec "$loader" --library-path "$library_path" \
+      /build/output_presenter_ozone_unittests \
+      '--gtest_filter=OutputPresenterOzoneTest.*' \
+      --single-process-tests
     ;;
   *)
     echo "error: expected Chromium builder mode: configure or build" >&2

@@ -199,9 +199,11 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             "android-aosp-signing-identity", "android-aosp-source", "android-aosp-tools",
             "android-gfxstream-build-linux-arm64", "android-gfxstream-build-linux-x86_64",
             "android-sdk", "benchmark-results", "browser-builder-metadata",
-            "browser-cef-generations", "browser-depot-tools", "browser-installations",
-            "browser-locks", "browser-logs", "browser-product-generations",
-            "browser-incremental-builds", "browser-source-generations", "checkout-state",
+            "browser-build-metadata", "browser-cef-arm64-generations",
+            "browser-cef-x86_64-generations", "browser-depot-tools",
+            "browser-installations", "browser-locks", "browser-logs",
+            "browser-product-arm64-generations", "browser-product-x86_64-generations",
+            "browser-source-generations", "checkout-state",
             "checkout-swiftpm-builds",
             "core-render-sdk-android-arm64",
             "core-render-sdk-linux-arm64", "core-render-sdk-linux-x86_64", "core-skia-build",
@@ -226,7 +228,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(storageOwners["wayland-build-linux-arm64"] == "wayland")
     #expect(storageOwners["android-aosp-build"] == "android-runtime")
     #expect(storageOwners["linux-runtime-generations"] == "linux")
-    #expect(storageOwners["browser-product-generations"] == "browser")
+    #expect(storageOwners["browser-product-arm64-generations"] == "browser")
+    #expect(storageOwners["browser-product-x86_64-generations"] == "browser")
     let storageClasses = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
     #expect(storageClasses["android-aosp-source"] == .source)

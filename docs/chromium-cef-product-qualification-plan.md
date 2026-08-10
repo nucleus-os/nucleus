@@ -10,10 +10,19 @@ an ordinary commit in a genuine `nucleus-os` fork. Collider never applies a
 Nucleus patch, runs CEF's patcher, adopts a dirty checkout, or repairs an
 existing source generation.
 
+The host prepares that generation in two passes: native macOS hooks and CEF
+translation first, then a no-hooks Linux x86_64 build-host synchronization.
+The host-side CIPD client materializes Chromium's official Linux x86_64 graph
+through an explicit platform adapter. Offline arm64 builder VMs execute those
+tools through macOS 27 Intel translation while producing both target
+architectures.
+
 CEF and Nucleus Browser retain separate GN outputs because their allocator and
-process-boundary contracts differ. Compilation runs offline in the selected
-rootless `chromium-builder`; packaging, artifact validation, focused executable
-tests, and hardware qualification run on the host.
+process-boundary contracts differ. Each product has independent persistent
+Linux arm64 and x86_64 output and compiler-cache workspaces. Compilation,
+packaging, artifact validation, and focused executable tests run offline in the
+selected rootless `chromium-builder`. Hardware qualification runs on the target
+system.
 
 The fork migration, source materialization, containerized compilation,
 packaging, immutable publication, and focused source-level tests are
@@ -21,28 +30,35 @@ implemented. This plan owns product qualification only.
 
 ## Phase 1 — Qualify cold product builds
 
-From an empty external build generation, prepare the selected builder image,
-materialize the exact source generation, generate both production GN graphs
-offline, build and publish CEF, and then build and publish Nucleus Browser.
+From empty persistent workspaces, prepare the selected builder image,
+materialize the exact source generation, generate all four production GN graphs
+offline, build and publish arm64 and x86_64 CEF, and then build and publish
+arm64 and x86_64 Nucleus Browser. The two architecture branches of each product
+remain concurrent.
 
-Gate: both products validate from read-only source and depot_tools mounts, and
-no compiler output or generated state appears beneath the source generation.
+Gate: both architectures of both products validate from the read-only source
+mount, the source-pinned Linux host tools execute through macOS 27 translation,
+and no compiler output or generated state appears beneath the source generation
+or a host-backed intermediate tree.
 
 ## Phase 2 — Qualify artifacts and focused tests
 
-Compile and run the external CEF consumer, browser artifact validator, focused
-Ozone presenter suite, and focused Viz presenter suite. Verify dynamic-library
-resolution, sandbox ownership, product metadata, source provenance, launcher
-syntax, and absence of SwiftShader and unsupported renderer fallbacks.
+Cross-compile, link, and run the external CEF consumer for each architecture.
+Run each browser artifact validator and each target's focused Ozone and Viz
+presenter suite. Use the matching Chromium sysroot and target loader so arm64
+executes natively and x86_64 executes through macOS 27 Intel binary translation.
+Verify dynamic-library resolution, sandbox ownership, product metadata, source
+provenance, launcher syntax, and absence of SwiftShader and unsupported renderer
+fallbacks.
 
-Gate: every published artifact is executable on the qualifier and bound to the
-selected source, GN, compiler, PGO, and builder identities.
+Gate: every published architecture is executable on the qualifier and bound to
+the selected source, target, GN, compiler, sysroot, PGO, and builder identities.
 
 ## Phase 3 — Prove bounded incremental reuse
 
-Repeat the complete product build without changing inputs. Prove GN, Ninja, and
-Siso reuse the same bounded external outputs, publication remains deterministic,
-and all six selected source repositories remain clean.
+Repeat the complete product build without changing inputs. Prove GN, Ninja,
+Siso, and ccache reuse the same persistent target workspaces, publication
+remains deterministic, and all six selected source repositories remain clean.
 
 Gate: the unchanged run performs no source repair and produces equivalent
 validated products without rebuilding unaffected work.

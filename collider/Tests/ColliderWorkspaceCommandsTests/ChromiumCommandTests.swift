@@ -36,27 +36,17 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             jobs: 16))
     let graph = try TaskGraph(tasks)
     #expect(
-        Set(tasks.map(\.id)).isSuperset(of: [
-            ChromiumTaskIDs.source,
-            ChromiumTaskIDs.retention,
-            ChromiumTaskIDs.test,
-            ChromiumTaskIDs.install,
-        ]))
+        Set(tasks.map(\.id)).isSuperset(
+            of: [
+                ChromiumTaskIDs.source,
+                ChromiumTaskIDs.retention,
+                ChromiumTaskIDs.install,
+            ] + chromiumLinuxTargets.map(ChromiumTaskIDs.test)))
     let orderedBuildTasks = try graph.orderedTasks(selecting: [
         ChromiumTaskIDs.retention
-    ]).map(\.id.rawValue)
-    #expect(
-        orderedBuildTasks == [
-            "browser.depot-tools",
-            "browser.depot-tools-bootstrap",
-            "browser.source",
-            "browser.builder",
-            "browser.product.build",
-            "browser.artifact",
-            "browser.cef.build",
-            "browser.cef",
-            "browser.retention",
-        ])
+    ]).map(\.id)
+    #expect(orderedBuildTasks.count == 13)
+    #expect(orderedBuildTasks.last == ChromiumTaskIDs.retention)
 
     #expect(
         Set(tasks.compactMap(\.action).map(\.kind)).isSuperset(of: [
@@ -67,17 +57,21 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     let productActions = tasks.compactMap(\.action).filter {
         $0.kind == ActionKind(rawValue: "browser.build-product")
     }
-    #expect(productActions.count == 2)
-    #expect(Set(productActions.map(\.identity)).count == 2)
+    #expect(productActions.count == 4)
+    #expect(Set(productActions.map(\.identity)).count == 4)
     #expect(
         productActions.allSatisfy {
             $0.requirements.executionPlatform == .linuxARM64OCI
-                && $0.requirements.artifactTarget == .linuxX86_64
-                && $0.requirements.lane == .hostExclusive
+                && $0.requirements.lane == .oci
+                && $0.requirements.persistentWorkspaceEffects.count == 2
         })
+    #expect(
+        Set(productActions.compactMap(\.requirements.artifactTarget))
+            == [.linuxARM64, .linuxX86_64])
 
+    let x86Target = ChromiumLinuxTarget(architecture: .x86_64)
     let test = try #require(
-        tasks.first { $0.id == ChromiumTaskIDs.test })
+        tasks.first { $0.id == ChromiumTaskIDs.test(x86Target) })
     guard let testAction = test.action,
         let execution = try await ociExecutions(in: test.action).first
     else {
@@ -85,41 +79,52 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         return
     }
     #expect(testAction.kind == "browser.run-tests")
-    #expect(execution.command.first == "build")
     #expect(
-        execution.mounts == [
-            OCIMount(
-                source: FilePath(
-                    "/cache/cef/source-generations/source-identity"),
-                target: "/source",
-                access: .readOnly),
-            OCIMount(
-                source: FilePath("/cache/cef/depot_tools"),
-                target: "/depot_tools",
-                access: .readOnly),
-            OCIMount(
-                source: FilePath(
-                    "/cache/cef/build/source-identity/.inputs"),
-                target: "/inputs",
-                access: .readOnly),
-            OCIMount(
-                source: FilePath(
-                    "/cache/cef/build/source-identity/browser"),
-                target: "/build",
-                access: .readWrite),
+        execution.command == [
+            "test-ozone", "16", x86Target.architecture.rawValue,
         ])
+    #expect(!execution.mounts.contains { $0.target == "/build" })
+    #expect(
+        execution.persistentWorkspaceMounts.map(\.target)
+            == ["/build", "/ccache"])
 
-    let cefBuild = try #require(
-        tasks.first { $0.id == ChromiumTaskIDs.cefBuild })
-    let browserBuild = try #require(
-        tasks.first { $0.id == ChromiumTaskIDs.browserBuild })
-    #expect(!cefBuild.dependencies.contains(ChromiumTaskIDs.browserBuild))
-    #expect(!browserBuild.dependencies.contains(ChromiumTaskIDs.cefBuild))
+    let buildIDs = chromiumLinuxTargets.flatMap { target in
+        ChromiumProduct.allCases.map { product in
+            ChromiumTaskIDs.build(product, target)
+        }
+    }
+    for left in buildIDs {
+        let task = try #require(tasks.first { $0.id == left })
+        #expect(task.dependencies.allSatisfy { !buildIDs.contains($0) })
+    }
     let retention = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.retention })
     #expect(
-        Set(retention.dependencies).isSuperset(of: [
-            ChromiumTaskIDs.cefArtifact,
-            ChromiumTaskIDs.browserArtifact,
-        ]))
+        Set(retention.dependencies).isSuperset(
+            of: Set(
+                chromiumLinuxTargets.flatMap { target in
+                    ChromiumProduct.allCases.map { product in
+                        ChromiumTaskIDs.artifact(product, target)
+                    }
+                })))
+}
+
+@Test
+func chromiumGNConfigurationsAreTargetSpecificAndUsePersistentCompilerCaches() {
+    for product in ChromiumProduct.allCases {
+        for target in chromiumLinuxTargets {
+            let arguments = chromiumGNArguments(product: product, target: target)
+            #expect(arguments.contains(#"cc_wrapper="ccache""#))
+            #expect(
+                arguments.contains(
+                    #"clang_base_path="//third_party/llvm-build/Linux_x64""#))
+            #expect(arguments.contains("use_sysroot=true"))
+            #expect(arguments.contains(#"target_cpu="\#(target.gnCPU)""#))
+            #expect(
+                arguments.contains(
+                    target.architecture == .x86_64
+                        ? "chrome_pgo_phase=2"
+                        : "chrome_pgo_phase=0"))
+        }
+    }
 }

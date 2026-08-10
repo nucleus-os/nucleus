@@ -73,8 +73,8 @@ and exact-name deletion verification. It uses the upstream build library plus
 image, network, health, and disk-usage clients directly for image build and
 identity, network inspection, cache reporting, pruning, and backend health. Cancellation shares
 the same idempotent cleanup transaction. The installed CLI remains only in the
-privileged login-session bootstrap script, which runs before the API service is
-available. Clone-local SwiftPM mirrors make every
+current-user login-session bootstrap script, which runs before the API service
+is available. Clone-local SwiftPM mirrors make every
 transitive dependency edge resolve to the root-owned gitlink without modifying
 Apple's manifests. Doctor exercises the typed XPC health request, so an
 installed CLI alone cannot satisfy the backend contract.
@@ -116,10 +116,11 @@ registration after reboot. Its API server and helpers are launch agents that
 are intentionally scoped to a logged-in user and cannot serve clients from the
 system bootstrap namespace. Nucleus now declares the complete host contract and
 persistent login-session bootstrap under `tools/macos-builder/`; installing
-that bootstrap now restores Apple `container` successfully in the active
-builder login session. Passing `collider doctor ci-macos-builder` and repeating
-the reboot-and-login gate are the remaining Phase 4 host work. Phase 5 then
-provisions the persistent development machine.
+that bootstrap as the builder user installs its launcher under the user's
+Library and restores Apple `container` successfully in the active builder login
+session without elevated privileges. Passing `collider doctor ci-macos-builder`
+and repeating the reboot-and-login gate are the remaining Phase 4 host work.
+Phase 5 then provisions the persistent development machine.
 
 ## Required Runner Topology
 

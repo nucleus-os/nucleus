@@ -24,9 +24,10 @@
   "launchd": {
     "label": "com.nucleus.container-system-start",
     "plistRelativePath": "Library/LaunchAgents/com.nucleus.container-system-start.plist",
-    "starterPath": "/usr/local/libexec/nucleus/container-system-start",
+    "starterRelativePath": "Library/Application Support/Nucleus/bin/container-system-start",
     "standardOutPath": "/Volumes/NucleusLogs/apple-container-apiserver.log",
-    "standardErrorPath": "/Volumes/NucleusLogs/apple-container-apiserver.error.log"
+    "standardErrorPath": "/Volumes/NucleusLogs/apple-container-apiserver.error.log",
+    "maximumOpenFileCount": 245760
   },
   "resources": {
     "physicalCPUCount": 24,

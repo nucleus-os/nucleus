@@ -6,7 +6,7 @@
   <string>com.nucleus.container-system-start</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/libexec/nucleus/container-system-start</string>
+    <string>NUCLEUS_CONTAINER_STARTER_PATH</string>
   </array>
   <key>LimitLoadToSessionType</key>
   <array>
@@ -25,12 +25,12 @@
   <key>SoftResourceLimits</key>
   <dict>
     <key>NumberOfFiles</key>
-    <integer>65536</integer>
+    <integer>245760</integer>
   </dict>
   <key>HardResourceLimits</key>
   <dict>
     <key>NumberOfFiles</key>
-    <integer>65536</integer>
+    <integer>245760</integer>
   </dict>
   <key>ThrottleInterval</key>
   <integer>30</integer>

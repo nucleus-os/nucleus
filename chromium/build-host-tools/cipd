@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+
+def main() -> int:
+    real_cipd = os.environ.get("NUCLEUS_REAL_CIPD")
+    if not real_cipd or not pathlib.Path(real_cipd).is_file():
+        print("error: NUCLEUS_REAL_CIPD must name depot_tools/cipd", file=sys.stderr)
+        return 64
+
+    arguments = sys.argv[1:]
+    temporary_paths: list[pathlib.Path] = []
+    rewritten_arguments: list[str] = []
+    index = 0
+    try:
+        while index < len(arguments):
+            argument = arguments[index]
+            if argument == "-ensure-file":
+                if index + 1 >= len(arguments) or arguments[index + 1] == "-":
+                    print("error: CIPD ensure file must be a path", file=sys.stderr)
+                    return 64
+                rewritten_arguments.extend(
+                    [argument, rewrite(arguments[index + 1], temporary_paths)]
+                )
+                index += 2
+                continue
+            if argument.startswith("-ensure-file="):
+                source = argument.removeprefix("-ensure-file=")
+                if not source or source == "-":
+                    print("error: CIPD ensure file must be a path", file=sys.stderr)
+                    return 64
+                rewritten_arguments.append(
+                    "-ensure-file=" + rewrite(source, temporary_paths)
+                )
+                index += 1
+                continue
+            rewritten_arguments.append(argument)
+            index += 1
+
+        return subprocess.run([real_cipd, *rewritten_arguments], check=False).returncode
+    finally:
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
+
+
+def rewrite(source: str, temporary_paths: list[pathlib.Path]) -> str:
+    content = pathlib.Path(source).read_text(encoding="utf-8")
+    content = content.replace("${platform}", "linux-amd64")
+    content = content.replace("${os}", "linux")
+    content = content.replace("${arch}", "amd64")
+    descriptor, path = tempfile.mkstemp(
+        prefix="nucleus-linux-amd64-", suffix=".ensure"
+    )
+    destination = pathlib.Path(path)
+    temporary_paths.append(destination)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        output.write(content)
+    return str(destination)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

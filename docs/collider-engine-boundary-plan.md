@@ -135,10 +135,9 @@ or `containerization`. `ColliderRuntime` receives the interface implementation
 at construction and remains responsible for action execution, observations,
 logging, and cancellation coordination.
 
-Keep the existing privileged login-session bootstrap outside this interface. It
-is host provisioning and may continue invoking the installed `container`
-executable directly. Normal Collider image and workload management continues to
-use the Swift APIs.
+Keep the current-user login-session bootstrap outside this interface. It is host
+provisioning and may invoke the installed `container` executable directly.
+Normal Collider image and workload management continues to use the Swift APIs.
 
 Do not implement a second backend in this phase. The interface is proven by the
 Apple implementation and a deterministic test implementation.

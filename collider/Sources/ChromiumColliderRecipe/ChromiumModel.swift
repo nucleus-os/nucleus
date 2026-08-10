@@ -1,3 +1,4 @@
+import ColliderCore
 import SystemPackage
 
 package struct ChromiumSourceRepository: Codable, Hashable, Sendable {
@@ -41,17 +42,23 @@ package struct ChromiumDepotToolsLock: Codable, Hashable, Sendable {
 package struct ChromiumSourceLock: Codable, Hashable, Sendable {
     package let cefBranch: String
     package let chromiumVersion: String
+    package let buildHostPlatform: String
+    package let devtoolsRollupPlatform: String
     package let repositories: [ChromiumSourceRepository]
     package let depotTools: ChromiumDepotToolsLock
 
     package init(
         cefBranch: String,
         chromiumVersion: String,
+        buildHostPlatform: String,
+        devtoolsRollupPlatform: String,
         repositories: [ChromiumSourceRepository],
         depotTools: ChromiumDepotToolsLock
     ) {
         self.cefBranch = cefBranch
         self.chromiumVersion = chromiumVersion
+        self.buildHostPlatform = buildHostPlatform
+        self.devtoolsRollupPlatform = devtoolsRollupPlatform
         self.repositories = repositories
         self.depotTools = depotTools
     }
@@ -63,6 +70,7 @@ package struct ChromiumSourcePreparation: Hashable, Sendable {
     package let sourceGenerations: FilePath
     package let current: FilePath
     package let depotTools: FilePath
+    package let linuxHostCIPDAdapter: FilePath
     package let sourceLockFile: FilePath
     package let sourceLock: ChromiumSourceLock
     package let environment: [String: String]
@@ -73,6 +81,7 @@ package struct ChromiumSourcePreparation: Hashable, Sendable {
         sourceGenerations: FilePath,
         current: FilePath,
         depotTools: FilePath,
+        linuxHostCIPDAdapter: FilePath,
         sourceLockFile: FilePath,
         sourceLock: ChromiumSourceLock,
         environment: [String: String]
@@ -82,22 +91,101 @@ package struct ChromiumSourcePreparation: Hashable, Sendable {
         self.sourceGenerations = sourceGenerations
         self.current = current
         self.depotTools = depotTools
+        self.linuxHostCIPDAdapter = linuxHostCIPDAdapter
         self.sourceLockFile = sourceLockFile
         self.sourceLock = sourceLock
         self.environment = environment
     }
 }
 
-package enum ChromiumProduct: String, Hashable, Sendable {
+package enum ChromiumProduct: String, CaseIterable, Hashable, Sendable {
     case cef
     case browser
 }
 
+package struct ChromiumLinuxTarget: Hashable, Sendable {
+    package let architecture: PlatformArchitecture
+
+    package init(architecture: PlatformArchitecture) {
+        precondition(architecture == .arm64 || architecture == .x86_64)
+        self.architecture = architecture
+    }
+
+    package var identifier: String { "linux-\(architecture.rawValue)" }
+
+    package var artifactTarget: ArtifactTarget {
+        switch architecture {
+        case .arm64: .linuxARM64
+        case .x86_64: .linuxX86_64
+        }
+    }
+
+    package var gnCPU: String {
+        switch architecture {
+        case .arm64: "arm64"
+        case .x86_64: "x64"
+        }
+    }
+
+    package var cefBuildFlag: String {
+        switch architecture {
+        case .arm64: "--arm64-build"
+        case .x86_64: "--x64-build"
+        }
+    }
+
+    package var cefPlatformName: String {
+        switch architecture {
+        case .arm64: "linuxarm64"
+        case .x86_64: "linux64"
+        }
+    }
+}
+
+package let chromiumLinuxTargets = PlatformArchitecture.allCases.map {
+    ChromiumLinuxTarget(architecture: $0)
+}
+
+// V8 deliberately uses its x64 builtins profile for both x64 and arm64.
+package let chromiumV8BuiltinsPGOProfile = "x64.profile"
+package let chromiumLinuxClangRoot = "third_party/llvm-build/Linux_x64"
+
+package func chromiumOutputWorkspace(
+    product: ChromiumProduct,
+    target: ChromiumLinuxTarget
+) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "chromium-\(product.rawValue)-output",
+            artifactTarget: target.artifactTarget,
+            role: "build"),
+        capacityBytes: 150 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
+package func chromiumCompilerCacheWorkspace(
+    product: ChromiumProduct,
+    target: ChromiumLinuxTarget
+) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "chromium-\(product.rawValue)-ccache",
+            artifactTarget: target.artifactTarget,
+            role: "compiler-cache"),
+        capacityBytes: 30 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
 package struct ChromiumProductBuild: Hashable, Sendable {
     package let product: ChromiumProduct
+    package let target: ChromiumLinuxTarget
     package let sourceRoot: FilePath
-    package let output: FilePath
-    package let depotTools: FilePath
+    package let buildManifest: FilePath
+    package let inputRoot: FilePath
+    package let outputWorkspace: PersistentWorkspaceDeclaration
+    package let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
     package let gnArguments: String?
     package let targets: [String]
@@ -106,9 +194,12 @@ package struct ChromiumProductBuild: Hashable, Sendable {
 
     package init(
         product: ChromiumProduct,
+        target: ChromiumLinuxTarget,
         sourceRoot: FilePath,
-        output: FilePath,
-        depotTools: FilePath,
+        buildManifest: FilePath,
+        inputRoot: FilePath,
+        outputWorkspace: PersistentWorkspaceDeclaration,
+        compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         gnArguments: String? = nil,
         targets: [String],
@@ -116,20 +207,46 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         environment: [String: String]
     ) {
         self.product = product
+        self.target = target
         self.sourceRoot = sourceRoot
-        self.output = output
-        self.depotTools = depotTools
+        self.buildManifest = buildManifest
+        self.inputRoot = inputRoot
+        self.outputWorkspace = outputWorkspace
+        self.compilerCacheWorkspace = compilerCacheWorkspace
         self.containerImageID = containerImageID
         self.gnArguments = gnArguments
         self.targets = targets
         self.jobs = jobs
         self.environment = environment
     }
+
+    package var outputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/build",
+            access: .readWrite)
+    }
+
+    package var readOnlyOutputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/build",
+            access: .readOnly)
+    }
+
+    package var compilerCacheMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: compilerCacheWorkspace,
+            target: "/ccache",
+            access: .readWrite)
+    }
 }
 
 package struct BrowserArtifactAssembly: Hashable, Sendable {
+    package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
-    package let buildOutput: FilePath
+    package let buildManifest: FilePath
+    package let outputWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
     package let distributionRoot: FilePath
     package let launcher: FilePath
@@ -137,28 +254,40 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let environment: [String: String]
 
     package init(
+        target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
-        buildOutput: FilePath,
+        buildManifest: FilePath,
+        outputWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         distributionRoot: FilePath,
         launcher: FilePath,
         desktopTemplate: FilePath,
         environment: [String: String]
     ) {
+        self.target = target
         self.chromiumSource = chromiumSource
-        self.buildOutput = buildOutput
+        self.buildManifest = buildManifest
+        self.outputWorkspace = outputWorkspace
         self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
         self.launcher = launcher
         self.desktopTemplate = desktopTemplate
         self.environment = environment
     }
+
+    package var readOnlyOutputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/build",
+            access: .readOnly)
+    }
 }
 
 package struct CEFArtifactAssembly: Hashable, Sendable {
+    package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
-    package let buildOutput: FilePath
-    package let depotTools: FilePath
+    package let buildManifest: FilePath
+    package let outputWorkspace: PersistentWorkspaceDeclaration
     package let containerImageID: FilePath
     package let distributionRoot: FilePath
     package let cefCheckout: String
@@ -166,23 +295,32 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
     package let environment: [String: String]
 
     package init(
+        target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
-        buildOutput: FilePath,
-        depotTools: FilePath,
+        buildManifest: FilePath,
+        outputWorkspace: PersistentWorkspaceDeclaration,
         containerImageID: FilePath,
         distributionRoot: FilePath,
         cefCheckout: String,
         chromiumVersion: String,
         environment: [String: String]
     ) {
+        self.target = target
         self.chromiumSource = chromiumSource
-        self.buildOutput = buildOutput
-        self.depotTools = depotTools
+        self.buildManifest = buildManifest
+        self.outputWorkspace = outputWorkspace
         self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
         self.cefCheckout = cefCheckout
         self.chromiumVersion = chromiumVersion
         self.environment = environment
+    }
+
+    package var readOnlyOutputMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: outputWorkspace,
+            target: "/build",
+            access: .readOnly)
     }
 }
 

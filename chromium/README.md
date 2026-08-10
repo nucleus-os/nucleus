@@ -1,7 +1,8 @@
 # Chromium products
 
-The Chromium build has one supported public entry point and one production
-configuration:
+The Chromium component produces Linux arm64 and x86_64 variants of embedded
+CEF and Nucleus Browser from one exact source generation. The supported command
+surface is:
 
 ```sh
 collider doctor browser
@@ -11,91 +12,94 @@ collider test browser
 collider install browser
 ```
 
-`bootstrap` reports missing host-side source and packaging tools from
-`../cef/apt-deps.txt`, including the exact `sudo apt-get install` command the
-user may run, then materializes the source lock. It never mutates the host
-package database. Chromium compilation dependencies live only in the pinned
-rootless builder image. `build` performs the complete production build and
-publishes both products. Product selectors, package-only modes, update
-bypasses, and ad-hoc GN overrides are unsupported.
+`bootstrap` prepares host-owned downloads and source. `build` compiles,
+packages, and validates both architectures. `test` executes the focused
+Ozone/Viz suites for both architectures. Product selectors, architecture
+selectors, package-only modes, source-update bypasses, and ad hoc GN overrides
+are unsupported.
 
-## Source architecture
+## Source and network boundary
 
-`source.lock.json` is the sole browser source-selection input. It selects exact
-commits and trees in the genuine `nucleus-os` Chromium, CEF, ANGLE, Skia, V8,
-and Dawn forks, plus the exact canonical `depot_tools` commit. It has no format
-version: source updates replace the complete lock atomically.
+`source.lock.json` selects exact commits and trees in the genuine `nucleus-os`
+Chromium, CEF, ANGLE, Skia, V8, and Dawn forks and the canonical `depot_tools`
+commit. It has no format version; a source update replaces the complete lock.
 
-Collider maintains bounded bare object caches under
-`~/.cache/nucleus/cef/repository-cache/`. A private candidate generation checks
-out the locked Chromium commit, synchronizes the upstream DEPS graph, overrides
-ANGLE, Skia, V8, and Dawn with their exact fork commits, checks out CEF, runs
-Chromium hooks, resolves PGO profiles, and verifies CEF translation and API hashes.
-Publication requires every selected repository to have the locked commit and
-tree with a clean worktree.
+Collider maintains bounded shallow object caches for the selected Chromium and
+CEF repositories under `~/.cache/nucleus/cef/repository-cache`. It also keeps a
+source-ID-scoped private candidate when dependency synchronization is
+interrupted, so the next invocation resumes the same gclient checkout instead
+of downloading it again. Collider first synchronizes the Linux target graph and
+runs the source-generation hooks with native macOS tools. After CEF translation
+is complete, a second host-side, no-hooks synchronization materializes the
+official Linux x86_64 GN, Ninja, Siso, and other build-host inputs. A narrow
+CIPD adapter substitutes the selected Linux host platform while the macOS CIPD
+client performs every download. Collider then runs DevTools' source-pinned
+Rollup synchronization script so its Linux x86_64 native module replaces the
+macOS hook result. Collider also installs the Linux Chromium clang and arm64 and
+amd64 sysroots, resolves the V8 builtins PGO profile used by both targets, and
+verifies all selected commits and trees before atomically publishing the source
+generation. The resulting provenance binds the source lock, build-host
+platform, DEPS graph, compiler, sysroots, PGO profiles, and clean repository
+identities.
 
-The resulting `source-provenance.json` binds the lock digest, all six commit
-and tree identities, `depot_tools`, Chromium DEPS, the resolved gclient graph,
-and both PGO profiles. Existing source directories are verified against that
-provenance and are never repaired or adopted. Nucleus source preparation does
-not run CEF's patcher, apply patches, or use `automate-git.py`.
+Every network operation runs on the macOS host. Builder containers receive the
+published source and downloaded inputs as read-only mounts and run with
+networking disabled. `depot_tools` remains a host-only acquisition input;
+container builds invoke the source-pinned Linux Siso executable directly.
+Collider never applies patches, runs CEF's patcher, adopts a dirty checkout, or
+repairs a published generation.
 
-CEF and Nucleus Browser share this one content-addressed source generation,
-mounted read-only at compile time. Their separate writable GN outputs live
-under `~/.cache/nucleus/cef/build/<source-id>/` because their allocator
-contracts differ. CEF
-embeds `libcef.so` into another process and disables Chromium's allocator shim
-and BackupRefPtr support. The standalone browser retains PartitionAlloc, the
-allocator shim, and BackupRefPtr. Both are official PGO/ThinLTO builds using
-LLD, Siso, native Wayland, Graphite/Dawn/Vulkan, and no SwiftShader compositor
-fallback.
+## Build workspaces and concurrency
 
-The build order is strictly sequential:
+CEF and Nucleus Browser each have independent Linux arm64 and x86_64 GN output
+volumes and compiler-cache volumes. These Collider-owned persistent EXT4
+workspaces contain only reconstructible intermediates. The source generation
+and final publications remain ordinary host files; no Ninja output is written
+through a host bind mount.
 
-1. verify declared host tools and prepare the pinned Chromium builder;
-2. materialize or verify the source generation;
-3. build, package, and validate CEF;
-4. build, package, and validate Nucleus Browser;
-5. apply cache retention.
+The four build branches are independent. Collider schedules up to two Apple
+container build lanes concurrently, so the arm64 and x86_64 variants of a
+product compile together when resources are available. Each lane receives 12
+virtual CPUs and runs at 12-way Siso concurrency, using all 24 physical host
+cores without oversubscription. The persistent Apple container service inherits
+the host contract's 245,760-descriptor limit so both source graphs can remain
+open concurrently. Native build systems retain responsibility for incremental
+invalidation, and ccache persists across ephemeral containers and interrupted
+runs.
 
-Independent CEF and browser link pools never run concurrently. Local Siso work
-is capped at 16 jobs. GN and Ninja run in the rootless builder with networking
-disabled; packaging, artifact execution, sandbox checks, and GPU/Wayland tests
-run on the host.
+Both targets use Chromium's official Linux x86_64 host tools inside the arm64
+builder VM. macOS 27 Intel binary translation executes those tools. They
+generate arm64 or x86_64 target code according to each branch's GN
+configuration; no x86_64 Linux distribution or x86_64 VM is booted.
 
-## Identities and publication
+CEF disables Chromium's allocator shim and BackupRefPtr because `libcef.so`
+loads into another process. The standalone browser retains PartitionAlloc, the
+allocator shim, and BackupRefPtr. Both products use LLD, Siso, ccache, ThinLTO,
+native Wayland, Graphite/Dawn/Vulkan, and no SwiftShader compositor fallback.
 
-Each successful output contains `.nucleus-built-build.json`. It binds source
-provenance, resolved `args.gn`, Chromium clang, and exact PGO profiles.
-Packaging and installation recompute that identity and reject stale outputs.
+## Publication and validation
 
-CEF publishes complete SDK and tarball generations beneath
-`~/.cache/nucleus/cef/dist/`. Nucleus Browser publishes validated artifact
-generations beneath `~/.cache/nucleus/cef/browser-dist/`. Stable `current`
-links switch only after validation.
+Each output volume contains `.nucleus-built-build.json`, binding its target
+architecture, source provenance, resolved `args.gn`, Chromium clang, sysroot,
+and PGO profile. Packaging rejects a missing or stale identity before copying
+the bounded product into an immutable host generation.
 
-The installed browser uses versioned generations under
-`~/.local/lib/nucleus-browser/generations/`. A single atomic `current` symlink
-switches the runtime, launcher, desktop entry, icons, Widevine payload, and
-recorded sandbox identity together.
+CEF publishes beneath `~/.cache/nucleus/cef/dist/linux-arm64` and
+`~/.cache/nucleus/cef/dist/linux-x86_64`. Nucleus Browser publishes beneath
+`~/.cache/nucleus/cef/browser-dist/linux-arm64` and
+`~/.cache/nucleus/cef/browser-dist/linux-x86_64`. Each target has its own
+validated `current` symlink.
 
-## Logs and validation
+Artifact validation uses the matching Chromium target sysroot and dynamic
+loader. The arm64 artifacts execute natively; x86_64 artifacts execute through
+macOS 27 Intel binary translation. CEF validation cross-compiles, links, and
+runs a real consumer for each target. Browser validation resolves the shipped
+runtime and executes the browser version path for each target. Focused Ozone
+and Viz tests execute in the same target-specific workspaces.
 
-Every command uses Collider's shared run registry:
+`collider install browser` installs the x86_64 desktop browser generation and
+its Linux x64 Widevine payload. Dual-architecture build and publication do not
+change that existing local installation contract.
 
-```text
-<workspace>/.nucleus/runs/<run-id>/
-  manifest.json
-  run.log
-  stages/<task>.log
-<workspace>/.nucleus/latest -> runs/<most-recent-run>
-```
-
-Signals terminate the active stage process group. Locks prevent concurrent
-source preparation, GN-output mutation, and publication.
-
-Publication gates include source/build identity verification, CEF API hashes,
-CEF consumer compile/link/load, dynamic-library resolution, launcher syntax,
-and focused Ozone/Viz presenter tests. Browser startup and live
-Wayland/120 Hz/media acceptance remain explicit user-run validation after
-installation.
+Live Wayland, GPU, media, sandbox, Widevine, 120 Hz, and hardware behavior
+remain explicit user-owned qualification after automated build and test gates.

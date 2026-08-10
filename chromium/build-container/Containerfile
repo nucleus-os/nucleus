@@ -1,19 +1,19 @@
 FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG UBUNTU_SNAPSHOT=20260730T000000Z
 
-COPY packages.txt /tmp/chromium-build-packages.txt
-
-RUN sed -Ei \
-        "s#^URIs: .*#URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}#" \
-        /etc/apt/sources.list.d/ubuntu.sources \
-    && apt-get -o Acquire::https::Verify-Peer=false update \
-    && xargs -r apt-get -o Acquire::https::Verify-Peer=false \
-        install --yes --no-install-recommends \
-        < /tmp/chromium-build-packages.txt \
-    && rm -f /tmp/chromium-build-packages.txt \
-    && rm -rf /var/lib/apt/lists/*
+# Collider resolves this exact package closure from pinned Ubuntu indexes and
+# downloads it on the host. Image construction is deliberately offline.
+COPY inputs/apt/install/ /tmp/nucleus-apt/install/
+RUN test "$(dpkg --print-architecture)" = arm64 \
+    && dpkg --add-architecture amd64 \
+    && mkdir -p /tmp/nucleus-empty-apt-sources \
+    && apt-get --yes --no-install-recommends \
+        -o Acquire::Retries=0 \
+        -o Dir::Etc::sourcelist=/dev/null \
+        -o Dir::Etc::sourceparts=/tmp/nucleus-empty-apt-sources \
+        install /tmp/nucleus-apt/install/*.deb \
+    && rm -rf /tmp/nucleus-apt /tmp/nucleus-empty-apt-sources
 
 RUN usermod \
         --login nucleus-build \
@@ -32,11 +32,10 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-chromium-build
 USER nucleus-build
 WORKDIR /source/chromium/src
 
-ENV DEPOT_TOOLS_UPDATE=0 \
-    HOME=/tmp/nucleus-home \
+ENV HOME=/tmp/nucleus-home \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH=/depot_tools:/source/chromium/src/third_party/llvm-build/Release+Asserts/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/source/chromium/src/third_party/llvm-build/Linux_x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=UTC
 

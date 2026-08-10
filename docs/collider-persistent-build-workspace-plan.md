@@ -122,8 +122,8 @@ Initial declarations are:
 | --- | ---: |
 | AOSP product output | 300 GiB |
 | AOSP ccache | 50 GiB |
-| Chromium/CEF output | 300 GiB |
-| Chromium/CEF compiler cache | 50 GiB |
+| Chromium or CEF output per architecture | 150 GiB |
+| Chromium or CEF compiler cache per architecture | 30 GiB |
 | Swift target-SDK build root per architecture | 200 GiB |
 | Swift target-SDK compiler cache per architecture | 50 GiB |
 | Native SDK component build root | 100 GiB |
@@ -251,16 +251,30 @@ leaves no AOSP build intermediates under the host checkout or build root.
 
 ## Phase 4: Migrate Chromium and CEF
 
+Status: implementation complete; build qualification active.
+
 Move Chromium/CEF Ninja output and compiler cache to target-specific persistent
 workspaces. Keep Chromium, CEF, depot-tools inputs, downloaded archives, and
 generated configuration owned by their existing host source/cache boundaries.
 Export only distributable Chromium/CEF products, symbols, manifests, and
 provenance.
 
+Materialize the shared source generation entirely on the host in two explicit
+passes. The first pass uses native macOS tools for Chromium hooks and CEF source
+generation. The second no-hooks pass selects Chromium's official Linux x86_64
+build-host graph. A target-platform CIPD adapter keeps its downloads on macOS,
+and macOS 27 Intel binary translation executes those tools in the arm64 builder
+VM without booting an x86_64 distribution.
+
 Give arm64 and x86_64 independent output and compiler-cache volumes so their
 builds remain concurrent. Every sequential packaging or validation action that
 needs host tools attaches the corresponding output volume instead of importing
 the build tree onto APFS.
+
+Run each concurrent build at the 12-way Siso concurrency of its 12-vCPU VM. The
+shared Apple container API server inherits the host contract's maximum
+245,760-descriptor process limit so both Chromium source graphs can remain open
+without exhausting the service boundary.
 
 Delete the host-backed Chromium/CEF intermediate path after one successful hard
 migration. Extend the existing product build and test lanes to verify cold

@@ -86,14 +86,15 @@ packaging through the compile-time `ColliderCLI` composition.
 
 On macOS, Collider talks to Apple container services in process through the
 upstream Swift APIs for health, networks, image build/inspection/pruning, disk
-usage, container creation, process execution, and cleanup. Only the privileged
+usage, container creation, process execution, and cleanup. Only the current-user
 login-session bootstrap script invokes the installed `container` executable,
 because it must establish and verify the service before Collider can use its
-API. SwiftPM may still print missing pkg-config-file warnings while planning the
-Collider package on macOS: the single root runtime package contains Linux
-system-library targets, but those targets are not compiled into the macOS CLI.
-Linux target builds resolve their system libraries from the selected Swift
-SDK's architecture-specific pkg-config paths.
+API. The bootstrap installs its launcher under the user's Library and requires
+no elevated privileges. SwiftPM may still print missing pkg-config-file warnings
+while planning the Collider package on macOS: the single root runtime package
+contains Linux system-library targets, but those targets are not compiled into
+the macOS CLI. Linux target builds resolve their system libraries from the
+selected Swift SDK's architecture-specific pkg-config paths.
 
 Collider recipes declare typed actions, inputs, outputs, execution placement,
 filesystem effects, and locks. Planning lowers those declarations into one

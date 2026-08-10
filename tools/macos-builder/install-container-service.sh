@@ -5,56 +5,72 @@ readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly contract="$script_directory/contract.json"
 readonly starter_source="$script_directory/container-system-start"
 readonly plist_template="$script_directory/com.nucleus.container-system-start.plist.in"
-readonly starter_target="/usr/local/libexec/nucleus/container-system-start"
 readonly service_label="com.nucleus.container-system-start"
-readonly legacy_system_labels=(
-  "$service_label"
-  "com.apple.container.container-network-vmnet.default"
-  "com.apple.container.container-network-vmnet.nucleus-build-internal"
-  "com.apple.container.container-core-images"
-  "com.apple.container.machine-apiserver"
-)
 
-if [[ $EUID -ne 0 ]]; then
-  echo "usage: sudo $0 <service-user>" >&2
+if [[ $EUID -eq 0 ]]; then
+  echo "error: run this installer as the logged-in builder user, without sudo" >&2
   exit 77
 fi
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: sudo $0 <service-user>" >&2
+if [[ $# -ne 0 ]]; then
+  echo "usage: $0" >&2
   exit 64
 fi
 
-readonly service_user="$1"
-if [[ ! "$service_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
-  echo "error: invalid service user: $service_user" >&2
-  exit 64
-fi
-if ! /usr/bin/id "$service_user" >/dev/null 2>&1; then
-  echo "error: service user does not exist: $service_user" >&2
-  exit 67
-fi
-readonly service_group="$(/usr/bin/id -gn "$service_user")"
-readonly service_uid="$(/usr/bin/id -u "$service_user")"
+readonly service_user="$(/usr/bin/id -un)"
+readonly service_uid="$(/usr/bin/id -u)"
 readonly service_home="$(
   /usr/bin/dscl . -read "/Users/$service_user" NFSHomeDirectory \
-    | /usr/bin/awk '{ print $2 }'
+    | /usr/bin/sed 's/^NFSHomeDirectory: //'
 )"
+readonly starter_relative_path="$(
+  /usr/bin/plutil -extract launchd.starterRelativePath raw -o - "$contract"
+)"
+if [[ -z "$starter_relative_path" || "$starter_relative_path" == /* \
+    || "/$starter_relative_path/" == *"/../"* ]]; then
+  echo "error: launchd starter path must be relative to the current user's home" >&2
+  exit 69
+fi
+readonly starter_target="$service_home/$starter_relative_path"
+readonly starter_directory="$(/usr/bin/dirname "$starter_target")"
 readonly agent_directory="$service_home/Library/LaunchAgents"
 readonly agent_target="$agent_directory/$service_label.plist"
 
 if [[ ! -d "$service_home" ]]; then
-  echo "error: service-user home is absent: $service_home" >&2
+  echo "error: current-user home is absent: $service_home" >&2
   exit 72
 fi
 if ! /bin/launchctl print "gui/$service_uid" >/dev/null 2>&1; then
-  echo "error: $service_user must be logged in while provisioning the launch agent" >&2
+  echo "error: $service_user must have an active login session" >&2
   exit 69
 fi
 
 readonly expected_container_version="$(
   /usr/bin/plutil -extract appleContainer.version raw -o - "$contract"
 )"
+readonly expected_maximum_open_file_count="$(
+  /usr/bin/plutil -extract launchd.maximumOpenFileCount raw -o - "$contract"
+)"
+readonly template_soft_open_file_count="$(
+  /usr/bin/plutil -extract SoftResourceLimits.NumberOfFiles raw -o - \
+    "$plist_template"
+)"
+readonly template_hard_open_file_count="$(
+  /usr/bin/plutil -extract HardResourceLimits.NumberOfFiles raw -o - \
+    "$plist_template"
+)"
+readonly host_maximum_open_file_count="$(
+  /usr/sbin/sysctl -n kern.maxfilesperproc
+)"
+if [[ "$template_soft_open_file_count" != "$expected_maximum_open_file_count" \
+    || "$template_hard_open_file_count" != "$expected_maximum_open_file_count" ]]; then
+  echo "error: container service plist descriptor limits do not match the host contract" >&2
+  exit 69
+fi
+if (( host_maximum_open_file_count < expected_maximum_open_file_count )); then
+  echo "error: kern.maxfilesperproc is $host_maximum_open_file_count; expected at least $expected_maximum_open_file_count" >&2
+  exit 69
+fi
 readonly installed_container_version="$(
   /usr/local/bin/container --version \
     | /usr/bin/sed -E 's/^container CLI version ([^ ]+).*/\1/'
@@ -78,18 +94,14 @@ do
   fi
 done
 
-echo "removing the unsupported system-domain Apple container services..."
-for legacy_label in "${legacy_system_labels[@]}"; do
-  /bin/launchctl bootout "system/$legacy_label" >/dev/null 2>&1 || true
-  /bin/rm -f "/Library/LaunchDaemons/$legacy_label.plist"
-done
-
 /bin/launchctl bootout "gui/$service_uid/$service_label" >/dev/null 2>&1 || true
-/usr/bin/install -d -o root -g wheel -m 0755 /usr/local/libexec/nucleus
-/usr/bin/install -o root -g wheel -m 0755 "$starter_source" "$starter_target"
-/usr/bin/install -d -o "$service_user" -g "$service_group" -m 0755 "$agent_directory"
-/usr/bin/install -o "$service_user" -g "$service_group" -m 0644 \
-  "$plist_template" "$agent_target"
+/usr/bin/install -d -m 0755 "$starter_directory"
+/usr/bin/install -m 0755 "$starter_source" "$starter_target"
+/usr/bin/install -d -m 0755 "$agent_directory"
+/usr/bin/install -m 0644 "$plist_template" "$agent_target"
+/usr/bin/plutil -remove ProgramArguments.0 "$agent_target"
+/usr/bin/plutil -insert ProgramArguments.0 -string "$starter_target" \
+  "$agent_target"
 /usr/bin/plutil -lint "$agent_target" >/dev/null
 
 /bin/launchctl bootstrap "gui/$service_uid" "$agent_target"
@@ -97,8 +109,7 @@ done
 
 echo "waiting for the login-session Apple container API server..."
 for attempt in {1..60}; do
-  if /bin/launchctl asuser "$service_uid" /usr/bin/sudo -u "$service_user" \
-      /usr/local/bin/container system status --format json >/dev/null 2>&1; then
+  if /usr/local/bin/container system status --format json >/dev/null 2>&1; then
     echo "installed persistent Apple container launch agent for $service_user"
     exit 0
   fi

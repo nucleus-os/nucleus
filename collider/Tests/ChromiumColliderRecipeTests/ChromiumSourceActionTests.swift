@@ -22,6 +22,7 @@ import Testing
     let dawn = chromium.appendingPathComponent("third_party/dawn")
     let depot = directory.appendingPathComponent("depot_tools")
     let lockFile = directory.appendingPathComponent("source.lock.json")
+    let linuxHostCIPDAdapter = directory.appendingPathComponent("cipd")
     let environment = [
         "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
         "GIT_AUTHOR_NAME": "Collider Test",
@@ -30,6 +31,12 @@ import Testing
         "GIT_COMMITTER_EMAIL": "collider@example.invalid",
     ]
     let runtime = ColliderRuntime()
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    try Data("#!/bin/sh\n".utf8).write(to: linuxHostCIPDAdapter)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: linuxHostCIPDAdapter.path)
     func git(_ repository: URL) async throws -> (commit: String, tree: String) {
         try FileManager.default.createDirectory(
             at: repository, withIntermediateDirectories: true)
@@ -82,16 +89,48 @@ import Testing
         "chrome/build/pgo_profiles/\(pgoName)")
     let pgoDescriptor = chromium.appendingPathComponent(
         "chrome/build/linux.pgo.txt")
-    let v8PGO = v8.appendingPathComponent(
+    let v8X86PGO = v8.appendingPathComponent(
         "tools/builtins-pgo/profiles/x64.profile")
-    for file in [pgo, pgoDescriptor, v8PGO] {
+    let linuxClang = chromium.appendingPathComponent(
+        "third_party/llvm-build/Linux_x64/bin/clang")
+    let linuxGN = chromium.appendingPathComponent("buildtools/linux64/gn")
+    let linuxNinja = chromium.appendingPathComponent("third_party/ninja/ninja")
+    let linuxSiso = chromium.appendingPathComponent("third_party/siso/cipd/siso")
+    let linuxRollup = chromium.appendingPathComponent(
+        "third_party/devtools-frontend/src/node_modules/@rollup/"
+            + "rollup-linux-x64-gnu/rollup-linux-x64-gnu.node")
+    let amd64Sysroot = chromium.appendingPathComponent(
+        "build/linux/debian_bullseye_amd64-sysroot/.stamp")
+    let arm64Sysroot = chromium.appendingPathComponent(
+        "build/linux/debian_bullseye_arm64-sysroot/.stamp")
+    let sysrootsConfiguration = chromium.appendingPathComponent(
+        "build/linux/sysroot_scripts/sysroots.json")
+    for file in [
+        pgo, pgoDescriptor, v8X86PGO, linuxClang, linuxGN, linuxNinja, linuxSiso,
+        linuxRollup, amd64Sysroot, arm64Sysroot, sysrootsConfiguration,
+    ] {
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(),
             withIntermediateDirectories: true)
     }
     try Data("profile".utf8).write(to: pgo)
     try Data("\(pgoName)\n".utf8).write(to: pgoDescriptor)
-    try Data("v8 profile".utf8).write(to: v8PGO)
+    try Data("v8 x86 profile".utf8).write(to: v8X86PGO)
+    try Data("linux clang".utf8).write(to: linuxClang)
+    try Data("linux arm64 gn".utf8).write(to: linuxGN)
+    try Data("linux arm64 ninja".utf8).write(to: linuxNinja)
+    try Data("linux x86 siso".utf8).write(to: linuxSiso)
+    try Data("linux x86 rollup".utf8).write(to: linuxRollup)
+    try Data("amd64 sysroot".utf8).write(to: amd64Sysroot)
+    try Data("arm64 sysroot".utf8).write(to: arm64Sysroot)
+    try Data(
+        """
+        {
+          "bullseye_amd64": {"SysrootDir": "debian_bullseye_amd64-sysroot"},
+          "bullseye_arm64": {"SysrootDir": "debian_bullseye_arm64-sysroot"}
+        }
+        """.utf8
+    ).write(to: sysrootsConfiguration)
     let v8Revision = try await git(v8)
     let deps = chromium.appendingPathComponent("DEPS")
     try Data("deps fixture".utf8).write(to: deps)
@@ -119,6 +158,8 @@ import Testing
     let sourceLock = ChromiumSourceLock(
         cefBranch: "fixture",
         chromiumVersion: "1.2.3.4",
+        buildHostPlatform: "linux-x86_64",
+        devtoolsRollupPlatform: "linux-x64-gnu",
         repositories: repositories,
         depotTools: ChromiumDepotToolsLock(
             remote: "https://example.invalid/depot_tools.git",
@@ -150,8 +191,28 @@ import Testing
         "v8BuiltinsPGO": [
             "name": "x64.profile",
             "sha256": try ArtifactHasher.digest(
-                file: FilePath(v8PGO.path)
+                file: FilePath(v8X86PGO.path)
             ).description,
+        ],
+        "linuxClang": [
+            "name": "clang",
+            "sha256": try ArtifactHasher.digest(
+                file: FilePath(linuxClang.path)
+            ).description,
+        ],
+        "linuxSysroots": [
+            [
+                "name": "amd64",
+                "sha256": try ArtifactHasher.digest(
+                    file: FilePath(amd64Sysroot.path)
+                ).description,
+            ],
+            [
+                "name": "arm64",
+                "sha256": try ArtifactHasher.digest(
+                    file: FilePath(arm64Sysroot.path)
+                ).description,
+            ],
         ],
     ]
     try JSONSerialization.data(
@@ -182,6 +243,8 @@ import Testing
                         sourceGenerations: FilePath(generations.path),
                         current: FilePath(current.path),
                         depotTools: FilePath(depot.path),
+                        linuxHostCIPDAdapter: FilePath(
+                            linuxHostCIPDAdapter.path),
                         sourceLockFile: FilePath(lockFile.path),
                         sourceLock: sourceLock,
                         environment: environment))))

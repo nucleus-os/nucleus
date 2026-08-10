@@ -1,6 +1,8 @@
 {
   "cefBranch": "7922",
   "chromiumVersion": "151.0.7922.19",
+  "buildHostPlatform": "linux-x86_64",
+  "devtoolsRollupPlatform": "linux-x64-gnu",
   "repositories": [
     {
       "checkoutPath": "chromium/src",

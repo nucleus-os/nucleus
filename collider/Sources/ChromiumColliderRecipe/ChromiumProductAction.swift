@@ -8,9 +8,9 @@ package struct BuildChromiumProductAction: ColliderAction {
 
         package func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: build.product.rawValue)
-            encoder.append(tag: 2, string: build.sourceRoot.string)
-            encoder.append(tag: 3, string: build.output.string)
-            encoder.append(tag: 4, string: build.depotTools.string)
+            encoder.append(tag: 2, string: build.target.architecture.rawValue)
+            encoder.append(tag: 3, string: build.sourceRoot.string)
+            encoder.append(tag: 4, string: build.buildManifest.string)
             encoder.append(tag: 5, string: build.containerImageID.string)
             encoder.append(tag: 6, string: build.gnArguments ?? "")
             var targets = CanonicalDigestEncoder(
@@ -20,6 +20,14 @@ package struct BuildChromiumProductAction: ColliderAction {
             }
             encoder.append(tag: 7, bytes: targets.bytes)
             encoder.append(tag: 8, integer: UInt64(build.jobs))
+            encoder.append(tag: 9, string: build.outputWorkspace.identity.key)
+            encoder.append(tag: 10, integer: build.outputWorkspace.capacityBytes)
+            encoder.append(
+                tag: 11,
+                string: build.compilerCacheWorkspace.identity.key)
+            encoder.append(
+                tag: 12,
+                integer: build.compilerCacheWorkspace.capacityBytes)
         }
     }
 
@@ -38,15 +46,22 @@ package struct BuildChromiumProductAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(build.sourceRoot)),
-                ActionEffect(.read, scope: .input(build.depotTools)),
                 ActionEffect(.read, scope: .input(build.containerImageID)),
-                ActionEffect(.readWrite, scope: .scratch(inputRoot)),
-                ActionEffect(.readWrite, scope: .scratch(build.output)),
-                ActionEffect(.readWrite, scope: .scratch(temporaryDirectory)),
+                ActionEffect(.readWrite, scope: .scratch(build.inputRoot)),
+                ActionEffect(.readWrite, scope: .scratch(build.buildManifest)),
             ],
-            lane: .hostExclusive,
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.outputWorkspace,
+                    target: "/build",
+                    access: .readWrite),
+                ActionPersistentWorkspaceEffect(
+                    workspace: build.compilerCacheWorkspace,
+                    target: "/ccache",
+                    access: .readWrite),
+            ],
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: .linuxX86_64)
+            artifactTarget: build.target.artifactTarget)
     }
 
     package func execute(in context: ActionContext) async throws {
@@ -57,70 +72,55 @@ package struct BuildChromiumProductAction: ColliderAction {
             throw failure(
                 "Chromium source manifest is missing: \(sourceManifest)")
         }
-        let commandEnvironment = chromiumEnvironment
         let gnArguments = try stagedGNArguments(files: context.files)
         try await context.containers.run(
             containerExecution(command: ["configure", gnArguments]))
 
-        let expected = build.output.appending(
-            ".nucleus-expected-build.json")
-        let built = build.output.appending(".nucleus-built-build.json")
         let manifest = try await buildManifest(
             sourceManifest: sourceManifest,
-            environment: commandEnvironment,
             context: context)
-        try context.files.write(try encodedJSON(manifest), to: expected)
         try await context.containers.run(
             containerExecution(
                 command: ["build", String(build.jobs)] + build.targets))
-        try context.files.copy(from: expected, to: built)
-
         let verification = try await buildManifest(
             sourceManifest: sourceManifest,
-            environment: commandEnvironment,
             context: context)
-        let recorded = try JSONDecoder().decode(
-            ChromiumBuildManifest.self,
-            from: Data(context.files.read(built)))
-        guard recorded == verification else {
+        guard manifest == verification else {
             throw failure(
-                "Chromium build metadata changed during the build: \(built)")
+                "Chromium build metadata changed during the build")
         }
+        try context.files.write(
+            try encodedJSON(manifest),
+            to: build.buildManifest)
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {
-        let built = build.output.appending(".nucleus-built-build.json")
-        guard try files.metadata(for: built)?.type == .regular else {
-            throw failure("Chromium build manifest is missing: \(built)")
+        guard try files.metadata(for: build.buildManifest)?.type == .regular else {
+            throw failure(
+                "Chromium build manifest is missing: \(build.buildManifest)")
         }
         _ = try JSONDecoder().decode(
             ChromiumBuildManifest.self,
-            from: Data(files.read(built)))
+            from: Data(files.read(build.buildManifest)))
     }
 
     private var chromium: FilePath {
         build.sourceRoot.appending("chromium/src")
     }
 
-    private var inputRoot: FilePath {
-        build.output.removingLastComponent().appending(".inputs")
-    }
-
-    private var temporaryDirectory: FilePath {
-        build.output.removingLastComponent().appending(".temporary")
-    }
-
     private var chromiumEnvironment: [String: String] {
         var value = build.environment
-        value["PATH"] =
-            build.depotTools.string + ":"
-            + (value["PATH"] ?? "/usr/bin:/bin")
-        value["DEPOT_TOOLS_UPDATE"] = "0"
+        value["CCACHE_DIR"] = "/ccache"
+        value["CCACHE_MAXSIZE"] = "30G"
+        value["CCACHE_COMPILERCHECK"] = "content"
         return value
     }
 
     private func stagedGNArguments(files: ActionFileSystem) throws -> String {
-        try files.createDirectory(inputRoot)
+        try files.createDirectory(build.inputRoot)
+        guard build.target.architecture == .x86_64 else {
+            return build.gnArguments ?? ""
+        }
         let descriptor = chromium.appending("chrome/build/linux.pgo.txt")
         guard try files.metadata(for: descriptor)?.type == .regular else {
             return build.gnArguments ?? ""
@@ -134,7 +134,7 @@ package struct BuildChromiumProductAction: ColliderAction {
         guard try files.metadata(for: source)?.type == .regular else {
             throw failure("Chromium PGO profile is missing: \(source)")
         }
-        let destination = inputRoot.appending("chrome.profdata")
+        let destination = build.inputRoot.appending("chrome.profdata")
         let sourceDigest = try files.digest(file: source)
         let destinationDigest = try? files.digest(file: destination)
         if destinationDigest != sourceDigest {
@@ -150,7 +150,7 @@ package struct BuildChromiumProductAction: ColliderAction {
     ) -> OCIExecution {
         OCIExecution(
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: .linuxX86_64,
+            artifactTarget: build.target.artifactTarget,
             imageID: build.containerImageID,
             hostname: "chromium-build",
             workingDirectory: "/source/chromium/src",
@@ -161,25 +161,21 @@ package struct BuildChromiumProductAction: ColliderAction {
                     target: "/source",
                     access: .readOnly),
                 OCIMount(
-                    source: build.depotTools,
-                    target: "/depot_tools",
-                    access: .readOnly),
-                OCIMount(
-                    source: inputRoot,
+                    source: build.inputRoot,
                     target: "/inputs",
                     access: .readOnly),
-                OCIMount(
-                    source: build.output,
-                    target: "/build",
-                    access: .readWrite),
             ],
-            temporaryDirectory: temporaryDirectory,
+            persistentWorkspaceMounts: [
+                build.outputMount,
+                build.compilerCacheMount,
+            ],
+            temporaryDirectory: nil,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
             intelBinaryTranslationPolicy: .required,
-            resourceLimits: .build,
+            resourceLimits: .parallelBuild,
             containerEnvironment: [
                 "DEPOT_TOOLS_UPDATE": "0",
                 "HOME": "/tmp/nucleus-home",
@@ -189,13 +185,12 @@ package struct BuildChromiumProductAction: ColliderAction {
                 "TZ": "UTC",
             ],
             command: command,
-            environment: build.environment,
+            environment: chromiumEnvironment,
             output: output)
     }
 
     private func buildManifest(
         sourceManifest: FilePath,
-        environment: [String: String],
         context: ActionContext
     ) async throws -> ChromiumBuildManifest {
         let sourceObject = try JSONSerialization.jsonObject(
@@ -209,7 +204,7 @@ package struct BuildChromiumProductAction: ColliderAction {
                     + sourceManifest.string)
         }
         let clang = chromium.appending(
-            "third_party/llvm-build/Release+Asserts/bin/clang")
+            "\(chromiumLinuxClangRoot)/bin/clang")
         guard try context.files.metadata(for: clang)?.type == .regular else {
             throw failure("Chromium clang is missing: \(clang)")
         }
@@ -224,14 +219,21 @@ package struct BuildChromiumProductAction: ColliderAction {
         else {
             throw failure("could not identify Chromium clang: \(clang)")
         }
-        let args = build.output.appending("args.gn")
-        let normalizedArguments = try text(at: args, files: context.files)
+        let argumentsResult = try await context.containers.execute(
+            containerExecution(
+                command: ["gn-args"],
+                output: .captured(limit: 4 * 1_024 * 1_024)))
+        guard argumentsResult.status == 0 else {
+            throw failure("could not read resolved Chromium GN arguments")
+        }
+        let normalizedArguments = argumentsResult.standardOutput
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
             .sorted()
         let identity = ChromiumBuildIdentity(
             product: build.product.rawValue,
+            architecture: build.target.architecture.rawValue,
             sourceID: sourceID,
             sourceManifestSHA256: try context.files.digest(
                 file: sourceManifest
@@ -242,7 +244,8 @@ package struct BuildChromiumProductAction: ColliderAction {
             pgo: try pgoProfile(files: context.files),
             v8BuiltinsPGO: try optionalProfile(
                 chromium.appending(
-                    "v8/tools/builtins-pgo/profiles/x64.profile"),
+                    "v8/tools/builtins-pgo/profiles/"
+                        + chromiumV8BuiltinsPGOProfile),
                 files: context.files))
         let digest = ArtifactDigest.sha256(try encodedJSON(identity))
         return ChromiumBuildManifest(
@@ -253,6 +256,7 @@ package struct BuildChromiumProductAction: ColliderAction {
     private func pgoProfile(
         files: ActionFileSystem
     ) throws -> ChromiumProfileIdentity? {
+        guard build.target.architecture == .x86_64 else { return nil }
         let descriptor = chromium.appending("chrome/build/linux.pgo.txt")
         guard try files.metadata(for: descriptor)?.type == .regular else {
             return nil
@@ -304,6 +308,7 @@ private struct ChromiumProfileIdentity: Codable, Equatable {
 
 private struct ChromiumBuildIdentity: Codable, Equatable {
     let product: String
+    let architecture: String
     let sourceID: String
     let sourceManifestSHA256: String
     let gnArguments: [String]

@@ -7,11 +7,13 @@ let chromiumToolResourceLimits = OCIResourceLimits(
     processCount: 4_096)
 
 func chromiumToolExecution(
+    target: ChromiumLinuxTarget,
     imageID: FilePath,
     hostname: String,
     workingDirectory: String,
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
+    persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
     temporaryDirectory: FilePath,
     command: [String],
     environment: [String: String],
@@ -19,17 +21,19 @@ func chromiumToolExecution(
 ) -> OCIExecution {
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxX86_64,
+        artifactTarget: target.artifactTarget,
         imageID: imageID,
         hostname: hostname,
         workingDirectory: workingDirectory,
         hostWorkingDirectory: hostWorkingDirectory,
         mounts: mounts,
+        persistentWorkspaceMounts: persistentWorkspaceMounts,
         temporaryDirectory: temporaryDirectory,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
+        // Chromium's Linux clang bundle and some checked-in tools remain x86_64.
         intelBinaryTranslationPolicy: .required,
         resourceLimits: chromiumToolResourceLimits,
         containerEnvironment: [

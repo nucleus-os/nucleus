@@ -24,6 +24,10 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
         contract.appleContainer.commit
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
+    #expect(
+        contract.launchd.starterRelativePath
+            == "Library/Application Support/Nucleus/bin/container-system-start")
+    #expect(contract.launchd.maximumOpenFileCount == 245_760)
     #expect(contract.environment.buildRoot == "/Volumes/NucleusBuild")
     #expect(contract.environment.xdgCacheHome == "/Volumes/NucleusCache")
     #expect(
@@ -102,13 +106,36 @@ func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
         contentsOf: root.appendingPathComponent(
             "tools/macos-builder/com.nucleus.container-system-start.plist.in"),
         encoding: .utf8)
-    let rendered =
-        template
+    let starterPath =
+        "/Users/builder/Library/Application Support/Nucleus/bin/container-system-start"
+    let rendered = template.replacingOccurrences(
+        of: "NUCLEUS_CONTAINER_STARTER_PATH",
+        with: starterPath)
 
     #expect(
         MacOSBuilderDoctor.persistentServiceDetail(
-            Data(rendered.utf8), contract: contract)
+            Data(rendered.utf8),
+            launchdOutput: """
+                resource limits = {
+                    maxfiles (soft) => 245760
+                    maxfiles (hard) => 245760
+                }
+                """,
+            starterPath: starterPath,
+            contract: contract)
             == "login-session/com.nucleus.container-system-start")
+
+    #expect(
+        MacOSBuilderDoctor.persistentServiceDetail(
+            Data(rendered.utf8),
+            launchdOutput: """
+                resource limits = {
+                    maxfiles (soft) => 65536
+                    maxfiles (hard) => 65536
+                }
+                """,
+            starterPath: starterPath,
+            contract: contract) == nil)
 }
 
 @Test

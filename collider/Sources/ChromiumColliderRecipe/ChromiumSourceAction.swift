@@ -16,6 +16,15 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             encoder.append(tag: 7, string: preparation.sourceLock.cefBranch)
             encoder.append(tag: 8, string: preparation.sourceLock.chromiumVersion)
             encoder.append(
+                tag: 12,
+                string: preparation.sourceLock.buildHostPlatform)
+            encoder.append(
+                tag: 13,
+                string: preparation.linuxHostCIPDAdapter.string)
+            encoder.append(
+                tag: 14,
+                string: preparation.sourceLock.devtoolsRollupPlatform)
+            encoder.append(
                 tag: 9,
                 string: preparation.sourceLock.depotTools.remote)
             encoder.append(
@@ -63,6 +72,10 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                     "gclient",
                     executable: .taskOutput(preparation.depotTools.appending("gclient")),
                     role: .operational),
+                ActionToolRequirement(
+                    "linux-host-cipd-adapter",
+                    executable: .path(preparation.linuxHostCIPDAdapter),
+                    role: .semantic),
             ],
             effects: [
                 ActionEffect(
@@ -103,19 +116,13 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         try context.files.createDirectory(preparation.sourceGenerations)
         let candidate = preparation.sourceGenerations.appending(
             ".\(preparation.sourceID).preparing")
-        try context.files.remove(candidate)
         try context.files.createDirectory(candidate)
-        var succeeded = false
-        defer {
-            if !succeeded { try? context.files.remove(candidate) }
-        }
 
         let sourceEnvironment = actionEnvironment
         let chromiumRepository = try lockedRepository(named: "chromium")
         let cefRepository = try lockedRepository(named: "cef")
         let chromiumRoot = candidate.appending("chromium")
         let chromium = candidate.appending(chromiumRepository.checkoutPath)
-
         try await checkout(
             chromiumRepository,
             at: chromium,
@@ -130,24 +137,10 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 return "    '\(path)': '\($0.remote)@\($0.commit)',"
             }
             .joined(separator: "\n")
-        let gclientConfiguration =
-            """
-            solutions = [{
-              'managed': False,
-              'name': 'src',
-              'url': '\(chromiumRepository.remote)',
-              'custom_vars': {
-                'checkout_pgo_profiles': True,
-                'source_tarball': False,
-                'siso_version': 'latest',
-              },
-              'custom_deps': {
-            \(dependencyOverrides)
-              },
-              'deps_file': 'DEPS',
-              'safesync_url': '',
-            }]
-            """
+        let gclientConfiguration = makeGclientConfiguration(
+            chromiumRepository: chromiumRepository,
+            dependencyOverrides: dependencyOverrides,
+            linuxX8664HostTools: false)
         try context.files.write(
             Array(gclientConfiguration.utf8),
             to: chromiumRoot.appending(".gclient"))
@@ -175,7 +168,7 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             in: chromiumRoot,
             environment: sourceEnvironment,
             context: context)
-        try await ensureProfiles(
+        try await ensureMacOSHostClang(
             chromium: chromium,
             environment: sourceEnvironment,
             context: context)
@@ -189,6 +182,55 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             .named("python3"),
             ["tools/version_manager.py", "-c"],
             in: chromium.appending("cef"),
+            environment: sourceEnvironment,
+            context: context)
+        let linuxHostGclientConfiguration = makeGclientConfiguration(
+            chromiumRepository: chromiumRepository,
+            dependencyOverrides: dependencyOverrides,
+            linuxX8664HostTools: true)
+        try context.files.write(
+            Array(linuxHostGclientConfiguration.utf8),
+            to: chromiumRoot.appending(".gclient"))
+        var linuxHostEnvironment = sourceEnvironment
+        linuxHostEnvironment["PATH"] =
+            preparation.linuxHostCIPDAdapter.removingLastComponent().string
+            + ":" + (sourceEnvironment["PATH"] ?? "/usr/bin:/bin")
+        linuxHostEnvironment["NUCLEUS_REAL_CIPD"] =
+            preparation.depotTools.appending("cipd").string
+        try await requireSuccess(
+            .taskOutput(preparation.depotTools.appending("gclient")),
+            [
+                "sync", "--nohooks", "--no-history",
+                "--revision", "src@\(chromiumRepository.commit)",
+            ],
+            in: chromiumRoot,
+            environment: linuxHostEnvironment,
+            context: context)
+        try await requireSuccess(
+            .named("python3"),
+            ["scripts/deps/sync_rollup_libs.py"],
+            in: chromium.appending("third_party/devtools-frontend/src"),
+            environment: sourceEnvironment,
+            context: context)
+        try await requireSuccess(
+            .named("python3"),
+            [
+                "tools/clang/scripts/update.py",
+                "--host-os=linux",
+                "--output-dir=\(chromiumLinuxClangRoot)",
+            ],
+            in: chromium,
+            environment: sourceEnvironment,
+            context: context)
+        for architecture in ["amd64", "arm64"] {
+            try await ensureSysroot(
+                architecture: architecture,
+                chromium: chromium,
+                environment: sourceEnvironment,
+                context: context)
+        }
+        try await ensureProfiles(
+            chromium: chromium,
             environment: sourceEnvironment,
             context: context)
 
@@ -210,7 +252,6 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             candidate: candidate,
             generation: preparation.sourceRoot,
             active: preparation.current)
-        succeeded = true
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {
@@ -222,6 +263,13 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         _ = try JSONDecoder().decode(
             ChromiumSourceProvenance.self,
             from: Data(files.read(provenance)))
+        let rollup = preparation.sourceRoot.appending(
+            "chromium/src/third_party/devtools-frontend/src/node_modules/@rollup/"
+                + "rollup-\(preparation.sourceLock.devtoolsRollupPlatform)/"
+                + "rollup-\(preparation.sourceLock.devtoolsRollupPlatform).node")
+        guard try isNonEmptyFile(rollup, files: files) else {
+            throw failure("Chromium Linux Rollup host module is missing: \(rollup)")
+        }
         guard
             try files.metadataWithoutFollowingSymlinks(
                 for: preparation.current)?.type == .symbolicLink,
@@ -245,6 +293,39 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             + (value["PATH"] ?? "/usr/bin:/bin")
         value["DEPOT_TOOLS_UPDATE"] = "0"
         return value
+    }
+
+    private func makeGclientConfiguration(
+        chromiumRepository: ChromiumSourceRepository,
+        dependencyOverrides: String,
+        linuxX8664HostTools: Bool
+    ) -> String {
+        var lines = [
+            "target_os = ['linux']",
+            "target_os_only = True",
+            "solutions = [{",
+            "  'managed': False,",
+            "  'name': 'src',",
+            "  'url': '\(chromiumRepository.remote)',",
+            "  'custom_vars': {",
+            "    'checkout_pgo_profiles': True,",
+        ]
+        if linuxX8664HostTools {
+            lines.append("    'host_os': 'linux',")
+            lines.append("    'host_cpu': 'x64',")
+        }
+        lines.append(contentsOf: [
+            "    'source_tarball': False,",
+            "    'siso_version': 'latest',",
+            "  },",
+            "  'custom_deps': {",
+            dependencyOverrides,
+            "  },",
+            "  'deps_file': 'DEPS',",
+            "  'safesync_url': '',",
+            "}]",
+        ])
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private func checkout(
@@ -315,37 +396,35 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             environment: environment,
             context: context)
 
+        let checkoutExists =
+            try context.files.metadata(for: destination.appending(".git")) != nil
         try context.files.createDirectory(destination.removingLastComponent())
-        try await requireGitSuccess(
-            ["init", destination.string],
-            in: destination.removingLastComponent(),
-            environment: environment,
-            context: context)
-        try context.files.write(
-            Array("\(cache.appending("objects"))\n".utf8),
-            to: destination.appending(".git/objects/info/alternates"))
-        let cacheShallow = cache.appending("shallow")
-        if try context.files.metadata(for: cacheShallow) != nil {
-            try context.files.copy(
-                from: cacheShallow,
-                to: destination.appending(".git/shallow"))
+        if !checkoutExists {
+            try await requireGitSuccess(
+                ["init", destination.string],
+                in: destination.removingLastComponent(),
+                environment: environment,
+                context: context)
+            try context.files.write(
+                Array("\(cache.appending("objects"))\n".utf8),
+                to: destination.appending(".git/objects/info/alternates"))
+            let cacheShallow = cache.appending("shallow")
+            if try context.files.metadata(for: cacheShallow) != nil {
+                try context.files.copy(
+                    from: cacheShallow,
+                    to: destination.appending(".git/shallow"))
+            }
         }
-        try await requireGitSuccess(
-            [
-                "-C", destination.string, "remote", "add", "origin",
-                repository.remote,
-            ],
-            in: destination,
-            environment: environment,
-            context: context)
-        try await requireGitSuccess(
-            [
-                "-C", destination.string, "remote", "add", "upstream",
-                repository.upstreamRemote,
-            ],
-            in: destination,
-            environment: environment,
-            context: context)
+        for (name, remote) in [
+            ("origin", repository.remote),
+            ("upstream", repository.upstreamRemote),
+        ] {
+            try await requireGitSuccess(
+                ["-C", destination.string, "config", "remote.\(name).url", remote],
+                in: destination,
+                environment: environment,
+                context: context)
+        }
         try await requireGitSuccess(
             [
                 "-C", destination.string, "checkout", "--detach",
@@ -361,6 +440,21 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         provenance: FilePath,
         context: ActionContext
     ) async throws {
+        let chromium = sourceRoot.appending("chromium/src")
+        for executable in [
+            chromium.appending("buildtools/linux64/gn"),
+            chromium.appending("third_party/ninja/ninja"),
+            chromium.appending("third_party/siso/cipd/siso"),
+            chromium.appending(
+                "third_party/devtools-frontend/src/node_modules/@rollup/"
+                    + "rollup-\(preparation.sourceLock.devtoolsRollupPlatform)/"
+                    + "rollup-\(preparation.sourceLock.devtoolsRollupPlatform).node"),
+        ] {
+            guard try isNonEmptyFile(executable, files: context.files) else {
+                throw failure(
+                    "Chromium Linux host tool is missing: " + executable.string)
+            }
+        }
         let actual = try JSONDecoder().decode(
             ChromiumSourceProvenance.self,
             from: Data(context.files.read(provenance)))
@@ -373,6 +467,31 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 "Chromium source provenance does not match its checkout: "
                     + provenance.string)
         }
+    }
+
+    private func ensureMacOSHostClang(
+        chromium: FilePath,
+        environment: [String: String],
+        context: ActionContext
+    ) async throws {
+        let root = chromium.appending("third_party/llvm-build/Release+Asserts")
+        let clang = root.appending("bin/clang")
+        let magic =
+            try context.files.metadata(for: clang) == nil
+            ? [] : context.files.readPrefix(clang, count: 4)
+        let isMachO =
+            magic == [0xcf, 0xfa, 0xed, 0xfe]
+            || magic == [0xca, 0xfe, 0xba, 0xbe]
+            || magic == [0xca, 0xfe, 0xba, 0xbf]
+            || magic == [0xbe, 0xba, 0xfe, 0xca]
+        guard !isMachO else { return }
+        try context.files.remove(root)
+        try await requireSuccess(
+            .named("python3"),
+            ["tools/clang/scripts/update.py", "--host-os=mac-arm64"],
+            in: chromium,
+            environment: environment,
+            context: context)
     }
 
     private func sourceProvenance(
@@ -440,8 +559,19 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 files: context.files),
             v8BuiltinsPGO: try fileIdentity(
                 chromium.appending(
-                    "v8/tools/builtins-pgo/profiles/x64.profile"),
-                files: context.files))
+                    "v8/tools/builtins-pgo/profiles/"
+                        + chromiumV8BuiltinsPGOProfile),
+                files: context.files),
+            linuxClang: try fileIdentity(
+                chromium.appending(
+                    "\(chromiumLinuxClangRoot)/bin/clang"),
+                files: context.files),
+            linuxSysroots: try ["amd64", "arm64"].map {
+                try sysrootIdentity(
+                    architecture: $0,
+                    chromium: chromium,
+                    files: context.files)
+            })
     }
 
     private func ensureProfiles(
@@ -473,7 +603,8 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             throw failure("Chromium PGO profile is missing: \(profile)")
         }
         let v8Profile = chromium.appending(
-            "v8/tools/builtins-pgo/profiles/x64.profile")
+            "v8/tools/builtins-pgo/profiles/"
+                + chromiumV8BuiltinsPGOProfile)
         if try !isNonEmptyFile(v8Profile, files: context.files) {
             try await requireSuccess(
                 .named("python3"),
@@ -489,6 +620,75 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         guard try isNonEmptyFile(v8Profile, files: context.files) else {
             throw failure("V8 builtins PGO profile is missing: \(v8Profile)")
         }
+    }
+
+    private func sysrootIdentity(
+        architecture: String,
+        chromium: FilePath,
+        files: ActionFileSystem
+    ) throws -> ChromiumSourceFileIdentity {
+        let stamp = try sysrootStamp(
+            architecture: architecture,
+            chromium: chromium,
+            files: files)
+        return ChromiumSourceFileIdentity(
+            name: architecture,
+            sha256: try files.digest(file: stamp).description)
+    }
+
+    private func ensureSysroot(
+        architecture: String,
+        chromium: FilePath,
+        environment: [String: String],
+        context: ActionContext
+    ) async throws {
+        if let stamp = try? sysrootStamp(
+            architecture: architecture,
+            chromium: chromium,
+            files: context.files),
+            try isNonEmptyFile(stamp, files: context.files)
+        {
+            return
+        }
+        try await requireSuccess(
+            .named("python3"),
+            [
+                "build/linux/sysroot_scripts/install-sysroot.py",
+                "--arch=\(architecture)",
+            ],
+            in: chromium,
+            environment: environment,
+            context: context)
+        _ = try sysrootStamp(
+            architecture: architecture,
+            chromium: chromium,
+            files: context.files)
+    }
+
+    private func sysrootStamp(
+        architecture: String,
+        chromium: FilePath,
+        files: ActionFileSystem
+    ) throws -> FilePath {
+        let linux = chromium.appending("build/linux")
+        let configuration = linux.appending("sysroot_scripts/sysroots.json")
+        let descriptors = try JSONDecoder().decode(
+            [String: ChromiumSysrootDescriptor].self,
+            from: Data(files.read(configuration)))
+        let suffix = "_\(architecture)-sysroot"
+        let matches: [FilePath] = try descriptors.values.compactMap { descriptor in
+            guard descriptor.directory.hasSuffix(suffix) else { return nil }
+            let stamp = linux.appending(descriptor.directory).appending(".stamp")
+            guard try files.metadata(for: stamp)?.type == .regular else {
+                return nil
+            }
+            return stamp
+        }
+        guard matches.count == 1, let match = matches.first else {
+            throw failure(
+                "expected one Chromium Linux \(architecture) sysroot stamp")
+        }
+        return match
     }
 
     private func gitValue(
@@ -623,6 +823,16 @@ private struct ChromiumSourceProvenance: Codable, Equatable {
     let gclientGraphSHA256: String
     let pgo: ChromiumSourceFileIdentity
     let v8BuiltinsPGO: ChromiumSourceFileIdentity
+    let linuxClang: ChromiumSourceFileIdentity
+    let linuxSysroots: [ChromiumSourceFileIdentity]
+}
+
+private struct ChromiumSysrootDescriptor: Decodable {
+    let directory: String
+
+    private enum CodingKeys: String, CodingKey {
+        case directory = "SysrootDir"
+    }
 }
 
 private struct ChromiumRepositoryProvenance: Codable, Equatable {
