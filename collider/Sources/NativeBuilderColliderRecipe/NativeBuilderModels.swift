@@ -57,17 +57,20 @@ package struct NativeLinuxTarget: Hashable, Sendable {
 /// image is required to produce that SDK.
 package struct NativeOCIBaseConfiguration: Sendable {
     package let context: FilePath
+    package let dependencyImage: ArtifactReference<FileArtifact>
     package let image: ArtifactReference<FileArtifact>
     package let ccache: FilePath
     package let environment: [String: String]
 
     package init(
         context: FilePath,
+        dependencyImage: ArtifactReference<FileArtifact>,
         image: ArtifactReference<FileArtifact>,
         ccache: FilePath,
         environment: [String: String]
     ) {
         self.context = context
+        self.dependencyImage = dependencyImage
         self.image = image
         self.ccache = ccache
         self.environment = environment
@@ -92,6 +95,9 @@ package struct NativeOCIConfiguration: Sendable {
     }
 
     package var context: FilePath { base.context }
+    package var dependencyImage: ArtifactReference<FileArtifact> {
+        base.dependencyImage
+    }
     package var image: ArtifactReference<FileArtifact> { base.image }
     package var imageID: FilePath { base.imageID }
     package var ccache: FilePath { base.ccache }

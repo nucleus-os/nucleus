@@ -1,8 +1,8 @@
 # Chromium builder
 
-This rootless Apple container image is the sole Linux environment for building,
-packaging, and automatically validating CEF and Nucleus Browser for Linux arm64
-and x86_64.
+These rootless Apple container images are the sole Linux environment for
+building, packaging, and automatically validating CEF and Nucleus Browser for
+Linux arm64 and x86_64.
 
 Collider prepares the exact source graph, official Linux x86_64 build-host
 tools, `depot_tools`, Chromium Linux clang, both target sysroots, PGO profiles,
@@ -14,12 +14,16 @@ output at `/build` and ccache at `/ccache`; final artifacts cross back to the
 host only through bounded candidate mounts.
 
 `Dependencies.Containerfile` defines the stable, content-addressed dependency
-image. Collider adds `entrypoint.sh` in a separate thin image layer based on the
-exact local dependency-image digest. Editing orchestration code therefore does
-not reinstall the Linux package closure or rebuild the tool environment.
+image. Collider derives two independent thin images from that exact local
+digest: `build-entrypoint.sh` owns source materialization, configuration,
+compilation, linking, and build tests; `artifact-entrypoint.sh` owns staging, packaging,
+archiving, and artifact validation. Artifact-tool changes cannot invalidate a
+product build, and neither thin image reinstalls the shared Linux package
+closure.
 
 The VM remains arm64. Chromium's official x86_64 Linux host tools use macOS 27
 Intel binary translation. Target binaries are generated against their matching
-Chromium sysroot. Automated validation executes arm64 artifacts natively and
-x86_64 artifacts through the same translation facility with their explicit
-target loader and libraries.
+Chromium sysroot. Automated validation executes arm64 artifacts natively. CEF's
+x86_64 consumer link, ELF architecture, and direct dependency closure are
+validated statically because Apple's translated loader cannot process CEF's
+otherwise-valid, unusually large dynamic relocation table.

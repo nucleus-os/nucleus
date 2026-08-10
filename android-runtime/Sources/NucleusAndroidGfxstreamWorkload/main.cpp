@@ -37,14 +37,13 @@
 
 namespace {
 
-std::string guestICDPath() {
-    const char *buildRoot = std::getenv("NUCLEUS_GFXSTREAM_BUILD_ROOT");
-    if (!buildRoot || buildRoot[0] == '\0') {
+std::string guestLibraryPath() {
+    const char *libraryPath = std::getenv("NUCLEUS_GFXSTREAM_GUEST_LIBRARY");
+    if (!libraryPath || libraryPath[0] == '\0') {
         throw std::runtime_error(
-            "NUCLEUS_GFXSTREAM_BUILD_ROOT is required to locate the guest ICD");
+            "NUCLEUS_GFXSTREAM_GUEST_LIBRARY is required to locate the guest ICD");
     }
-    return std::string(buildRoot) +
-        "/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so";
+    return libraryPath;
 }
 
 constexpr uint32_t kInitialWidth = 64;
@@ -2217,7 +2216,7 @@ int runBrokerWorker(int controlDescriptor) {
         traceStage("broker-worker.create-renderer.complete");
 
         traceStage("broker-worker.load-icd.begin");
-        const std::string icdPath = guestICDPath();
+        const std::string icdPath = guestLibraryPath();
         void *icdHandle =
             dlopen(icdPath.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (!icdHandle) {
@@ -2609,7 +2608,7 @@ int main(int argc, char **argv) {
         traceStage("failure-paths.host-import.complete");
 
         traceStage("guest.load-icd.begin");
-        const std::string icdPath = guestICDPath();
+        const std::string icdPath = guestLibraryPath();
         void *icdHandle =
             dlopen(icdPath.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (!icdHandle) {

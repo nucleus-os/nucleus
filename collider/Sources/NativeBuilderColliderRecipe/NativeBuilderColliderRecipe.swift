@@ -110,6 +110,7 @@ public enum NativeBuilderColliderRecipe {
                         preparation: finalPreparation)))
         let configuration = NativeOCIBaseConfiguration(
             context: generatedContext,
+            dependencyImage: dependencyImage,
             image: image,
             ccache: ccache,
             environment: environment)

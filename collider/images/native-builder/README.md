@@ -12,9 +12,13 @@ dependency build context contains all archives and packages, so every image
 build runs with no network or DNS attachment.
 
 `Dependencies.Containerfile` defines the stable, content-addressed dependency
-image shared by native SDK and AOSP work. Collider adds `entrypoint.sh` in a
-separate thin image layer based on the exact local dependency-image digest.
-Entrypoint-only changes never repeat package extraction or toolchain assembly.
+image shared by native SDK and AOSP work. Collider adds component-owned thin
+entrypoint images above that exact local dependency-image digest. The native
+SDK entrypoint remains here; AOSP build and artifact entrypoints live under
+`android-runtime/build-container`, and the gfxstream entrypoint lives under
+`android-runtime/gfxstream-build-container`. Entrypoint-only changes never
+repeat package extraction or toolchain assembly and do not invalidate unrelated
+components.
 
 `apt-install-packages.txt` and `apt-extract-packages.txt` are the small,
 human-maintained package requests. The expanded package closure is generated
@@ -23,7 +27,4 @@ repository.
 
 Collider selects the finished image by content-addressed image ID and exposes
 only the explicitly declared source, output, and cache mounts to each action.
-The entrypoint rejects commands that do not match a declared mode. `aosp-build`
-requires the writable output and ccache mounts used by compilation;
-`aosp-tools` accepts only the source and completed output required by export and
-signing tools.
+Each thin entrypoint rejects commands whose required mounts are absent.

@@ -26,7 +26,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         Identity(
             source: build.source,
             buildRoot: build.artifactRoot,
-            containerImageID: build.containerImageID,
+            containerImageID: build.artifactImageID,
             product: build.product,
             expectedPlatformSDK: build.expectedPlatformSDK)
     }
@@ -35,7 +35,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(build.source)),
-                ActionEffect(.read, scope: .input(build.containerImageID)),
+                ActionEffect(.read, scope: .input(build.artifactImageID)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],
             persistentWorkspaceEffects: [
@@ -163,9 +163,9 @@ let aospRequiredProductImages = [
     "vbmeta_system.img",
 ]
 
-enum AOSPContainerMode: String, Sendable {
-    case build = "aosp-build"
-    case tools = "aosp-tools"
+enum AOSPContainerPhase: Sendable {
+    case build
+    case artifact
 }
 
 func aospProductOCIExecution(
@@ -174,8 +174,7 @@ func aospProductOCIExecution(
     readOnlyMounts: [(FilePath, String)],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
     command: [String],
-    mode: AOSPContainerMode = .tools,
-    imageEntrypointOverride: String? = nil,
+    phase: AOSPContainerPhase = .artifact,
     workingDirectory: String = "/src",
     containerEnvironment: [String: String] = aospProductContainerToolEnvironment(),
     output: CommandSpec.Output = .logged
@@ -183,7 +182,7 @@ func aospProductOCIExecution(
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .androidX86_64(apiLevel: build.expectedPlatformSDK),
-        imageID: build.containerImageID,
+        imageID: phase == .build ? build.buildImageID : build.artifactImageID,
         hostname: "android-build",
         workingDirectory: workingDirectory,
         hostWorkingDirectory: build.source,
@@ -201,8 +200,7 @@ func aospProductOCIExecution(
         intelBinaryTranslationPolicy: .required,
         resourceLimits: .build,
         containerEnvironment: containerEnvironment,
-        imageEntrypointOverride: imageEntrypointOverride,
-        command: imageEntrypointOverride == nil ? [mode.rawValue] + command : command,
+        command: command,
         environment: build.environment,
         output: output)
 }

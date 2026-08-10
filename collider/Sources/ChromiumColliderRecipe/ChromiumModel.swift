@@ -278,7 +278,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let buildManifest: FilePath
     package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
-    package let containerImageID: FilePath
+    package let artifactImageID: FilePath
     package let distributionRoot: FilePath
     package let launcher: FilePath
     package let desktopTemplate: FilePath
@@ -290,7 +290,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         buildManifest: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
-        containerImageID: FilePath,
+        artifactImageID: FilePath,
         distributionRoot: FilePath,
         launcher: FilePath,
         desktopTemplate: FilePath,
@@ -301,7 +301,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         self.buildManifest = buildManifest
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
-        self.containerImageID = containerImageID
+        self.artifactImageID = artifactImageID
         self.distributionRoot = distributionRoot
         self.launcher = launcher
         self.desktopTemplate = desktopTemplate
@@ -329,7 +329,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
     package let buildManifest: FilePath
     package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
-    package let containerImageID: FilePath
+    package let artifactImageID: FilePath
     package let distributionRoot: FilePath
     package let cefCheckout: String
     package let chromiumVersion: String
@@ -341,7 +341,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         buildManifest: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
-        containerImageID: FilePath,
+        artifactImageID: FilePath,
         distributionRoot: FilePath,
         cefCheckout: String,
         chromiumVersion: String,
@@ -352,7 +352,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         self.buildManifest = buildManifest
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
-        self.containerImageID = containerImageID
+        self.artifactImageID = artifactImageID
         self.distributionRoot = distributionRoot
         self.cefCheckout = cefCheckout
         self.chromiumVersion = chromiumVersion

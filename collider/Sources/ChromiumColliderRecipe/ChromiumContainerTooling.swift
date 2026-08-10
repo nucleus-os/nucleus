@@ -41,6 +41,10 @@ func chromiumToolExecution(
             "HOME": "/tmp/nucleus-home",
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
+            "PATH":
+                "/source/chromium/src/third_party/depot_tools:"
+                + "/source/chromium/src/third_party/llvm-build/Linux_x64/bin:"
+                + "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "PYTHONDONTWRITEBYTECODE": "1",
             "TZ": "UTC",
         ],

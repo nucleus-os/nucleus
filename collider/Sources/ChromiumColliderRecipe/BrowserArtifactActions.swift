@@ -43,7 +43,7 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
         let staging = try await context.containers.execute(
             chromiumToolExecution(
                 target: assembly.target,
-                imageID: assembly.containerImageID,
+                imageID: assembly.artifactImageID,
                 hostname: "chromium-browser-staging",
                 workingDirectory: "/candidate",
                 hostWorkingDirectory: candidate,
@@ -133,7 +133,7 @@ private func browserArtifactRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
-            ActionEffect(.read, scope: .input(assembly.containerImageID)),
+            ActionEffect(.read, scope: .input(assembly.artifactImageID)),
             ActionEffect(.read, scope: .input(assembly.launcher)),
             ActionEffect(.read, scope: .input(assembly.desktopTemplate)),
             ActionEffect(
@@ -193,7 +193,7 @@ private func validateBrowserGeneration(
     let validation = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.containerImageID,
+            imageID: assembly.artifactImageID,
             hostname: "chromium-browser-validation",
             workingDirectory: "/artifact",
             hostWorkingDirectory: generation,

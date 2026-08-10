@@ -80,15 +80,6 @@ public enum WaylandColliderRecipe: ColliderComponent {
             ]
             return [
                 StorageDeclaration(
-                    id: "wayland-build-\(target.identifier)",
-                    owner: descriptor.id,
-                    producers: producers,
-                    storageClass: .incremental,
-                    root: root.appending(".wayland-build/\(target.identifier)"),
-                    safetyRoot: root.appending(".wayland-build"),
-                    cleanupPolicy: .explicitClean,
-                    retention: "the architecture-specific Wayland build remains reusable"),
-                StorageDeclaration(
                     id: "wayland-sdk-\(target.identifier)",
                     owner: descriptor.id,
                     producers: producers,
@@ -96,7 +87,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     root: sdkRoot.appending("wayland"),
                     safetyRoot: sdkRoot,
                     cleanupPolicy: .explicitClean,
-                    retention: "the validated Wayland SDK remains published"),
+                    retention: "the validated Wayland SDK remains published")
             ]
         }
         let component = try ComponentDefinition(
@@ -124,8 +115,8 @@ public enum WaylandColliderRecipe: ColliderComponent {
         builder: NativeOCIConfiguration
     ) throws -> NativeSDKArtifacts {
         let source = root.appending("third-party/wayland")
-        let build = root.appending(".wayland-build/\(target.identifier)")
         let sdk = sdkRoot.appending("wayland")
+        let workspaces = WaylandNativeWorkspaces(target: target)
         let nativeScannerSDK =
             nativeScanner?.path.removingLastComponent()
             .removingLastComponent() ?? sdk
@@ -202,37 +193,36 @@ public enum WaylandColliderRecipe: ColliderComponent {
             action:
                 try AnyColliderAction(
                     RunWaylandNativeBuildAction(
-                        build: build,
                         sdk: sdk,
                         executions: [
                             try nativeExecution(
                                 root: root,
                                 source: source,
-                                build: build,
                                 sdk: sdk,
                                 nativeScannerSDK: nativeScannerSDK,
                                 builder: builder,
                                 target: target,
+                                workspaces: workspaces,
                                 environment: environment,
                                 command: configureArguments),
                             try nativeExecution(
                                 root: root,
                                 source: source,
-                                build: build,
                                 sdk: sdk,
                                 nativeScannerSDK: nativeScannerSDK,
                                 builder: builder,
                                 target: target,
+                                workspaces: workspaces,
                                 environment: environment,
                                 command: ["meson", "compile", "-C", "/build"]),
                             try nativeExecution(
                                 root: root,
                                 source: source,
-                                build: build,
                                 sdk: sdk,
                                 nativeScannerSDK: nativeScannerSDK,
                                 builder: builder,
                                 target: target,
+                                workspaces: workspaces,
                                 environment: environment,
                                 command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
                         ]))
@@ -710,20 +700,43 @@ private func clientArguments(
     ] + xmlPaths.map(\.string)
 }
 
+private struct WaylandNativeWorkspaces {
+    let intermediates: PersistentWorkspaceDeclaration
+    let compilerCache: PersistentWorkspaceDeclaration
+
+    init(target: NativeLinuxTarget) {
+        intermediates = PersistentWorkspaceDeclaration(
+            identity: PersistentWorkspaceIdentity(
+                key: "wayland-native-intermediates",
+                artifactTarget: target.artifactTarget,
+                role: "build"),
+            capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+            filesystem: .ext4,
+            journal: .writeback64MiB)
+        compilerCache = PersistentWorkspaceDeclaration(
+            identity: PersistentWorkspaceIdentity(
+                key: "wayland-native-ccache",
+                artifactTarget: target.artifactTarget,
+                role: "compiler-cache"),
+            capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+            filesystem: .ext4,
+            journal: .writeback64MiB)
+    }
+}
+
 private func nativeExecution(
     root: FilePath,
     source: FilePath,
-    build: FilePath,
     sdk: FilePath,
     nativeScannerSDK: FilePath,
     builder: NativeOCIConfiguration,
     target: NativeLinuxTarget,
+    workspaces: WaylandNativeWorkspaces,
     environment: [String: String],
     command: [String]
 ) throws -> OCIExecution {
     var mounts = [
         OCIMount(source: source, target: "/src", access: .readOnly),
-        OCIMount(source: build, target: "/build", access: .readWrite),
         OCIMount(
             source: sdk,
             target: target.architecture == .arm64 ? "/native-wayland" : "/sdk",
@@ -739,6 +752,9 @@ private func nativeExecution(
     ]
     var containerEnvironment = [
         "CC": "clang",
+        "CCACHE_BASEDIR": "/src",
+        "CCACHE_DIR": "/ccache",
+        "CCACHE_LOGFILE": "/ccache/ccache.log",
         "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
         "NUCLEUS_WAYLAND_SDK": target.architecture == .arm64 ? "/native-wayland" : "/sdk",
         "PKG_CONFIG_LIBDIR":
@@ -767,6 +783,16 @@ private func nativeExecution(
         workingDirectory: "/src",
         hostWorkingDirectory: root,
         mounts: mounts,
+        persistentWorkspaceMounts: [
+            OCIPersistentWorkspaceMount(
+                workspace: workspaces.intermediates,
+                target: "/build",
+                access: .readWrite),
+            OCIPersistentWorkspaceMount(
+                workspace: workspaces.compilerCache,
+                target: "/ccache",
+                access: .readWrite),
+        ],
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -781,44 +807,41 @@ private func nativeExecution(
 
 private struct RunWaylandNativeBuildAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let build: FilePath
         let sdk: FilePath
         let pipeline: OCIExecutionPipelineIdentity
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: build.string)
-            encoder.append(tag: 2, string: sdk.string)
-            encoder.append(tag: 3, nested: pipeline)
+            encoder.append(tag: 1, string: sdk.string)
+            encoder.append(tag: 2, nested: pipeline)
         }
     }
 
     static let kind: ActionKind = "wayland.build-native-sdk"
 
-    let build: FilePath
     let sdk: FilePath
     let pipeline: OCIExecutionPipeline
 
-    init(build: FilePath, sdk: FilePath, executions: [OCIExecution]) throws {
-        self.build = build
+    init(sdk: FilePath, executions: [OCIExecution]) throws {
         self.sdk = sdk
         pipeline = try OCIExecutionPipeline(executions)
     }
 
     var identity: Identity {
-        Identity(build: build, sdk: sdk, pipeline: pipeline.identity)
+        Identity(sdk: sdk, pipeline: pipeline.identity)
     }
 
     var requirements: ActionRequirements {
         var effects = pipeline.requirements.effects
         for effect in [
-            ActionEffect(.readWrite, scope: .scratch(build)),
-            ActionEffect(.readWrite, scope: .output(sdk)),
+            ActionEffect(.readWrite, scope: .output(sdk))
         ] where !effects.contains(effect) {
             effects.append(effect)
         }
         return ActionRequirements(
             effects: effects,
+            persistentWorkspaceEffects: pipeline.requirements.persistentWorkspaceEffects,
             lane: pipeline.requirements.lane,
+            networkAccess: pipeline.requirements.networkAccess,
             executionPlatform: pipeline.requirements.executionPlatform,
             artifactTarget: pipeline.requirements.artifactTarget)
     }
@@ -826,9 +849,7 @@ private struct RunWaylandNativeBuildAction: ColliderAction {
     var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try context.files.remove(build)
         try context.files.remove(sdk)
-        try context.files.createDirectory(build)
         try context.files.createDirectory(sdk)
         try await pipeline.execute(in: context)
     }

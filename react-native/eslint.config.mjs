@@ -81,7 +81,6 @@ export default defineConfig([
       'node_modules/**',
       'build/**',
       '.rn-build/**',
-      '.cxx-build/**',
       'target/**',
       'CMakeFiles/**',
       'third-party/**',

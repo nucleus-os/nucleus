@@ -70,7 +70,7 @@ struct ValidateAOSPProductAction: ColliderAction {
         var effects = [
             ActionEffect(.read, scope: .input(build.productSource)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(.read, scope: .input(build.containerImageID)),
+            ActionEffect(.read, scope: .input(build.artifactImageID)),
             ActionEffect(.read, scope: .input(build.signingIdentity)),
             ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]

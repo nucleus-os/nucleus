@@ -5,10 +5,6 @@ import Testing
 
 @MainActor
 @Suite struct FabricRuntimeTests {
-    static let repoRoot = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent().path
-
     /// Compile a trivial JS bundle to Hermes bytecode with the built hermesc.
     static func makeTinyBytecode(
         source: String = "var nucleusFabricValue = 1 + 1;\n"
@@ -20,7 +16,20 @@ import Testing
         let hbc = "\(tmp)/tiny.hbc"
         try source.write(toFile: js, atomically: true, encoding: .utf8)
 
-        let hermesc = "\(repoRoot)/.rn-build/hermes/bin/hermesc"
+        guard
+            let nativeSDKRoot = ProcessInfo.processInfo.environment[
+                "NUCLEUS_NATIVE_SDK_ROOT"
+            ], !nativeSDKRoot.isEmpty
+        else {
+            throw NSError(
+                domain: "FabricRuntimeTests",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "NUCLEUS_NATIVE_SDK_ROOT is required to locate hermesc"
+                ])
+        }
+        let hermesc = "\(nativeSDKRoot)/rn/lib/rn/hermes/bin/hermesc"
         // hermesc links libc++ (clang default); put its dir on the loader path —
         // the same fix Collider's Hermes task applies during the build-time
         // hermesc invocation.

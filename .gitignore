@@ -48,7 +48,6 @@ Desktop.ini
 # Native build products
 **/.rn-build/
 **/.skia-build/
-**/.cxx-build/
 **/.tracy-build/
 *.o
 *.obj

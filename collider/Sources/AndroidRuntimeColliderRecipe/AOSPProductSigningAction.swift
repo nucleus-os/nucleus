@@ -31,7 +31,7 @@ struct SignAOSPProductAction: ColliderAction {
         Identity(
             source: build.source,
             buildRoot: build.artifactRoot,
-            containerImageID: build.containerImageID,
+            containerImageID: build.artifactImageID,
             signingIdentity: build.signingIdentity,
             product: build.product,
             variant: build.variant,
@@ -42,7 +42,7 @@ struct SignAOSPProductAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(build.source)),
-                ActionEffect(.read, scope: .input(build.containerImageID)),
+                ActionEffect(.read, scope: .input(build.artifactImageID)),
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],

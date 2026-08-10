@@ -158,7 +158,7 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
         outputWorkspace: chromiumOutputWorkspace(
             product: .browser,
             target: target),
-        containerImageID: FilePath(imageID.path),
+        artifactImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         launcher: FilePath(launcher.path),
         desktopTemplate: FilePath(desktop.path),
@@ -328,7 +328,7 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         outputWorkspace: chromiumOutputWorkspace(
             product: .cef,
             target: target),
-        containerImageID: FilePath(imageID.path),
+        artifactImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         cefCheckout: checkout,
         chromiumVersion: version,
@@ -372,7 +372,7 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
                         fileURLWithPath: candidate.appending(
                             "artifacts/\(archive)"
                         ).string))
-            case "validate-cef", "cef-version-check":
+            case "validate-cef":
                 break
             default:
                 Issue.record("unexpected CEF container command: \(execution.command)")
@@ -383,7 +383,7 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
     let recorded = await executions.values()
     #expect(
         recorded.map(\.command.first) == [
-            "cef-make-distrib", "validate-cef", "cef-version-check", "cef-archive",
+            "cef-make-distrib", "validate-cef", "cef-archive",
         ])
     #expect(
         recorded.allSatisfy {

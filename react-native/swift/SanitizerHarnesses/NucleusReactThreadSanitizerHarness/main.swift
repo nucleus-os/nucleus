@@ -9,13 +9,6 @@ private enum HarnessFailure: Error {
 
 @main
 enum NucleusReactThreadSanitizerHarness {
-    private static let workspaceRoot = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent().path
-
     @MainActor
     static func main() {
         do {
@@ -53,7 +46,12 @@ enum NucleusReactThreadSanitizerHarness {
 
     private static func makeBytecode() throws -> String {
         let environment = ProcessInfo.processInfo.environment
-        let root = environment["NUCLEUS_WORKSPACE_ROOT"] ?? workspaceRoot
+        guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
+            !nativeSDKRoot.isEmpty
+        else {
+            throw HarnessFailure.process(
+                "NUCLEUS_NATIVE_SDK_ROOT is required to locate hermesc")
+        }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "nucleus-rn-tsan-\(getpid())",
@@ -73,9 +71,7 @@ enum NucleusReactThreadSanitizerHarness {
                 environment["LD_LIBRARY_PATH"],
             ].compactMap { $0 }.joined(separator: ":")
         }
-        let hermesc =
-            root
-            + "/react-native/.rn-build/hermes/bin/hermesc"
+        let hermesc = nativeSDKRoot + "/rn/lib/rn/hermes/bin/hermesc"
         let result = try spawn(
             executable: hermesc,
             arguments: [

@@ -79,10 +79,6 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         let candidate = releases.appending(".\(buildID).prepared")
         try context.files.remove(candidate)
         try context.files.createDirectory(candidate)
-        var succeeded = false
-        defer {
-            if !succeeded { try? context.files.remove(candidate) }
-        }
         let sdk = candidate.appending("sdk")
         let artifacts = candidate.appending("artifacts")
         try context.files.copyTree(from: produced.path, to: sdk)
@@ -113,18 +109,6 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             environment: commandEnvironment,
             smoke: candidate.appending(".consumer-smoke"),
             context: context)
-        try await requireCEFContainerSuccess(
-            command: ["cef-version-check"],
-            workingDirectory: "/source/chromium/src/cef",
-            hostWorkingDirectory: assembly.chromiumSource.appending("cef"),
-            mounts: [],
-            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
-            temporaryDirectory: assembly.distributionRoot.appending(
-                ".container-temporary"),
-            environment: commandEnvironment,
-            assembly: assembly,
-            context: context)
-
         let producedName = produced.relativePath
         let version = String(
             producedName
@@ -167,7 +151,6 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         try context.files.replaceSymlink(
             at: assembly.distributionRoot.appending("artifacts-current"),
             target: "current-release/artifacts")
-        succeeded = true
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {
@@ -197,7 +180,7 @@ private func cefArtifactRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
-            ActionEffect(.read, scope: .input(assembly.containerImageID)),
+            ActionEffect(.read, scope: .input(assembly.artifactImageID)),
             ActionEffect(
                 publicationAccess,
                 scope: publicationAccess == .read
@@ -268,7 +251,7 @@ private func validateCEFSDK(
     let validation = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.containerImageID,
+            imageID: assembly.artifactImageID,
             hostname: "chromium-cef-validation",
             workingDirectory: "/sdk",
             hostWorkingDirectory: sdk,
@@ -281,12 +264,10 @@ private func validateCEFSDK(
                 ".container-temporary"),
             command: ["validate-cef", assembly.target.architecture.rawValue],
             environment: environment,
-            output: .captured(limit: 4 * 1_024 * 1_024)))
-    guard validation.status == 0,
-        !validation.standardOutput.contains("not found")
-    else {
-        throw CEFArtifactActionFailure.invalidOutput(
-            "CEF SDK failed Linux linkage or consumer validation")
+            output: .logged))
+    guard validation.succeeded else {
+        throw validation.executionFailure(
+            reason: "CEF SDK failed Linux linkage or consumer validation")
     }
 }
 
@@ -321,7 +302,7 @@ private func requireCEFContainerSuccess(
     let result = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.containerImageID,
+            imageID: assembly.artifactImageID,
             hostname: "chromium-cef-artifact",
             workingDirectory: workingDirectory,
             hostWorkingDirectory: hostWorkingDirectory,

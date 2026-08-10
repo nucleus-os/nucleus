@@ -276,26 +276,31 @@ public enum LinuxColliderRecipe: ColliderComponent {
             packageRoot: root,
             environment: environment,
             arguments: ["--filter", "gpuHeadless_"])
+        var testBuilder = TaskBuilder(
+            id: LinuxTaskIDs.test(architecture),
+            component: ComponentID(rawValue: "linux"))
+        testBuilder.consume(targetArtifacts)
+        let test = testBuilder.build(
+            swiftTests: [testRequirement],
+            inputs: sharedInputs,
+            postconditions: [swiftPM.postcondition],
+            locks: [.checkout("linux-\(name)")],
+            assessmentPolicy: .always)
         return [
             build,
-            TaskDeclaration(
-                id: LinuxTaskIDs.test(architecture),
-                component: ComponentID(rawValue: "linux"),
-                swiftTests: [testRequirement],
-                inputs: sharedInputs,
-                postconditions: [swiftPM.postcondition],
-                locks: [.checkout("linux-\(name)")],
-                assessmentPolicy: .always),
+            test,
             laneTestTask(
                 id: LinuxTaskIDs.testLoader(architecture),
                 requirement: loaderRequirement,
                 sharedInputs: sharedInputs,
-                lockName: "linux-\(name)"),
+                lockName: "linux-\(name)",
+                targetArtifacts: targetArtifacts),
             laneTestTask(
                 id: LinuxTaskIDs.testGPUHeadless(architecture),
                 requirement: headlessRequirement,
                 sharedInputs: sharedInputs,
-                lockName: "linux-\(name)"),
+                lockName: "linux-\(name)",
+                targetArtifacts: targetArtifacts),
         ]
     }
 
@@ -313,11 +318,14 @@ private func laneTestTask(
     id: TaskID,
     requirement: SwiftTestRequirement,
     sharedInputs: [ArtifactInput],
-    lockName: String
+    lockName: String,
+    targetArtifacts: ArtifactReferenceSet
 ) -> TaskDeclaration {
-    TaskDeclaration(
+    var builder = TaskBuilder(
         id: id,
-        component: ComponentID(rawValue: "linux"),
+        component: ComponentID(rawValue: "linux"))
+    builder.consume(targetArtifacts)
+    return builder.build(
         swiftTests: [requirement],
         inputs: sharedInputs,
         postconditions: [requirement.invocation.postcondition],

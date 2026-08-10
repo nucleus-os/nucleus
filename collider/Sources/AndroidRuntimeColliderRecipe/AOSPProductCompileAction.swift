@@ -12,7 +12,7 @@ struct CompileAOSPProductAction: ColliderAction {
                 (2, build.source),
                 (4, build.sourceProvenance),
                 (5, build.artifactRoot),
-                (7, build.containerImageID),
+                (7, build.buildImageID),
             ] {
                 encoder.append(tag: UInt64(tag), string: path.string)
             }
@@ -58,7 +58,7 @@ struct CompileAOSPProductAction: ColliderAction {
             ActionEffect(.read, scope: .input(build.productSource)),
             ActionEffect(.read, scope: .input(build.source)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(.read, scope: .input(build.containerImageID)),
+            ActionEffect(.read, scope: .input(build.buildImageID)),
             ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]
         for overlay in build.sourceOverlays {
@@ -160,7 +160,7 @@ private struct AOSPProductCompileWorkflow {
                     "target-files-package",
                     "otatools",
                 ],
-                mode: .build,
+                phase: .build,
                 containerEnvironment: environment,
                 output: .logged))
         try requireAOSPBuildSuccess(result.status)

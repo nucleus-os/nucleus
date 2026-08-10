@@ -702,8 +702,7 @@ package struct ComponentRegistry {
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
-            gfxstreamBuildRoot: root.appending(
-                "android-runtime/.gfxstream-build/\(target.identifier)"))
+            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
         let execution = SwiftPMExecution.oci(
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
@@ -741,9 +740,11 @@ package struct ComponentRegistry {
                 containerEnvironment: [
                     "CCACHE_DIR": "/ccache",
                     "HOME": "/home/nucleus-build",
-                    "NUCLEUS_GFXSTREAM_BUILD_ROOT":
-                        root.appending("android-runtime/.gfxstream-build/\(target.identifier)")
-                        .string,
+                    "NUCLEUS_NATIVE_SDK_ROOT": nativeSDK.string,
+                    "NUCLEUS_GFXSTREAM_GUEST_LIBRARY":
+                        nativeSDK.appending(
+                            "android/gfxstream/lib/libvulkan_gfxstream.so"
+                        ).string,
                     "LD_LIBRARY_PATH": [
                         "/opt/nucleus-vulkan-loader/\(target.gnuArchitecture)/lib",
                         guestTargetSDK + "/usr/lib/swift/linux",
@@ -844,8 +845,7 @@ package struct ComponentRegistry {
         let nativeSDK = context.nativeSDKRoot(named: "android-arm64")
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
-            gfxstreamBuildRoot: context.layout.androidRuntime.appending(
-                ".gfxstream-build/android-arm64"))
+            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
         let swiftCxxLibraries = swiftSDKRoot.appending(
             "\(inputs.androidBundleID).artifactbundle/swift-android/"
                 + "swift-resources/usr/lib/swift-aarch64/android")
@@ -865,7 +865,7 @@ package struct ComponentRegistry {
 
     private func nativeSDKCompilerConfiguration(
         nativeSDK: FilePath,
-        gfxstreamBuildRoot: FilePath
+        gfxstreamSDKRoot: FilePath
     ) -> NativeSDKCompilerConfiguration {
         let root = context.layout.root
         let render = nativeSDK.appending("render")
@@ -930,11 +930,11 @@ package struct ComponentRegistry {
             render.appending("lib/skia-graphite"),
             render.appending("lib/skia-graphite-android-arm64"),
             rn.appending("lib/rn/hermes"),
-            rn.appending("lib/rn/reactnative"),
-            rn.appending("lib/rn/glog"),
-            rn.appending("lib/rn/fmt"),
-            rn.appending("lib/rn/double-conversion/src"),
-            gfxstreamBuildRoot.appending("host/host"),
+            rn.appending("lib/rn/runtime/reactnative"),
+            rn.appending("lib/rn/runtime/glog"),
+            rn.appending("lib/rn/support/fmt"),
+            rn.appending("lib/rn/support/double-conversion/src"),
+            gfxstreamSDKRoot.appending("lib"),
         ]
         return NativeSDKCompilerConfiguration(
             cFlags: icuIncludeFlags + includeFlags,

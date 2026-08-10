@@ -50,6 +50,24 @@ case "${1:-}" in
     fi
     shift
     ;;
+  skia-export)
+    shift
+    if [[ ! -d /build || ! -d /export || ! -w /export || "$#" -eq 0 ]]; then
+      echo "error: skia-export requires build and export roots plus archive names" >&2
+      exit 64
+    fi
+    for archive in "$@"; do
+      if [[ "$archive" == */* || ! -f "/build/$archive" ]]; then
+        echo "error: missing Skia archive: $archive" >&2
+        exit 66
+      fi
+    done
+    find /export -mindepth 1 -maxdepth 1 -delete
+    for archive in "$@"; do
+      install --mode=0644 "/build/$archive" "/export/$archive"
+    done
+    exit 0
+    ;;
   react-native)
     if [[ ! -d /build || ! -w /build ]]; then
       echo "error: /build is not the writable external native build root" >&2
@@ -66,46 +84,10 @@ case "${1:-}" in
     fi
     shift
     ;;
-  gfxstream)
-    if [[ ! -d /gfxstream || ! -f /gfxstream/meson.build ]]; then
-      echo "error: /gfxstream is not the complete read-only gfxstream checkout" >&2
-      exit 64
-    fi
-    if [[ ! -d /mesa || ! -f /mesa/meson.build ]]; then
-      echo "error: /mesa is not the complete read-only Mesa checkout" >&2
-      exit 64
-    fi
-    if [[ ! -d /build || ! -w /build ]]; then
-      echo "error: /build is not the writable external gfxstream build root" >&2
-      exit 64
-    fi
-    if [[ ! -d /ccache || ! -w /ccache ]]; then
-      echo "error: /ccache is not the writable compiler cache" >&2
-      exit 64
-    fi
-    shift
-    ;;
-  aosp-build)
-    if [[ ! -d /src/.repo \
-        || ! -d /src/out \
-        || ! -w /src/out \
-        || ! -d /ccache \
-        || ! -w /ccache ]]; then
-      echo "error: aosp-build requires source plus writable output and compiler-cache workspaces" >&2
-      exit 64
-    fi
-    shift
-    ;;
-  aosp-tools)
-    if [[ ! -d /src/.repo || ! -d /src/out ]]; then
-      echo "error: aosp-tools requires source and built host tools" >&2
-      exit 64
-    fi
-    shift
-    ;;
   wayland)
-    if [[ ! -d /build || ! -w /build ]]; then
-      echo "error: /build is not the writable external Wayland build root" >&2
+    if [[ ! -d /build || ! -w /build \
+        || ! -d /ccache || ! -w /ccache ]]; then
+      echo "error: wayland requires writable build and compiler-cache workspaces" >&2
       exit 64
     fi
     if [[ -z "${NUCLEUS_WAYLAND_SDK:-}" \
@@ -121,7 +103,7 @@ case "${1:-}" in
     shift
     ;;
   *)
-    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, aosp-build, aosp-tools, or wayland" >&2
+    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, skia-export, react-native, or wayland" >&2
     exit 64
     ;;
 esac

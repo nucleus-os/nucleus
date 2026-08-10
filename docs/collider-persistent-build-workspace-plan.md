@@ -305,6 +305,12 @@ retain their existing concurrency.
 
 ## Phase 5: Migrate Native SDK Builders
 
+Status: active. The Skia, gfxstream/Mesa, Wayland, Hermes, support-library, and
+React Native C++ workspace implementations are complete. AOSP compilation and
+artifact processing now use separate Android-owned thin images, and gfxstream
+uses its own Android-owned thin image. Their cold and warm build qualification
+and the Vulkan-loader migration remain pending.
+
 Move Skia, gfxstream, Mesa, Vulkan-loader, React Native C++, Hermes, folly, and
 other CMake/GN/Meson/Ninja intermediates into component-and-target-specific
 workspaces. Keep separate workspaces for components that Collider schedules
@@ -317,16 +323,17 @@ libraries, pkg-config metadata, tools, digests, and provenance into its owning
 SDK candidate. Generated source that SwiftPM consumes remains under the owning
 first-party package.
 
-Prepare the stable native dependency image independently from its operational
-entrypoint. Build the thin entrypoint image from the exact local dependency
-image digest without pulling or repeating package installation. AOSP build and
-AOSP tool operations use distinct entrypoint modes with mount preconditions
-that match their actual writable state.
+Prepare the stable native dependency image independently from operational
+entrypoints. Build component-owned thin entrypoint images from the exact local
+dependency image digest without pulling or repeating package installation.
+AOSP build and artifact processing use distinct images with mount preconditions
+that match their actual writable state. Gfxstream uses one image shared by its
+architecture lanes while their writable workspaces remain independent.
 
 Move compiler caches into the same component concurrency partition. Remove
-`core/.skia-build`, `react-native/.rn-build`, `react-native/.cxx-build`, and
-equivalent host intermediate directories after their volume-backed owners pass
-the existing build and test lanes.
+`core/.skia-build`, `react-native/.rn-build`, and equivalent host intermediate
+directories after their volume-backed owners pass the existing build and test
+lanes.
 
 Gate: the complete native SDK reconstructs from empty volumes, warm rebuilds
 reuse native intermediates, and concurrent component builds never contend for

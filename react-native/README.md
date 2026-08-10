@@ -14,9 +14,10 @@ remains the source of the engine Nucleus compiles.
 It consumes the render SDK owned by `core/` and owns `rn` within each
 per-target native SDK root, such as
 `~/.cache/nucleus/nucleus-native-sdk/linux-arm64/rn`. Generated and native
-outputs remain under `react-native/.rn-build` and `react-native/.cxx-build`;
-the React Native gitlink is an unmodified source-only input, not a JavaScript
-dependency workspace.
+build intermediates and compiler caches live in component-and-target-specific
+Collider workspaces; only finished libraries and generated public headers enter
+the staged native SDK. The React Native gitlink is an unmodified source-only
+input, not a JavaScript dependency workspace.
 
 Provision and verify from the repository root:
 

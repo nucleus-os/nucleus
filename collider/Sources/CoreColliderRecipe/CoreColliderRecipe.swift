@@ -86,8 +86,10 @@ public enum CoreColliderRecipe: ColliderComponent {
             NativeBuilderGraphConfiguration.self,
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
+        let skiaInputRoot = context.cacheRoot.appending("nucleus/inputs/skia")
         let sources = try prepareSkiaDependencies(
             root: root,
+            downloadRoot: skiaInputRoot,
             environment: context.environment,
             builder: native.builder.base)
         var tasks = sources.tasks
@@ -96,15 +98,17 @@ public enum CoreColliderRecipe: ColliderComponent {
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
+            let sdkRoot = native.nativeSDK(for: target)
             let skia = try buildSkiaLinux(
                 root: root,
+                sdkRoot: sdkRoot,
                 environment: context.environment,
                 target: target,
                 sources: sources,
                 builder: native.builder)
             let sdk = try publishLinuxRenderSDK(
                 root: root,
-                sdkRoot: native.nativeSDK(for: target),
+                sdkRoot: sdkRoot,
                 target: target,
                 skia: skia.buildDirectory)
             tasks += [skia.task, sdk.task]
@@ -121,6 +125,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         let androidSDKRoot = native.nativeSDKRoot.appending("android-arm64")
         let androidSkia = try buildSkiaAndroid(
             root: root,
+            sdkRoot: androidSDKRoot,
             minimumAndroidAPI: androidToolchain.minimumSDK,
             environment: context.environment,
             sources: sources,
@@ -154,19 +159,18 @@ public enum CoreColliderRecipe: ColliderComponent {
         func producers(_ matches: (String) -> Bool) -> Set<StorageProducer> {
             Set(tasks.compactMap { matches($0.id.rawValue) ? .task($0.id) : nil })
         }
-        var storage = [
+        var storage: [StorageDeclaration] = [
             StorageDeclaration(
-                id: "core-skia-build",
+                id: "core-skia-inputs",
                 owner: descriptor.id,
                 producers: producers {
-                    $0 == "core.gn-download" || $0 == "core.gn-install"
-                        || $0 == "core.sources" || $0.contains("core.skia.")
+                    $0 == CoreTaskIDs.gnDownload.rawValue
                 },
-                storageClass: .incremental,
-                root: root.appending(".skia-build"),
-                safetyRoot: root,
+                storageClass: .cache,
+                root: skiaInputRoot,
+                safetyRoot: skiaInputRoot.removingLastComponent(),
                 cleanupPolicy: .explicitClean,
-                retention: "Skia dependency and target build trees remain reusable")
+                retention: "the pinned Skia GN input remains reusable")
         ]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -175,7 +179,10 @@ public enum CoreColliderRecipe: ColliderComponent {
                 StorageDeclaration(
                     id: "core-render-sdk-\(target.identifier)",
                     owner: descriptor.id,
-                    producers: producers { $0 == CoreTaskIDs.nativeSDK(target).rawValue },
+                    producers: producers {
+                        $0 == CoreTaskIDs.skia(target).rawValue
+                            || $0 == CoreTaskIDs.nativeSDK(target).rawValue
+                    },
                     storageClass: .published,
                     root: sdkRoot.appending("render"),
                     safetyRoot: sdkRoot,
@@ -186,7 +193,10 @@ public enum CoreColliderRecipe: ColliderComponent {
             StorageDeclaration(
                 id: "core-render-sdk-android-arm64",
                 owner: descriptor.id,
-                producers: [.task(CoreTaskIDs.androidNativeSDK)],
+                producers: [
+                    .task(CoreTaskIDs.androidSkia),
+                    .task(CoreTaskIDs.androidNativeSDK),
+                ],
                 storageClass: .published,
                 root: androidSDKRoot.appending("render"),
                 safetyRoot: androidSDKRoot,
@@ -217,11 +227,12 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func prepareSkiaDependencies(
         root: FilePath,
+        downloadRoot: FilePath,
         environment: [String: String],
         builder: NativeOCIBaseConfiguration
     ) throws -> SkiaSourceArtifacts {
         let skia = root.appending("third-party/skia")
-        let gnArchive = root.appending(".skia-build/downloads/gn-linux-arm64.zip")
+        let gnArchive = downloadRoot.appending("gn-linux-arm64.zip")
         let dependencies = try skiaGitDependencies(from: skia.appending("DEPS"))
         guard
             let gnURL = URL(
@@ -334,6 +345,7 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func buildSkiaLinux(
         root: FilePath,
+        sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
         sources: SkiaSourceArtifacts,
@@ -343,10 +355,9 @@ public enum CoreColliderRecipe: ColliderComponent {
             id: CoreTaskIDs.skia(target),
             root: root,
             environment: environment,
-            buildDirectory: root.appending(".skia-build/\(target.identifier)"),
+            exportDirectory: sdkRoot.appending("render/lib/skia-graphite"),
             gnArguments: linuxGNArguments(target),
             mode: "linux",
-            cacheNamespace: target.identifier,
             artifactTarget: target.artifactTarget,
             intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
             containerEnvironment: targetEnvironment(target),
@@ -357,6 +368,7 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func buildSkiaAndroid(
         root: FilePath,
+        sdkRoot: FilePath,
         minimumAndroidAPI: UInt32,
         environment: [String: String],
         sources: SkiaSourceArtifacts,
@@ -367,7 +379,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             id: CoreTaskIDs.androidSkia,
             root: root,
             environment: environment,
-            buildDirectory: root.appending(".skia-build/android-arm64"),
+            exportDirectory: sdkRoot.appending("render/lib/skia-graphite"),
             gnArguments: [
                 #"target_os="android""#,
                 #"target_cpu="arm64""#,
@@ -376,7 +388,6 @@ public enum CoreColliderRecipe: ColliderComponent {
                 "skia_use_fontconfig=false",
             ] + commonGNArguments,
             mode: "android",
-            cacheNamespace: "android-arm64",
             artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
             intelBinaryTranslationPolicy: .required,
             containerEnvironment: [:],
@@ -537,14 +548,13 @@ public enum CoreColliderRecipe: ColliderComponent {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
-            ("lib/skia-graphite", skia.path),
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidNativeSDK,
             component: ComponentID(rawValue: "core"))
         builder.consume(skia)
-        var outputs = ArtifactReferenceSet()
+        var outputs = ArtifactReferenceSet(skia)
         for (name, _) in links {
             let output: ArtifactReference<PathArtifact> = try builder.output(
                 OutputSlotID(rawValue: name),
@@ -576,17 +586,13 @@ public enum CoreColliderRecipe: ColliderComponent {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
-            (
-                "lib/skia-graphite",
-                skia.path
-            ),
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
         var builder = TaskBuilder(
             id: CoreTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "core"))
         builder.consume(skia)
-        var outputs = ArtifactReferenceSet()
+        var outputs = ArtifactReferenceSet(skia)
         for (name, _) in links {
             let output: ArtifactReference<PathArtifact> = try builder.output(
                 OutputSlotID(rawValue: name),
@@ -1236,10 +1242,9 @@ private func skiaTask(
     id: TaskID,
     root: FilePath,
     environment: [String: String],
-    buildDirectory: FilePath,
+    exportDirectory: FilePath,
     gnArguments: [String],
     mode: String,
-    cacheNamespace: String,
     artifactTarget: ArtifactTarget,
     intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
     containerEnvironment: [String: String],
@@ -1249,25 +1254,50 @@ private func skiaTask(
 ) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
     let skia = root.appending("third-party/skia")
     let containerBuildDirectory = "/build"
+    let buildWorkspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "core-skia-intermediates",
+            artifactTarget: artifactTarget,
+            role: "build"),
+        capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+    let compilerCacheWorkspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "core-skia-ccache",
+            artifactTarget: artifactTarget,
+            role: "compiler-cache"),
+        capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
     let mounts = [
         OCIMount(
             source: skia,
             target: "/src",
             access: .readOnly),
         OCIMount(
-            source: buildDirectory,
-            target: containerBuildDirectory,
-            access: .readWrite),
-        OCIMount(
-            source: builder.ccache.appending(cacheNamespace),
-            target: "/ccache",
+            source: exportDirectory,
+            target: "/export",
             access: .readWrite),
         OCIMount(
             source: builder.swiftSDKRoot,
             target: "/swift-sdk",
             access: .readOnly),
     ]
-    func execution(_ command: [String]) -> OCIExecution {
+    let persistentWorkspaceMounts = [
+        OCIPersistentWorkspaceMount(
+            workspace: buildWorkspace,
+            target: containerBuildDirectory,
+            access: .readWrite),
+        OCIPersistentWorkspaceMount(
+            workspace: compilerCacheWorkspace,
+            target: "/ccache",
+            access: .readWrite),
+    ]
+    func execution(
+        _ command: [String],
+        entrypointMode: String = "skia-\(mode)"
+    ) -> OCIExecution {
         OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: artifactTarget,
@@ -1276,6 +1306,7 @@ private func skiaTask(
             workingDirectory: "/src",
             hostWorkingDirectory: skia,
             mounts: mounts,
+            persistentWorkspaceMounts: persistentWorkspaceMounts,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
@@ -1285,7 +1316,7 @@ private func skiaTask(
             containerEnvironment: containerEnvironment.merging(
                 ["CCACHE_LOGFILE": "/ccache/ccache.log"],
                 uniquingKeysWith: { configured, _ in configured }),
-            command: ["skia-\(mode)"] + command,
+            command: [entrypointMode] + command,
             environment: builder.environment,
             output: .logged)
     }
@@ -1296,6 +1327,7 @@ private func skiaTask(
         ]),
         execution(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
+        execution(requiredArchives, entrypointMode: "skia-export"),
     ]
     var task = TaskBuilder(
         id: id,
@@ -1305,17 +1337,17 @@ private func skiaTask(
     task.consume(builder.image)
     task.consume(builder.swiftSDK)
     let directory: ArtifactReference<DirectoryArtifact> = try task.output(
-        "build-directory",
-        path: buildDirectory,
+        "archives",
+        path: exportDirectory,
         validation: .nonEmptyDirectory)
     let icuLibrary: ArtifactReference<FileArtifact> = try task.output(
         "libicu.a",
-        path: buildDirectory.appending("libicu.a"),
+        path: exportDirectory.appending("libicu.a"),
         validation: .regularFile)
     for archive in requiredArchives where archive != "libicu.a" {
         let _: ArtifactReference<FileArtifact> = try task.output(
             OutputSlotID(rawValue: archive),
-            path: buildDirectory.appending(archive),
+            path: exportDirectory.appending(archive),
             validation: .regularFile)
     }
     let declaration = task.build(
@@ -1327,7 +1359,9 @@ private func skiaTask(
         locks: [.checkout(id.rawValue)],
         action:
             try AnyColliderAction(
-                RunSkiaBuildAction(executions: executions))
+                RunSkiaBuildAction(
+                    executions: executions,
+                    exportDirectory: exportDirectory))
     )
     return CoreColliderRecipe.SkiaBuildArtifacts(
         task: declaration,
@@ -1339,9 +1373,11 @@ private struct RunSkiaBuildAction: ColliderAction {
     static let kind: ActionKind = "core.build-skia"
 
     let pipeline: OCIExecutionPipeline
+    let exportDirectory: FilePath
 
-    init(executions: [OCIExecution]) throws {
+    init(executions: [OCIExecution], exportDirectory: FilePath) throws {
         pipeline = try OCIExecutionPipeline(executions)
+        self.exportDirectory = exportDirectory
     }
 
     var identity: OCIExecutionPipelineIdentity { pipeline.identity }
@@ -1351,6 +1387,12 @@ private struct RunSkiaBuildAction: ColliderAction {
     var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
+        if let metadata = try context.files.metadata(for: exportDirectory),
+            metadata.type != .directory
+        {
+            try context.files.remove(exportDirectory)
+        }
+        try context.files.createDirectory(exportDirectory)
         try await pipeline.execute(in: context)
     }
 }

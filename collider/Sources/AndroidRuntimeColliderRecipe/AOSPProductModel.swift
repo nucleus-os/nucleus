@@ -40,7 +40,8 @@ struct AOSPProductBuild: Hashable, Sendable {
     let artifactRoot: FilePath
     let outputWorkspace: PersistentWorkspaceDeclaration
     let compilerCacheWorkspace: PersistentWorkspaceDeclaration
-    let containerImageID: FilePath
+    let buildImageID: FilePath
+    let artifactImageID: FilePath
     let signingIdentity: FilePath
     let product: String
     let release: String
@@ -60,7 +61,8 @@ struct AOSPProductBuild: Hashable, Sendable {
         artifactRoot: FilePath,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
-        containerImageID: FilePath,
+        buildImageID: FilePath,
+        artifactImageID: FilePath,
         signingIdentity: FilePath,
         product: String,
         release: String,
@@ -79,7 +81,8 @@ struct AOSPProductBuild: Hashable, Sendable {
         self.artifactRoot = artifactRoot
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
-        self.containerImageID = containerImageID
+        self.buildImageID = buildImageID
+        self.artifactImageID = artifactImageID
         self.signingIdentity = signingIdentity
         self.product = product
         self.release = release

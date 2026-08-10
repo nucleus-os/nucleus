@@ -5,9 +5,10 @@
 Its targets provide shared value types, retained render state, Skia Graphite/Vulkan rendering, text layout, NucleusUI, application/scene vocabulary, and platform host seams. Compositor and React Native targets consume these modules through the root manifest; `core/` is not a standalone Swift package.
 
 The component owns `render` within each per-target native SDK root, such as
-`~/.cache/nucleus/nucleus-native-sdk/linux-arm64/render`, and owns generated
-native outputs under `core/.skia-build`. Provision and verify it from the
-repository root:
+`~/.cache/nucleus/nucleus-native-sdk/linux-arm64/render`. Collider keeps Skia
+intermediates and compiler caches in target-specific persistent workspaces and
+publishes only the finished render SDK into that host artifact root. Provision
+and verify it from the repository root:
 
 ```sh
 collider bootstrap core
