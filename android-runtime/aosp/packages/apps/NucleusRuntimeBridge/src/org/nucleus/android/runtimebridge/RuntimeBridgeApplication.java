@@ -1,7 +1,12 @@
 package org.nucleus.android.runtimebridge;
 
+import android.app.ActivityManager;
+import android.app.ActivityOptions;
+import android.app.ActivityTaskManager;
 import android.app.Application;
+import android.app.TaskStackListener;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -13,44 +18,50 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
-import android.hardware.input.InputManager;
+import android.hardware.display.IDisplayManager;
 import android.hardware.input.IPointerIconChangedListener;
+import android.hardware.input.InputManager;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
-import android.view.InputDevice;
 import android.os.Process;
+import android.os.RemoteException;
+import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 import android.system.StructPollfd;
-import android.util.Log;
 import android.util.Base64;
 import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
-import org.json.JSONException;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RuntimeBridgeApplication extends Application {
     private static final String TAG = "NucleusRuntimeBridge";
@@ -59,8 +70,43 @@ public final class RuntimeBridgeApplication extends Application {
     private static final int MAXIMUM_PACKET_BYTES = 256 * 1024;
     private static final AtomicBoolean STARTED = new AtomicBoolean();
 
+    private static final class PendingLaunch {
+        final String requestId;
+        final long requestedPresentationId;
+        final int displayId;
+        final ComponentName component;
+        final long deadlineMillis;
+
+        PendingLaunch(
+                String requestId,
+                long requestedPresentationId,
+                int displayId,
+                ComponentName component) {
+            this.requestId = requestId;
+            this.requestedPresentationId = requestedPresentationId;
+            this.displayId = displayId;
+            this.component = component;
+            deadlineMillis = SystemClock.elapsedRealtime() + 20_000;
+        }
+    }
+
     private final Set<String> dirtyPackages =
             ConcurrentHashMap.newKeySet();
+    private final Set<Long> activePresentations =
+            ConcurrentHashMap.newKeySet();
+    private final Map<Integer, Long> presentationByDisplayId =
+            new HashMap<>();
+    private final Map<Integer, Long> presentationByTaskId =
+            new HashMap<>();
+    private final Map<Long, Set<Integer>> taskIdsByPresentation =
+            new HashMap<>();
+    private final Map<String, PendingLaunch> pendingLaunches =
+            new HashMap<>();
+    private final Map<Integer, String> publishedTasks =
+            new HashMap<>();
+    private final ConcurrentLinkedQueue<Integer> removedTaskIds =
+            new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean taskStateDirty = new AtomicBoolean();
     private final Map<Integer, Integer> pointerButtonStates =
             new HashMap<>();
     private final Map<Integer, Long> pointerDownTimesMillis =
@@ -75,6 +121,34 @@ public final class RuntimeBridgeApplication extends Application {
                 public void onPointerIconChanged(
                         int displayId, int pointerIconType) {
                     pendingPointerIcons.put(displayId, pointerIconType);
+                }
+            };
+    private final TaskStackListener taskStackListener =
+            new TaskStackListener() {
+                @Override
+                public void onTaskStackChanged() {
+                    taskStateDirty.set(true);
+                }
+
+                @Override
+                public void onTaskCreated(int taskId, ComponentName componentName) {
+                    taskStateDirty.set(true);
+                }
+
+                @Override
+                public void onTaskMovedToFront(ActivityManager.RunningTaskInfo taskInfo) {
+                    taskStateDirty.set(true);
+                }
+
+                @Override
+                public void onTaskDisplayChanged(int taskId, int newDisplayId) {
+                    taskStateDirty.set(true);
+                }
+
+                @Override
+                public void onTaskRemoved(int taskId) {
+                    removedTaskIds.add(taskId);
+                    taskStateDirty.set(true);
                 }
             };
 
@@ -98,6 +172,8 @@ public final class RuntimeBridgeApplication extends Application {
         getSystemService(InputManager.class)
                 .registerPointerIconChangedListener(
                         pointerIconChangedListener);
+        ActivityTaskManager.getInstance()
+                .registerTaskStackListener(taskStackListener);
         IntentFilter packages = new IntentFilter();
         packages.addAction(Intent.ACTION_PACKAGE_ADDED);
         packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
@@ -140,6 +216,7 @@ public final class RuntimeBridgeApplication extends Application {
 
     private void connectionLoop() {
         while (true) {
+            closeApplicationPresentations();
             try (LocalSocket socket =
                          new LocalSocket(LocalSocket.SOCKET_SEQPACKET)) {
                 socket.connect(new LocalSocketAddress(
@@ -151,6 +228,8 @@ public final class RuntimeBridgeApplication extends Application {
                 Log.w(TAG, "bridge connection failed", error);
             } finally {
                 restoreAndroidPointerIcons();
+                pendingLaunches.clear();
+                closeApplicationPresentations();
             }
             try {
                 Thread.sleep(500);
@@ -233,6 +312,19 @@ public final class RuntimeBridgeApplication extends Application {
                         }
                         sendInputEvent(command.getJSONObject("inputEvent"));
                         break;
+                    case "launchActivity":
+                        beginActivityLaunch(
+                                output,
+                                generation,
+                                command.getJSONObject("activityLaunch"));
+                        break;
+                    case "closePresentation":
+                        closePresentationFromHost(
+                                output,
+                                generation,
+                                command.getJSONObject("presentationClose")
+                                        .getLong("presentationID"));
+                        break;
                     default:
                         throw new IOException(
                                 "unsupported broker command " + kind);
@@ -264,7 +356,359 @@ public final class RuntimeBridgeApplication extends Application {
                     }
                 }
             }
+            sendTaskUpdates(output, generation);
             sendPendingPointerIcons(output, generation);
+        }
+    }
+
+    private void beginActivityLaunch(
+            OutputStream output,
+            String generation,
+            JSONObject request) throws IOException, JSONException {
+        String requestId = request.getString("requestID");
+        long presentationId = request.getLong("presentationID");
+        try {
+            if (presentationId <= 0) {
+                throw new IllegalArgumentException(
+                        "presentation identity must be positive");
+            }
+            String packageName = request.getString("packageName");
+            String activityName = request.getString("activityName");
+            ComponentName component = new ComponentName(
+                    packageName, activityName);
+            requireLaunchableActivity(component);
+            ActivityManager.RunningTaskInfo existing = findManagedTask(component);
+            if (existing != null) {
+                long existingPresentation = presentationByDisplayId.get(existing.displayId);
+                ActivityTaskManager.getService().moveTaskToFront(
+                        null, getPackageName(), existing.taskId, 0, null);
+                sendLaunchResult(
+                        output,
+                        generation,
+                        requestId,
+                        presentationId,
+                        existingPresentation,
+                        existing.displayId,
+                        existing.taskId,
+                        "activatedExistingPresentation",
+                        null);
+                return;
+            }
+            IDisplayManager displays = IDisplayManager.Stub.asInterface(
+                    ServiceManager.getService(Context.DISPLAY_SERVICE));
+            if (displays == null) {
+                throw new IllegalStateException(
+                        "Android display manager is unavailable");
+            }
+            int displayId = displays.createNucleusPresentation(
+                    presentationId);
+            activePresentations.add(presentationId);
+            presentationByDisplayId.put(displayId, presentationId);
+            PendingLaunch pending = new PendingLaunch(
+                    requestId, presentationId, displayId, component);
+            pendingLaunches.put(requestId, pending);
+            try {
+                Intent intent = new Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LAUNCHER)
+                        .setComponent(component)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                                | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                ActivityOptions options = ActivityOptions.makeBasic();
+                options.setLaunchDisplayId(displayId);
+                startActivity(intent, options.toBundle());
+                taskStateDirty.set(true);
+            } catch (Exception error) {
+                pendingLaunches.remove(requestId);
+                closeFrameworkPresentation(presentationId);
+                throw error;
+            }
+        } catch (Exception error) {
+            sendLaunchResult(
+                    output,
+                    generation,
+                    requestId,
+                    presentationId,
+                    null,
+                    null,
+                    null,
+                    "failed",
+                    describeFailure(error));
+        }
+    }
+
+    private ActivityManager.RunningTaskInfo findManagedTask(ComponentName component) {
+        for (ActivityManager.RunningTaskInfo task : getManagedTasks()) {
+            if (component.equals(task.baseActivity)
+                    || component.equals(task.topActivity)) {
+                return task;
+            }
+        }
+        return null;
+    }
+
+    private void sendTaskUpdates(OutputStream output, String generation)
+            throws IOException, JSONException {
+        boolean changed = taskStateDirty.getAndSet(false);
+        Integer removedTaskId;
+        while ((removedTaskId = removedTaskIds.poll()) != null) {
+            removeTrackedTask(output, generation, removedTaskId);
+        }
+        if (changed) {
+            List<ActivityManager.RunningTaskInfo> tasks = getManagedTasks();
+            Set<Integer> currentTaskIds = new HashSet<>();
+            for (ActivityManager.RunningTaskInfo task : tasks) {
+                currentTaskIds.add(task.taskId);
+                Long presentationId = presentationByDisplayId.get(task.displayId);
+                Long trackedPresentation = presentationByTaskId.get(task.taskId);
+                if (trackedPresentation != null
+                        && !trackedPresentation.equals(presentationId)) {
+                    removeTrackedTask(output, generation, task.taskId);
+                }
+                if (presentationId == null) {
+                    continue;
+                }
+                trackTask(presentationId, task.taskId);
+                ComponentName component = task.topActivity != null
+                        ? task.topActivity : task.baseActivity;
+                if (component == null) {
+                    continue;
+                }
+                String signature = presentationId + ":" + task.displayId + ":"
+                        + component.flattenToString();
+                if (!signature.equals(publishedTasks.put(task.taskId, signature))) {
+                    sendTaskChanged(output, generation, presentationId, task, component);
+                }
+                completePendingLaunches(
+                        output, generation, presentationId, task);
+            }
+            for (int taskId : new ArrayList<>(presentationByTaskId.keySet())) {
+                if (!currentTaskIds.contains(taskId)) {
+                    removeTrackedTask(output, generation, taskId);
+                }
+            }
+        }
+        long now = SystemClock.elapsedRealtime();
+        for (PendingLaunch pending : new ArrayList<>(pendingLaunches.values())) {
+            if (now < pending.deadlineMillis
+                    || pendingLaunches.remove(pending.requestId) == null) {
+                continue;
+            }
+            closeFrameworkPresentation(pending.requestedPresentationId);
+            sendLaunchResult(
+                    output,
+                    generation,
+                    pending.requestId,
+                    pending.requestedPresentationId,
+                    null,
+                    null,
+                    null,
+                    "failed",
+                    "Android did not create the requested task");
+        }
+    }
+
+    private List<ActivityManager.RunningTaskInfo> getManagedTasks() {
+        ActivityTaskManager taskManager = ActivityTaskManager.getInstance();
+        List<ActivityManager.RunningTaskInfo> tasks = new ArrayList<>();
+        for (int displayId : new ArrayList<>(presentationByDisplayId.keySet())) {
+            tasks.addAll(
+                    taskManager.getTasks(
+                            Integer.MAX_VALUE,
+                            false,
+                            false,
+                            displayId));
+        }
+        return tasks;
+    }
+
+    private void completePendingLaunches(
+            OutputStream output,
+            String generation,
+            long presentationId,
+            ActivityManager.RunningTaskInfo task) throws IOException, JSONException {
+        for (PendingLaunch pending : new ArrayList<>(pendingLaunches.values())) {
+            if (pending.displayId != task.displayId
+                    || (!pending.component.equals(task.baseActivity)
+                            && !pending.component.equals(task.topActivity))
+                    || pendingLaunches.remove(pending.requestId) == null) {
+                continue;
+            }
+            sendLaunchResult(
+                    output,
+                    generation,
+                    pending.requestId,
+                    pending.requestedPresentationId,
+                    presentationId,
+                    task.displayId,
+                    task.taskId,
+                    "created",
+                    null);
+        }
+    }
+
+    private void trackTask(long presentationId, int taskId) {
+        presentationByTaskId.put(taskId, presentationId);
+        taskIdsByPresentation
+                .computeIfAbsent(presentationId, ignored -> new HashSet<>())
+                .add(taskId);
+    }
+
+    private void removeTrackedTask(
+            OutputStream output,
+            String generation,
+            int taskId) throws IOException, JSONException {
+        Long presentationId = presentationByTaskId.remove(taskId);
+        publishedTasks.remove(taskId);
+        if (presentationId == null) {
+            return;
+        }
+        Set<Integer> taskIds = taskIdsByPresentation.get(presentationId);
+        if (taskIds != null) {
+            taskIds.remove(taskId);
+            if (!taskIds.isEmpty()) {
+                return;
+            }
+            taskIdsByPresentation.remove(presentationId);
+        }
+        closeFrameworkPresentation(presentationId);
+        send(output, new JSONObject()
+                .put("kind", "taskVanished")
+                .put("generation", generation)
+                .put("vanishedTask", new JSONObject()
+                        .put("presentationID", presentationId)
+                        .put("taskID", taskId)));
+    }
+
+    private void sendTaskChanged(
+            OutputStream output,
+            String generation,
+            long presentationId,
+            ActivityManager.RunningTaskInfo task,
+            ComponentName component) throws IOException, JSONException {
+        send(output, new JSONObject()
+                .put("kind", "taskChanged")
+                .put("generation", generation)
+                .put("taskState", new JSONObject()
+                        .put("presentationID", presentationId)
+                        .put("displayID", task.displayId)
+                        .put("taskID", task.taskId)
+                        .put("packageName", component.getPackageName())
+                        .put("activityName", component.getClassName())));
+    }
+
+    private void sendLaunchResult(
+            OutputStream output,
+            String generation,
+            String requestId,
+            long requestedPresentationId,
+            Long presentationId,
+            Integer displayId,
+            Integer taskId,
+            String outcome,
+            String failure) throws IOException, JSONException {
+        JSONObject result = new JSONObject()
+                .put("requestID", requestId)
+                .put("requestedPresentationID", requestedPresentationId)
+                .put("outcome", outcome);
+        if (presentationId != null) {
+            result.put("presentationID", presentationId);
+        }
+        if (displayId != null) {
+            result.put("displayID", displayId);
+        }
+        if (taskId != null) {
+            result.put("taskID", taskId);
+        }
+        if (failure != null) {
+            result.put("failure", failure);
+        }
+        send(output, new JSONObject()
+                .put("kind", "launchResult")
+                .put("generation", generation)
+                .put("activityLaunchResult", result));
+    }
+
+    private void requireLaunchableActivity(ComponentName requested) {
+        LauncherApps launcherApps = getSystemService(LauncherApps.class);
+        UserHandle user = Process.myUserHandle();
+        for (LauncherActivityInfo activity
+                : launcherApps.getActivityList(
+                        requested.getPackageName(), user)) {
+            if (activity.getComponentName().equals(requested)) {
+                return;
+            }
+        }
+        throw new IllegalArgumentException(
+                "activity is not available to the current Android user");
+    }
+
+    private void closePresentation(long presentationId) {
+        Set<Integer> taskIds = taskIdsByPresentation.remove(presentationId);
+        if (taskIds != null) {
+            for (int taskId : new ArrayList<>(taskIds)) {
+                presentationByTaskId.remove(taskId);
+                publishedTasks.remove(taskId);
+                try {
+                    ActivityTaskManager.getService().removeTask(taskId);
+                } catch (RemoteException error) {
+                    Log.w(TAG, "removing Android presentation task failed", error);
+                }
+            }
+        }
+        closeFrameworkPresentation(presentationId);
+    }
+
+    private void closePresentationFromHost(
+            OutputStream output,
+            String generation,
+            long presentationId) throws IOException, JSONException {
+        for (PendingLaunch pending : new ArrayList<>(pendingLaunches.values())) {
+            if (pending.requestedPresentationId != presentationId
+                    || pendingLaunches.remove(pending.requestId) == null) {
+                continue;
+            }
+            sendLaunchResult(
+                    output,
+                    generation,
+                    pending.requestId,
+                    pending.requestedPresentationId,
+                    null,
+                    null,
+                    null,
+                    "failed",
+                    "Host presentation closed during Android activity launch");
+        }
+        closePresentation(presentationId);
+    }
+
+    private void closeFrameworkPresentation(long presentationId) {
+        IDisplayManager displays = IDisplayManager.Stub.asInterface(
+                ServiceManager.getService(Context.DISPLAY_SERVICE));
+        if (displays == null) {
+            throw new IllegalStateException(
+                    "Android display manager is unavailable");
+        }
+        try {
+            displays.removeNucleusPresentation(presentationId);
+        } catch (RemoteException error) {
+            throw error.rethrowFromSystemServer();
+        }
+        activePresentations.remove(presentationId);
+        presentationByDisplayId.values().removeIf(
+                value -> value == presentationId);
+    }
+
+    private void closeApplicationPresentations() {
+        if (activePresentations.isEmpty()) {
+            return;
+        }
+        for (long presentationId
+                : new ArrayList<>(activePresentations)) {
+            try {
+                closePresentation(presentationId);
+            } catch (Exception error) {
+                Log.w(TAG, "closing Android presentation failed", error);
+            }
         }
     }
 

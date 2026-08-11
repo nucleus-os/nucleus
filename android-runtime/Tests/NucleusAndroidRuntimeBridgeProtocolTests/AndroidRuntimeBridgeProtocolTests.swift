@@ -22,6 +22,29 @@ private actor InputEventRecorder {
 }
 
 @Test
+func launchResultsDistinguishRequestedAndExistingPresentations() throws {
+    let reused = try AndroidActivityLaunchResult(
+        requestID: "request",
+        requestedPresentationID: 7,
+        presentationID: 3,
+        displayID: 11,
+        taskID: 19,
+        outcome: .activatedExistingPresentation)
+
+    #expect(reused.requestedPresentationID == 7)
+    #expect(reused.presentationID == 3)
+    #expect(throws: AndroidRuntimeFailure.self) {
+        try AndroidActivityLaunchResult(
+            requestID: "request",
+            requestedPresentationID: 7,
+            presentationID: 7,
+            displayID: nil,
+            taskID: 19,
+            outcome: .created)
+    }
+}
+
+@Test
 func inputProtocolAcceptsNativeDeviceEventsAndRejectsMixedShapes()
     throws
 {
@@ -113,6 +136,62 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
     #expect(pointerCommand.generation == generation)
     #expect(pointerCommand.inputEvent == pointer)
 
+    let launch = Task {
+        await server.launch(
+            presentationID: 7,
+            packageName: "org.example",
+            activityName: "org.example.MainActivity",
+            activationToken: "activation-token")
+    }
+    let launchEnvelope = try receive(from: connection)
+    let launchCommand = try #require(launchEnvelope.activityLaunch)
+    #expect(launchEnvelope.kind == .launchActivity)
+    #expect(launchCommand.presentationID == 7)
+    #expect(launchCommand.packageName == "org.example")
+    #expect(launchCommand.activationToken == "activation-token")
+    let launchResult = try AndroidActivityLaunchResult(
+        requestID: launchCommand.requestID,
+        requestedPresentationID: launchCommand.presentationID,
+        presentationID: launchCommand.presentationID,
+        displayID: 3,
+        taskID: 19,
+        outcome: .created)
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .launchResult,
+            generation: generation,
+            activityLaunchResult: launchResult),
+        over: connection)
+    #expect(await launch.value == launchResult)
+
+    let taskState = try AndroidTaskState(
+        presentationID: 7,
+        displayID: 3,
+        taskID: 19,
+        packageName: "org.example",
+        activityName: "org.example.MainActivity")
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .taskChanged,
+            generation: generation,
+            taskState: taskState),
+        over: connection)
+    let vanishedTask = try AndroidTaskVanished(
+        presentationID: 7,
+        taskID: 19)
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .taskVanished,
+            generation: generation,
+            vanishedTask: vanishedTask),
+        over: connection)
+
+    let close = try AndroidPresentationCloseCommand(presentationID: 7)
+    try server.close(presentationID: 7)
+    let closeEnvelope = try receive(from: connection)
+    #expect(closeEnvelope.kind == .closePresentation)
+    #expect(closeEnvelope.presentationClose == close)
+
     try send(
         AndroidRuntimeBridgeEnvelope(
             kind: .runtimeState,
@@ -184,7 +263,7 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
         over: connection)
 
     let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-    while await recorder.events.count < 8,
+    while await recorder.events.count < 10,
         ContinuousClock.now < deadline
     {
         try await ContinuousClock().sleep(for: .milliseconds(10))
@@ -193,6 +272,8 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
         await recorder.events == [
             .connected(generation: generation),
             .inputReady(generation: generation),
+            .taskChanged(generation: generation, task: taskState),
+            .taskVanished(generation: generation, task: vanishedTask),
             .userUnlocked(generation: generation, userSerial: 42),
             .iconAsset(
                 generation: generation,

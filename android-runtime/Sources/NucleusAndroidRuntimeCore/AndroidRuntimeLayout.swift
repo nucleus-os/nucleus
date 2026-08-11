@@ -18,6 +18,7 @@ public struct AndroidRuntimeLayout: Sendable {
     public let runtimeBridgeDirectory: URL
     public let runtimeBridgeSocket: URL
     public let presentationSocket: URL
+    public let presentationControlSocket: URL
     public let displayControlSocket: URL
     public let displayInputSocket: URL
     public let hostKernelConfigurationDirectory: URL
@@ -98,6 +99,8 @@ public struct AndroidRuntimeLayout: Sendable {
             "broker.sock")
         presentationSocket = runtimeBridgeDirectory.appendingPathComponent(
             "presentation.sock")
+        presentationControlSocket = runtimeBridgeDirectory.appendingPathComponent(
+            "presentation-control.sock")
         displayControlSocket = runtimeBridgeDirectory.appendingPathComponent(
             "display-control.sock")
         displayInputSocket = runtimeBridgeDirectory.appendingPathComponent(

@@ -20,10 +20,18 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. Finish Phase 6 and 7 qualification, then complete Phase 9 of
-   [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md).
-2. Begin [macOS remote development](macos-remote-development-plan.md) at Phase 1.
+1. Finish cold and warm qualification for
+   [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md),
+   then remove the confirmed-unused host intermediate directories and
+   consolidate the completed plan into the storage architecture.
+2. Complete Phases 1 through 4 of
+   [macOS remote development](macos-remote-development-plan.md).
 3. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
+4. Execute the
+   [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+   in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
+   complete remote-development Phase 6 immediately afterward, then continue the
+   package plan at Phase 3.
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).

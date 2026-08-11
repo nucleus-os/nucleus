@@ -24,10 +24,11 @@ qualification only.
 
 ## Phase 1 — Consume the qualified browser artifact
 
-Complete the Chromium/CEF product qualification plan and install its validated
-Nucleus Browser generation atomically. Verify the launcher, desktop entry,
-profile/cache isolation, sandbox helper ownership, runtime libraries, Widevine
-payload, and immutable product metadata.
+Complete the Chromium/CEF product qualification plan and consume its validated
+Nucleus Browser generation through the package cohort defined by the
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+Verify the launcher, desktop entry, profile/cache isolation, sandbox helper
+ownership, runtime libraries, Widevine payload, and immutable product metadata.
 
 Gate: the installed generation is complete, self-consistent, and traceable to
 the selected source and build identities.

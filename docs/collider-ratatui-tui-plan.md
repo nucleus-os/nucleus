@@ -60,5 +60,9 @@ Install Collider and `collider-ui` atomically as one version-matched cohort.
 Add PTY snapshot, input, terminal-restoration, subprocess, large-log, and
 accessibility tests.
 
+This is distribution of the developer tool itself. It does not install the
+Nucleus Linux product and is outside the
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+
 Gate: a partial installation cannot expose mismatched binaries, and removing the
 TUI leaves every Collider workflow available through the ordinary CLI.

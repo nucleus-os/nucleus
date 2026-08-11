@@ -49,6 +49,11 @@ import Testing
                 == layout.instance.appendingPathComponent(
                     "runtime-bridge/display-input.sock"
                 ).path)
+        #expect(
+            layout.presentationControlSocket.path
+                == layout.instance.appendingPathComponent(
+                    "runtime-bridge/presentation-control.sock"
+                ).path)
     }
 
     @Test func mountLedgerTakesExactlyOnceInReverseOrder() {

@@ -53,20 +53,9 @@
       "cleanupPolicy": "protected"
     },
     {
-      "name": "NucleusSnapshots",
-      "mountPath": "/Volumes/NucleusSnapshots",
-      "owner": "source-snapshot-service",
-      "storageClass": "sourceSnapshot",
-      "quotaBytes": 150000000000,
-      "reserveBytes": 50000000000,
-      "recoverability": "protected",
-      "retention": "content-addressed source retention policy",
-      "cleanupPolicy": "protected"
-    },
-    {
       "name": "NucleusBuild",
       "mountPath": "/Volumes/NucleusBuild",
-      "owner": "collider-worker",
+      "owner": "collider-build-workspaces",
       "storageClass": "incremental",
       "quotaBytes": 500000000000,
       "reserveBytes": 0,

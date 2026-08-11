@@ -26,7 +26,9 @@ struct AndroidApplicationCatalogPublisherTests {
         let publisher = try AndroidApplicationCatalogPublisher(
             server: server,
             sessionRuntimeDirectory: runtime)
-        let service = Task { try await server.run() }
+        let service = Task {
+            try await server.run { _ in .created }
+        }
         defer { service.cancel() }
         let client = try ApplicationProviderClientChannel(
             connecting: server.socket,

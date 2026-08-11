@@ -140,6 +140,10 @@ package func runAndroidRuntimeBroker<
         let applicationCatalog = try AndroidApplicationCatalogPublisher(
             server: applicationProvider,
             sessionRuntimeDirectory: configuration.sessionRuntimeDirectory)
+        let applicationLaunches = AndroidApplicationLaunchCoordinator(
+            catalog: applicationCatalog,
+            bridge: bridge,
+            presentationControlSocket: layout.presentationControlSocket.path)
         try await session.recordRuntimeBridgeListener()
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -147,6 +151,7 @@ package func runAndroidRuntimeBroker<
                     if case .cursorShapeChanged(_, let update) = event {
                         try? displayInteraction.send(update)
                     }
+                    await applicationLaunches.handle(event)
                     try? await applicationCatalog.handle(event)
                     await recordRuntimeBridgeEvent(
                         event,
@@ -154,7 +159,17 @@ package func runAndroidRuntimeBroker<
                 }
             }
             group.addTask {
-                try await applicationProvider.run()
+                try await applicationProvider.run { request in
+                    await applicationLaunches.launch(request)
+                }
+            }
+            group.addTask {
+                try await observeAndroidPresentationClosures(
+                    socketPath: layout.presentationControlSocket.path
+                ) { presentationID in
+                    await applicationLaunches.hostClosed(
+                        presentationID: presentationID)
+                }
             }
             group.addTask {
                 try await displayInteraction.run { event in
@@ -270,8 +285,17 @@ actor AndroidApplicationCatalogPublisher {
             try? server.publish(.replace([]))
             garbageCollectIcons()
         case .connected, .inputReady, .inputFailed, .userUnlocked,
-            .cursorShapeChanged:
+            .cursorShapeChanged, .taskChanged, .taskVanished:
             break
+        }
+    }
+
+    func activity(
+        forLaunchID launchID: String
+    ) -> AndroidRuntimeBridgeActivity? {
+        guard let userSerial else { return nil }
+        return activities.values.first { activity in
+            localID(for: key(for: activity), serial: userSerial) == launchID
         }
     }
 
@@ -361,6 +385,234 @@ actor AndroidApplicationCatalogPublisher {
     }
 }
 
+private actor AndroidApplicationLaunchCoordinator {
+    private struct ManagedPresentation {
+        var displayID: Int32
+        var taskIDs: Set<Int32>
+    }
+
+    private let catalog: AndroidApplicationCatalogPublisher
+    private let bridge: AndroidRuntimeBridgeServer
+    private let presentationControlSocket: String
+    private var presentations: [UInt64: ManagedPresentation] = [:]
+    private var launchingPresentationIDs: Set<UInt64> = []
+    private var retiredPresentationIDs: Set<UInt64> = []
+
+    init(
+        catalog: AndroidApplicationCatalogPublisher,
+        bridge: AndroidRuntimeBridgeServer,
+        presentationControlSocket: String
+    ) {
+        self.catalog = catalog
+        self.bridge = bridge
+        self.presentationControlSocket = presentationControlSocket
+    }
+
+    func launch(
+        _ request: ApplicationProviderLaunchRequest
+    ) async -> ApplicationProviderLaunchResult {
+        guard let activity = await catalog.activity(forLaunchID: request.launchID) else {
+            return .failed("Android activity is no longer available")
+        }
+        let presentationID: UInt64
+        do {
+            let control = try AndroidPresentationControlConnection.connect(
+                socketPath: presentationControlSocket)
+            try control.send(
+                .create(
+                    appID: "\(activity.packageName)/\(activity.activityName)",
+                    title: activity.label,
+                    width: 1_280,
+                    height: 720,
+                    activationToken: request.activationToken))
+            presentationID = try control.receiveReply().presentationID
+        } catch {
+            return .failed(
+                "Creating Android presentation failed: \(error)")
+        }
+
+        launchingPresentationIDs.insert(presentationID)
+        let result = await bridge.launch(
+            presentationID: presentationID,
+            packageName: activity.packageName,
+            activityName: activity.activityName,
+            activationToken: request.activationToken)
+        launchingPresentationIDs.remove(presentationID)
+        if retiredPresentationIDs.contains(presentationID) {
+            if result.outcome == .created,
+                let actualPresentationID = result.presentationID
+            {
+                try? bridge.close(presentationID: actualPresentationID)
+            }
+            closePresentation(presentationID)
+            return .failed("Android presentation closed during launch")
+        }
+        switch result.outcome {
+        case .created:
+            guard let actualPresentationID = result.presentationID,
+                actualPresentationID == presentationID,
+                let displayID = result.displayID,
+                let taskID = result.taskID
+            else {
+                closePresentation(presentationID)
+                return .failed(
+                    "Android returned an inconsistent created presentation")
+            }
+            presentations[presentationID] = ManagedPresentation(
+                displayID: displayID,
+                taskIDs: [taskID])
+            return .created
+        case .activatedExistingPresentation:
+            guard let existingPresentationID = result.presentationID,
+                existingPresentationID != presentationID,
+                !retiredPresentationIDs.contains(existingPresentationID),
+                let displayID = result.displayID,
+                let taskID = result.taskID
+            else {
+                closePresentation(presentationID)
+                return .failed(
+                    "Android returned an inconsistent reused presentation")
+            }
+            closePresentation(presentationID)
+            presentations[existingPresentationID] = ManagedPresentation(
+                displayID: displayID,
+                taskIDs: [taskID])
+            if let token = request.activationToken {
+                activatePresentation(
+                    existingPresentationID,
+                    token: token)
+            }
+            return .activatedExistingPresentation
+        case .failed:
+            closePresentation(presentationID)
+            return .failed(
+                result.failure ?? "Android rejected activity launch")
+        }
+    }
+
+    func handle(_ event: AndroidRuntimeBridgeEvent) {
+        switch event {
+        case .taskChanged(_, let task):
+            guard !launchingPresentationIDs.contains(task.presentationID)
+            else { return }
+            var presentation =
+                presentations[task.presentationID]
+                ?? ManagedPresentation(
+                    displayID: task.displayID,
+                    taskIDs: [])
+            presentation.displayID = task.displayID
+            presentation.taskIDs.insert(task.taskID)
+            presentations[task.presentationID] = presentation
+        case .taskVanished(_, let task):
+            retiredPresentationIDs.insert(task.presentationID)
+            presentations.removeValue(forKey: task.presentationID)
+            closePresentation(task.presentationID)
+        case .disconnected:
+            for presentationID in presentations.keys {
+                retiredPresentationIDs.insert(presentationID)
+                closePresentation(presentationID)
+            }
+            presentations.removeAll()
+            for presentationID in launchingPresentationIDs {
+                retiredPresentationIDs.insert(presentationID)
+                closePresentation(presentationID)
+            }
+        case .connected, .inputReady, .inputFailed, .userUnlocked, .userLocked,
+            .activitiesReplaced, .packageActivitiesReplaced, .iconAsset,
+            .cursorShapeChanged:
+            break
+        }
+    }
+
+    func hostClosed(presentationID: UInt64) {
+        let wasLaunching = launchingPresentationIDs.contains(presentationID)
+        let wasManaged = presentations.removeValue(forKey: presentationID) != nil
+        if wasLaunching || wasManaged {
+            retiredPresentationIDs.insert(presentationID)
+            try? bridge.close(presentationID: presentationID)
+        }
+    }
+
+    private func closePresentation(_ presentationID: UInt64) {
+        do {
+            let control = try AndroidPresentationControlConnection.connect(
+                socketPath: presentationControlSocket)
+            try control.send(.close(presentationID: presentationID))
+            _ = try control.receiveReply()
+        } catch {
+            // Runtime teardown closes any provisional presentation that survives
+            // an unsuccessful launch transaction.
+        }
+    }
+
+    private func activatePresentation(
+        _ presentationID: UInt64,
+        token: String
+    ) {
+        do {
+            let control = try AndroidPresentationControlConnection.connect(
+                socketPath: presentationControlSocket)
+            try control.send(
+                .activate(
+                    presentationID: presentationID,
+                    token: token))
+            _ = try control.receiveReply()
+        } catch {
+            // The task remains usable even if a stale activation token is rejected.
+        }
+    }
+}
+
+private func observeAndroidPresentationClosures(
+    socketPath: String,
+    onClosed: @escaping @Sendable (UInt64) async -> Void
+) async throws {
+    var establishedConnection: AndroidPresentationControlConnection?
+    while establishedConnection == nil {
+        try Task.checkCancellation()
+        do {
+            establishedConnection =
+                try AndroidPresentationControlConnection.connect(
+                    socketPath: socketPath)
+        } catch {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+    guard let connection = establishedConnection else {
+        throw AndroidRuntimeFailure(
+            "Android presentation observer could not connect")
+    }
+    try connection.send(.observe)
+    while true {
+        try Task.checkCancellation()
+        var descriptor = pollfd(
+            fd: connection.fileDescriptor,
+            events: Int16(POLLIN),
+            revents: 0)
+        let result = unsafe poll(&descriptor, 1, 250)
+        if result < 0 {
+            if errno == EINTR { continue }
+            throw POSIXError(.init(rawValue: errno) ?? .EIO)
+        }
+        guard result > 0 else { continue }
+        guard descriptor.revents & Int16(POLLIN) != 0 else {
+            throw AndroidRuntimeFailure(
+                "Android presentation observer disconnected")
+        }
+        let event = try connection.receiveEvent()
+        switch event.kind {
+        case .ready:
+            continue
+        case .closed:
+            guard let presentationID = event.presentationID else {
+                throw AndroidRuntimeFailure(
+                    "Android presentation closure omitted identity")
+            }
+            await onClosed(presentationID)
+        }
+    }
+}
+
 private func recordRuntimeBridgeEvent<
     RuntimeHost: AndroidRuntimeHost
 >(
@@ -439,6 +691,24 @@ private func recordRuntimeBridgeEvent<
                 "generation": generation,
                 "displayId": String(update.displayID),
                 "pointerIconType": String(update.pointerIconType),
+            ])
+    case .taskChanged(let generation, let task):
+        try? await session.recordRuntimeBridgeStage(
+            "task-changed",
+            fields: [
+                "generation": generation,
+                "presentationId": String(task.presentationID),
+                "displayId": String(task.displayID),
+                "taskId": String(task.taskID),
+                "component": "\(task.packageName)/\(task.activityName)",
+            ])
+    case .taskVanished(let generation, let task):
+        try? await session.recordRuntimeBridgeStage(
+            "task-vanished",
+            fields: [
+                "generation": generation,
+                "presentationId": String(task.presentationID),
+                "taskId": String(task.taskID),
             ])
     case .disconnected(let generation):
         try? await session.recordRuntimeBridgeStage(

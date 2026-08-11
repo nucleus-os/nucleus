@@ -30,7 +30,13 @@ struct RemoteApplicationProviderServiceTests {
             expectedUserID: getuid())
         let first = try record(id: "android:0:org.example/.Main", name: "Example")
         try server.publish(.replace([first]))
-        let publication = Task.detached { try await server.run() }
+        let publication = Task.detached {
+            try await server.run { request in
+                request.launchID.hasSuffix("/.Settings")
+                    ? .activatedExistingPresentation
+                    : .created
+            }
+        }
         defer { publication.cancel() }
 
         let launcher = LauncherService(desktopProvider: nil)
@@ -47,6 +53,10 @@ struct RemoteApplicationProviderServiceTests {
         try server.publish(.upsert(second))
         #expect(service.process(token: token))
         #expect(launcher.applications().map(\.name) == ["Example", "Settings"])
+        let settingsID = try #require(ApplicationID(rawValue: second.id))
+        #expect(
+            launcher.launch(applicationID: settingsID)
+                == .activatedExistingPresentation)
 
         try server.publish(.remove(first.id))
         #expect(service.process(token: token))

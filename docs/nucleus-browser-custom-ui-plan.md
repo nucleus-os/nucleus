@@ -411,6 +411,9 @@ adds no persistent copy to the page frame path.
 Make NucleusUI the only product shell.
 
 - Install and launch the custom executable as Nucleus Browser.
+- Publish the custom executable through the browser package owned by the
+  [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md);
+  this phase adds no browser-specific installer or updater.
 - Remove the remaining vertical-tab defaults and branding behavior implemented in
   Chromium Views; the experimental glass styling was retired before this phase.
 - Remove custom-shell dependencies on `BrowserView` and Views bubble implementations.

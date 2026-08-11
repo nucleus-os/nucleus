@@ -8,14 +8,17 @@ The M2 Ultra is the Nucleus development and build host. The authoritative Git
 checkout, including uncommitted work and submodule worktrees, lives on protected
 macOS storage under `/Volumes/NucleusDev`. Remote computers are replaceable SSH,
 editor, and terminal clients; they do not own a second checkout that must be
-uploaded before it can build.
+uploaded before it can build. A declared Linux presentation target may receive
+an immutable user-owned development generation for local VT testing, but it
+never receives source or becomes a build host.
 
 Collider runs directly on macOS, where it owns Xcode, host-side downloads,
 durable runs, task scheduling, Apple-container execution, and persistent Linux
 build workspaces. Linux containers remain offline build executors. There is no
-persistent Linux development machine, nested container runtime, Collider worker
-daemon, source-snapshot service, remote-execution protocol, or development
-artifact transport.
+persistent Linux build machine, nested container runtime, Collider worker
+daemon, source-snapshot service, or remote-execution protocol. Development
+artifact deployment uses one-shot SSH and rsync from macOS to a user-owned store
+on a declared Linux presentation target.
 
 Remote access uses the host's standard SSH service over an authenticated private
 network. Long-running work remains attached to a standard terminal multiplexer.
@@ -36,14 +39,20 @@ failed or interrupted run when its resolved task identities still match.
 Persistent Linux build and compiler-cache state is separate from source and
 survives individual build-container lifetimes.
 
-The macOS builder contract already declares `NucleusDev` as protected source
-storage, but the active checkout has not yet moved there. It also declares a
-`NucleusSnapshots` volume and worker-oriented ownership names inherited from the
-discarded remote-worker architecture. Collider execution lanes coordinate one
-process; independently launched Collider processes do not yet share one
+The macOS builder contract declares `NucleusDev` as protected source storage,
+but the active checkout has not yet moved there. `NucleusSnapshots` and the
+worker-oriented `NucleusBuild` ownership inherited from the discarded remote-
+worker architecture have been removed from the contract, and the unused
+physical snapshot volume has been deleted. Collider execution lanes coordinate
+one process; independently launched Collider processes do not yet share one
 host-wide execution admission lock.
 
 ## Phase 1: Correct Host Storage Ownership
+
+Status: in progress. The builder contract and physical APFS layout now omit
+`NucleusSnapshots`, and `NucleusBuild` is owned by Collider build workspaces.
+Moving the authoritative checkout to `NucleusDev` and establishing its
+encrypted off-host backup remain.
 
 Make `/Volumes/NucleusDev/nucleus` the stable authoritative checkout. Preserve
 the complete working tree, Git metadata, submodule selections, ignored local
@@ -127,7 +136,26 @@ Gate: two checkouts cannot execute task graphs concurrently, inspection remains
 available while a build owns admission, internal architecture concurrency is
 unchanged, and interruption leaves the lock reusable.
 
-## Phase 5: Complete the Remote-Development Cutover
+## Phase 5: Add the Linux Presentation Target
+
+Implement the non-installed development-generation deployment defined by the
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+Collider builds and validates the selected Linux runtime on macOS, transfers it
+through standard SSH and rsync, and atomically publishes it below the remote
+user's development state root. The Linux target has no checkout, build
+toolchain, Collider worker, or listening Nucleus service.
+
+Keep the package-managed nightly runtime and every development workspace in
+separate configuration, data, state, cache, runtime, and log roots. Deployment
+does not launch a session. A person launches the generation from a free local VT
+and relies on ordinary logind or seat-provider pause/resume when switching
+between the package-managed and development sessions.
+
+Gate: editing and building remain entirely on the M2 Ultra while a declared
+Linux target can run the exact dirty development generation on a secondary VT
+without changing its package database or primary Nucleus installation.
+
+## Phase 6: Complete the Remote-Development Cutover
 
 Update builder setup, agent guidance, and architecture documentation to state
 that macOS is both the development control plane and build orchestrator. Remove
@@ -135,21 +163,25 @@ all remaining references to a persistent Linux development machine, source
 snapshot service, Collider worker endpoint, `collider dev`, and `collider
 remote` commands.
 
-Keep self-hosted CI, native qualification, publication, and shipping Apple
-virtualization in their own plans. None is a prerequisite for remote editing or
-development builds.
+Keep self-hosted CI, native qualification, repository publication, and shipping
+Apple virtualization in their own plans. None is a prerequisite for remote
+editing, development builds, or one-shot deployment to a declared presentation
+target.
 
 Gate: remote development from a clean client succeeds through standard SSH;
 the authoritative checkout and uncommitted work survive client replacement;
 one heavy build can use the M2 Ultra's internal parallelism without competing
-with another Collider process; and deleting every reconstructible build
-workspace leaves protected source and user state intact.
+with another Collider process; a Linux presentation target receives no source;
+and deleting every reconstructible build workspace and deployed development
+generation leaves protected source, installed packages, and user state intact.
 
 ## Explicit Non-Goals
 
 - Do not put the authoritative checkout inside an Apple container or VM.
 - Do not create a second Linux checkout for editor convenience.
-- Do not implement source snapshotting, blob upload, or custom artifact transfer.
+- Do not implement source snapshotting, source upload, a custom artifact
+  protocol, or a remote artifact daemon. One-shot development-generation
+  transfer through standard SSH and rsync is the only deployment path.
 - Do not add a Collider worker daemon or remote-execution API.
 - Do not make remote development depend on GitHub Actions.
 - Do not expose Apple-container services or build containers to remote clients.

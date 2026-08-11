@@ -158,13 +158,6 @@ struct TextRect final {
   uint32_t direction{TextDirectionLtr};
 };
 
-struct TextBounds final {
-  float left{0.0f};
-  float top{0.0f};
-  float right{0.0f};
-  float bottom{0.0f};
-};
-
 struct FontMetrics final {
   float ascender{0.0f};
   float descender{0.0f};
@@ -244,8 +237,6 @@ class TextLayoutService final {
       TextRect *outRects,
       size_t rectCapacity,
       uint32_t *outRectCount) const;
-
-  std::optional<TextBounds> inkBounds(uint64_t handle) const;
 
   bool graphemeBreaks(TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const;
   void invalidateFontCollection() const;

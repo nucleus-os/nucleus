@@ -27,7 +27,7 @@ package func composerRefreshPeriodNanoseconds(
 let initialAndroidPresentationWidth: Int32 = 1_280
 let initialAndroidPresentationHeight: Int32 = 720
 
-struct AndroidPresentationMode: Equatable {
+struct AndroidPresentationMode: Equatable, Sendable {
     let width: Int32
     let height: Int32
 }
@@ -605,13 +605,13 @@ func receiveComposerTopologySubscription(
     private let acceptReactor: LinuxHostReactor
     private let presentationListener: Int32
     private let displayControlListener: Int32
+    private let presentationControlListener: AndroidPresentationControlListener
+    private let presentationControlExpectedUserID: UInt32
     private let presenter: AndroidDisplayPresenter
     private var topologySubscriber: Int32?
-    private var displayControlConnection: Int32?
-    private var displayConfigurationGeneration: UInt64 = 1
-    private var displayConfigurationMode = AndroidPresentationMode(
-        width: initialAndroidPresentationWidth,
-        height: initialAndroidPresentationHeight)
+    private var presentations: AndroidPresentationRegistry
+    private var displayControlConnections: [AndroidPresentationID: Int32] = [:]
+    private var presentationObserver: AndroidPresentationControlConnection?
 
     package init(
         socketPath: String,
@@ -622,7 +622,9 @@ func receiveComposerTopologySubscription(
         inputSocketPath: String,
         presentationSocketPath: String,
         displayControlSocketPath: String,
-        presentationExpectedUserID: UInt32
+        presentationExpectedUserID: UInt32,
+        presentationControlSocketPath: String,
+        presentationControlExpectedUserID: UInt32
     ) throws {
         guard
             nucleus_android_require_parent_lifetime(
@@ -637,6 +639,8 @@ func receiveComposerTopologySubscription(
         self.presentationSocketPath = presentationSocketPath
         self.displayControlSocketPath = displayControlSocketPath
         self.presentationExpectedUserID = presentationExpectedUserID
+        self.presentationControlExpectedUserID =
+            presentationControlExpectedUserID
         self.parentProcessID = parentProcessID
         self.listener = listener
         self.acceptReactor = try LinuxHostReactor()
@@ -661,13 +665,29 @@ func receiveComposerTopologySubscription(
         }
         self.displayControlListener = displayControlListener
         do {
+            presentationControlListener =
+                try AndroidPresentationControlListener(
+                    socketPath: presentationControlSocketPath)
+        } catch {
+            _ = close(listener)
+            _ = close(presentationListener)
+            _ = close(displayControlListener)
+            _ = socketPath.withCString { unsafe unlink($0) }
+            _ = presentationSocketPath.withCString { unsafe unlink($0) }
+            _ = displayControlSocketPath.withCString { unsafe unlink($0) }
+            throw error
+        }
+        do {
             let inputClient = try AndroidDisplayInteractionClient(
                 socketPath: inputSocketPath)
+            let presentations = AndroidPresentationRegistry()
             self.presenter = try AndroidDisplayPresenter(
                 waylandSocket: waylandSocket,
                 renderDevice: renderDevice,
                 reactor: LinuxHostReactor(),
-                inputClient: inputClient)
+                inputClient: inputClient,
+                initialPresentation: presentations.desktop)
+            self.presentations = presentations
         } catch {
             _ = close(listener)
             _ = close(presentationListener)
@@ -691,6 +711,9 @@ func receiveComposerTopologySubscription(
                 generation: generation,
                 mode: mode)
         }
+        presenter.presentationClosedSink = { [weak self] presentationID in
+            self?.presentationClosedByCompositor(presentationID)
+        }
     }
 
     package func run() async throws {
@@ -698,8 +721,8 @@ func receiveComposerTopologySubscription(
             _ = close(listener)
             _ = close(presentationListener)
             _ = close(displayControlListener)
-            if let displayControlConnection {
-                _ = close(displayControlConnection)
+            for connection in displayControlConnections.values {
+                _ = close(connection)
             }
             _ = socketPath.withCString { unsafe unlink($0) }
             _ = presentationSocketPath.withCString {
@@ -724,6 +747,10 @@ func receiveComposerTopologySubscription(
                         token: 3,
                         fileDescriptor: displayControlListener,
                         events: Int16(POLLIN)),
+                    LinuxReactorInterest(
+                        token: 4,
+                        fileDescriptor: presentationControlListener.fileDescriptor,
+                        events: Int16(POLLIN)),
                 ], timeoutNanoseconds: nil)
             for event in batch.events {
                 if let failure = event.failureCode {
@@ -743,9 +770,126 @@ func receiveComposerTopologySubscription(
                     try acceptPresentationConnection()
                 } else if event.token == 3 {
                     try acceptDisplayControlConnection()
+                } else if event.token == 4 {
+                    try acceptPresentationControlConnection()
                 }
             }
         }
+    }
+
+    private func acceptPresentationControlConnection() throws {
+        let connection = try presentationControlListener.accept(
+            expectedUserID: presentationControlExpectedUserID)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await waitForDisplayHostReadable(
+                    connection.fileDescriptor,
+                    reactor: LinuxHostReactor())
+                try handlePresentationControl(connection)
+            } catch {
+                let diagnostic =
+                    "{\"component\":\"nucleus-android-display-host\","
+                    + "\"stage\":\"presentation.control.failed\","
+                    + "\"error\":\"\(String(describing: error))\"}\n"
+                FileHandle.standardError.write(Data(diagnostic.utf8))
+            }
+        }
+    }
+
+    private func handlePresentationControl(
+        _ connection: AndroidPresentationControlConnection
+    ) throws {
+        let request = try connection.receiveRequest()
+        switch request.operation {
+        case .create:
+            guard let appID = request.appID,
+                let title = request.title,
+                let width = request.width.flatMap({ Int32(exactly: $0) }),
+                let height = request.height.flatMap({ Int32(exactly: $0) })
+            else { throw DisplayHostError.invalidRequest }
+            let presentation = try presentations.createApplication(
+                appID: appID,
+                title: title,
+                initialMode: AndroidPresentationMode(
+                    width: width,
+                    height: height))
+            do {
+                try presenter.createPresentation(presentation)
+                if let activationToken = request.activationToken {
+                    try presenter.activatePresentation(
+                        id: presentation.id,
+                        token: activationToken)
+                }
+            } catch {
+                presentations.removeApplication(id: presentation.id)
+                throw error
+            }
+            try connection.send(
+                AndroidPresentationControlReply(
+                    presentationID: presentation.id.rawValue))
+        case .close:
+            guard let rawPresentationID = request.presentationID else {
+                throw DisplayHostError.invalidRequest
+            }
+            let presentationID = AndroidPresentationID(
+                rawValue: rawPresentationID)
+            guard
+                closeApplicationPresentation(
+                    presentationID,
+                    retireSurface: true)
+            else { throw DisplayHostError.invalidRequest }
+            try connection.send(
+                AndroidPresentationControlReply(
+                    presentationID: rawPresentationID))
+        case .activate:
+            guard let rawPresentationID = request.presentationID,
+                let activationToken = request.activationToken
+            else { throw DisplayHostError.invalidRequest }
+            try presenter.activatePresentation(
+                id: AndroidPresentationID(rawValue: rawPresentationID),
+                token: activationToken)
+            try connection.send(
+                AndroidPresentationControlReply(
+                    presentationID: rawPresentationID))
+        case .observe:
+            presentationObserver = connection
+            try connection.send(.ready)
+        }
+    }
+
+    private func presentationClosedByCompositor(
+        _ presentationID: AndroidPresentationID
+    ) {
+        guard
+            closeApplicationPresentation(
+                presentationID,
+                retireSurface: false)
+        else { return }
+        do {
+            try presentationObserver?.send(
+                .closed(presentationID: presentationID.rawValue))
+        } catch {
+            presentationObserver = nil
+        }
+    }
+
+    @discardableResult
+    private func closeApplicationPresentation(
+        _ presentationID: AndroidPresentationID,
+        retireSurface: Bool
+    ) -> Bool {
+        guard presentations.removeApplication(id: presentationID) != nil
+        else { return false }
+        if let displayControl = displayControlConnections.removeValue(
+            forKey: presentationID)
+        {
+            _ = close(displayControl)
+        }
+        if retireSurface {
+            presenter.closePresentation(id: presentationID)
+        }
+        return true
     }
 
     private func acceptDisplayControlConnection() throws {
@@ -768,24 +912,26 @@ func receiveComposerTopologySubscription(
                     0,
                     &descriptorCount)
             }
+            let presentationID = AndroidPresentationID(
+                rawValue: request.presentation_id)
             guard received == MemoryLayout.size(ofValue: request),
                 request.operation
                     == UInt32(NUCLEUS_ANDROID_DISPLAY_CONTROL_REGISTER.rawValue),
                 request.byte_count == received,
                 request.fd_count == 0,
                 descriptorCount == 0,
-                request.presentation_id == 0
+                let presentation = presentations.presentation(
+                    id: presentationID)
             else { throw DisplayHostError.invalidRequest }
-            if let previous = displayControlConnection {
+            if let previous = displayControlConnections[presentationID] {
                 _ = close(previous)
             }
-            displayControlConnection = connection
+            displayControlConnections[presentationID] = connection
             try sendDisplayConfiguration(
                 connection: connection,
                 operation: UInt32(
                     NUCLEUS_ANDROID_DISPLAY_CONTROL_CONFIGURE.rawValue),
-                presentationID: request.presentation_id,
-                mode: displayConfigurationMode)
+                presentation: presentation)
         } catch {
             _ = close(connection)
             throw error
@@ -797,38 +943,44 @@ func receiveComposerTopologySubscription(
         generation: UInt64,
         mode: AndroidPresentationMode
     ) {
-        displayConfigurationGeneration = generation
-        displayConfigurationMode = mode
-        guard let connection = displayControlConnection else { return }
+        let id = AndroidPresentationID(rawValue: presentationID)
         do {
+            try presentations.updateConfiguration(
+                id: id,
+                generation: generation,
+                mode: mode)
+            guard let connection = displayControlConnections[id],
+                let presentation = presentations.presentation(id: id)
+            else { return }
             try sendDisplayConfiguration(
                 connection: connection,
                 operation: UInt32(
                     NUCLEUS_ANDROID_DISPLAY_CONTROL_RESIZE.rawValue),
-                presentationID: presentationID,
-                mode: mode)
+                presentation: presentation)
         } catch {
-            _ = close(connection)
-            displayControlConnection = nil
+            if let connection = displayControlConnections.removeValue(
+                forKey: id)
+            {
+                _ = close(connection)
+            }
         }
     }
 
     private func sendDisplayConfiguration(
         connection: Int32,
         operation: UInt32,
-        presentationID: UInt64,
-        mode: AndroidPresentationMode
+        presentation: AndroidPresentation
     ) throws {
-        guard let width = UInt32(exactly: mode.width),
-            let height = UInt32(exactly: mode.height)
+        guard let width = UInt32(exactly: presentation.mode.width),
+            let height = UInt32(exactly: presentation.mode.height)
         else { throw DisplayHostError.invalidRequest }
         var configuration = nucleus_android_display_control_configuration()
         configuration.operation = operation
         configuration.byte_count = UInt32(
             MemoryLayout.size(ofValue: configuration))
         configuration.fd_count = 0
-        configuration.presentation_id = presentationID
-        configuration.generation = displayConfigurationGeneration
+        configuration.presentation_id = presentation.id.rawValue
+        configuration.generation = presentation.configurationGeneration
         configuration.width = width
         configuration.height = height
         configuration.density_dpi = 160
@@ -1742,6 +1894,7 @@ private final class AndroidDisplayPresenter:
     private let compositor: WaylandProxy<WlCompositorClient>
     private let dmabuf: WaylandProxy<ZwpLinuxDmabufV1Client>
     private let wmBase: WaylandProxy<XdgWmBaseClient>
+    private let activation: WaylandProxy<XdgActivationV1Client>
     private let viewporter: WaylandProxy<WpViewporterClient>
     private let syncobjManager: WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
     private let seatHandler: DisplaySeatHandler
@@ -1759,6 +1912,7 @@ private final class AndroidDisplayPresenter:
         outputTopology.connectedOutputs
     }
     var resizeSink: ((UInt64, UInt64, AndroidPresentationMode) -> Void)?
+    var presentationClosedSink: ((AndroidPresentationID) -> Void)?
     private var surfaces: [UInt64: DisplaySurface] = [:]
     private var displayIDByXdgSurface: [UInt: UInt64] = [:]
     private var displayIDByToplevel: [UInt: UInt64] = [:]
@@ -1773,7 +1927,8 @@ private final class AndroidDisplayPresenter:
         waylandSocket: String,
         renderDevice: String,
         reactor: LinuxHostReactor,
-        inputClient: AndroidDisplayInteractionClient
+        inputClient: AndroidDisplayInteractionClient,
+        initialPresentation: AndroidPresentation
     ) throws {
         let selectedRenderDevice: String
         if renderDevice == "auto" {
@@ -1806,6 +1961,7 @@ private final class AndroidDisplayPresenter:
                     DesiredGlobal<WlCompositorClient>(maximumVersion: 6),
                     DesiredGlobal<ZwpLinuxDmabufV1Client>(maximumVersion: 5),
                     DesiredGlobal<XdgWmBaseClient>(maximumVersion: 6),
+                    DesiredGlobal<XdgActivationV1Client>(maximumVersion: 1),
                     DesiredGlobal<WpViewporterClient>(maximumVersion: 1),
                     DesiredGlobal<WpLinuxDrmSyncobjManagerV1Client>(
                         maximumVersion: 1),
@@ -1835,6 +1991,7 @@ private final class AndroidDisplayPresenter:
         guard let compositor = registry.singleton(WlCompositorClient.self),
             let dmabuf = registry.singleton(ZwpLinuxDmabufV1Client.self),
             let wmBase = registry.singleton(XdgWmBaseClient.self),
+            let activation = registry.singleton(XdgActivationV1Client.self),
             let viewporter = registry.singleton(
                 WpViewporterClient.self),
             let syncobjManager = registry.singleton(
@@ -1853,6 +2010,7 @@ private final class AndroidDisplayPresenter:
         self.compositor = compositor
         self.dmabuf = dmabuf
         self.wmBase = wmBase
+        self.activation = activation
         self.viewporter = viewporter
         self.syncobjManager = syncobjManager
         self.seatHandler = seatHandler
@@ -1863,23 +2021,13 @@ private final class AndroidDisplayPresenter:
         seatHandler.sink = { [weak self] event in
             self?.sendInputEvent(event)
         }
-        try createSurface(
-            displayID: 0,
-            width: UInt32(initialAndroidPresentationWidth),
-            height: UInt32(initialAndroidPresentationHeight))
-        guard connection.bootstrapRoundtrip() >= 0,
-            connection.bootstrapRoundtrip() >= 0,
-            surfaces.values.allSatisfy(\.configured)
-        else {
-            throw DisplayHostError.wayland(
-                "initial Android presentation configure failed")
-        }
+        try createPresentation(initialPresentation)
     }
 
-    private func retireSurface(displayID: UInt64) {
+    private func retirePresentation(id: AndroidPresentationID) {
         guard
             let displaySurface = surfaces.removeValue(
-                forKey: displayID)
+                forKey: id.rawValue)
         else { return }
         displayIDByXdgSurface.removeValue(
             forKey: displaySurface.xdgSurface.identity)
@@ -1895,6 +2043,22 @@ private final class AndroidDisplayPresenter:
         try? displaySurface.toplevel.destroy()
         try? displaySurface.xdgSurface.destroy()
         try? displaySurface.surface.destroy()
+    }
+
+    func closePresentation(id: AndroidPresentationID) {
+        retirePresentation(id: id)
+    }
+
+    func activatePresentation(
+        id: AndroidPresentationID,
+        token: String
+    ) throws {
+        guard let displaySurface = surfaces[id.rawValue], !displaySurface.closed
+        else { throw DisplayHostError.invalidRequest }
+        try activation.activate(token: token, surface: displaySurface.surface)
+        guard connection.flush() >= 0 else {
+            throw DisplayHostError.wayland("activation flush failed")
+        }
     }
 
     func present(
@@ -2110,11 +2274,13 @@ private final class AndroidDisplayPresenter:
         }
     }
 
-    private func createSurface(
-        displayID: UInt64,
-        width: UInt32,
-        height: UInt32
+    func createPresentation(
+        _ presentation: AndroidPresentation
     ) throws {
+        let displayID = presentation.id.rawValue
+        guard let width = UInt32(exactly: presentation.mode.width),
+            let height = UInt32(exactly: presentation.mode.height)
+        else { throw DisplayHostError.invalidRequest }
         guard surfaces[displayID] == nil
         else {
             throw DisplayHostError.wayland(
@@ -2157,13 +2323,19 @@ private final class AndroidDisplayPresenter:
             bufferWidth: width,
             bufferHeight: height)
         surfaces[displayID] = displaySurface
+        var created = false
+        defer {
+            if !created {
+                retirePresentation(id: presentation.id)
+            }
+        }
         displayIDBySurface[surface.identity] = displayID
         displayIDByXdgSurface[xdgSurface.identity] = displayID
         displayIDByToplevel[toplevel.identity] = displayID
         try xdgSurface.installListener(self)
         try toplevel.installListener(self)
-        try toplevel.setAppId(app_id: "nucleus.android.desktop")
-        try toplevel.setTitle(title: "Android")
+        try toplevel.setAppId(app_id: presentation.appID)
+        try toplevel.setTitle(title: presentation.title)
         try toplevel.setMinSize(width: 320, height: 320)
         try viewport.setDestination(
             width: Int32(width),
@@ -2177,6 +2349,14 @@ private final class AndroidDisplayPresenter:
         guard connection.flush() >= 0 else {
             throw DisplayHostError.wayland("initial commit failed")
         }
+        guard connection.bootstrapRoundtrip() >= 0,
+            connection.bootstrapRoundtrip() >= 0,
+            displaySurface.configured
+        else {
+            throw DisplayHostError.wayland(
+                "Android presentation configure failed")
+        }
+        created = true
     }
 
     private func importBuffer(
@@ -2434,7 +2614,9 @@ private final class AndroidDisplayPresenter:
             return
         }
         surfaces[displayID]?.closed = true
-        retireSurface(displayID: displayID)
+        let presentationID = AndroidPresentationID(rawValue: displayID)
+        retirePresentation(id: presentationID)
+        presentationClosedSink?(presentationID)
     }
     func release(_ proxy: WaylandBorrowedProxy<WlBufferClient>) {
         guard

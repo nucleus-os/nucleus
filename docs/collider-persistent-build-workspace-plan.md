@@ -402,6 +402,10 @@ workspace boundary from the preceding phases therefore applies unchanged:
 source and user state remain host-owned, while Linux build intermediates remain
 inside Collider-owned persistent volumes.
 
+The Linux presentation target defined by the remote-development and package-
+distribution plans receives only a validated immutable runtime generation. It
+does not receive these build workspaces or weaken their ownership boundary.
+
 Gate: the remote-development plan can delete every reconstructible Linux build
 workspace without deleting or relocating the authoritative checkout,
 uncommitted work, editor state, credentials, or user home data.

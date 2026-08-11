@@ -835,6 +835,8 @@ public actor AndroidRuntimeSession<
                             self.layout.presentationSocket.path,
                             "--display-control-socket",
                             self.layout.displayControlSocket.path,
+                            "--presentation-control-socket",
+                            self.layout.presentationControlSocket.path,
                             "--presentation-expected-uid",
                             "\(UInt64(self.host.subordinateUID) + 2_900)",
                         ],
@@ -988,6 +990,8 @@ public actor AndroidRuntimeSession<
                     atPath: layout.presentationSocket.path),
                 FileManager.default.fileExists(
                     atPath: layout.displayControlSocket.path)
+                    && FileManager.default.fileExists(
+                        atPath: layout.presentationControlSocket.path)
             {
                 return
             }

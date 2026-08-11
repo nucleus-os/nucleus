@@ -26,6 +26,17 @@ public enum ApplicationProviderEndpoint {
             .appendingPathComponent("\(providerID).sock")
     }
 
+    public static func launchSocket(
+        providerID: String,
+        in sessionRuntimeDirectory: URL
+    ) throws -> URL {
+        guard validProviderID(providerID) else {
+            throw ApplicationProviderChannelFailure.invalidProviderID(providerID)
+        }
+        return directory(in: sessionRuntimeDirectory)
+            .appendingPathComponent("\(providerID).launch")
+    }
+
     public static func validProviderID(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 128
             && value.utf8.allSatisfy { byte in
@@ -98,6 +109,60 @@ public enum ApplicationProviderCatalogChange: Codable, Equatable, Sendable {
     case replace([ApplicationProviderRecord])
     case upsert(ApplicationProviderRecord)
     case remove(String)
+}
+
+public struct ApplicationProviderLaunchRequest: Codable, Equatable, Sendable {
+    public var providerID: String
+    public var launchID: String
+    public var activationToken: String?
+
+    public init(
+        providerID: String,
+        launchID: String,
+        activationToken: String? = nil
+    ) throws {
+        self.providerID = providerID
+        self.launchID = launchID
+        self.activationToken = activationToken
+        try validate()
+    }
+
+    public func validate() throws {
+        guard ApplicationProviderEndpoint.validProviderID(providerID),
+            validField(launchID, maximumBytes: 4_096),
+            activationToken.map({ validField($0, maximumBytes: 4_096) }) ?? true
+        else {
+            throw ApplicationProviderChannelFailure.invalidMessage
+        }
+    }
+}
+
+public enum ApplicationProviderLaunchResult: Codable, Equatable, Sendable {
+    case created
+    case activatedExistingPresentation
+    case failed(String)
+
+    public func validate() throws {
+        if case .failed(let message) = self,
+            !validField(message, maximumBytes: 16_384)
+        {
+            throw ApplicationProviderChannelFailure.invalidMessage
+        }
+    }
+}
+
+private struct ApplicationProviderLaunchReply: Codable, Sendable {
+    var providerID: String
+    var result: ApplicationProviderLaunchResult
+
+    func validate(expectedProviderID: String) throws {
+        guard providerID == expectedProviderID else {
+            throw ApplicationProviderChannelFailure.unexpectedProvider(
+                expected: expectedProviderID,
+                actual: providerID)
+        }
+        try result.validate()
+    }
 }
 
 public enum ApplicationProviderChannelFailure: Error, Equatable, Sendable {
@@ -215,6 +280,30 @@ public final class ApplicationProviderClientChannel: @unchecked Sendable {
     }
 }
 
+public enum ApplicationProviderLaunchClient {
+    public static func launch(
+        _ request: ApplicationProviderLaunchRequest,
+        sessionRuntimeDirectory: URL,
+        expectedUserID: UInt32
+    ) throws -> ApplicationProviderLaunchResult {
+        try request.validate()
+        let socket = try ApplicationProviderEndpoint.launchSocket(
+            providerID: request.providerID,
+            in: sessionRuntimeDirectory)
+        let connection = try PacketConnection.connect(path: socket.path)
+        try connection.requirePeer(userID: expectedUserID)
+        try sendPacket(request, over: connection)
+        guard try waitUntilReadable(connection.fileDescriptor, timeoutMilliseconds: 30_000)
+        else {
+            throw ApplicationProviderChannelFailure.invalidMessage
+        }
+        let reply: ApplicationProviderLaunchReply = try receivePacket(
+            from: connection)
+        try reply.validate(expectedProviderID: request.providerID)
+        return reply.result
+    }
+}
+
 public final class ApplicationProviderPublicationServer: @unchecked Sendable {
     public static let maximumMessageBytes = ApplicationProviderClientChannel.maximumMessageBytes
 
@@ -225,8 +314,10 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
 
     public let providerID: String
     public let socket: URL
+    public let launchSocket: URL
 
     private let listener: PacketListener
+    private let launchListener: PacketListener
     private let expectedUserID: UInt32
     private let state = Mutex(State())
 
@@ -240,6 +331,9 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
         socket = try ApplicationProviderEndpoint.socket(
             providerID: providerID,
             in: sessionRuntimeDirectory)
+        launchSocket = try ApplicationProviderEndpoint.launchSocket(
+            providerID: providerID,
+            in: sessionRuntimeDirectory)
         let directory = socket.deletingLastPathComponent()
         try FileManager.default.createDirectory(
             at: directory,
@@ -248,6 +342,10 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
         guard unsafe chmod(directory.path, 0o700) == 0 else {
             throw POSIXError(.init(rawValue: errno) ?? .EIO)
         }
+        launchListener = try PacketListener(
+            path: launchSocket.path,
+            mode: 0o600,
+            nonblocking: true)
         listener = try PacketListener(
             path: socket.path,
             mode: 0o600,
@@ -282,19 +380,39 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
         }
     }
 
-    public func run() async throws {
+    public func run(
+        onLaunch:
+            @escaping @Sendable (
+                ApplicationProviderLaunchRequest
+            ) async -> ApplicationProviderLaunchResult
+    ) async throws {
         while true {
             try Task.checkCancellation()
-            var descriptor = pollfd(
-                fd: listener.fileDescriptor,
-                events: Int16(POLLIN),
-                revents: 0)
-            let result = unsafe poll(&descriptor, 1, 250)
+            var descriptors = [
+                pollfd(
+                    fd: listener.fileDescriptor,
+                    events: Int16(POLLIN),
+                    revents: 0),
+                pollfd(
+                    fd: launchListener.fileDescriptor,
+                    events: Int16(POLLIN),
+                    revents: 0),
+            ]
+            let result = unsafe poll(
+                &descriptors,
+                nfds_t(descriptors.count),
+                250)
             if result < 0 {
                 if errno == EINTR { continue }
                 throw POSIXError(.init(rawValue: errno) ?? .EIO)
             }
             guard result > 0 else { continue }
+            if descriptors[1].revents & Int16(POLLIN) != 0 {
+                try await serveLaunch(onLaunch: onLaunch)
+            }
+            guard descriptors[0].revents & Int16(POLLIN) != 0 else {
+                continue
+            }
             let connection: PacketConnection
             do {
                 connection = try listener.accept(expectedUserID: expectedUserID)
@@ -317,6 +435,41 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
                 state.connection = connection
             }
         }
+    }
+
+    private func serveLaunch(
+        onLaunch:
+            @escaping @Sendable (
+                ApplicationProviderLaunchRequest
+            ) async -> ApplicationProviderLaunchResult
+    ) async throws {
+        let connection: PacketConnection
+        do {
+            connection = try launchListener.accept(
+                expectedUserID: expectedUserID)
+        } catch let error as IPCTransportError {
+            if case .systemCall(_, let code) = error,
+                code == EAGAIN || code == EWOULDBLOCK
+            {
+                return
+            }
+            throw error
+        }
+        let request: ApplicationProviderLaunchRequest = try receivePacket(
+            from: connection)
+        try request.validate()
+        guard request.providerID == providerID else {
+            throw ApplicationProviderChannelFailure.unexpectedProvider(
+                expected: providerID,
+                actual: request.providerID)
+        }
+        let result = await onLaunch(request)
+        try result.validate()
+        try sendPacket(
+            ApplicationProviderLaunchReply(
+                providerID: providerID,
+                result: result),
+            over: connection)
     }
 
     private func send(
@@ -356,6 +509,46 @@ public final class ApplicationProviderPublicationServer: @unchecked Sendable {
         }
         try connection.send(bytes)
     }
+}
+
+private func sendPacket<Value: Encodable>(
+    _ value: Value,
+    over connection: PacketConnection
+) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    let bytes = try encoder.encode(value)
+    guard bytes.count <= ApplicationProviderClientChannel.maximumMessageBytes else {
+        throw ApplicationProviderChannelFailure.invalidMessage
+    }
+    try connection.send(bytes)
+}
+
+private func receivePacket<Value: Decodable>(
+    from connection: PacketConnection
+) throws -> Value {
+    let packet = try connection.receive(
+        maximumBytes: ApplicationProviderClientChannel.maximumMessageBytes,
+        maximumDescriptors: 0)
+    guard packet.descriptors.isEmpty else {
+        throw ApplicationProviderChannelFailure.invalidMessage
+    }
+    return try JSONDecoder().decode(Value.self, from: Data(packet.bytes))
+}
+
+private func waitUntilReadable(
+    _ descriptor: Int32,
+    timeoutMilliseconds: Int32
+) throws -> Bool {
+    var pollDescriptor = pollfd(
+        fd: descriptor,
+        events: Int16(POLLIN),
+        revents: 0)
+    let result = unsafe poll(&pollDescriptor, 1, timeoutMilliseconds)
+    if result < 0 {
+        throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    return result > 0 && pollDescriptor.revents & Int16(POLLIN) != 0
 }
 
 private func validField(_ value: String, maximumBytes: Int) -> Bool {

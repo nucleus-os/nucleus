@@ -50,6 +50,10 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(
         contract.storage.first { $0.name == "NucleusDev" }?.owner
             == "remote-development")
+    #expect(contract.storage.allSatisfy { $0.name != "NucleusSnapshots" })
+    #expect(
+        contract.storage.first { $0.name == "NucleusBuild" }?.owner
+            == "collider-build-workspaces")
     #expect(
         contract.storage.first { $0.name == "NucleusOCI" }?.owner
             == "apple-container")

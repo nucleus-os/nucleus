@@ -44,7 +44,7 @@ launching remain fully functional when no Android application provider connects.
 
 ## Implementation Status
 
-Status as of 2026-08-08:
+Status as of 2026-08-10:
 
 | Phase | Status | Remaining gate |
 | --- | --- | --- |
@@ -52,8 +52,8 @@ Status as of 2026-08-08:
 | 2. Platform-signed Android bridge | Implemented; the bridge connects after unlock and publishes two real launcher activities | Validate the new native-input handshake in the next standard interactive session |
 | 3. Shell application model | Implemented; provider-neutral catalog, launch routing, dynamic provider lifecycle, namespaced identity, desktop provider, and unified icon resolution pass the Linux shell lane | Attach the Android broker as the second provider in Phase 4 |
 | 4. Android application publication | Complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane, and the full signed AOSP image graph passes | Confirm publication in the next standard interactive Android session |
-| 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout; obsolete Composer and RuntimeBridge presentation ownership is deleted | Validate the desktop path interactively, then add the framework-owned application-display factory and pass the two-presentation gate |
-| 6. Android activity launch and tracking | Not started | Depends on Phase 5 |
+| 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout. The host owns presentation identity, metadata, configuration, and teardown independently per window behind a broker-facing control boundary. The framework adapter owns one native surface controller and logical display device per presentation identity with independent teardown. | Pass the two-live-presentation gate through the Phase 6 launch path. |
+| 6. Android activity launch and tracking | Implementation complete; launch success waits for an observed task/display binding, exact task reuse activates the existing host presentation, and task removal, host close, bridge disconnect, and rollback converge on one presentation teardown path | Pass the two-live-application, relaunch, force-stop, crash, package-removal, host-close, and runtime-shutdown gates in a standard interactive Android session |
 | 7. Input and focus | Primary-display pointer/keyboard transport implemented through display-targeted Android input injection; native virtual-device, focus, gesture-generation, and presentation-scoped completion remains | Depends on Phase 6 |
 | 8. Density, resize, and activation | Single-flight configure coalescing, exact-frame host geometry, and in-place framework host-display resize are implemented; output-derived density and activation remain | Depends on Phase 7 |
 | 9. Clipboard | Not started | Depends on Phase 8 |
@@ -318,8 +318,10 @@ The protocol contains:
   activity, task ID, and failure code where applicable.
 
 Every request that can race carries a broker-generated request ID. Every
-presentation carries an opaque 128-bit presentation ID from creation through
-teardown. Unknown IDs, stale generations, oversized packets, unexpected file
+presentation carries the host registry's opaque, monotonic 64-bit presentation
+ID from creation through teardown; identity zero is reserved for the Android
+desktop and application identities are never reused during the host lifetime.
+Unknown IDs, stale generations, oversized packets, unexpected file
 descriptors, and messages invalid for the current state are protocol errors.
 
 ### Presentation state machine
@@ -530,6 +532,23 @@ confirmation does not keep the implementation phase open.
 
 ## Phase 5: Make Presentations Window-First
 
+Status: implementation complete; the live gate remains. The display host owns
+a monotonic presentation registry with the desktop fixed at identity zero and
+application identities never reused. A same-UID `SOCK_SEQPACKET` control
+boundary creates and closes application toplevels with independent app ID,
+title, geometry generation, display-control connection, and teardown. The
+framework display adapter owns one JNI native surface controller,
+`AImageReader` surface, SurfaceFlinger virtual-display token, and logical
+display device per presentation identity. Application devices are
+own-content-only and destroy their task content when removed, so an empty or
+closing presentation never mirrors or migrates onto the Launcher3 desktop.
+Registry, packet-transport, and framework adapter tests cover two independent
+synthetic application presentations and prove that removing one does not
+disturb the other. Phase 6
+wires factory invocation and Android activity launch to this completed
+presentation boundary; the resulting two live application windows satisfy the
+remaining gate.
+
 Refactor `NucleusAndroidDisplayHostCore` so physical `wl_output` discovery no
 longer creates Android displays or fullscreen Android windows. A broker control
 request creates an `AndroidPresentation`; Wayland configure establishes its
@@ -572,6 +591,27 @@ Verification gate:
   changes with no stale frame or descriptor leaks.
 
 ## Phase 6: Launch and Track Android Activities
+
+Status: implementation complete; the live gate remains. The launch transaction runs
+from the shell through the provider boundary, broker, display host, Android bridge,
+and DisplayManager. It validates the launch against the bridge's current-user
+launcher catalog, assigns one opaque presentation identity across the host and
+framework display, launches the explicit component on the returned logical display,
+and reports success only after `TaskStackListener` observes the task on that display.
+The bridge enumerates tasks per owned display instead of relying on Android's bounded
+recents list, tracks every task in each presentation, and closes the presentation only
+after its last task disappears. Exact component relaunch moves Android's existing
+task to the front, reports its actual presentation, closes the unused provisional
+host window, and activates the existing Wayland toplevel with the user gesture's
+one-shot token. Application displays are own-content-only and destroy content on
+removal, so Android never mirrors or migrates their tasks onto display 0.
+
+The display host maintains one long-lived broker observer for compositor-initiated
+window closure. Host close removes the Android task group and framework display;
+task disappearance closes the host toplevel; bridge disconnect and runtime shutdown
+close both sides; and every launch rejection or timeout rolls back the provisional
+pair. The primary Launcher3 presentation is identity zero and is excluded from every
+application teardown operation.
 
 Implement the provider launch transaction:
 

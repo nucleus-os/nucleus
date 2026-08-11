@@ -207,6 +207,11 @@ identity.
 
 ### Phase 3: Centralize installation and launch identity
 
+This phase owns typed installed paths and launch identity. Native package
+archives, repository enrollment, update policy, and product-installation
+authority belong to the
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+
 Replace the repeated executable and relative install paths in
 `RuntimeInstallation`, runtime staging, ELF validation, session capability
 generation, run, doctor, sanitizer, benchmarks, and recipe product lookup with

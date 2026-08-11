@@ -10,6 +10,11 @@ Distribution packages install that artifact and satisfy its host integration
 requirements; they never select a different build, patch Nucleus, or introduce a
 distribution-specific runtime path.
 
+This plan owns the portable runtime and host-capability contract. The
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+owns native package archives, signed repositories, package-manager updates, and
+the removal of Collider's product-installation commands.
+
 The supported Linux platform requires:
 
 - arm64 or x86_64;
@@ -220,6 +225,11 @@ Behavioral coverage stages and removes package roots from the manifests. The old
 Ubuntu development-tool inventory is deleted rather than becoming runtime
 package policy.
 
+These manifests are the completed portability adapter contract. They are not
+end-user packages. Native `.deb`, `.rpm`, and `.pkg.tar.zst` production and
+repository enrollment proceed only through the Linux package distribution and
+update plan.
+
 ## Phase 6: Qualify One Artifact Across Distributions
 
 Status: deferred
@@ -233,6 +243,12 @@ libstdc++, and passes relocation and offline host-integration validation. No
 cross-distribution result is claimed yet. Every matrix environment consumes this
 published output by digest; none invokes SwiftPM, a native build action, or an
 external network.
+
+Begin this qualification only after the Linux package distribution and update
+plan emits the native packages and local repository snapshots consumed by the
+matrix. Package installation, upgrade, rollback, signing-key transition, and
+removal qualification belong to that plan; this phase remains focused on one
+unchanged runtime artifact across host distributions.
 
 Build each architecture once. Exercise that exact staged artifact in a sequential
 runtime matrix containing:

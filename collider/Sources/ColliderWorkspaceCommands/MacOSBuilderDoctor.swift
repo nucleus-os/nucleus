@@ -108,7 +108,7 @@ struct MacOSBuilderContract: Codable, Sendable {
                 throw MacOSBuilderContractFailure.invalid(
                     "invalid storage capacity declaration: \(declaration.name)")
             }
-            if [.source, .sourceSnapshot, .published].contains(
+            if [.source, .published].contains(
                 declaration.storageClass),
                 declaration.cleanupPolicy != .protected
             {

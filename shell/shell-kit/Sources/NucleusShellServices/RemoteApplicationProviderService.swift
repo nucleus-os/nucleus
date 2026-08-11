@@ -17,6 +17,7 @@ package final class RemoteApplicationProviderService {
     }
 
     private let launcher: LauncherService
+    private let sessionRuntimeDirectory: URL
     private let endpointDirectory: URL
     private let expectedUserID: UInt32
     private var connections: [UInt64: Connection] = [:]
@@ -30,6 +31,7 @@ package final class RemoteApplicationProviderService {
         expectedUserID: UInt32 = getuid()
     ) {
         self.launcher = launcher
+        self.sessionRuntimeDirectory = sessionRuntimeDirectory
         endpointDirectory = ApplicationProviderEndpoint.directory(
             in: sessionRuntimeDirectory)
         self.expectedUserID = expectedUserID
@@ -67,7 +69,10 @@ package final class RemoteApplicationProviderService {
             nextToken &+= 1
             connections[token] = Connection(
                 channel: channel,
-                provider: RemoteApplicationProvider(id: providerID))
+                provider: RemoteApplicationProvider(
+                    id: providerID,
+                    sessionRuntimeDirectory: sessionRuntimeDirectory,
+                    expectedUserID: expectedUserID))
             providerTokens[providerID] = token
         }
     }
@@ -182,12 +187,20 @@ private enum RemoteApplicationProviderFailure: Error {
 @MainActor
 private final class RemoteApplicationProvider: ApplicationProvider {
     let id: ApplicationProviderID
+    private let sessionRuntimeDirectory: URL
+    private let expectedUserID: UInt32
     private(set) var applications: [ApplicationRecord] = []
     private var records: [ApplicationID: ApplicationRecord] = [:]
     private var catalogChangeHandler: (@MainActor @Sendable (ApplicationCatalogChange) -> Void)?
 
-    init(id: ApplicationProviderID) {
+    init(
+        id: ApplicationProviderID,
+        sessionRuntimeDirectory: URL,
+        expectedUserID: UInt32
+    ) {
         self.id = id
+        self.sessionRuntimeDirectory = sessionRuntimeDirectory
+        self.expectedUserID = expectedUserID
     }
 
     func setCatalogChangeHandler(
@@ -197,7 +210,29 @@ private final class RemoteApplicationProvider: ApplicationProvider {
     }
 
     func launch(_ request: ApplicationLaunchRequest) -> ApplicationLaunchResult {
-        .failed(.launchFailed("remote application launch is not implemented"))
+        guard let record = records[request.applicationID] else {
+            return .failed(.applicationUnavailable(request.applicationID))
+        }
+        do {
+            let providerRequest = try ApplicationProviderLaunchRequest(
+                providerID: id.rawValue,
+                launchID: record.providerLaunchID,
+                activationToken: request.activationToken)
+            switch try ApplicationProviderLaunchClient.launch(
+                providerRequest,
+                sessionRuntimeDirectory: sessionRuntimeDirectory,
+                expectedUserID: expectedUserID)
+            {
+            case .created:
+                return .created
+            case .activatedExistingPresentation:
+                return .activatedExistingPresentation
+            case .failed(let message):
+                return .failed(.launchFailed(message))
+            }
+        } catch {
+            return .failed(.launchFailed(String(describing: error)))
+        }
     }
 
     func apply(_ change: ApplicationCatalogChange) {

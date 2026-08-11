@@ -738,29 +738,6 @@ bool TextLayoutService::rectsForRange(
     return true;
 }
 
-std::optional<TextBounds> TextLayoutService::inkBounds(uint64_t handle) const
-{
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph) return std::nullopt;
-    SkRect bounds = SkRect::MakeEmpty();
-    paragraph->extendedVisit([&](int, const skia::textlayout::Paragraph::ExtendedVisitorInfo* info) {
-        if (!info) return;
-        for (int index = 0; index < info->count; ++index) {
-            SkRect glyph = info->bounds[index];
-            glyph.offset(info->positions[index]);
-            glyph.offset(info->origin);
-            if (!glyph.isEmpty()) bounds.join(glyph);
-        }
-    });
-    if (bounds.isEmpty()) {
-        return TextBounds{};
-    }
-    return TextBounds{
-        .left = bounds.left(), .top = bounds.top(),
-        .right = bounds.right(), .bottom = bounds.bottom(),
-    };
-}
-
 bool TextLayoutService::graphemeBreaks(
     TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const
 {

@@ -4,5 +4,7 @@
         <permission name="android.permission.INJECT_EVENTS" />
         <permission name="android.permission.ADD_TRUSTED_DISPLAY" />
         <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+        <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
+        <permission name="android.permission.REAL_GET_TASKS" />
     </privapp-permissions>
 </permissions>

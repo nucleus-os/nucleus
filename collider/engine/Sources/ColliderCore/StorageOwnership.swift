@@ -4,7 +4,6 @@ import SystemPackage
 public enum StorageClass: String, Codable, Hashable, Sendable {
     case source
     case identity
-    case sourceSnapshot
     case incremental
     case cache
     case container

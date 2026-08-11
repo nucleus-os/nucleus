@@ -22,6 +22,179 @@ package enum AndroidRuntimeBridgeMessageKind:
     case inputState
     case inputEvent
     case cursorShape
+    case launchActivity
+    case launchResult
+    case closePresentation
+    case taskChanged
+    case taskVanished
+}
+
+package struct AndroidActivityLaunchCommand: Codable, Equatable, Sendable {
+    package let requestID: String
+    package let presentationID: UInt64
+    package let packageName: String
+    package let activityName: String
+    package let activationToken: String?
+
+    package init(
+        requestID: String,
+        presentationID: UInt64,
+        packageName: String,
+        activityName: String,
+        activationToken: String?
+    ) throws {
+        self.requestID = requestID
+        self.presentationID = presentationID
+        self.packageName = packageName
+        self.activityName = activityName
+        self.activationToken = activationToken
+        try validate()
+    }
+
+    package func validate() throws {
+        guard AndroidRuntimeBridgeEnvelope.validIdentifier(requestID, maximumBytes: 128),
+            presentationID > 0,
+            AndroidRuntimeBridgeEnvelope.validActivityField(packageName),
+            AndroidRuntimeBridgeEnvelope.validActivityField(activityName),
+            activationToken.map({
+                AndroidRuntimeBridgeEnvelope.validIdentifier($0, maximumBytes: 4_096)
+            }) ?? true
+        else {
+            throw AndroidRuntimeFailure("invalid Android activity launch command")
+        }
+    }
+}
+
+package enum AndroidActivityLaunchOutcome: String, Codable, Equatable, Sendable {
+    case created
+    case activatedExistingPresentation
+    case failed
+}
+
+package struct AndroidActivityLaunchResult: Codable, Equatable, Sendable {
+    package let requestID: String
+    package let requestedPresentationID: UInt64
+    package let presentationID: UInt64?
+    package let displayID: Int32?
+    package let taskID: Int32?
+    package let outcome: AndroidActivityLaunchOutcome
+    package let failure: String?
+
+    package init(
+        requestID: String,
+        requestedPresentationID: UInt64,
+        presentationID: UInt64?,
+        displayID: Int32?,
+        taskID: Int32?,
+        outcome: AndroidActivityLaunchOutcome,
+        failure: String? = nil
+    ) throws {
+        self.requestID = requestID
+        self.requestedPresentationID = requestedPresentationID
+        self.presentationID = presentationID
+        self.displayID = displayID
+        self.taskID = taskID
+        self.outcome = outcome
+        self.failure = failure
+        try validate()
+    }
+
+    package func validate() throws {
+        guard AndroidRuntimeBridgeEnvelope.validIdentifier(requestID, maximumBytes: 128),
+            requestedPresentationID > 0,
+            presentationID.map({ $0 > 0 }) ?? true,
+            displayID.map({ $0 >= 0 }) ?? true,
+            taskID.map({ $0 >= 0 }) ?? true,
+            failure?.utf8.count ?? 0 <= 16_384,
+            !(failure?.contains("\0") ?? false)
+        else {
+            throw AndroidRuntimeFailure("invalid Android activity launch result")
+        }
+        switch outcome {
+        case .created, .activatedExistingPresentation:
+            guard presentationID != nil,
+                displayID != nil,
+                taskID != nil,
+                failure == nil
+            else {
+                throw AndroidRuntimeFailure("invalid successful Android activity launch result")
+            }
+        case .failed:
+            guard presentationID == nil,
+                displayID == nil,
+                taskID == nil,
+                failure?.isEmpty == false
+            else {
+                throw AndroidRuntimeFailure("invalid failed Android activity launch result")
+            }
+        }
+    }
+}
+
+package struct AndroidPresentationCloseCommand: Codable, Equatable, Sendable {
+    package let presentationID: UInt64
+
+    package init(presentationID: UInt64) throws {
+        self.presentationID = presentationID
+        try validate()
+    }
+
+    package func validate() throws {
+        guard presentationID > 0 else {
+            throw AndroidRuntimeFailure("invalid Android presentation close command")
+        }
+    }
+}
+
+package struct AndroidTaskState: Codable, Equatable, Sendable {
+    package let presentationID: UInt64
+    package let displayID: Int32
+    package let taskID: Int32
+    package let packageName: String
+    package let activityName: String
+
+    package init(
+        presentationID: UInt64,
+        displayID: Int32,
+        taskID: Int32,
+        packageName: String,
+        activityName: String
+    ) throws {
+        self.presentationID = presentationID
+        self.displayID = displayID
+        self.taskID = taskID
+        self.packageName = packageName
+        self.activityName = activityName
+        try validate()
+    }
+
+    package func validate() throws {
+        guard presentationID > 0,
+            displayID >= 0,
+            taskID >= 0,
+            AndroidRuntimeBridgeEnvelope.validActivityField(packageName),
+            AndroidRuntimeBridgeEnvelope.validActivityField(activityName)
+        else {
+            throw AndroidRuntimeFailure("invalid Android task state")
+        }
+    }
+}
+
+package struct AndroidTaskVanished: Codable, Equatable, Sendable {
+    package let presentationID: UInt64
+    package let taskID: Int32
+
+    package init(presentationID: UInt64, taskID: Int32) throws {
+        self.presentationID = presentationID
+        self.taskID = taskID
+        try validate()
+    }
+
+    package func validate() throws {
+        guard presentationID > 0, taskID >= 0 else {
+            throw AndroidRuntimeFailure("invalid vanished Android task")
+        }
+    }
 }
 
 package enum AndroidInputAction: String, Codable, Equatable, Sendable {
@@ -193,6 +366,11 @@ package struct AndroidRuntimeBridgeEnvelope:
     package let inputError: String?
     package let inputEvent: AndroidInputEvent?
     package let cursorShape: AndroidCursorShapeUpdate?
+    package let activityLaunch: AndroidActivityLaunchCommand?
+    package let activityLaunchResult: AndroidActivityLaunchResult?
+    package let presentationClose: AndroidPresentationCloseCommand?
+    package let taskState: AndroidTaskState?
+    package let vanishedTask: AndroidTaskVanished?
 
     package init(
         kind: AndroidRuntimeBridgeMessageKind,
@@ -205,7 +383,12 @@ package struct AndroidRuntimeBridgeEnvelope:
         inputReady: Bool? = nil,
         inputError: String? = nil,
         inputEvent: AndroidInputEvent? = nil,
-        cursorShape: AndroidCursorShapeUpdate? = nil
+        cursorShape: AndroidCursorShapeUpdate? = nil,
+        activityLaunch: AndroidActivityLaunchCommand? = nil,
+        activityLaunchResult: AndroidActivityLaunchResult? = nil,
+        presentationClose: AndroidPresentationCloseCommand? = nil,
+        taskState: AndroidTaskState? = nil,
+        vanishedTask: AndroidTaskVanished? = nil
     ) throws {
         self.kind = kind
         self.generation = generation
@@ -218,6 +401,11 @@ package struct AndroidRuntimeBridgeEnvelope:
         self.inputError = inputError
         self.inputEvent = inputEvent
         self.cursorShape = cursorShape
+        self.activityLaunch = activityLaunch
+        self.activityLaunchResult = activityLaunchResult
+        self.presentationClose = presentationClose
+        self.taskState = taskState
+        self.vanishedTask = vanishedTask
         try validate()
     }
 
@@ -311,7 +499,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android bridge hello")
@@ -326,7 +519,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android broker hello")
@@ -341,7 +539,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android bridge runtime state")
@@ -356,7 +559,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android icon asset")
@@ -371,7 +579,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android activity snapshot")
@@ -387,6 +600,11 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputError == nil,
                 inputEvent == nil,
                 cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil,
                 activities?.allSatisfy({ $0.packageName == packageName }) == true
             else {
                 throw AndroidRuntimeFailure(
@@ -402,7 +620,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 let inputReady,
                 inputReady ? inputError == nil : inputError?.isEmpty == false,
                 inputEvent == nil,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android input-service state")
@@ -417,7 +640,12 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 let inputEvent,
-                cursorShape == nil
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android input event")
@@ -433,18 +661,137 @@ package struct AndroidRuntimeBridgeEnvelope:
                 inputReady == nil,
                 inputError == nil,
                 inputEvent == nil,
-                let cursorShape
+                let cursorShape,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android cursor-shape update")
             }
             try cursorShape.validate()
+        case .launchActivity:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                let activityLaunch,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android activity launch command")
+            }
+            try activityLaunch.validate()
+        case .launchResult:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                let activityLaunchResult,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android activity launch result")
+            }
+            try activityLaunchResult.validate()
+        case .closePresentation:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                let presentationClose,
+                taskState == nil,
+                vanishedTask == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android presentation close command")
+            }
+            try presentationClose.validate()
+        case .taskChanged:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState != nil,
+                vanishedTask == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android task-state update")
+            }
+            try taskState?.validate()
+        case .taskVanished:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask != nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid vanished Android task update")
+            }
+            try vanishedTask?.validate()
         }
     }
 
-    private static func validActivityField(_ value: String) -> Bool {
+    fileprivate static func validActivityField(_ value: String) -> Bool {
         !value.isEmpty
             && value.utf8.count <= 4_096
+            && !value.contains("\0")
+    }
+
+    fileprivate static func validIdentifier(
+        _ value: String,
+        maximumBytes: Int
+    ) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= maximumBytes
             && !value.contains("\0")
     }
 
@@ -476,14 +823,26 @@ package enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
     case cursorShapeChanged(
         generation: String,
         update: AndroidCursorShapeUpdate)
+    case taskChanged(generation: String, task: AndroidTaskState)
+    case taskVanished(generation: String, task: AndroidTaskVanished)
     case disconnected(generation: String)
 }
 
 package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
+    private struct PendingLaunch {
+        var presentationID: UInt64
+        var continuation: CheckedContinuation<AndroidActivityLaunchResult, Never>
+    }
+
+    private struct ConnectionState {
+        var connection: PacketConnection?
+        var pendingLaunches: [String: PendingLaunch] = [:]
+    }
+
     private let listener: PacketListener
     private let expectedUserID: UInt32
     package let generation: String
-    private let writer = Mutex<PacketConnection?>(nil)
+    private let state = Mutex(ConnectionState())
 
     package init(
         socketPath: URL,
@@ -499,8 +858,8 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
     }
 
     package func send(_ inputEvent: AndroidInputEvent) throws {
-        try writer.withLock { connection in
-            guard let connection else {
+        try state.withLock { state in
+            guard let connection = state.connection else {
                 throw AndroidRuntimeFailure(
                     "Android runtime bridge is not connected")
             }
@@ -511,6 +870,120 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     inputEvent: inputEvent),
                 over: connection)
         }
+    }
+
+    package func close(presentationID: UInt64) throws {
+        let command = try AndroidPresentationCloseCommand(
+            presentationID: presentationID)
+        try state.withLock { state in
+            guard let connection = state.connection else {
+                throw AndroidRuntimeFailure(
+                    "Android runtime bridge is not connected")
+            }
+            try send(
+                AndroidRuntimeBridgeEnvelope(
+                    kind: .closePresentation,
+                    generation: generation,
+                    presentationClose: command),
+                over: connection)
+        }
+    }
+
+    package func launch(
+        presentationID: UInt64,
+        packageName: String,
+        activityName: String,
+        activationToken: String?
+    ) async -> AndroidActivityLaunchResult {
+        let requestID = UUID().uuidString.lowercased()
+        let command: AndroidActivityLaunchCommand
+        do {
+            command = try AndroidActivityLaunchCommand(
+                requestID: requestID,
+                presentationID: presentationID,
+                packageName: packageName,
+                activityName: activityName,
+                activationToken: activationToken)
+        } catch {
+            return failedLaunch(
+                requestID: requestID,
+                presentationID: presentationID,
+                message: String(describing: error))
+        }
+        return await waitForLaunch(command)
+    }
+
+    private func waitForLaunch(
+        _ command: AndroidActivityLaunchCommand
+    ) async -> AndroidActivityLaunchResult {
+        await withCheckedContinuation { continuation in
+            do {
+                try state.withLock { state in
+                    guard let connection = state.connection else {
+                        throw AndroidRuntimeFailure(
+                            "Android runtime bridge is not connected")
+                    }
+                    state.pendingLaunches[command.requestID] = PendingLaunch(
+                        presentationID: command.presentationID,
+                        continuation: continuation)
+                    do {
+                        try send(
+                            AndroidRuntimeBridgeEnvelope(
+                                kind: .launchActivity,
+                                generation: generation,
+                                activityLaunch: command),
+                            over: connection)
+                    } catch {
+                        state.pendingLaunches.removeValue(
+                            forKey: command.requestID)
+                        throw error
+                    }
+                }
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(20))
+                    guard let self else { return }
+                    self.completeLaunch(
+                        self.failedLaunch(
+                            requestID: command.requestID,
+                            presentationID: command.presentationID,
+                            message: "Android activity launch timed out"))
+                }
+            } catch {
+                continuation.resume(
+                    returning: failedLaunch(
+                        requestID: command.requestID,
+                        presentationID: command.presentationID,
+                        message: String(describing: error)))
+            }
+        }
+    }
+
+    @discardableResult
+    private func completeLaunch(_ result: AndroidActivityLaunchResult) -> Bool {
+        let continuation = state.withLock { state in
+            guard
+                state.pendingLaunches[result.requestID]?.presentationID
+                    == result.requestedPresentationID
+            else { return nil }
+            state.pendingLaunches.removeValue(forKey: result.requestID)
+        }
+        continuation?.continuation.resume(returning: result)
+        return continuation != nil
+    }
+
+    private func failedLaunch(
+        requestID: String,
+        presentationID: UInt64,
+        message: String
+    ) -> AndroidActivityLaunchResult {
+        try! AndroidActivityLaunchResult(
+            requestID: requestID,
+            requestedPresentationID: presentationID,
+            presentationID: nil,
+            displayID: nil,
+            taskID: nil,
+            outcome: .failed,
+            failure: String(message.prefix(16_384)))
     }
 
     package func run(
@@ -560,12 +1033,21 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
             throw AndroidRuntimeFailure(
                 "Android bridge did not begin with hello")
         }
-        writer.withLock { $0 = connection }
+        state.withLock { $0.connection = connection }
         defer {
-            writer.withLock { current in
-                if current === connection {
-                    current = nil
-                }
+            let pending = state.withLock { state in
+                guard state.connection === connection else { return [] }
+                state.connection = nil
+                let pending = Array(state.pendingLaunches)
+                state.pendingLaunches.removeAll()
+                return pending
+            }
+            for (requestID, pendingLaunch) in pending {
+                pendingLaunch.continuation.resume(
+                    returning: failedLaunch(
+                        requestID: requestID,
+                        presentationID: pendingLaunch.presentationID,
+                        message: "Android runtime bridge disconnected"))
             }
         }
         try send(
@@ -680,7 +1162,35 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     .cursorShapeChanged(
                         generation: generation,
                         update: update))
-            case .bridgeHello, .brokerHello, .inputEvent:
+            case .launchResult:
+                guard let result = envelope.activityLaunchResult else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge omitted activity launch result")
+                }
+                guard completeLaunch(result) else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge replied to an unknown activity launch")
+                }
+            case .taskChanged:
+                guard let task = envelope.taskState else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge omitted task state")
+                }
+                await onEvent(
+                    .taskChanged(
+                        generation: generation,
+                        task: task))
+            case .taskVanished:
+                guard let task = envelope.vanishedTask else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge omitted vanished task")
+                }
+                await onEvent(
+                    .taskVanished(
+                        generation: generation,
+                        task: task))
+            case .bridgeHello, .brokerHello, .inputEvent, .launchActivity,
+                .closePresentation:
                 throw AndroidRuntimeFailure(
                     "unexpected Android bridge handshake message")
             }

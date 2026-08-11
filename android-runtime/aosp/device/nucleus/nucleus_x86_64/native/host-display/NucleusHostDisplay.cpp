@@ -106,7 +106,7 @@ class Controller {
         if (reader_ != nullptr) AImageReader_delete(reader_);
         if (control_socket_ >= 0) close(control_socket_);
         if (presentation_socket_ >= 0) close(presentation_socket_);
-        if (java_vm_ != nullptr && adapter_ != nullptr) {
+        if (java_vm_ != nullptr && callback_ != nullptr) {
             JNIEnv* environment = nullptr;
             bool attached = false;
             if (java_vm_->GetEnv(
@@ -116,7 +116,7 @@ class Controller {
                         == JNI_OK;
             }
             if (environment != nullptr) {
-                environment->DeleteGlobalRef(adapter_);
+                environment->DeleteGlobalRef(callback_);
             }
             if (attached) java_vm_->DetachCurrentThread();
         }
@@ -139,17 +139,17 @@ class Controller {
         return ANativeWindow_toSurface(environment, window);
     }
 
-    bool start(JNIEnv* environment, jobject adapter) {
+    bool start(JNIEnv* environment, jobject callback) {
         if (java_vm_ != nullptr
                 || environment->GetJavaVM(&java_vm_) != JNI_OK) {
             return false;
         }
-        adapter_ = environment->NewGlobalRef(adapter);
-        jclass type = environment->GetObjectClass(adapter);
+        callback_ = environment->NewGlobalRef(callback);
+        jclass type = environment->GetObjectClass(callback);
         configuration_method_ = environment->GetMethodID(
             type, "onHostDisplayConfiguration", "(JIIII)V");
         environment->DeleteLocalRef(type);
-        if (adapter_ == nullptr || configuration_method_ == nullptr) {
+        if (callback_ == nullptr || configuration_method_ == nullptr) {
             return false;
         }
         control_thread_ = std::thread([this] { controlLoop(); });
@@ -283,7 +283,7 @@ class Controller {
                 break;
             }
             environment->CallVoidMethod(
-                adapter_,
+                callback_,
                 configuration_method_,
                 static_cast<jlong>(configuration.generation),
                 static_cast<jint>(configuration.width),
@@ -427,7 +427,7 @@ class Controller {
     int control_socket_ = -1;
     int presentation_socket_ = -1;
     JavaVM* java_vm_ = nullptr;
-    jobject adapter_ = nullptr;
+    jobject callback_ = nullptr;
     jmethodID configuration_method_ = nullptr;
     std::thread control_thread_;
     std::thread frame_thread_;
@@ -490,9 +490,9 @@ Java_com_android_server_display_NucleusHostDisplayAdapter_nativeGetSurface(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_android_server_display_NucleusHostDisplayAdapter_nativeStart(
-        JNIEnv* environment, jclass, jlong handle, jobject adapter) {
+        JNIEnv* environment, jclass, jlong handle, jobject callback) {
     Controller* controller = fromHandle(handle);
-    if (controller == nullptr || !controller->start(environment, adapter)) {
+    if (controller == nullptr || !controller->start(environment, callback)) {
         throwIllegalState(environment, "starting host-display control failed");
     }
 }

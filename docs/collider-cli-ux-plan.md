@@ -112,6 +112,14 @@ collider status [repository|swift-sdk]
 collider run [session options]
 ```
 
+The `install` group records the grammar at completion of this plan. It is a
+transitional product-deployment surface, not a durable Collider responsibility.
+The [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+replaces it with development staging, one-shot development deployment, native
+package production, and installed Nucleus capability management, then deletes
+the group atomically. That plan owns the future `dev-deploy` and `package`
+grammar; this completed grammar migration does not define their implementation.
+
 Keep genuinely domain-specific runtime control beneath its domain. Delete old
 aliases and single-child namespaces in the same change as their callers.
 
