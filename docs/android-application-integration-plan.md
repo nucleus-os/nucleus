@@ -44,7 +44,7 @@ launching remain fully functional when no Android application provider connects.
 
 ## Implementation Status
 
-Status as of 2026-08-10:
+Status as of 2026-08-11:
 
 | Phase | Status | Remaining gate |
 | --- | --- | --- |
@@ -56,9 +56,9 @@ Status as of 2026-08-10:
 | 6. Android activity launch and tracking | Implementation complete; launch success waits for an observed task/display binding, exact task reuse activates the existing host presentation, and task removal, host close, bridge disconnect, and rollback converge on one presentation teardown path | Pass the two-live-application, relaunch, force-stop, crash, package-removal, host-close, and runtime-shutdown gates in a standard interactive Android session |
 | 7. Input and focus | Implementation complete; every presentation owns display-associated native mouse, keyboard, and touchscreen devices, and focus/lifetime/generation handling is presentation-scoped | Pass the two-window pointer, scrolling, multitouch, keyboard, focus-loss, and IME gate in a standard interactive Android session |
 | 8. Density, resize, and activation | Implementation complete; fractional output scale, geometry, frame acceptance, input mapping, and Android configuration use one coalesced presentation generation, and activation remains shell-authorized | Pass the mixed-density resize and activation gate in a standard interactive Android session |
-| 9. Clipboard | Not started | Depends on Phase 8 |
-| 10. Notifications | Not started | Depends on Phase 9 |
-| 11. Lifecycle integration and bring-up removal | Not started | Depends on Phase 10 |
+| 9. Clipboard | Implementation complete; automated verification is running | Pass the live native/Android clipboard gate |
+| 10. Notifications | Implementation complete; automated verification is running | Pass the live notification publication, replacement, action, dismissal, and activation gate |
+| 11. Lifecycle integration and bring-up removal | Implementation complete; automated verification is running | Pass the clean-boot, shutdown, and non-Android composition gates |
 
 Phase 1 now includes:
 
@@ -225,11 +225,11 @@ instance naming, `android-runtime` diagnostics, runtime health/event types,
 and a declared 60-second graceful shutdown interval before forced termination.
 The container's independent privileged scope is now owned through a `pidfd`
 watcher rather than process ancestry or best-effort cancellation. Startup
-reconciles legacy `nucleus-framework-*` and abandoned
-`nucleus-android-runtime-*` containers before creating a new instance. Native
+reconciles abandoned `nucleus-android-runtime-*` containers before creating a
+new instance. Native
 input readiness is negotiated by the Android bridge after it successfully
 creates both virtual devices; host-side `lxc-attach` polling is deleted.
-The first legacy-runtime reconciliation stopped the orphan container but
+The first orphan-runtime reconciliation stopped the container but
 exposed an invalid `findmnt` output-mode combination before its inherited
 mount tree could be removed. Mount discovery now resolves the containing
 mount hierarchy, filters it to the exact validated runtime instance, unmounts
@@ -755,6 +755,15 @@ Verification gate:
 
 ## Phase 9: Bridge the Clipboard
 
+Status: implementation complete; automated verification and the live gate remain.
+The platform bridge observes Android `ClipboardManager` state and exchanges bounded
+plain-text updates with the broker. The broker republishes that state over a
+provider-neutral session service channel. The shell consumes that channel from its
+existing reactor and mirrors it through the semantic context's native `Pasteboard`;
+the compositor and display host remain uninvolved. Independent source and
+publication generations, replay on reconnect, echo suppression, user-lock clearing,
+and provider-disconnect withdrawal define the complete ownership lifecycle.
+
 Integrate Android `ClipboardManager` with the shell's native clipboard service
 through the broker. Start with UTF-8 plain text. Carry MIME type, source side,
 and monotonic generation so mirrored updates do not loop. Read clipboard data
@@ -771,6 +780,14 @@ Verification gate:
 - Runtime shutdown, user lock, and source exit invalidate inaccessible offers.
 
 ## Phase 10: Bridge Notifications
+
+Status: implementation complete; automated verification and the live gate remain. The
+platform listener publishes one bounded replayable notification snapshot, the broker
+normalizes provider identity and routes only actions present in that snapshot, and the
+shell owns native presentation and user authorization. Activity-producing pending
+intents enter the same provisional-presentation transaction as ordinary Android
+launches; other actions execute without creating a presentation. No intent description
+crosses the bridge.
 
 The Android bridge observes notifications with a narrowly privileged
 notification-listener implementation and sends normalized post/replace/remove
@@ -795,6 +812,13 @@ Verification gate:
   payload data.
 
 ## Phase 11: Integrate Lifecycle and Remove Bring-Up Paths
+
+Status: implementation complete; automated verification and the live gate remain. The
+session capability is the only Android runtime owner. Reconciliation recognizes only
+the current `nucleus-android-runtime-*` lifecycle, while container commands, display
+creation, launch tracking, clipboard, and notifications remain inside their owning
+runtime and broker services. The retired validation/probe products and their direct
+runtime path are absent.
 
 Make the background broker the only supported Android session path. Delete
 replaced Collider-only orchestration, output-driven display creation, fixed

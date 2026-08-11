@@ -28,8 +28,7 @@ Execute the implementation plans in this order:
    consolidate the completed plan into the storage architecture.
 2. Complete Phases 1 through 4 of
    [macOS remote development](macos-remote-development-plan.md).
-3. Resume [Android application integration](android-application-integration-plan.md) at Phase 9.
-4. Execute the
+3. Execute the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
    complete remote-development Phase 6 immediately afterward, then continue the
@@ -44,9 +43,10 @@ implementation inputs are available:
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
 2. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
 3. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
-4. [Android container security](android-container-security-qualification-plan.md)
-5. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
-6. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+4. [Android application integration](android-application-integration-plan.md)
+5. [Android container security](android-container-security-qualification-plan.md)
+6. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
+7. [Nucleus Browser](nucleus-browser-qualification-plan.md)
 
 ## Deferred product plans
 
