@@ -30,9 +30,16 @@ package let nucleusSwiftPMEnvironmentProjection = EnvironmentProjection(
 package func nucleusCacheLayout(
     environment: [String: String]
 ) -> ColliderCacheLayout {
+    #if os(macOS)
+    let macOSCacheRoot: FilePath? = try? MacOSHostStorageLayout.current().cacheRoot
+    #else
+    let macOSCacheRoot: FilePath? = nil
+    #endif
     let root: FilePath
     if let value = environment["XDG_CACHE_HOME"], !value.isEmpty {
         root = FilePath(value)
+    } else if let macOSCacheRoot {
+        root = macOSCacheRoot
     } else if let home = environment["HOME"], !home.isEmpty {
         root = FilePath(home).appending(".cache")
     } else {

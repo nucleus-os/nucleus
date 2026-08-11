@@ -33,6 +33,12 @@ continues to read or write `/Volumes/Nucleus*` after the cutover.
 
 ## Phase 1: Introduce the standard host-storage layout
 
+Status: complete. `MacOSHostStorageLayout` resolves the standard per-user roots
+through Foundation and owns every derived Collider storage class. Focused
+layout coverage includes a home path containing spaces. Workspace cache
+fallback uses the standard macOS cache root; explicit legacy environment values
+remain in force until the hard cutover.
+
 Add one `MacOSHostStorageLayout` value in Collider. Resolve the Application
 Support, Caches, and Logs roots through Foundation's user-domain directory APIs.
 Resolve `~/Library/Developer/Nucleus/Collider` from the current user's home

@@ -22,20 +22,17 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. Remove the confirmed-unused host intermediate directories from the
-   [Collider persistent build workspace plan](collider-persistent-build-workspace-plan.md),
-   then consolidate and retire the completed plan.
-2. Execute the
+1. Execute the
    [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
    in order.
-3. Complete Phases 2 through 4 of
+2. Complete Phases 2 through 4 of
    [macOS remote development](macos-remote-development-plan.md).
-4. Execute the
+3. Execute the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
    complete remote-development Phase 6 immediately afterward, then continue the
    package plan at Phase 3.
-5. Execute the
+4. Execute the
    [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md)
    in order. It adds an independent contributor workflow without replacing the
    M2 Ultra development, CI, or publication roles.

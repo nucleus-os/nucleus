@@ -80,7 +80,6 @@ export default defineConfig([
     ignores: [
       'node_modules/**',
       'build/**',
-      '.rn-build/**',
       'target/**',
       'CMakeFiles/**',
       'third-party/**',

@@ -1,6 +1,4 @@
 build/
-.rn-build/
-.cxx-build/
 target/
 dist/
 tmp/

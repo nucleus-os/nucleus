@@ -33,8 +33,6 @@ Desktop.ini
 /collider/engine/Package.resolved
 
 # Native build products
-**/.rn-build/
-**/.skia-build/
 **/.tracy-build/
 *.o
 *.obj

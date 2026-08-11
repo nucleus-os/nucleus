@@ -130,7 +130,9 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
     #expect(
         storageSignatures(defaultCatalog.storage, context: defaultContext)
             == storageSignatures(apfsCatalog.storage, context: apfsContext))
-    #expect(defaultContext.cacheRoot == FilePath(home.appendingPathComponent(".cache").path))
+    #expect(
+        defaultContext.cacheRoot
+            == MacOSHostStorageLayout.current().cacheRoot)
     #expect(apfsContext.cacheRoot == FilePath(apfsCache.path))
 }
 
