@@ -412,7 +412,8 @@ uncommitted work, editor state, credentials, or user home data.
 
 ## Phase 9: Complete the Cutover
 
-Status: implementation complete; qualification and physical cleanup remain.
+Status: lifecycle implementation complete; destructive cold and warm
+qualification and confirmed physical host cleanup remain.
 
 Collider's type model separates read-only host inputs, bounded host exports,
 persistent Linux workspaces, and tmpfs. General writable host mounts,
@@ -422,11 +423,22 @@ retention rules are removed. The durable boundary is recorded in
 [Collider Build Storage Architecture](collider-build-storage-architecture.md)
 and [Collider Architecture](collider-architecture.md).
 
+The component graph now derives complete workspace usage from action effects
+and Linux SwiftPM execution contexts. A workspace used by one component belongs
+to that component; an intentionally shared workspace belongs to the catalog.
+Component clean uses the scheduler's workspace locks and removes only the
+selected component's inactive exclusive volumes. Cache prune removes only
+inactive Collider-owned volumes that no current component declares. Cache
+status distinguishes active, retained, and reclaimable volumes. Running records
+hold kernel-backed leases so the next Collider invocation can terminalize a
+genuinely abandoned run without guessing from age or PID state.
+
 Complete the cold and unchanged warm qualification gates from Phases 4 through
 7. Then inspect and remove only the physical host intermediate directories
 confirmed unused by the new graph. Mark this plan complete and delete it after
-those remaining gates pass; no further storage-model implementation belongs to
-this phase.
+those remaining gates pass. Existing Browser workspaces remain intact until
+that destructive qualification is deliberately scheduled; no further storage-
+model implementation belongs to this phase.
 
 Gate: repository-wide container planning exposes no writable host build-
 intermediate mount, every persistent volume has one declared owner and target,

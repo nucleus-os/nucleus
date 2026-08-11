@@ -7,12 +7,259 @@ import Testing
 
 @testable import ColliderWorkspaceCommands
 
+private struct WorkspaceFixtureIdentity: ColliderActionIdentity {
+    let value: String
+
+    func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(tag: 1, string: value)
+    }
+}
+
+private struct WorkspaceFixtureAction: ColliderAction {
+    static let kind: ActionKind = "fixture.workspace"
+
+    let workspace: PersistentWorkspaceDeclaration
+    var identity: WorkspaceFixtureIdentity {
+        WorkspaceFixtureIdentity(value: workspace.identity.key)
+    }
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: workspace,
+                    target: "/workspace",
+                    access: .readWrite)
+            ],
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: workspace.identity.artifactTarget)
+    }
+
+    func execute(in _: ActionContext) async throws {}
+}
+
+private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
+    private var workspaces: [OCIPersistentWorkspaceState]
+    private var deletedNames: [String] = []
+
+    init(workspaces: [OCIPersistentWorkspaceState]) {
+        self.workspaces = workspaces
+    }
+
+    func prepareImage(_: OCIImagePreparation) async throws -> String {
+        throw WorkspaceFailure.message("unused fixture operation")
+    }
+
+    func execute(
+        _: OCIRuntimeExecutionRequest
+    ) async throws -> OCIRuntimeExecutionOutcome {
+        throw WorkspaceFailure.message("unused fixture operation")
+    }
+
+    func persistentWorkspaces(
+        configuration _: OCIRuntimeConfiguration
+    ) async throws -> [OCIPersistentWorkspaceState] {
+        workspaces
+    }
+
+    func deletePersistentWorkspace(
+        named name: String,
+        configuration _: OCIRuntimeConfiguration
+    ) async throws {
+        deletedNames.append(name)
+        workspaces.removeAll { $0.name == name }
+    }
+
+    func deletions() -> [String] { deletedNames }
+}
+
+private func fixtureWorkspace(
+    key: String = "fixture-build"
+) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: key,
+            artifactTarget: .linuxARM64,
+            role: "build"),
+        capacityBytes: 128 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
+private func workspaceRuntime(
+    root: URL,
+    backend: RecordingPersistentWorkspaceBackend
+) -> ColliderRuntime {
+    ColliderRuntime(
+        downloadCacheRoot: FilePath(root.appendingPathComponent("downloads").path),
+        ociConfiguration: .engineDefault,
+        ociBackend: backend)
+}
+
 @Test func cacheStatusMakesRecursiveAllocationMeasurementExplicit() throws {
     let defaultStatus = try Cache.Status.parse([])
     #expect(!defaultStatus.measureAllocations)
 
     let measuredStatus = try Cache.Status.parse(["--measure-allocations"])
     #expect(measuredStatus.measureAllocations)
+}
+
+@Test func repositoryCleanRemovesOnlyTheSelectedComponentsDeclaredWorkspaces() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-workspace-clean-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let selectedWorkspace = fixtureWorkspace()
+    let otherWorkspace = fixtureWorkspace(key: "other-build")
+    let sharedWorkspace = fixtureWorkspace(key: "shared-build")
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "selected-volume",
+                identity: selectedWorkspace.identity,
+                capacityBytes: selectedWorkspace.capacityBytes,
+                allocatedBytes: 4_096,
+                active: false),
+            OCIPersistentWorkspaceState(
+                name: "other-volume",
+                identity: otherWorkspace.identity,
+                capacityBytes: otherWorkspace.capacityBytes,
+                allocatedBytes: 8_192,
+                active: false),
+            OCIPersistentWorkspaceState(
+                name: "shared-volume",
+                identity: sharedWorkspace.identity,
+                capacityBytes: sharedWorkspace.capacityBytes,
+                allocatedBytes: 16_384,
+                active: false),
+        ])
+    let runtime = workspaceRuntime(root: root, backend: backend)
+    let selectedID = ComponentID(rawValue: "selected")
+    let otherID = ComponentID(rawValue: "other")
+    func component(
+        id: ComponentID,
+        workspace: PersistentWorkspaceDeclaration,
+        sharedWorkspace: PersistentWorkspaceDeclaration
+    ) throws -> ComponentDefinition {
+        try ComponentDefinition(
+            descriptor: ComponentDescriptor(
+                id: id,
+                canonicalName: id.rawValue,
+                directoryName: id.rawValue),
+            tasks: [
+                TaskDeclaration(
+                    id: TaskID(rawValue: "\(id.rawValue).build"),
+                    component: id,
+                    action: try AnyColliderAction(
+                        WorkspaceFixtureAction(workspace: workspace))),
+                TaskDeclaration(
+                    id: TaskID(rawValue: "\(id.rawValue).shared"),
+                    component: id,
+                    action: try AnyColliderAction(
+                        WorkspaceFixtureAction(workspace: sharedWorkspace))),
+            ],
+            entrypoints: [])
+    }
+    let repository = RepositoryCache(
+        context: WorkspaceContext(
+            root: FilePath(root.path),
+            environment: ["HOME": root.path],
+            runtime: runtime),
+        catalog: ComponentCatalog(
+            components: [
+                try component(
+                    id: selectedID,
+                    workspace: selectedWorkspace,
+                    sharedWorkspace: sharedWorkspace),
+                try component(
+                    id: otherID,
+                    workspace: otherWorkspace,
+                    sharedWorkspace: sharedWorkspace),
+            ],
+            publicEntrypoints: []))
+
+    try await repository.clean(component: "selected", dryRun: true)
+    #expect(await backend.deletions().isEmpty)
+
+    try await repository.clean(component: "selected", dryRun: false)
+    #expect(await backend.deletions() == ["selected-volume"])
+}
+
+@Test func repositoryPruneRemovesOnlyInactiveUndeclaredWorkspaces() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-workspace-prune-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let orphaned = fixtureWorkspace(key: "orphaned")
+    let active = fixtureWorkspace(key: "active")
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "orphaned-volume",
+                identity: orphaned.identity,
+                capacityBytes: orphaned.capacityBytes,
+                allocatedBytes: 4_096,
+                active: false),
+            OCIPersistentWorkspaceState(
+                name: "active-volume",
+                identity: active.identity,
+                capacityBytes: active.capacityBytes,
+                allocatedBytes: 8_192,
+                active: true),
+        ])
+    let runtime = workspaceRuntime(root: root, backend: backend)
+    let repository = RepositoryCache(
+        context: WorkspaceContext(
+            root: FilePath(root.path),
+            environment: ["HOME": root.path],
+            runtime: runtime),
+        catalog: ComponentCatalog(components: [], publicEntrypoints: []))
+
+    try await repository.prune(keepingRuns: 0, dryRun: false)
+    #expect(await backend.deletions() == ["orphaned-volume"])
+}
+
+@Test func repositoryCleanRefusesAnActiveDeclaredWorkspace() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-workspace-active-clean-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let workspace = fixtureWorkspace()
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "active-volume",
+                identity: workspace.identity,
+                capacityBytes: workspace.capacityBytes,
+                allocatedBytes: 4_096,
+                active: true)
+        ])
+    let componentID = ComponentID(rawValue: "selected")
+    let component = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: componentID,
+            canonicalName: componentID.rawValue,
+            directoryName: componentID.rawValue),
+        tasks: [
+            TaskDeclaration(
+                id: TaskID(rawValue: "selected.build"),
+                component: componentID,
+                action: try AnyColliderAction(
+                    WorkspaceFixtureAction(workspace: workspace)))
+        ],
+        entrypoints: [])
+    let repository = RepositoryCache(
+        context: WorkspaceContext(
+            root: FilePath(root.path),
+            environment: ["HOME": root.path],
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: ComponentCatalog(
+            components: [component],
+            publicEntrypoints: []))
+
+    await #expect(throws: WorkspaceFailure.self) {
+        try await repository.clean(component: "selected", dryRun: false)
+    }
+    #expect(await backend.deletions().isEmpty)
 }
 
 @Test func repositoryCachePrunesAbandonedCandidatesAndInactiveSwiftSDKGenerations() async throws {

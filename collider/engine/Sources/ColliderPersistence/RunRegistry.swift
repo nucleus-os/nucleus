@@ -73,6 +73,7 @@ public actor RunRegistry {
 
     private let root: FilePath
     private var sequences: [RunID: UInt64] = [:]
+    private var leases: [RunID: RunLease] = [:]
 
     public init(root: FilePath) { self.root = root }
 
@@ -82,6 +83,9 @@ public actor RunRegistry {
         let directory = runs.appending(id.rawValue)
         try createDirectory(root.appending("locks"))
         try createDirectory(directory.appending("stages"))
+        guard let lease = try RunLease.tryAcquire(in: directory) else {
+            throw RunRegistryFailure.activeRunOwned(id)
+        }
         let manifest = RunManifest(
             runID: id,
             command: CredentialScrubber.command(command),
@@ -89,6 +93,7 @@ public actor RunRegistry {
         try writeJSON(manifest, to: directory.appending("manifest.json"))
         try replaceLatest(runID: id, runs: runs)
         sequences[id] = 0
+        leases[id] = lease
         let handle = RunHandle(id: id, directory: directory)
         try append(.runStarted(resumed: false), to: handle)
         return handle
@@ -96,6 +101,9 @@ public actor RunRegistry {
 
     public func resume(_ id: RunID) throws -> RunHandle {
         let directory = root.appending("runs").appending(id.rawValue)
+        guard let lease = try RunLease.tryAcquire(in: directory) else {
+            throw RunRegistryFailure.activeRunOwned(id)
+        }
         let manifestPath = directory.appending("manifest.json")
         var manifest = try JSONDecoder().decode(
             RunManifest.self,
@@ -111,6 +119,7 @@ public actor RunRegistry {
         try writeJSON(manifest, to: manifestPath)
         let handle = RunHandle(id: id, directory: directory)
         sequences[id] = existingEventCount(handle)
+        leases[id] = lease
         try replaceLatest(runID: id, runs: root.appending("runs"))
         try append(.runStarted(resumed: true), to: handle)
         return handle
@@ -262,6 +271,7 @@ public actor RunRegistry {
         failedTask: TaskID? = nil,
         retainingRuns: Int = RunRegistry.defaultRetainedRunCount
     ) throws {
+        defer { leases[run.id] = nil }
         let manifestPath = run.directory.appending("manifest.json")
         var manifest = try JSONDecoder().decode(
             RunManifest.self, from: Data(contentsOf: URL(fileURLWithPath: manifestPath.string)))
@@ -273,6 +283,40 @@ public actor RunRegistry {
             .terminal(TerminalRunEvent(status: status, failedTask: failedTask)),
             in: run)
         try remove(reclaimableRuns(keeping: retainingRuns))
+    }
+
+    /// Converts a running record whose process lease no longer exists into an
+    /// interrupted run. The kernel owns lease release, so this does not infer
+    /// liveness from timestamps or process identifiers.
+    @discardableResult
+    public func reconcileAbandonedRuns() throws -> [RunID] {
+        var reconciled: [RunID] = []
+        for snapshot in try recordedRuns().reversed()
+        where snapshot.manifest.status == .running {
+            let id = snapshot.run.id
+            if leases[id] != nil { continue }
+            guard let lease = try RunLease.tryAcquire(in: snapshot.run.directory) else {
+                continue
+            }
+            try withExtendedLifetime(lease) {
+                let handle = RunHandle(id: id, directory: snapshot.run.directory)
+                sequences[id] = existingEventCount(handle)
+                try updateManifest(handle) {
+                    $0.status = .interrupted
+                    $0.finishedAt = timestamp()
+                }
+                try append(
+                    .interruption(
+                        InterruptionEvent(
+                            reason: "owning Collider process exited before finalization")),
+                    to: handle)
+                try append(
+                    .terminal(TerminalRunEvent(status: .interrupted)),
+                    to: handle)
+            }
+            reconciled.append(id)
+        }
+        return reconciled
     }
 
     public func stageLogPath(for task: TaskID, in run: RunHandle) -> FilePath {
@@ -613,6 +657,7 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
     case invalidEvent(RunID, String)
     case eventTooLarge(RunID)
     case notResumable(RunID, RunStatus)
+    case activeRunOwned(RunID)
     case resumptionIdentityChanged(RunID)
     case unplannedTaskMetadata(TaskID)
 
@@ -628,11 +673,41 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
             "run '\(id)' contains an event larger than the inspection limit"
         case .notResumable(let id, let status):
             "run '\(id)' has status '\(status.rawValue)' and cannot be resumed"
+        case .activeRunOwned(let id):
+            "run '\(id)' is still owned by another Collider process"
         case .resumptionIdentityChanged(let id):
             "run '\(id)' cannot resume because its resolved task identities changed"
         case .unplannedTaskMetadata(let task):
             "cannot record execution metadata for unplanned task '\(task)'"
         }
+    }
+}
+
+private final class RunLease {
+    private let descriptor: FileDescriptor
+
+    private init(descriptor: FileDescriptor) {
+        self.descriptor = descriptor
+    }
+
+    static func tryAcquire(in directory: FilePath) throws -> RunLease? {
+        let descriptor = try FileDescriptor.open(
+            directory.appending("run.lock"),
+            .readWrite,
+            options: .create,
+            permissions: [.ownerReadWrite, .groupRead, .otherRead])
+        guard collider_lock_exclusive(descriptor.rawValue, 0) == 0 else {
+            let code = errno
+            try? descriptor.close()
+            if code == EWOULDBLOCK || code == EAGAIN { return nil }
+            throw Errno(rawValue: code)
+        }
+        return RunLease(descriptor: descriptor)
+    }
+
+    deinit {
+        _ = collider_unlock(descriptor.rawValue)
+        try? descriptor.close()
     }
 }
 

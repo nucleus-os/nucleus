@@ -98,7 +98,10 @@ version.
 Run terminalization applies bounded retention after logs and records close.
 Active runs are never pruned, and retention preserves the newest failed run for
 diagnosis. Artifact reuse is represented by a clean task, not a restored-task
-state.
+outcome. Every running record holds a kernel-backed lease for the lifetime of
+its Collider process. The next invocation terminalizes an abandoned running
+record as interrupted only when that lease is no longer held; timestamps and
+process identifiers do not determine liveness.
 
 Product installation remains a transitional CLI responsibility until the
 [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)

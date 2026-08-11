@@ -49,6 +49,7 @@ public struct ComponentDefinition: Sendable {
     public let tasks: [TaskDeclaration]
     public let entrypoints: [ComponentEntrypointID: ComponentEntrypoint]
     public let storage: [StorageDeclaration]
+    public let persistentWorkspaces: [PersistentWorkspaceDeclaration]
 
     public init(
         descriptor: ComponentDescriptor,
@@ -92,10 +93,25 @@ public struct ComponentDefinition: Sendable {
                 owner: declaration.owner)
         }
 
+        var workspacesByIdentity: [PersistentWorkspaceIdentity: PersistentWorkspaceDeclaration] =
+            [:]
+        for declaration in tasks.flatMap(Self.persistentWorkspaces) {
+            if let existing = workspacesByIdentity[declaration.identity],
+                existing != declaration
+            {
+                throw ComponentDefinitionFailure.conflictingPersistentWorkspace(
+                    declaration.identity)
+            }
+            workspacesByIdentity[declaration.identity] = declaration
+        }
+
         self.descriptor = descriptor
         self.tasks = tasks
         self.entrypoints = entrypointsByID
         self.storage = storage
+        persistentWorkspaces = workspacesByIdentity.values.sorted {
+            $0.identity.schedulingKey < $1.identity.schedulingKey
+        }
     }
 
     public func addingStorage(
@@ -106,6 +122,27 @@ public struct ComponentDefinition: Sendable {
             tasks: tasks,
             entrypoints: Array(entrypoints.values),
             storage: storage + declarations)
+    }
+
+    private static func persistentWorkspaces(
+        in task: TaskDeclaration
+    ) -> [PersistentWorkspaceDeclaration] {
+        var declarations =
+            task.action?.requirements.persistentWorkspaceEffects.map(\.workspace) ?? []
+        for invocation in task.swiftProducts.map(\.invocation)
+            + task.swiftTests.map(\.invocation)
+        {
+            guard case .oci(let configuration) = invocation.context.execution else {
+                continue
+            }
+            if let buildWorkspace = configuration.buildWorkspace {
+                declarations.append(buildWorkspace)
+            }
+            if let compilerCacheWorkspace = configuration.compilerCacheWorkspace {
+                declarations.append(compilerCacheWorkspace)
+            }
+        }
+        return declarations
     }
 }
 
@@ -320,6 +357,7 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
     case emptyEntrypoint(ComponentEntrypointID)
     case unknownEntrypointRoot(entrypoint: ComponentEntrypointID, task: TaskID)
     case foreignStorage(component: ComponentID, storage: String, owner: ComponentID)
+    case conflictingPersistentWorkspace(PersistentWorkspaceIdentity)
 
     public var description: String {
         switch self {
@@ -335,6 +373,8 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
             "component entrypoint '\(entrypoint)' names unknown root task '\(task)'"
         case .foreignStorage(let component, let storage, let owner):
             "component '\(component)' contains storage '\(storage)' owned by '\(owner)'"
+        case .conflictingPersistentWorkspace(let identity):
+            "component declares conflicting persistent workspace '\(identity.schedulingKey)'"
         }
     }
 }

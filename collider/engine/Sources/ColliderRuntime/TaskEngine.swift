@@ -665,12 +665,20 @@ private func persistentWorkspaceLocks(
     for task: TaskDeclaration,
     stateRoot: FilePath
 ) -> [TaskLock] {
-    let locksRoot = stateRoot.removingLastComponent().appending("locks")
     return (task.action?.requirements.persistentWorkspaceEffects ?? []).map { effect in
+        .persistentWorkspace(effect.workspace.identity, stateRoot: stateRoot)
+    }
+}
+
+extension TaskLock {
+    public static func persistentWorkspace(
+        _ identity: PersistentWorkspaceIdentity,
+        stateRoot: FilePath
+    ) -> TaskLock {
         let digest = ArtifactHasher.digest(
-            bytes: Array(effect.workspace.identity.schedulingKey.utf8))
+            bytes: Array(identity.schedulingKey.utf8))
         return .shared(
-            locksRoot.appending(
+            stateRoot.removingLastComponent().appending("locks").appending(
                 "persistent-workspace-\(digest.hexadecimal.prefix(24)).lock"))
     }
 }

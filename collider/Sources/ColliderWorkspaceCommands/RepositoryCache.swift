@@ -22,7 +22,20 @@ struct StorageStatusRecord: Codable, Equatable {
 private struct StorageStatusReport: Codable {
     let storage: [StorageStatusRecord]
     let appleContainer: OCIRuntimeDiskUsage?
-    let persistentWorkspaces: [OCIPersistentWorkspaceState]
+    let persistentWorkspaces: [PersistentWorkspaceStatusRecord]
+}
+
+private struct PersistentWorkspaceStatusRecord: Codable {
+    let name: String
+    let identity: PersistentWorkspaceIdentity
+    let capacityBytes: UInt64
+    let allocatedBytes: UInt64
+    let state: String
+}
+
+private struct PersistentWorkspaceUsage {
+    let declaration: PersistentWorkspaceDeclaration
+    var consumers: Set<ComponentID>
 }
 
 struct StorageRemovalTarget: Codable, Equatable, Sendable {
@@ -36,9 +49,17 @@ struct StorageAllocationMeasurement: Equatable, Sendable {
     let reclaimableBytes: UInt64
 }
 
+struct PersistentWorkspaceRemovalTarget: Codable, Equatable, Sendable {
+    let name: String
+    let identity: PersistentWorkspaceIdentity
+    let allocatedBytes: UInt64
+    let active: Bool
+}
+
 struct CleanResult: Codable, Equatable, Sendable {
     let component: String
     let targets: [StorageRemovalTarget]
+    let persistentWorkspaces: [PersistentWorkspaceRemovalTarget]
     let reclaimedBytes: UInt64
     let dryRun: Bool
 }
@@ -46,6 +67,7 @@ struct CleanResult: Codable, Equatable, Sendable {
 struct PruneResult: Codable, Equatable, Sendable {
     let removedRuns: [String]
     let targets: [StorageRemovalTarget]
+    let persistentWorkspaces: [PersistentWorkspaceRemovalTarget]
     let reclaimedBytes: UInt64
     let appleContainerImagesPruned: Bool
     let appleContainerReclaimableBytes: UInt64
@@ -74,7 +96,11 @@ struct RepositoryCache {
         let declarations = component.storage
             .filter { $0.cleanupPolicy == .explicitClean }
             .sorted { $0.id < $1.id }
-        guard !declarations.isEmpty else {
+        let workspaceUsage = try persistentWorkspaceUsage()
+        let workspaceDeclarations = component.persistentWorkspaces.filter {
+            workspaceUsage[$0.identity]?.consumers == Set([component.descriptor.id])
+        }
+        guard !declarations.isEmpty || !workspaceDeclarations.isEmpty else {
             throw WorkspaceFailure.message(
                 "component '\(component.descriptor.canonicalName)' has no explicitly cleanable storage"
             )
@@ -88,6 +114,12 @@ struct RepositoryCache {
             }
             locks.formUnion(declarationLocks)
         }
+        for workspace in workspaceDeclarations {
+            locks.insert(
+                .persistentWorkspace(
+                    workspace.identity,
+                    stateRoot: context.layout.tasks))
+        }
         let targets = try declarations.map { declaration in
             StorageRemovalTarget(
                 id: declaration.id,
@@ -95,22 +127,43 @@ struct RepositoryCache {
                 allocatedBytes: try allocatedSize(
                     URL(fileURLWithPath: declaration.root.string)))
         }
-        let result = CleanResult(
-            component: component.descriptor.canonicalName,
-            targets: targets,
-            reclaimedBytes: targets.reduce(0) { $0 &+ $1.allocatedBytes },
-            dryRun: dryRun)
-        try emit(result)
-        guard !dryRun else { return }
-        try await context.runtime.withTaskLocks(
+        if dryRun {
+            let workspaces = try await persistentWorkspaceTargets(
+                matching: Set(workspaceDeclarations.map(\.identity)))
+            try emit(
+                cleanResult(
+                    component: component.descriptor.canonicalName,
+                    targets: targets,
+                    workspaces: workspaces,
+                    dryRun: true))
+            return
+        }
+        let workspaces = try await context.runtime.withTaskLocks(
             locks,
             stateRoot: context.layout.tasks,
             purpose: "clean \(component.descriptor.canonicalName) storage"
         ) {
+            let workspaces = try await persistentWorkspaceTargets(
+                matching: Set(workspaceDeclarations.map(\.identity)))
+            if let active = workspaces.first(where: \.active) {
+                throw WorkspaceFailure.message(
+                    "persistent workspace '\(active.name)' is still attached")
+            }
             for declaration in declarations {
                 try removeDeclaredRoot(declaration)
             }
+            for workspace in workspaces {
+                try await context.runtime.deleteOCIPersistentWorkspace(
+                    named: workspace.name)
+            }
+            return workspaces
         }
+        try emit(
+            cleanResult(
+                component: component.descriptor.canonicalName,
+                targets: targets,
+                workspaces: workspaces,
+                dryRun: false))
     }
 
     func status(measureAllocations: Bool = false) async throws {
@@ -139,7 +192,19 @@ struct RepositoryCache {
         let contract = try? MacOSBuilderContract.load(root: context.root)
         let apfs = contract == nil ? [:] : try await apfsVolumes()
         let ociUsage = try await containerDiskUsage()
-        let persistentWorkspaces = await containerPersistentWorkspaces()
+        let declaredWorkspaceIdentities = Set(
+            catalog.components.flatMap(\.persistentWorkspaces).map(\.identity))
+        let persistentWorkspaces = await containerPersistentWorkspaces().map { workspace in
+            PersistentWorkspaceStatusRecord(
+                name: workspace.name,
+                identity: workspace.identity,
+                capacityBytes: workspace.capacityBytes,
+                allocatedBytes: workspace.allocatedBytes,
+                state: workspace.active
+                    ? "active"
+                    : declaredWorkspaceIdentities.contains(workspace.identity)
+                        ? "retained" : "reclaimable")
+        }
         var records = declarations.map { declaration in
             let exists = FileManager.default.fileExists(atPath: declaration.root.string)
             let measurement = measurements[declaration.id]
@@ -239,17 +304,34 @@ struct RepositoryCache {
             storageDeclarations
             .filter { $0.cleanupPolicy == .explicitPrune }
             .sorted { $0.id < $1.id }
+        let declaredWorkspaceIdentities = Set(
+            catalog.components.flatMap(\.persistentWorkspaces).map(\.identity))
+        let orphanedWorkspaceIdentities = Set(
+            await containerPersistentWorkspaces()
+                .filter {
+                    !$0.active && !declaredWorkspaceIdentities.contains($0.identity)
+                }
+                .map(\.identity))
         var targetRecords: [StorageRemovalTarget]
+        var workspaceRecords: [PersistentWorkspaceRemovalTarget]
         let beforeOCI = try await containerDiskUsage()
 
         if dryRun {
             targetRecords = try resolvedPruneTargets(pruneDeclarations).records
+            workspaceRecords = try await persistentWorkspaceTargets(
+                matching: orphanedWorkspaceIdentities)
         } else {
             var locks = Set<TaskLock>()
             for declaration in pruneDeclarations {
                 locks.formUnion(try catalog.workflowLocks(for: declaration))
             }
-            targetRecords = try await context.runtime.withTaskLocks(
+            for identity in orphanedWorkspaceIdentities {
+                locks.insert(
+                    .persistentWorkspace(
+                        identity,
+                        stateRoot: context.layout.tasks))
+            }
+            (targetRecords, workspaceRecords) = try await context.runtime.withTaskLocks(
                 locks,
                 stateRoot: context.layout.tasks,
                 purpose: "declared storage pruning"
@@ -260,7 +342,14 @@ struct RepositoryCache {
                         try FileManager.default.removeItem(at: url)
                     }
                 }
-                return resolved.records
+                let workspaces = try await persistentWorkspaceTargets(
+                    matching: orphanedWorkspaceIdentities
+                ).filter { !$0.active }
+                for workspace in workspaces {
+                    try await context.runtime.deleteOCIPersistentWorkspace(
+                        named: workspace.name)
+                }
+                return (resolved.records, workspaces)
             }
             try await registry.remove(reclaimableRuns)
             if beforeOCI != nil {
@@ -268,6 +357,9 @@ struct RepositoryCache {
             }
         }
         let declaredReclaimableBytes = targetRecords.reduce(UInt64(0)) {
+            $0 &+ $1.allocatedBytes
+        }
+        let workspaceReclaimableBytes = workspaceRecords.reduce(UInt64(0)) {
             $0 &+ $1.allocatedBytes
         }
 
@@ -281,12 +373,14 @@ struct RepositoryCache {
                     - Int64(afterOCI?.reclaimableBytes ?? 0))
         let reclaimed =
             dryRun
-            ? runBytes &+ declaredReclaimableBytes
-            : runBytes &+ declaredReclaimableBytes &+ UInt64(ociReclaimed)
+            ? runBytes &+ declaredReclaimableBytes &+ workspaceReclaimableBytes
+            : runBytes &+ declaredReclaimableBytes &+ workspaceReclaimableBytes
+                &+ UInt64(ociReclaimed)
         try emit(
             PruneResult(
                 removedRuns: reclaimableRuns.map(\.id.rawValue),
                 targets: targetRecords,
+                persistentWorkspaces: workspaceRecords,
                 reclaimedBytes: reclaimed,
                 appleContainerImagesPruned: !dryRun && beforeOCI != nil,
                 appleContainerReclaimableBytes: beforeOCI?.reclaimableBytes ?? 0,
@@ -302,6 +396,31 @@ struct RepositoryCache {
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
         try StorageCatalog.validateProducers(storageDeclarations, tasks: catalog.tasks)
+        _ = try persistentWorkspaceUsage()
+    }
+
+    private func persistentWorkspaceUsage() throws -> [PersistentWorkspaceIdentity:
+        PersistentWorkspaceUsage]
+    {
+        var usage: [PersistentWorkspaceIdentity: PersistentWorkspaceUsage] = [:]
+        for component in catalog.components {
+            for workspace in component.persistentWorkspaces {
+                if var existing = usage[workspace.identity] {
+                    guard existing.declaration == workspace else {
+                        throw WorkspaceFailure.message(
+                            "persistent workspace '\(workspaceLabel(workspace.identity))' has conflicting declarations"
+                        )
+                    }
+                    existing.consumers.insert(component.descriptor.id)
+                    usage[workspace.identity] = existing
+                } else {
+                    usage[workspace.identity] = PersistentWorkspaceUsage(
+                        declaration: workspace,
+                        consumers: [component.descriptor.id])
+                }
+            }
+        }
+        return usage
     }
 
     private func pruneTargets(
@@ -456,6 +575,37 @@ struct RepositoryCache {
         (try? await context.runtime.ociPersistentWorkspaces()) ?? []
     }
 
+    private func persistentWorkspaceTargets(
+        matching identities: Set<PersistentWorkspaceIdentity>
+    ) async throws -> [PersistentWorkspaceRemovalTarget] {
+        guard !identities.isEmpty else { return [] }
+        return try await context.runtime.ociPersistentWorkspaces()
+            .filter { identities.contains($0.identity) }
+            .map {
+                PersistentWorkspaceRemovalTarget(
+                    name: $0.name,
+                    identity: $0.identity,
+                    allocatedBytes: $0.allocatedBytes,
+                    active: $0.active)
+            }
+            .sorted { $0.name < $1.name }
+    }
+
+    private func cleanResult(
+        component: String,
+        targets: [StorageRemovalTarget],
+        workspaces: [PersistentWorkspaceRemovalTarget],
+        dryRun: Bool
+    ) -> CleanResult {
+        CleanResult(
+            component: component,
+            targets: targets,
+            persistentWorkspaces: workspaces,
+            reclaimedBytes: targets.reduce(0) { $0 &+ $1.allocatedBytes }
+                &+ workspaces.reduce(0) { $0 &+ $1.allocatedBytes },
+            dryRun: dryRun)
+    }
+
     private func storageState(
         declaration: StorageDeclaration,
         exists: Bool,
@@ -509,14 +659,13 @@ struct RepositoryCache {
                     + "\(formatted(usage.reclaimableBytes)) reclaimable")
         }
         for workspace in report.persistentWorkspaces {
-            let state = workspace.active ? "active" : "retained"
             let capacityWarning =
                 workspace.capacityBytes > 0
                 && workspace.allocatedBytes
                     >= workspace.capacityBytes - workspace.capacityBytes / 5
             let warning = capacityWarning ? ", capacity warning" : ""
             lines.append(
-                "persistent-workspace:\(workspace.identity.key): \(state)\(warning), "
+                "persistent-workspace:\(workspace.identity.key): \(workspace.state)\(warning), "
                     + "\(formatted(workspace.allocatedBytes)) allocated / "
                     + "\(formatted(workspace.capacityBytes)) logical")
             lines.append(
@@ -533,11 +682,16 @@ struct RepositoryCache {
         var lines = [
             "cache prune: \(action) \(result.removedRuns.count) run(s), "
                 + "\(result.targets.count) declared storage target(s), "
+                + "\(result.persistentWorkspaces.count) orphaned workspace(s), "
                 + formatted(result.reclaimedBytes)
         ]
         for run in result.removedRuns { lines.append("  run \(run)") }
         for target in result.targets {
             lines.append("  \(target.id): \(target.path)")
+        }
+        for workspace in result.persistentWorkspaces {
+            lines.append(
+                "  persistent-workspace:\(workspace.identity.key): \(workspace.name)")
         }
         if result.appleContainerReclaimableBytes > 0 {
             let verb = result.dryRun ? "reports" : "reported before dangling-image pruning"
@@ -552,13 +706,27 @@ struct RepositoryCache {
         let action = result.dryRun ? "would remove" : "removing"
         var lines = [
             "clean \(result.component): \(action) \(result.targets.count) declared root(s), "
+                + "\(result.persistentWorkspaces.count) persistent workspace(s), "
                 + formatted(result.reclaimedBytes)
         ]
         for target in result.targets {
             lines.append("  \(target.id): \(target.path)")
         }
+        for workspace in result.persistentWorkspaces {
+            let active = workspace.active ? " (active)" : ""
+            lines.append(
+                "  persistent-workspace:\(workspace.identity.key): \(workspace.name)\(active)")
+        }
         try context.console.report(result, text: lines.joined(separator: "\n"))
     }
+}
+
+private func workspaceLabel(_ identity: PersistentWorkspaceIdentity) -> String {
+    let target = identity.artifactTarget
+    let abi = target.abi.map { "-\($0)" } ?? ""
+    let api = target.androidAPILevel.map { "-api\($0)" } ?? ""
+    return
+        "\(identity.key):\(target.operatingSystem.rawValue)-\(target.architecture.rawValue)\(abi)\(api):\(identity.role)"
 }
 
 private func allocatedSize(of roots: [URL]) throws -> UInt64 {

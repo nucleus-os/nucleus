@@ -53,6 +53,7 @@ public struct ColliderCommand: AsyncParsableCommand {
             environment: environment)
         let layout = WorkspaceLayout(root: workspace)
         let registry = RunRegistry(root: layout.state)
+        try await registry.reconcileAbandonedRuns()
         let requestedRunID = requestedRunID(for: command)
         let run: RunHandle?
         if workspaceCommand.recordsRun {

@@ -47,6 +47,46 @@ import Testing
     #expect(reduced.tasks[TaskID(rawValue: "doctor.host")] == .running)
 }
 
+@Test func runRegistryReconcilesRunningRecordsWithoutAnOwnerLease() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-abandoned-run-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let id = RunID(rawValue: "abandoned")
+    let runDirectory = directory.appendingPathComponent("runs/abandoned")
+    try FileManager.default.createDirectory(
+        at: runDirectory.appendingPathComponent("stages"),
+        withIntermediateDirectories: true)
+    let manifest = RunManifest(
+        runID: id,
+        command: ["collider", "build"],
+        startedAt: "2026-08-11T00:00:00Z")
+    try JSONEncoder().encode(manifest).write(
+        to: runDirectory.appendingPathComponent("manifest.json"))
+
+    let registry = RunRegistry(root: FilePath(directory.path))
+    #expect(try await registry.reconcileAbandonedRuns() == [id])
+
+    let snapshot = try await registry.recordedRun(id)
+    #expect(snapshot.manifest.status == .interrupted)
+    #expect(snapshot.manifest.finishedAt != nil)
+    let observed = try await registry.reducedEvents(in: snapshot)
+    #expect(observed.status == .interrupted)
+}
+
+@Test func runRegistryPreservesRunningRecordsWithAnOwnerLease() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-active-run-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let owner = RunRegistry(root: FilePath(directory.path))
+    let run = try await owner.begin(command: ["collider", "build"])
+    let observer = RunRegistry(root: FilePath(directory.path))
+
+    #expect(try await observer.reconcileAbandonedRuns().isEmpty)
+    #expect(try await observer.recordedRun(run.id).manifest.status == .running)
+
+    try await owner.finish(run, status: .succeeded)
+}
+
 @Test func runRegistryPersistsOneUnifiedRecordPerPlannedTask() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-task-record-\(UUID().uuidString)")
