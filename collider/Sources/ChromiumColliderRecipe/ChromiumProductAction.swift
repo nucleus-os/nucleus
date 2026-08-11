@@ -85,21 +85,15 @@ package struct BuildChromiumProductAction: ColliderAction {
             sourceMaterializationExecution(sourceID: sourceID))
         let gnArguments = try stagedGNArguments(files: context.files)
         try await context.containers.run(
-            containerExecution(command: ["configure", gnArguments]))
-
-        let manifest = try await buildManifest(
-            sourceManifest: sourceManifest,
-            context: context)
-        try await context.containers.run(
             containerExecution(
-                command: ["build", String(build.jobs)] + build.targets))
-        let verification = try await buildManifest(
+                command: [
+                    "build", sourceID, gnArguments, String(build.jobs),
+                ] + build.targets))
+        let manifest = try buildManifest(
+            sourceID: sourceID,
+            gnArguments: gnArguments,
             sourceManifest: sourceManifest,
             context: context)
-        guard manifest == verification else {
-            throw failure(
-                "Chromium build metadata changed during the build")
-        }
         try context.files.write(
             try encodedJSON(manifest),
             to: build.buildManifest)
@@ -229,38 +223,16 @@ package struct BuildChromiumProductAction: ColliderAction {
     }
 
     private func buildManifest(
+        sourceID: String,
+        gnArguments: String,
         sourceManifest: FilePath,
         context: ActionContext
-    ) async throws -> ChromiumBuildManifest {
-        let sourceID = try sourceID(in: sourceManifest, files: context.files)
+    ) throws -> ChromiumBuildManifest {
         let clang = chromium.appending(
             "\(chromiumLinuxClangRoot)/bin/clang")
         guard try context.files.metadata(for: clang)?.type == .regular else {
             throw failure("Chromium clang is missing: \(clang)")
         }
-        let versionResult = try await context.containers.execute(
-            containerExecution(
-                command: ["clang-version"],
-                output: .captured(limit: 64 * 1_024)))
-        guard versionResult.status == 0,
-            let version = versionResult.standardOutput.split(
-                separator: "\n"
-            ).first
-        else {
-            throw failure("could not identify Chromium clang: \(clang)")
-        }
-        let argumentsResult = try await context.containers.execute(
-            containerExecution(
-                command: ["gn-args"],
-                output: .captured(limit: 4 * 1_024 * 1_024)))
-        guard argumentsResult.status == 0 else {
-            throw failure("could not read resolved Chromium GN arguments")
-        }
-        let normalizedArguments = argumentsResult.standardOutput
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-            .sorted()
         let identity = ChromiumBuildIdentity(
             product: build.product.rawValue,
             architecture: build.target.architecture.rawValue,
@@ -268,8 +240,7 @@ package struct BuildChromiumProductAction: ColliderAction {
             sourceManifestSHA256: try context.files.digest(
                 file: sourceManifest
             ).description,
-            gnArguments: normalizedArguments,
-            clangVersion: String(version),
+            gnArguments: gnArguments,
             clangSHA256: try context.files.digest(file: clang).description,
             pgo: try pgoProfile(files: context.files),
             v8BuiltinsPGO: try optionalProfile(
@@ -348,24 +319,23 @@ package struct BuildChromiumProductAction: ColliderAction {
     }
 }
 
-private struct ChromiumProfileIdentity: Codable, Equatable {
+private struct ChromiumProfileIdentity: Codable {
     let name: String
     let sha256: String
 }
 
-private struct ChromiumBuildIdentity: Codable, Equatable {
+private struct ChromiumBuildIdentity: Codable {
     let product: String
     let architecture: String
     let sourceID: String
     let sourceManifestSHA256: String
-    let gnArguments: [String]
-    let clangVersion: String
+    let gnArguments: String
     let clangSHA256: String
     let pgo: ChromiumProfileIdentity?
     let v8BuiltinsPGO: ChromiumProfileIdentity?
 }
 
-private struct ChromiumBuildManifest: Codable, Equatable {
+private struct ChromiumBuildManifest: Codable {
     let identity: ChromiumBuildIdentity
     let buildID: String
 }

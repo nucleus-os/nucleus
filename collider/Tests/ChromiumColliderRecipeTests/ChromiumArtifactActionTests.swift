@@ -57,16 +57,8 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
         recording: executions,
         containerRun: { execution in
             switch execution.command.first {
-            case "materialize-source", "configure", "build":
+            case "materialize-source", "build":
                 return CommandResult(status: 0)
-            case "clang-version":
-                return CommandResult(
-                    status: 0,
-                    standardOutput: "clang version 23.0.0\n")
-            case "gn-args":
-                return CommandResult(
-                    status: 0,
-                    standardOutput: "is_debug = false\n")
             default:
                 Issue.record(
                     "unexpected Chromium build command: \(execution.command)")
@@ -76,8 +68,13 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
     let recorded = await executions.values()
     #expect(
         recorded.map(\.command.first) == [
-            "materialize-source", "configure", "clang-version", "gn-args",
-            "build", "clang-version", "gn-args",
+            "materialize-source", "build",
+        ])
+    let build = try #require(recorded.dropFirst().first)
+    #expect(
+        build.command == [
+            "build", "0123456789abcdef01234567", "is_debug=false", "12",
+            "chrome",
         ])
     let materialization = try #require(recorded.first)
     #expect(materialization.mounts.map(\.target) == ["/host-source"])

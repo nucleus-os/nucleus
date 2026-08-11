@@ -81,6 +81,22 @@ import Testing
         )
     }
     let cefRevision = try await git(cef)
+    let cefCache = directory.appendingPathComponent("cef-cache.git")
+    for (arguments, workingDirectory) in [
+        (["clone", "--bare", cef.path, cefCache.path], directory),
+        (["clone", "--shared", cefCache.path, cef.path], directory),
+    ] {
+        if arguments.contains("--shared") {
+            try FileManager.default.removeItem(at: cef)
+        }
+        let result = try await runtime.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: arguments,
+                workingDirectory: FilePath(workingDirectory.path),
+                environment: environment))
+        #expect(result.status == 0)
+    }
     let angleRevision = try await git(angle)
     let skiaRevision = try await git(skia)
     let dawnRevision = try await git(dawn)
@@ -255,4 +271,12 @@ import Testing
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: current.path) == sourceID)
+    try FileManager.default.removeItem(at: cefCache)
+    let cefConnectivity = try await runtime.execute(
+        CommandSpec(
+            executable: .named("git"),
+            arguments: ["fsck", "--connectivity-only"],
+            workingDirectory: FilePath(cef.path),
+            environment: environment))
+    #expect(cefConnectivity.status == 0)
 }

@@ -64,7 +64,9 @@ case "${1:-}" in
     fi
     source_id="$2"
     marker=/source/.nucleus-source-id
-    if [[ -f "$marker" ]] && [[ "$(<"$marker")" == "$source_id" ]]; then
+    if [[ -f "$marker" ]] \
+        && [[ "$(<"$marker")" == "$source_id" ]] \
+        && [[ ! -e /source/chromium/src/cef/.git/objects/info/alternates ]]; then
       exit 0
     fi
     find /source -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
@@ -87,14 +89,6 @@ case "${1:-}" in
     esac
     exec "${executable}" "$@"
     ;;
-  clang-version)
-    if [[ $# -ne 1 \
-        || ! -x /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang ]]; then
-      echo "error: clang-version requires the Chromium compiler" >&2
-      exit 64
-    fi
-    exec /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang --version
-    ;;
 esac
 
 if [[ ! -f /source/source-provenance.json \
@@ -108,31 +102,39 @@ if [[ ! -d /build || ! -w /build ]]; then
   exit 64
 fi
 
+configure_build() {
+  local source_id="$1"
+  local gn_arguments="$2"
+  local marker=/build/.nucleus-gn-configuration
+  local desired="$marker.desired.$$"
+  trap 'rm -f "$desired"' EXIT
+  printf '%s\n%s\n' "$source_id" "$gn_arguments" >"$desired"
+  if [[ -f /build/build.ninja && -f "$marker" ]] \
+      && cmp -s "$desired" "$marker"; then
+    rm -f "$desired"
+    trap - EXIT
+    return
+  fi
+  /source/chromium/src/buildtools/linux64/gn \
+    gen /build \
+    "--args=$gn_arguments"
+  mv -f "$desired" "$marker"
+  trap - EXIT
+}
+
 case "${1:-}" in
-  configure)
-    if [[ $# -ne 2 ]]; then
-      echo "error: configure requires the complete GN argument string" >&2
-      exit 64
-    fi
-    exec /source/chromium/src/buildtools/linux64/gn \
-      gen /build \
-      "--args=$2"
-    ;;
-  gn-args)
-    if [[ $# -ne 1 ]]; then
-      echo "error: gn-args takes no arguments" >&2
-      exit 64
-    fi
-    exec /source/chromium/src/buildtools/linux64/gn \
-      args /build --list --short
-    ;;
   build)
-    if [[ $# -lt 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-      echo "error: build requires a positive job count and at least one target" >&2
+    if [[ $# -lt 5 || ! "$2" =~ ^[0-9a-f]{24}$ \
+        || ! "$4" =~ ^[1-9][0-9]*$ ]]; then
+      echo "error: build requires the source identity, GN arguments," \
+        "positive job count, and at least one target" >&2
       exit 64
     fi
-    jobs="$2"
-    shift 2
+    source_id="$2"
+    gn_arguments="$3"
+    jobs="$4"
+    shift 4
+    configure_build "$source_id" "$gn_arguments"
     exec /source/chromium/src/third_party/siso/cipd/siso \
       ninja --offline -local_jobs="$jobs" -C /build "$@"
     ;;

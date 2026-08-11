@@ -28,7 +28,9 @@ closure.
 
 The VM remains arm64. Chromium's official x86_64 Linux host tools use macOS 27
 Intel binary translation. Target binaries are generated against their matching
-Chromium sysroot. Automated validation executes arm64 artifacts natively. CEF's
-x86_64 consumer link, ELF architecture, and direct dependency closure are
-validated statically because Apple's translated loader cannot process CEF's
-otherwise-valid, unusually large dynamic relocation table.
+Chromium sysroot. Those stripped sysroots are compile/link inputs and are never
+used as runtime roots. Automated validation executes arm64 artifacts against
+the image's real arm64 distribution runtime. CEF's x86_64 consumer link, ELF
+architecture, and direct dependency closure are validated statically because
+Apple's translated loader cannot process CEF's otherwise-valid, unusually large
+dynamic relocation table.

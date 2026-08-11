@@ -98,6 +98,9 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         let provenance = preparation.sourceRoot.appending(
             "source-provenance.json")
         if try context.files.metadata(for: provenance) != nil {
+            try await prepareCEFCheckoutForDistribution(
+                sourceRoot: preparation.sourceRoot,
+                context: context)
             try await validateSource(
                 sourceRoot: preparation.sourceRoot,
                 provenance: provenance,
@@ -232,6 +235,9 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         try await ensureProfiles(
             chromium: chromium,
             environment: sourceEnvironment,
+            context: context)
+        try await prepareCEFCheckoutForDistribution(
+            sourceRoot: candidate,
             context: context)
 
         let value = try await sourceProvenance(
@@ -467,6 +473,46 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 "Chromium source provenance does not match its checkout: "
                     + provenance.string)
         }
+    }
+
+    private func prepareCEFCheckoutForDistribution(
+        sourceRoot: FilePath,
+        context: ActionContext
+    ) async throws {
+        let repository = try lockedRepository(named: "cef")
+        let checkout = sourceRoot.appending(repository.checkoutPath)
+        try await requireGitSuccess(
+            [
+                "-C", checkout.string, "update-ref",
+                "refs/heads/\(preparation.sourceLock.cefBranch)",
+                repository.commit,
+            ],
+            in: checkout,
+            environment: actionEnvironment,
+            context: context)
+        try await requireGitSuccess(
+            [
+                "-C", checkout.string, "update-ref",
+                "refs/remotes/origin/master", repository.upstreamCommit,
+            ],
+            in: checkout,
+            environment: actionEnvironment,
+            context: context)
+        let alternates = checkout.appending(".git/objects/info/alternates")
+        guard try context.files.metadata(for: alternates) != nil else {
+            return
+        }
+        try await requireGitSuccess(
+            ["-C", checkout.string, "repack", "-a", "-d"],
+            in: checkout,
+            environment: actionEnvironment,
+            context: context)
+        try context.files.remove(alternates)
+        try await requireGitSuccess(
+            ["-C", checkout.string, "fsck", "--connectivity-only"],
+            in: checkout,
+            environment: actionEnvironment,
+            context: context)
     }
 
     private func ensureMacOSHostClang(

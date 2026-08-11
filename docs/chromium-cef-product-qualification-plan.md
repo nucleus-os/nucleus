@@ -56,13 +56,15 @@ host-backed intermediate tree.
 
 ## Phase 2 — Qualify artifacts and focused tests
 
-Cross-compile, link, and run the external CEF consumer for each architecture.
-Run each browser artifact validator and each target's focused Ozone and Viz
-presenter suite. Use the matching Chromium sysroot and target loader so arm64
-executes natively and x86_64 executes through macOS 27 Intel binary translation.
-Verify dynamic-library resolution, sandbox ownership, product metadata, source
-provenance, launcher syntax, and absence of SwiftShader and unsupported renderer
-fallbacks.
+Cross-compile and link the external CEF consumer for each architecture. Execute
+the arm64 consumer against the builder image's real arm64 distribution runtime.
+Statically validate the x86_64 consumer's ELF architecture and direct dependency
+closure because Apple Intel translation cannot load CEF's relocation table. Run
+each browser artifact validator and each target's focused Ozone and Viz presenter
+suite. Chromium's stripped sysroots remain compile/link inputs and are never
+used as runtime roots. Verify dynamic-library resolution, sandbox ownership,
+product metadata, source provenance, launcher syntax, and absence of SwiftShader
+and unsupported renderer fallbacks.
 
 Gate: every published architecture is executable on the qualifier and bound to
 the selected source, target, GN, compiler, sysroot, PGO, and builder identities.

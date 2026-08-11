@@ -1275,6 +1275,12 @@ private struct PruneChromiumCacheAction: ColliderAction {
         for rule in plan.rules {
             let effect = ActionEffect(.readWrite, scope: .scratch(rule.root))
             if !effects.contains(effect) { effects.append(effect) }
+            if let current = rule.current {
+                let currentEffect = ActionEffect(.read, scope: .input(current))
+                if !effects.contains(currentEffect) {
+                    effects.append(currentEffect)
+                }
+            }
         }
         return ActionRequirements(
             effects: effects,

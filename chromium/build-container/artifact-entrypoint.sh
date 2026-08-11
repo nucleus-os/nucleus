@@ -3,19 +3,17 @@ set -euo pipefail
 
 mkdir -p "$HOME"
 
-target_runtime() {
+target_build_context() {
   local architecture="$1"
-  local sysroot_arch triple loader_name
+  local sysroot_arch triple
   case "$architecture" in
     arm64)
       sysroot_arch="arm64"
       triple="aarch64-linux-gnu"
-      loader_name="ld-linux-aarch64.so.1"
       ;;
     x86_64)
       sysroot_arch="amd64"
       triple="x86_64-linux-gnu"
-      loader_name="ld-linux-x86-64.so.2"
       ;;
     *)
       echo "error: unsupported Chromium Linux architecture: $architecture" >&2
@@ -31,18 +29,10 @@ target_runtime() {
     return 1
   fi
 
-  local loader
-  loader="$(find "$sysroot" \( -type f -o -type l \) \
-    -name "$loader_name" -print -quit)"
-  if [[ -z "$loader" ]]; then
-    echo "error: Chromium $architecture runtime loader is unavailable" >&2
-    return 1
-  fi
-
-  printf '%s\n%s\n%s\n' "$sysroot" "$triple" "$loader"
+  printf '%s\n%s\n' "$sysroot" "$triple"
 }
 
-runtime_library_path() {
+sysroot_link_library_path() {
   local sysroot="$1"
   local artifact_directory="$2"
   local path="$artifact_directory"
@@ -84,19 +74,21 @@ case "${1:-}" in
       echo "error: validate-browser requires an architecture, source, and artifact" >&2
       exit 64
     fi
-    runtime_output="$(target_runtime "$2")"
-    mapfile -t runtime <<<"$runtime_output"
-    sysroot="${runtime[0]}"
-    loader="${runtime[2]}"
-    library_path="$(runtime_library_path "$sysroot" /artifact/runtime)"
-    linkage="$("$loader" --library-path "$library_path" \
-      --list /artifact/runtime/nucleus-browser-bin)"
-    printf '%s\n' "$linkage"
-    if grep -Fq 'not found' <<<"$linkage"; then
-      exit 1
-    fi
     bash -n /artifact/bin/nucleus-browser
-    exec "$loader" --library-path "$library_path" \
+    if [[ "$2" == x86_64 ]]; then
+      build_context_output="$(target_build_context "$2")"
+      mapfile -t build_context <<<"$build_context_output"
+      sysroot="${build_context[0]}"
+      library_path="$(
+        sysroot_link_library_path "$sysroot" /artifact/runtime
+      )"
+      readelf -h /artifact/runtime/nucleus-browser-bin \
+        | grep -Eq '^[[:space:]]*Machine:[[:space:]]+Advanced Micro Devices X86-64$'
+      validate_elf_dependencies \
+        /artifact/runtime/nucleus-browser-bin "$library_path"
+      exit 0
+    fi
+    exec env LD_LIBRARY_PATH=/artifact/runtime \
       /artifact/runtime/nucleus-browser-bin --version
     ;;
   cef-make-distrib)
@@ -107,6 +99,10 @@ case "${1:-}" in
         || ! -w /distribution ]]; then
       echo "error: cef-make-distrib requires source, build, and distribution mounts" >&2
       exit 64
+    fi
+    if [[ -e /source/chromium/src/cef/.git/objects/info/alternates ]]; then
+      echo "error: the materialized CEF checkout still depends on a host Git object cache" >&2
+      exit 1
     fi
     exec python3 /source/chromium/src/cef/tools/make_distrib.py \
       --output-dir=/distribution \
@@ -150,11 +146,11 @@ case "${1:-}" in
       echo "error: validate-cef requires an architecture, source, SDK, and scratch mounts" >&2
       exit 64
     fi
-    runtime_output="$(target_runtime "$2")"
-    mapfile -t runtime <<<"$runtime_output"
-    sysroot="${runtime[0]}"
-    triple="${runtime[1]}"
-    library_path="$(runtime_library_path "$sysroot" /sdk/Release)"
+    build_context_output="$(target_build_context "$2")"
+    mapfile -t build_context <<<"$build_context_output"
+    sysroot="${build_context[0]}"
+    triple="${build_context[1]}"
+    library_path="$(sysroot_link_library_path "$sysroot" /sdk/Release)"
     cat > /smoke/consumer.c <<'EOF'
 #include "include/cef_version_info.h"
 int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }
@@ -181,7 +177,7 @@ EOF
       validate_elf_dependencies /smoke/consumer "$library_path"
       exit 0
     fi
-    exec env LD_LIBRARY_PATH="$library_path" /smoke/consumer
+    exec env LD_LIBRARY_PATH=/sdk/Release /smoke/consumer
     ;;
   cef-archive)
     if [[ $# -ne 3 \
