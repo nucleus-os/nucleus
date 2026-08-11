@@ -58,4 +58,5 @@ implementation inputs are available:
 ## Research and qualification
 
 - [Apple Silicon virtualization](apple-silicon-virtualization-target-plan.md) defines the macOS 27+ target and its prerequisite investigations. It is not part of the current implementation sequence.
+- [Linux development host review](linux-development-host-review.md) records the investigation into Linux x86_64 development hosts, foreign-architecture execution in the native build graph, and prebuilt artifact distribution. It states findings, open questions, and coverage limits rather than an execution sequence, and is not part of the current implementation sequence.
 - [Chromium/CEF](../chromium/README.md), [CEF](../cef/README.md), and [Android runtime](../android-runtime/README.md) contain component qualification commands and current runtime contracts.
