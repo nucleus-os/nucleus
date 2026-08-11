@@ -1,3 +1,4 @@
+import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import Foundation
@@ -5,6 +6,14 @@ import SystemPackage
 import Testing
 
 @testable import ColliderWorkspaceCommands
+
+@Test func cacheStatusMakesRecursiveAllocationMeasurementExplicit() throws {
+    let defaultStatus = try Cache.Status.parse([])
+    #expect(!defaultStatus.measureAllocations)
+
+    let measuredStatus = try Cache.Status.parse(["--measure-allocations"])
+    #expect(measuredStatus.measureAllocations)
+}
 
 @Test func repositoryCachePrunesAbandonedCandidatesAndInactiveSwiftSDKGenerations() async throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -238,7 +247,7 @@ import Testing
         runtime: ColliderRuntime())
     let repository = RepositoryCache(context: context, catalog: catalog)
 
-    async let status: Void = repository.status()
+    async let status: Void = repository.status(measureAllocations: true)
     async let prune: Void = repository.prune(
         keepingRuns: 0,
         dryRun: false)

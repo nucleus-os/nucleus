@@ -251,10 +251,11 @@ Subcommands:
 
 Report ownership, retention, allocation, and reclaimability for declared storage.
 
-Usage: `collider cache status [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
+Usage: `collider cache status [--measure-allocations] [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
 
 Arguments and options:
 
+- `--measure-allocations` — Recursively measure declared storage allocation; this can be expensive for large source and compiler trees.
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`

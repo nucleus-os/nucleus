@@ -9,8 +9,8 @@ struct StorageStatusRecord: Codable, Equatable {
     let owner: String
     let storageClass: StorageClass
     let path: String
-    let allocatedBytes: UInt64
-    let reclaimableBytes: UInt64
+    let allocatedBytes: UInt64?
+    let reclaimableBytes: UInt64?
     let cleanupPolicy: StorageCleanupPolicy
     let state: String
     let retention: String
@@ -29,6 +29,11 @@ struct StorageRemovalTarget: Codable, Equatable, Sendable {
     let id: String
     let path: String
     let allocatedBytes: UInt64
+}
+
+struct StorageAllocationMeasurement: Equatable, Sendable {
+    let allocatedBytes: UInt64
+    let reclaimableBytes: UInt64
 }
 
 struct CleanResult: Codable, Equatable, Sendable {
@@ -108,34 +113,39 @@ struct RepositoryCache {
         }
     }
 
-    func status() async throws {
+    func status(measureAllocations: Bool = false) async throws {
         try validateStorageDeclarations()
         let declarations = storageDeclarations
-        let runs = await runReclamation(
-            keeping: RunRegistry.defaultRetainedRunCount)
-        let explicitlyPrunableBytes = try Dictionary(
-            uniqueKeysWithValues:
-                declarations
-                .filter { $0.cleanupPolicy == .explicitPrune }
-                .map { declaration in
-                    (
-                        declaration.id,
-                        try allocatedSize(of: pruneTargets(for: declaration))
-                    )
-                })
+        let reclaimableRuns = await RunRegistry(root: context.layout.state)
+            .reclaimableRuns(keeping: RunRegistry.defaultRetainedRunCount)
+        var reclaimableTargets: [String: [URL]] = [:]
+        for declaration in declarations {
+            if declaration.storageClass == .runRecord {
+                reclaimableTargets[declaration.id] = reclaimableRuns.map {
+                    URL(fileURLWithPath: $0.directory.string)
+                }
+            } else if declaration.cleanupPolicy == .explicitPrune {
+                reclaimableTargets[declaration.id] = try pruneTargets(for: declaration)
+            }
+        }
+        let measurements: [String: StorageAllocationMeasurement] =
+            if measureAllocations {
+                try allocationMeasurements(
+                    declarations: declarations,
+                    reclaimableTargets: reclaimableTargets)
+            } else {
+                [:]
+            }
         let contract = try? MacOSBuilderContract.load(root: context.root)
         let apfs = contract == nil ? [:] : try await apfsVolumes()
         let ociUsage = try await containerDiskUsage()
         let persistentWorkspaces = await containerPersistentWorkspaces()
-        var records = try declarations.map { declaration in
-            let allocated = try allocatedSize(
-                URL(fileURLWithPath: declaration.root.string))
-            let reclaimable: UInt64
-            if declaration.storageClass == .runRecord {
-                reclaimable = runs.bytes
-            } else {
-                reclaimable = explicitlyPrunableBytes[declaration.id] ?? 0
-            }
+        var records = declarations.map { declaration in
+            let exists = FileManager.default.fileExists(atPath: declaration.root.string)
+            let measurement = measurements[declaration.id]
+            let allocated = exists ? measurement?.allocatedBytes : 0
+            let targets = reclaimableTargets[declaration.id] ?? []
+            let reclaimable = targets.isEmpty ? 0 : measurement?.reclaimableBytes
             return StorageStatusRecord(
                 id: declaration.id,
                 owner: declaration.owner.rawValue,
@@ -146,8 +156,8 @@ struct RepositoryCache {
                 cleanupPolicy: declaration.cleanupPolicy,
                 state: storageState(
                     declaration: declaration,
-                    allocatedBytes: allocated,
-                    reclaimableBytes: reclaimable),
+                    exists: exists,
+                    hasReclaimableStorage: !targets.isEmpty),
                 retention: declaration.retention,
                 rollbackGenerationCount: declaration.rollbackGenerationCount,
                 quotaBytes: nil,
@@ -156,18 +166,28 @@ struct RepositoryCache {
         if let contract {
             records += contract.storage.map { declaration in
                 let volume = apfs[declaration.name]
-                let reclaimableBytes: UInt64
+                let reclaimableBytes: UInt64?
+                let hasReclaimableStorage: Bool
                 if declaration.storageClass == .container {
                     reclaimableBytes = ociUsage?.reclaimableBytes ?? 0
+                    hasReclaimableStorage = (reclaimableBytes ?? 0) > 0
                 } else {
                     let mount = FilePath(declaration.mountPath).normalizedForComparison()
-                    reclaimableBytes = records.reduce(into: UInt64(0)) {
-                        total, record in
+                    let contained = records.filter { record in
                         let path = FilePath(record.path).normalizedForComparison()
-                        if path.isContained(in: mount) {
-                            total &+= record.reclaimableBytes
-                        }
+                        return path.isContained(in: mount)
                     }
+                    hasReclaimableStorage = contained.contains {
+                        $0.state == "reclaimable"
+                    }
+                    reclaimableBytes =
+                        contained.contains {
+                            $0.reclaimableBytes == nil
+                        }
+                        ? nil
+                        : contained.reduce(into: UInt64(0)) {
+                            $0 &+= $1.reclaimableBytes ?? 0
+                        }
                 }
                 return StorageStatusRecord(
                     id: "volume:\(declaration.name)",
@@ -179,7 +199,7 @@ struct RepositoryCache {
                     cleanupPolicy: declaration.cleanupPolicy,
                     state: volume == nil
                         ? "missing"
-                        : reclaimableBytes > 0 ? "reclaimable" : "mounted",
+                        : hasReclaimableStorage ? "reclaimable" : "mounted",
                     retention: declaration.retention,
                     rollbackGenerationCount: nil,
                     quotaBytes: declaration.quotaBytes,
@@ -392,17 +412,31 @@ struct RepositoryCache {
         try FileManager.default.removeItem(atPath: root.string)
     }
 
-    private func runReclamation(keeping count: Int) async -> (
-        runs: [RecordedRun], bytes: UInt64
-    ) {
-        let registry = RunRegistry(root: context.layout.state)
-        let runs = await registry.reclaimableRuns(keeping: count)
-        let bytes =
-            (try? allocatedSize(
-                of: runs.map {
-                    URL(fileURLWithPath: $0.directory.string)
-                })) ?? 0
-        return (runs, bytes)
+    private func allocationMeasurements(
+        declarations: [StorageDeclaration],
+        reclaimableTargets: [String: [URL]]
+    ) throws -> [String: StorageAllocationMeasurement] {
+        let declaredRoots = declarations.map {
+            $0.root.normalizedForComparison()
+        }
+        var result: [String: StorageAllocationMeasurement] = [:]
+        defer { try? context.console.finishProgress() }
+        for declaration in declarations.sorted(by: { $0.id < $1.id }) {
+            try Task.checkCancellation()
+            try context.console.progress(
+                "measuring storage allocation: \(declaration.id)")
+            let root = declaration.root.normalizedForComparison()
+            let exclusions = declaredRoots.filter {
+                $0 != root && $0.isContained(in: root)
+            }
+            result[declaration.id] = try allocatedSize(
+                URL(fileURLWithPath: root.string),
+                excluding: exclusions,
+                reclaimableRoots: (reclaimableTargets[declaration.id] ?? []).map {
+                    FilePath($0.path).normalizedForComparison()
+                })
+        }
+        return result
     }
 
     private func apfsVolumes() async throws -> [String: APFSStorageInventory.Volume] {
@@ -424,17 +458,17 @@ struct RepositoryCache {
 
     private func storageState(
         declaration: StorageDeclaration,
-        allocatedBytes: UInt64,
-        reclaimableBytes: UInt64
+        exists: Bool,
+        hasReclaimableStorage: Bool
     ) -> String {
-        if reclaimableBytes > 0 { return "reclaimable" }
+        if hasReclaimableStorage { return "reclaimable" }
         if let link = declaration.activeGenerationLink,
             FileManager.default.fileExists(atPath: link.string)
         {
             return "active"
         }
         if declaration.cleanupPolicy == .protected { return "protected" }
-        return allocatedBytes == 0 ? "missing" : "reusable"
+        return exists ? "reusable" : "missing"
     }
 
     private func emit(_ report: StorageStatusReport) throws {
@@ -444,12 +478,23 @@ struct RepositoryCache {
                 entry.quotaBytes.map {
                     " / \(formatted($0)) quota"
                 } ?? ""
-            let reclaimable =
-                entry.reclaimableBytes > 0
-                ? ", \(formatted(entry.reclaimableBytes)) reclaimable"
-                : ""
+            let allocation =
+                entry.allocatedBytes.map(formatted)
+                ?? "allocation not measured"
+            let reclaimable: String
+            if let reclaimableBytes = entry.reclaimableBytes,
+                reclaimableBytes > 0
+            {
+                reclaimable = ", \(formatted(reclaimableBytes)) reclaimable"
+            } else if entry.state == "reclaimable",
+                entry.reclaimableBytes == nil
+            {
+                reclaimable = ", reclaimable allocation not measured"
+            } else {
+                reclaimable = ""
+            }
             lines.append(
-                "\(entry.id): \(entry.state), \(formatted(entry.allocatedBytes))\(capacity)\(reclaimable)"
+                "\(entry.id): \(entry.state), \(allocation)\(capacity)\(reclaimable)"
             )
             lines.append(
                 "  \(entry.storageClass.rawValue) · \(entry.owner) · \(entry.cleanupPolicy.rawValue)"
@@ -523,7 +568,24 @@ private func allocatedSize(of roots: [URL]) throws -> UInt64 {
 }
 
 private func allocatedSize(_ root: URL) throws -> UInt64 {
-    guard FileManager.default.fileExists(atPath: root.path) else { return 0 }
+    try allocatedSize(
+        root,
+        excluding: [],
+        reclaimableRoots: []
+    ).allocatedBytes
+}
+
+private func allocatedSize(
+    _ root: URL,
+    excluding excludedRoots: [FilePath],
+    reclaimableRoots: [FilePath]
+) throws -> StorageAllocationMeasurement {
+    try Task.checkCancellation()
+    guard FileManager.default.fileExists(atPath: root.path) else {
+        return StorageAllocationMeasurement(
+            allocatedBytes: 0,
+            reclaimableBytes: 0)
+    }
     let keys: [URLResourceKey] = [.isRegularFileKey, .fileAllocatedSizeKey, .fileSizeKey]
     guard
         let enumerator = FileManager.default.enumerator(
@@ -531,9 +593,20 @@ private func allocatedSize(_ root: URL) throws -> UInt64 {
             includingPropertiesForKeys: keys,
             options: [.skipsPackageDescendants],
             errorHandler: { _, _ in false })
-    else { return 0 }
+    else {
+        return StorageAllocationMeasurement(
+            allocatedBytes: 0,
+            reclaimableBytes: 0)
+    }
     var total: UInt64 = 0
+    var reclaimable: UInt64 = 0
     for case let url as URL in enumerator {
+        try Task.checkCancellation()
+        let path = FilePath(url.path).normalizedForComparison()
+        if excludedRoots.contains(path) {
+            enumerator.skipDescendants()
+            continue
+        }
         let values: URLResourceValues
         do {
             values = try url.resourceValues(forKeys: Set(keys))
@@ -541,9 +614,17 @@ private func allocatedSize(_ root: URL) throws -> UInt64 {
             continue
         }
         guard values.isRegularFile == true else { continue }
-        total &+= UInt64(values.fileAllocatedSize ?? values.fileSize ?? 0)
+        let bytes = UInt64(values.fileAllocatedSize ?? values.fileSize ?? 0)
+        total &+= bytes
+        if reclaimableRoots.contains(where: {
+            path == $0 || path.isContained(in: $0)
+        }) {
+            reclaimable &+= bytes
+        }
     }
-    return total
+    return StorageAllocationMeasurement(
+        allocatedBytes: total,
+        reclaimableBytes: reclaimable)
 }
 
 private func isMissingFile(_ error: any Error) -> Bool {

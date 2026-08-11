@@ -12,13 +12,19 @@ struct Cache: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")
+        @Flag(
+            name: .customLong("measure-allocations"),
+            help:
+                "Recursively measure declared storage allocation; this can be expensive for large source and compiler trees."
+        )
+        var measureAllocations = false
         @OptionGroup var outputOptions: CommandOutputOptions
         mutating func run(in context: WorkspaceContext) async throws {
             let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog
-            ).status()
+            ).status(measureAllocations: measureAllocations)
         }
     }
     struct Prune: ColliderWorkspaceCommand {
