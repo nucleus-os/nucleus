@@ -20,13 +20,6 @@ Desktop.ini
 /out/
 /logs/
 **/.runtime-data/
-**/.cache/
-**/.build-cache/
-**/.temp/
-**/.tmp/
-**/tmp/
-**/profiles/
-*.log
 .env
 .env.*
 !.env.example
@@ -35,15 +28,9 @@ Desktop.ini
 # SwiftPM and generated Swift bindings
 **/.build/
 **/.swiftpm/
-/Tools/.build/
 /collider/.nucleus/
 /collider/.sourcekit-lsp/
-/collider/.swiftpm/configuration/mirrors.json
-/collider/engine/.swiftpm/configuration/mirrors.json
 /collider/engine/Package.resolved
-/compositor/compositor-core/Packages/
-/compositor/compositor/Packages/
-/shell/Packages/
 
 # Native build products
 **/.rn-build/
@@ -62,25 +49,7 @@ Desktop.ini
 *.exp
 *.node
 /core/build/
-/core/build-*/
-!/core/build-container/
-!/core/build-container/**
-/core/out/
-/core/cmake-build-*/
-/core/**/CMakeFiles/
-/core/**/CMakeCache.txt
-/core/**/compile_commands.json
-/core/.zig-cache/
 /core/zig-out/
-/core/zig-pkg/
-/core/build.err
-/core/build.out
-/core/.cef-cache/
-/core/.codegen/
-/core/compositor/.install/
-/core/third-party/boost/
-/react-native/third-party/.boost-generations/
-/react-native/third-party/boost
 /swift-sdk/source/build/
 
 # Android build and source state
@@ -112,7 +81,6 @@ Desktop.ini
 **/jest-cache/
 **/jest-stare/
 **/.tap
-/react-native/.patches/
 /react-native/dist/
 
 # Python bytecode
@@ -125,4 +93,3 @@ Desktop.ini
 **/*.xcworkspace/xcuserdata/
 **/*.xcodeproj/xcuserdata/
 **/*.xcodeproj/project.xcworkspace/xcuserdata/
-/swift-vulkan/*.xcodeproj
