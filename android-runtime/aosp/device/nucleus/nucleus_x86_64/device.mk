@@ -40,8 +40,7 @@ PRODUCT_COPY_FILES += \
     device/nucleus/nucleus_x86_64/permissions/nucleus-container.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/nucleus-container.xml
 
 PRODUCT_VENDOR_PROPERTIES += \
-    ro.control_privapp_permissions=enforce \
-    ro.sf.lcd_density=160
+    ro.control_privapp_permissions=enforce
 
 PRODUCT_PRODUCT_PROPERTIES += \
     sys.use_memfd=true

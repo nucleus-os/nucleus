@@ -5,6 +5,7 @@
   the intentionally bounded memlock allowance.
 -->
 <resources>
+    <bool name="config_perDisplayFocusEnabled">true</bool>
     <integer name="config_pinnerHomePinBytes">0</integer>
     <integer name="config_pinnerCameraPinBytes">0</integer>
     <integer name="config_pinnerAssistantPinBytes">0</integer>

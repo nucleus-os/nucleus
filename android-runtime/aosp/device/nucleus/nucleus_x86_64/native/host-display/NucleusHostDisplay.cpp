@@ -271,14 +271,14 @@ class Controller {
                 &descriptor_count);
             if (!validConfiguration(
                     configuration,
-                    NUCLEUS_ANDROID_DISPLAY_CONTROL_RESIZE,
+                    NUCLEUS_ANDROID_DISPLAY_CONTROL_CONFIGURE,
                     received,
                     descriptor_count)) {
                 if (!stopping_.load()) {
                     __android_log_print(
                         ANDROID_LOG_ERROR,
                         kTag,
-                        "invalid host-display resize packet");
+                        "invalid host-display configuration packet");
                 }
                 break;
             }
@@ -509,7 +509,7 @@ Java_com_android_server_display_NucleusHostDisplayAdapter_nativeApplyConfigurati
     if (controller == nullptr
             || !controller->apply(
                     static_cast<uint64_t>(generation), width, height)) {
-        throwIllegalState(environment, "applying host-display resize failed");
+        throwIllegalState(environment, "applying host-display configuration failed");
     }
 }
 

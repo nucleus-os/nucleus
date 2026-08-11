@@ -165,12 +165,11 @@ package func chromiumOutputWorkspace(
 }
 
 package func chromiumCompilerCacheWorkspace(
-    product: ChromiumProduct,
     target: ChromiumLinuxTarget
 ) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
-            key: "chromium-\(product.rawValue)-ccache",
+            key: "chromium-ccache",
             artifactTarget: target.artifactTarget,
             role: "compiler-cache"),
         capacityBytes: 30 * 1_024 * 1_024 * 1_024,

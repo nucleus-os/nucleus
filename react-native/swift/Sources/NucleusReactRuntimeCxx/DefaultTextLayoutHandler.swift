@@ -1,6 +1,6 @@
 import CxxStdlib
 import NucleusReactRuntimeCxxBridge
-import NucleusTextCxxBridge
+import NucleusTextBackendNative
 
 // Default Fabric text-measurement handler. The bridge builds the
 // `TextMeasureRequest` from the RN inputs and this handler measures it

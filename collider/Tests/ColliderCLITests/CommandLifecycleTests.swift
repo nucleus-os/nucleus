@@ -58,6 +58,21 @@ func everyRecordedCommandFailureNamesItsDurableLog() {
 }
 
 @Test
+func interruptedCommandsDoNotRenderCancellationAsFailure() {
+    #expect(
+        reportedExecutionFailure(
+            CancellationError(),
+            status: .interrupted,
+            runLogPath: "/runs/fixture/run.log") == nil)
+    #expect(
+        reportedExecutionFailure(
+            WorkspaceFailure.message("failed"),
+            status: .failed,
+            runLogPath: "/runs/fixture/run.log")?.logPath
+            == "/runs/fixture/run.log")
+}
+
+@Test
 func executableRequiresTheWorkspaceLauncher() throws {
     #expect(throws: (any Error).self) {
         try validateColliderEntrypoint(environment: [:])

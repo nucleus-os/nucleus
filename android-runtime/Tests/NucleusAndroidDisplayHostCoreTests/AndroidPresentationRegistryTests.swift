@@ -23,12 +23,15 @@ func applicationPresentationsHaveIndependentIdentityConfigurationAndLifetime() t
     try registry.updateConfiguration(
         id: first.id,
         generation: 2,
-        mode: AndroidPresentationMode(width: 1_280, height: 720))
+        configuration: AndroidPresentationConfiguration(
+            mode: AndroidPresentationMode(width: 1_280, height: 720),
+            densityDPI: 240))
 
     #expect(registry.presentation(id: first.id)?.configurationGeneration == 2)
     #expect(
         registry.presentation(id: first.id)?.mode
             == AndroidPresentationMode(width: 1_280, height: 720))
+    #expect(registry.presentation(id: first.id)?.densityDPI == 240)
     #expect(registry.presentation(id: second.id) == second)
 
     let removed = registry.removeApplication(id: first.id)

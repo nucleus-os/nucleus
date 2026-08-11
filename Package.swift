@@ -707,8 +707,6 @@ let targets: [Target] = [
         name: "NucleusLayers", dependencies: ["NucleusTypes", "NucleusFoundation"],
         path: "core/swift/Sources/NucleusLayers"),
     .systemLibrary(
-        name: "NucleusTextCxxBridge", path: "core/swiftpm/cmodules/NucleusTextCxxBridge"),
-    .systemLibrary(
         name: "NucleusRenderSystemC", path: "core/swiftpm/cmodules/NucleusRenderSystemC",
         pkgConfig: "nucleus-render-system"),
     .target(
@@ -724,7 +722,7 @@ let targets: [Target] = [
     .target(
         name: "NucleusTextBackend",
         dependencies: [
-            "NucleusUI", "NucleusTextCxxBridge", "NucleusTextBackendNative",
+            "NucleusUI", "NucleusTextBackendNative",
             "NucleusTextRenderingBridge",
             "Tracy",
         ], path: "core/swift/Sources/NucleusTextBackend"),
@@ -1268,7 +1266,7 @@ let targets: [Target] = [
         dependencies: [
             "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
-            "NucleusTextBackend",
+            "NucleusTextBackend", "NucleusTextBackendNative",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Tracy",
             "NucleusFoundation",
             "NucleusReactRuntimeCxxBridge",

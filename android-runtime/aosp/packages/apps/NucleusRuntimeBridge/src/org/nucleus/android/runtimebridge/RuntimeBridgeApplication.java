@@ -17,10 +17,23 @@ import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.PointF;
 import android.graphics.drawable.Drawable;
+import android.hardware.display.DisplayManager;
 import android.hardware.display.IDisplayManager;
 import android.hardware.input.IPointerIconChangedListener;
 import android.hardware.input.InputManager;
+import android.hardware.input.VirtualKeyEvent;
+import android.hardware.input.VirtualKeyboard;
+import android.hardware.input.VirtualKeyboardConfig;
+import android.hardware.input.VirtualMouse;
+import android.hardware.input.VirtualMouseButtonEvent;
+import android.hardware.input.VirtualMouseConfig;
+import android.hardware.input.VirtualMouseRelativeEvent;
+import android.hardware.input.VirtualMouseScrollEvent;
+import android.hardware.input.VirtualTouchEvent;
+import android.hardware.input.VirtualTouchscreen;
+import android.hardware.input.VirtualTouchscreenConfig;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
 import android.os.Process;
@@ -36,10 +49,8 @@ import android.system.StructPollfd;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.view.InputDevice;
-import android.view.KeyCharacterMap;
+import android.view.Display;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -90,11 +101,226 @@ public final class RuntimeBridgeApplication extends Application {
         }
     }
 
+    private final class PresentationInputDevices implements AutoCloseable {
+        final long presentationId;
+        final int displayId;
+        final long configurationGeneration;
+        final VirtualMouse mouse;
+        final VirtualKeyboard keyboard;
+        final VirtualTouchscreen touchscreen;
+        final Set<Integer> pressedButtons = new HashSet<>();
+        final Set<Integer> pressedKeys = new HashSet<>();
+        final Map<Integer, PointF> touches = new HashMap<>();
+        boolean pointerPresent;
+        float pointerX;
+        float pointerY;
+
+        PresentationInputDevices(
+                long presentationId,
+                int displayId,
+                long configurationGeneration) {
+            this.presentationId = presentationId;
+            this.displayId = displayId;
+            this.configurationGeneration = configurationGeneration;
+            InputManager input = getSystemService(InputManager.class);
+            Display display = getSystemService(DisplayManager.class).getDisplay(displayId);
+            if (display == null) {
+                throw new IllegalStateException(
+                        "Android presentation display is unavailable");
+            }
+            Display.Mode mode = display.getMode();
+            VirtualTouchscreenConfig touchConfig =
+                    new VirtualTouchscreenConfig.Builder(
+                            mode.getPhysicalWidth(), mode.getPhysicalHeight())
+                            .setVendorId(0x18d1)
+                            .setProductId(0x4e57)
+                            .setInputDeviceName("Nucleus touchscreen " + presentationId)
+                            .setAssociatedDisplayId(displayId)
+                            .build();
+            VirtualMouse createdMouse = input.createVirtualMouse(
+                    new VirtualMouseConfig.Builder()
+                            .setVendorId(0x18d1)
+                            .setProductId(0x4e55)
+                            .setInputDeviceName("Nucleus mouse " + presentationId)
+                            .setAssociatedDisplayId(displayId)
+                            .build());
+            VirtualKeyboard createdKeyboard = null;
+            VirtualTouchscreen createdTouchscreen = null;
+            try {
+                createdKeyboard = input.createVirtualKeyboard(
+                        new VirtualKeyboardConfig.Builder()
+                                .setVendorId(0x18d1)
+                                .setProductId(0x4e56)
+                                .setInputDeviceName("Nucleus keyboard " + presentationId)
+                                .setAssociatedDisplayId(displayId)
+                                .build());
+                createdTouchscreen = input.createVirtualTouchscreen(touchConfig);
+                input.setPointerIconVisible(false, displayId);
+            } catch (RuntimeException error) {
+                try {
+                    createdMouse.close();
+                } catch (RuntimeException closeError) {
+                    error.addSuppressed(closeError);
+                }
+                if (createdKeyboard != null) {
+                    try {
+                        createdKeyboard.close();
+                    } catch (RuntimeException closeError) {
+                        error.addSuppressed(closeError);
+                    }
+                }
+                if (createdTouchscreen != null) {
+                    try {
+                        createdTouchscreen.close();
+                    } catch (RuntimeException closeError) {
+                        error.addSuppressed(closeError);
+                    }
+                }
+                try {
+                    input.setPointerIconVisible(true, displayId);
+                } catch (RuntimeException restoreError) {
+                    error.addSuppressed(restoreError);
+                }
+                throw error;
+            }
+            mouse = createdMouse;
+            keyboard = createdKeyboard;
+            touchscreen = createdTouchscreen;
+        }
+
+        void alignPointer(float x, float y, long eventTimeNanos) {
+            if (!pointerPresent) {
+                PointF current = mouse.getCursorPosition();
+                pointerX = Float.isFinite(current.x) ? current.x : x;
+                pointerY = Float.isFinite(current.y) ? current.y : y;
+                pointerPresent = true;
+            }
+            float deltaX = x - pointerX;
+            float deltaY = y - pointerY;
+            if (deltaX != 0 || deltaY != 0) {
+                mouse.sendRelativeEvent(
+                        new VirtualMouseRelativeEvent.Builder()
+                                .setRelativeX(deltaX)
+                                .setRelativeY(deltaY)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+            }
+            pointerX = x;
+            pointerY = y;
+        }
+
+        void releasePointer(long eventTimeNanos) {
+            for (int button : new ArrayList<>(pressedButtons)) {
+                mouse.sendButtonEvent(
+                        new VirtualMouseButtonEvent.Builder()
+                                .setButtonCode(button)
+                                .setAction(VirtualMouseButtonEvent.ACTION_BUTTON_RELEASE)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+            }
+            pressedButtons.clear();
+            pointerPresent = false;
+        }
+
+        void releaseKeyboard(long eventTimeNanos) {
+            for (int keyCode : new ArrayList<>(pressedKeys)) {
+                keyboard.sendKeyEvent(
+                        new VirtualKeyEvent.Builder()
+                                .setKeyCode(keyCode)
+                                .setAction(VirtualKeyEvent.ACTION_UP)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+            }
+            pressedKeys.clear();
+        }
+
+        void cancelTouches(long eventTimeNanos) {
+            for (Map.Entry<Integer, PointF> entry
+                    : new ArrayList<>(touches.entrySet())) {
+                PointF point = entry.getValue();
+                touchscreen.sendTouchEvent(
+                        new VirtualTouchEvent.Builder()
+                                .setPointerId(entry.getKey())
+                                .setToolType(VirtualTouchEvent.TOOL_TYPE_PALM)
+                                .setAction(VirtualTouchEvent.ACTION_CANCEL)
+                                .setX(point.x)
+                                .setY(point.y)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+            }
+            touches.clear();
+        }
+
+        void cancel(long eventTimeNanos) {
+            releasePointer(eventTimeNanos);
+            releaseKeyboard(eventTimeNanos);
+            cancelTouches(eventTimeNanos);
+        }
+
+        @Override
+        public void close() {
+            closeDevices(true);
+        }
+
+        void retireForConfiguration() {
+            closeDevices(false);
+        }
+
+        private void closeDevices(boolean restorePointerIcon) {
+            RuntimeException failure = null;
+            try {
+                cancel(SystemClock.uptimeNanos());
+            } catch (RuntimeException error) {
+                failure = error;
+            }
+            try {
+                mouse.close();
+            } catch (RuntimeException error) {
+                failure = error;
+            }
+            try {
+                keyboard.close();
+            } catch (RuntimeException error) {
+                if (failure == null) {
+                    failure = error;
+                } else {
+                    failure.addSuppressed(error);
+                }
+            }
+            try {
+                touchscreen.close();
+            } catch (RuntimeException error) {
+                if (failure == null) {
+                    failure = error;
+                } else {
+                    failure.addSuppressed(error);
+                }
+            }
+            if (restorePointerIcon) {
+                try {
+                    getSystemService(InputManager.class)
+                            .setPointerIconVisible(true, displayId);
+                } catch (RuntimeException error) {
+                    if (failure == null) {
+                        failure = error;
+                    } else {
+                        failure.addSuppressed(error);
+                    }
+                }
+            }
+            if (failure != null) {
+                Log.w(TAG, "closing Android virtual input failed", failure);
+            }
+        }
+    }
+
     private final Set<String> dirtyPackages =
             ConcurrentHashMap.newKeySet();
     private final Set<Long> activePresentations =
             ConcurrentHashMap.newKeySet();
     private final Map<Integer, Long> presentationByDisplayId =
+            new HashMap<>();
+    private final Map<Long, Integer> displayByPresentationId =
             new HashMap<>();
     private final Map<Integer, Long> presentationByTaskId =
             new HashMap<>();
@@ -107,11 +333,7 @@ public final class RuntimeBridgeApplication extends Application {
     private final ConcurrentLinkedQueue<Integer> removedTaskIds =
             new ConcurrentLinkedQueue<>();
     private final AtomicBoolean taskStateDirty = new AtomicBoolean();
-    private final Map<Integer, Integer> pointerButtonStates =
-            new HashMap<>();
-    private final Map<Integer, Long> pointerDownTimesMillis =
-            new HashMap<>();
-    private final Map<Integer, Boolean> preparedInputDisplays =
+    private final Map<Long, PresentationInputDevices> inputDevicesByPresentation =
             new HashMap<>();
     private final ConcurrentHashMap<Integer, Integer> pendingPointerIcons =
             new ConcurrentHashMap<>();
@@ -155,6 +377,8 @@ public final class RuntimeBridgeApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        presentationByDisplayId.put(Display.DEFAULT_DISPLAY, 0L);
+        displayByPresentationId.put(0L, Display.DEFAULT_DISPLAY);
         start(this);
     }
 
@@ -227,7 +451,7 @@ public final class RuntimeBridgeApplication extends Application {
                     | RuntimeException error) {
                 Log.w(TAG, "bridge connection failed", error);
             } finally {
-                restoreAndroidPointerIcons();
+                closeInputDevices();
                 pendingLaunches.clear();
                 closeApplicationPresentations();
             }
@@ -240,19 +464,16 @@ public final class RuntimeBridgeApplication extends Application {
         }
     }
 
-    private void restoreAndroidPointerIcons() {
-        InputManager inputManager = getSystemService(InputManager.class);
-        for (int displayId : preparedInputDisplays.keySet()) {
+    private void closeInputDevices() {
+        for (PresentationInputDevices devices
+                : new ArrayList<>(inputDevicesByPresentation.values())) {
             try {
-                inputManager.setPointerIconVisible(true, displayId);
+                devices.close();
             } catch (RuntimeException error) {
-                Log.w(TAG, "restoring Android pointer icon failed for display "
-                        + displayId, error);
+                Log.w(TAG, "closing Android virtual input failed", error);
             }
         }
-        preparedInputDisplays.clear();
-        pointerButtonStates.clear();
-        pointerDownTimesMillis.clear();
+        inputDevicesByPresentation.clear();
     }
 
     private void serve(LocalSocket socket)
@@ -404,6 +625,7 @@ public final class RuntimeBridgeApplication extends Application {
                     presentationId);
             activePresentations.add(presentationId);
             presentationByDisplayId.put(displayId, presentationId);
+            displayByPresentationId.put(presentationId, displayId);
             PendingLaunch pending = new PendingLaunch(
                     requestId, presentationId, displayId, component);
             pendingLaunches.put(requestId, pending);
@@ -682,6 +904,11 @@ public final class RuntimeBridgeApplication extends Application {
     }
 
     private void closeFrameworkPresentation(long presentationId) {
+        PresentationInputDevices inputDevices =
+                inputDevicesByPresentation.remove(presentationId);
+        if (inputDevices != null) {
+            inputDevices.close();
+        }
         IDisplayManager displays = IDisplayManager.Stub.asInterface(
                 ServiceManager.getService(Context.DISPLAY_SERVICE));
         if (displays == null) {
@@ -694,6 +921,7 @@ public final class RuntimeBridgeApplication extends Application {
             throw error.rethrowFromSystemServer();
         }
         activePresentations.remove(presentationId);
+        displayByPresentationId.remove(presentationId);
         presentationByDisplayId.values().removeIf(
                 value -> value == presentationId);
     }
@@ -735,18 +963,99 @@ public final class RuntimeBridgeApplication extends Application {
     private void sendInputEvent(JSONObject payload)
             throws JSONException, IOException {
         String actionName = payload.getString("action");
-        int displayId = payload.getInt("displayID");
+        long presentationId = payload.getLong("presentationID");
+        long configurationGeneration =
+                payload.getLong("configurationGeneration");
         long eventTimeNanos =
                 payload.getLong("eventTimeNanoseconds");
+        if ("pointerLeave".equals(actionName)) {
+            PresentationInputDevices devices = existingInputDevices(
+                    presentationId, configurationGeneration);
+            if (devices != null) {
+                devices.releasePointer(eventTimeNanos);
+            }
+            return;
+        }
+        if ("keyboardFocus".equals(actionName)
+                && !payload.getBoolean("focused")) {
+            PresentationInputDevices devices = existingInputDevices(
+                    presentationId, configurationGeneration);
+            if (devices != null) {
+                devices.releaseKeyboard(eventTimeNanos);
+            }
+            return;
+        }
+        if ("touchCancel".equals(actionName)) {
+            PresentationInputDevices devices = existingInputDevices(
+                    presentationId, configurationGeneration);
+            if (devices != null) {
+                devices.cancelTouches(eventTimeNanos);
+            }
+            return;
+        }
+        if ("configurationChanged".equals(actionName)) {
+            PresentationInputDevices devices = existingInputDevices(
+                    presentationId, configurationGeneration);
+            if (devices != null) {
+                devices.cancel(eventTimeNanos);
+            }
+            return;
+        }
+        PresentationInputDevices devices = inputDevices(
+                presentationId, configurationGeneration);
         switch (actionName) {
+            case "pointerEnter":
+                devices.alignPointer(
+                        (float) payload.getDouble("x"),
+                        (float) payload.getDouble("y"),
+                        eventTimeNanos);
+                return;
             case "pointerMotion":
-                injectPointerMotion(payload, displayId, eventTimeNanos);
+                devices.alignPointer(
+                        (float) payload.getDouble("x"),
+                        (float) payload.getDouble("y"),
+                        eventTimeNanos);
                 return;
             case "pointerButton":
-                injectPointerButton(payload, displayId, eventTimeNanos);
+                devices.alignPointer(
+                        (float) payload.getDouble("x"),
+                        (float) payload.getDouble("y"),
+                        eventTimeNanos);
+                int button = androidButton(payload.getInt("button"));
+                boolean pressed = payload.getBoolean("pressed");
+                if (pressed) {
+                    focusPresentation(presentationId);
+                }
+                devices.mouse.sendButtonEvent(
+                        new VirtualMouseButtonEvent.Builder()
+                                .setButtonCode(button)
+                                .setAction(pressed
+                                        ? VirtualMouseButtonEvent.ACTION_BUTTON_PRESS
+                                        : VirtualMouseButtonEvent.ACTION_BUTTON_RELEASE)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+                if (pressed) {
+                    devices.pressedButtons.add(button);
+                } else {
+                    devices.pressedButtons.remove(button);
+                }
                 return;
             case "pointerScroll":
-                injectPointerScroll(payload, displayId, eventTimeNanos);
+                devices.alignPointer(
+                        (float) payload.getDouble("x"),
+                        (float) payload.getDouble("y"),
+                        eventTimeNanos);
+                devices.mouse.sendScrollEvent(
+                        new VirtualMouseScrollEvent.Builder()
+                                .setXAxisMovement(clampScroll(
+                                        -payload.optDouble("scrollX", 0)))
+                                .setYAxisMovement(clampScroll(
+                                        -payload.optDouble("scrollY", 0)))
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+                return;
+            case "keyboardFocus":
+                focusPresentation(presentationId);
                 return;
             case "key":
                 int keyCode = androidKeyCode(
@@ -756,166 +1065,144 @@ public final class RuntimeBridgeApplication extends Application {
                             + payload.getInt("keyCode"));
                     return;
                 }
-                injectKey(displayId, eventTimeNanos, keyCode,
-                        payload.getBoolean("pressed"));
+                boolean keyPressed = payload.getBoolean("pressed");
+                devices.keyboard.sendKeyEvent(
+                        new VirtualKeyEvent.Builder()
+                                .setKeyCode(keyCode)
+                                .setAction(keyPressed
+                                        ? VirtualKeyEvent.ACTION_DOWN
+                                        : VirtualKeyEvent.ACTION_UP)
+                                .setEventTimeNanos(eventTimeNanos)
+                                .build());
+                if (keyPressed) {
+                    devices.pressedKeys.add(keyCode);
+                } else {
+                    devices.pressedKeys.remove(keyCode);
+                }
+                return;
+            case "touchDown":
+            case "touchMotion":
+            case "touchUp":
+                if ("touchDown".equals(actionName)) {
+                    focusPresentation(presentationId);
+                }
+                sendTouch(devices, payload, actionName, eventTimeNanos);
                 return;
             default:
                 throw new IOException("unsupported input action");
         }
     }
 
-    private void prepareInputDisplay(int displayId) {
-        if (preparedInputDisplays.putIfAbsent(displayId, true) != null) {
+    private PresentationInputDevices inputDevices(
+            long presentationId,
+            long configurationGeneration) throws IOException {
+        PresentationInputDevices existing = existingInputDevices(
+                presentationId, configurationGeneration);
+        if (existing != null) {
+            return existing;
+        }
+        Integer displayId = displayByPresentationId.get(presentationId);
+        if (displayId == null) {
+            throw new IOException("Android presentation is not active");
+        }
+        try {
+            PresentationInputDevices created = new PresentationInputDevices(
+                    presentationId, displayId, configurationGeneration);
+            inputDevicesByPresentation.put(presentationId, created);
+            return created;
+        } catch (RuntimeException error) {
+            throw new IOException("creating Android virtual input devices failed", error);
+        }
+    }
+
+    private PresentationInputDevices existingInputDevices(
+            long presentationId,
+            long configurationGeneration) throws IOException {
+        if (!displayByPresentationId.containsKey(presentationId)) {
+            throw new IOException("Android presentation is not active");
+        }
+        PresentationInputDevices existing =
+                inputDevicesByPresentation.get(presentationId);
+        if (existing == null) {
+            return null;
+        }
+        if (configurationGeneration < existing.configurationGeneration) {
+            throw new IOException("Android input uses a stale configuration generation");
+        }
+        if (configurationGeneration > existing.configurationGeneration) {
+            inputDevicesByPresentation.remove(presentationId);
+            existing.retireForConfiguration();
+            return null;
+        }
+        return existing;
+    }
+
+    private void sendTouch(
+            PresentationInputDevices devices,
+            JSONObject payload,
+            String actionName,
+            long eventTimeNanos) throws JSONException, IOException {
+        int contactId = payload.getInt("contactID");
+        float x = (float) payload.getDouble("x");
+        float y = (float) payload.getDouble("y");
+        int action;
+        switch (actionName) {
+            case "touchDown": action = VirtualTouchEvent.ACTION_DOWN; break;
+            case "touchMotion": action = VirtualTouchEvent.ACTION_MOVE; break;
+            case "touchUp": action = VirtualTouchEvent.ACTION_UP; break;
+            default: throw new IOException("unsupported touch action");
+        }
+        devices.touchscreen.sendTouchEvent(
+                new VirtualTouchEvent.Builder()
+                        .setPointerId(contactId)
+                        .setToolType(VirtualTouchEvent.TOOL_TYPE_FINGER)
+                        .setAction(action)
+                        .setX(x)
+                        .setY(y)
+                        .setPressure(action == VirtualTouchEvent.ACTION_UP ? 0 : 1)
+                        .setEventTimeNanos(eventTimeNanos)
+                        .build());
+        if (action == VirtualTouchEvent.ACTION_UP) {
+            devices.touches.remove(contactId);
+        } else {
+            devices.touches.put(contactId, new PointF(x, y));
+        }
+    }
+
+    private void focusPresentation(long presentationId) throws IOException {
+        Integer displayId = displayByPresentationId.get(presentationId);
+        if (displayId == null) {
             return;
         }
-        try {
-            getSystemService(InputManager.class)
-                    .setPointerIconVisible(false, displayId);
-            Log.i(TAG, "prepared display-targeted native input for display "
-                    + displayId);
-        } catch (RuntimeException error) {
-            preparedInputDisplays.remove(displayId);
-            throw error;
+        for (ActivityManager.RunningTaskInfo task : getManagedTasks()) {
+            if (task.displayId != displayId) {
+                continue;
+            }
+            try {
+                ActivityTaskManager.getService().setFocusedTask(task.taskId);
+            } catch (RemoteException error) {
+                throw new IOException("focusing Android presentation failed", error);
+            }
+            return;
         }
     }
 
-    private void injectPointerMotion(
-            JSONObject payload, int displayId, long eventTimeNanos)
-            throws JSONException, IOException {
-        int buttons = pointerButtonStates.getOrDefault(displayId, 0);
-        injectMotion(payload, displayId, eventTimeNanos,
-                buttons == 0 ? MotionEvent.ACTION_HOVER_MOVE
-                        : MotionEvent.ACTION_MOVE,
-                0, buttons, 0, 0);
-    }
-
-    private void injectPointerButton(
-            JSONObject payload, int displayId, long eventTimeNanos)
-            throws JSONException, IOException {
-        int button = androidButton(payload.getInt("button"));
-        boolean pressed = payload.getBoolean("pressed");
-        int previous = pointerButtonStates.getOrDefault(displayId, 0);
-        int buttons = pressed ? previous | button : previous & ~button;
-        long eventTimeMillis = eventTimeNanos / 1_000_000;
-        if (pressed && previous == 0) {
-            pointerDownTimesMillis.put(displayId, eventTimeMillis);
-            injectMotion(payload, displayId, eventTimeNanos,
-                    MotionEvent.ACTION_DOWN, 0, buttons, 0, 0);
-        }
-        injectMotion(payload, displayId, eventTimeNanos,
-                pressed ? MotionEvent.ACTION_BUTTON_PRESS
-                        : MotionEvent.ACTION_BUTTON_RELEASE,
-                button, buttons, 0, 0);
-        if (!pressed && buttons == 0) {
-            injectMotion(payload, displayId, eventTimeNanos,
-                    MotionEvent.ACTION_UP, 0, 0, 0, 0);
-            pointerDownTimesMillis.remove(displayId);
-        }
-        pointerButtonStates.put(displayId, buttons);
-    }
-
-    private void injectPointerScroll(
-            JSONObject payload, int displayId, long eventTimeNanos)
-            throws JSONException, IOException {
-        injectMotion(payload, displayId, eventTimeNanos,
-                MotionEvent.ACTION_SCROLL, 0,
-                pointerButtonStates.getOrDefault(displayId, 0),
-                (float) -payload.optDouble("scrollX", 0),
-                (float) -payload.optDouble("scrollY", 0));
-    }
-
-    private void injectMotion(
-            JSONObject payload,
-            int displayId,
-            long eventTimeNanos,
-            int action,
-            int actionButton,
-            int buttonState,
-            float horizontalScroll,
-            float verticalScroll) throws JSONException, IOException {
-        prepareInputDisplay(displayId);
-        long eventTimeMillis = eventTimeNanos / 1_000_000;
-        long downTimeMillis = pointerDownTimesMillis.getOrDefault(
-                displayId, eventTimeMillis);
-        MotionEvent.PointerProperties properties =
-                new MotionEvent.PointerProperties();
-        properties.id = 0;
-        properties.toolType = MotionEvent.TOOL_TYPE_MOUSE;
-        MotionEvent.PointerCoords coordinates =
-                new MotionEvent.PointerCoords();
-        coordinates.x = (float) payload.getDouble("x");
-        coordinates.y = (float) payload.getDouble("y");
-        coordinates.pressure = buttonState == 0 ? 0 : 1;
-        coordinates.size = 1;
-        coordinates.setAxisValue(
-                MotionEvent.AXIS_HSCROLL, horizontalScroll);
-        coordinates.setAxisValue(
-                MotionEvent.AXIS_VSCROLL, verticalScroll);
-        MotionEvent event = MotionEvent.obtain(
-                downTimeMillis,
-                eventTimeMillis,
-                action,
-                1,
-                new MotionEvent.PointerProperties[]{properties},
-                new MotionEvent.PointerCoords[]{coordinates},
-                0,
-                buttonState,
-                1,
-                1,
-                0,
-                0,
-                InputDevice.SOURCE_MOUSE,
-                displayId,
-                0);
-        event.setActionButton(actionButton);
-        try {
-            inject(event);
-        } finally {
-            event.recycle();
-        }
-    }
-
-    private void injectKey(
-            int displayId,
-            long eventTimeNanos,
-            int keyCode,
-            boolean pressed) throws IOException {
-        prepareInputDisplay(displayId);
-        long eventTimeMillis = eventTimeNanos / 1_000_000;
-        KeyEvent event = new KeyEvent(
-                eventTimeMillis,
-                eventTimeMillis,
-                pressed ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP,
-                keyCode,
-                0,
-                0,
-                KeyCharacterMap.VIRTUAL_KEYBOARD,
-                0,
-                0,
-                InputDevice.SOURCE_KEYBOARD);
-        event.setDisplayId(displayId);
-        inject(event);
-    }
-
-    private void inject(android.view.InputEvent event) throws IOException {
-        if (!getSystemService(InputManager.class).injectInputEvent(
-                event, InputManager.INJECT_INPUT_EVENT_MODE_ASYNC)) {
-            throw new IOException("Android rejected input injection");
-        }
+    private static float clampScroll(double value) {
+        return (float) Math.max(-1, Math.min(1, value));
     }
 
     private static int androidButton(int linuxButton) throws IOException {
         switch (linuxButton) {
             case 0x110:
-                return MotionEvent.BUTTON_PRIMARY;
+                return VirtualMouseButtonEvent.BUTTON_PRIMARY;
             case 0x111:
-                return MotionEvent.BUTTON_SECONDARY;
+                return VirtualMouseButtonEvent.BUTTON_SECONDARY;
             case 0x112:
-                return MotionEvent.BUTTON_TERTIARY;
+                return VirtualMouseButtonEvent.BUTTON_TERTIARY;
             case 0x113:
-                return MotionEvent.BUTTON_BACK;
+                return VirtualMouseButtonEvent.BUTTON_BACK;
             case 0x114:
-                return MotionEvent.BUTTON_FORWARD;
+                return VirtualMouseButtonEvent.BUTTON_FORWARD;
             default:
                 throw new IOException("unsupported pointer button");
         }

@@ -6,6 +6,20 @@ import Foundation
 import SystemPackage
 import Testing
 
+@Test func ubuntuSnapshotIndexAcceptsValidZeroByteEntries() throws {
+    let records = try chromiumUbuntuSnapshotIndexRecords(
+        """
+
+        SHA256:
+         e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 main/debian-installer/binary-arm64/Packages
+         0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 42 main/binary-arm64/Packages.gz
+        Description: fixture
+        """)
+
+    #expect(records["main/debian-installer/binary-arm64/Packages"]?.size == 0)
+    #expect(records["main/binary-arm64/Packages.gz"]?.size == 42)
+}
+
 @Test func depotToolsMaterializesItsDeclaredCommitAndRejectsTrackedChanges() async throws {
     let fixture = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-managed-source-\(UUID().uuidString)")

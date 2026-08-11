@@ -49,23 +49,42 @@ func inputProtocolAcceptsNativeDeviceEventsAndRejectsMixedShapes()
     throws
 {
     let key = try AndroidInputEvent(
-        displayID: 0,
+        presentationID: 0,
+        configurationGeneration: 1,
         eventTimeNanoseconds: 9,
         keyCode: 30,
         pressed: true,
         action: .key)
     #expect(key.keyCode == 30)
     let scroll = try AndroidInputEvent(
-        displayID: 0,
+        presentationID: 0,
+        configurationGeneration: 1,
         eventTimeNanoseconds: 10,
         x: 4,
         y: 5,
         scrollY: -0.25,
         action: .pointerScroll)
     #expect(scroll.scrollY == -0.25)
+    let focus = try AndroidInputEvent(
+        presentationID: 7,
+        configurationGeneration: 3,
+        eventTimeNanoseconds: 10,
+        focused: true,
+        action: .keyboardFocus)
+    #expect(focus.focused == true)
+    let touch = try AndroidInputEvent(
+        presentationID: 7,
+        configurationGeneration: 3,
+        eventTimeNanoseconds: 10,
+        x: 40,
+        y: 50,
+        contactID: 2,
+        action: .touchDown)
+    #expect(touch.contactID == 2)
     #expect(throws: AndroidRuntimeFailure.self) {
         try AndroidInputEvent(
-            displayID: 0,
+            presentationID: 0,
+            configurationGeneration: 1,
             eventTimeNanoseconds: 11,
             x: 4,
             y: 5,
@@ -75,12 +94,26 @@ func inputProtocolAcceptsNativeDeviceEventsAndRejectsMixedShapes()
     }
     #expect(throws: AndroidRuntimeFailure.self) {
         try AndroidInputEvent(
-            displayID: 0,
+            presentationID: 0,
+            configurationGeneration: 1,
             eventTimeNanoseconds: 12,
             button: 0x110,
             pressed: true,
             action: .pointerButton)
     }
+    #expect(throws: AndroidRuntimeFailure.self) {
+        try AndroidInputEvent(
+            presentationID: 7,
+            configurationGeneration: 0,
+            eventTimeNanoseconds: 12,
+            action: .touchCancel)
+    }
+    let configurationChanged = try AndroidInputEvent(
+        presentationID: 7,
+        configurationGeneration: 4,
+        eventTimeNanoseconds: 13,
+        action: .configurationChanged)
+    #expect(configurationChanged.configurationGeneration == 4)
 }
 
 @Test
@@ -123,7 +156,8 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
             inputReady: true),
         over: connection)
     let pointer = try AndroidInputEvent(
-        displayID: 0,
+        presentationID: 0,
+        configurationGeneration: 1,
         eventTimeNanoseconds: 42_000_000,
         x: 320,
         y: 240,
@@ -374,7 +408,8 @@ func displayInputForwardsOnlyValidatedInputPackets() async throws {
         pointerIconType: 1_000)
     try server.send(initialCursor)
     let expected = try AndroidInputEvent(
-        displayID: 0,
+        presentationID: 0,
+        configurationGeneration: 1,
         eventTimeNanoseconds: 7_000_000,
         x: 100,
         y: 80,

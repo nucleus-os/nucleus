@@ -155,6 +155,16 @@ func chromiumGNConfigurationsAreTargetSpecificAndUsePersistentCompilerCaches() {
                     target.architecture == .x86_64
                         ? "chrome_pgo_phase=2"
                         : "chrome_pgo_phase=0"))
+            #expect(
+                arguments.contains(
+                    #"v8_snapshot_toolchain="//build/toolchain/linux:clang_arm64""#)
+                    == (target.architecture == .arm64))
         }
     }
+
+    let arm64 = ChromiumLinuxTarget(architecture: .arm64)
+    let x86_64 = ChromiumLinuxTarget(architecture: .x86_64)
+    #expect(
+        chromiumCompilerCacheWorkspace(target: arm64).identity
+            != chromiumCompilerCacheWorkspace(target: x86_64).identity)
 }

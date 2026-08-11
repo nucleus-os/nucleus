@@ -32,60 +32,129 @@ struct AndroidPresentationMode: Equatable, Sendable {
     let height: Int32
 }
 
-struct AndroidPresentationResizeRequest: Equatable {
-    let generation: UInt64
+struct AndroidPresentationConfiguration: Equatable, Sendable {
     let mode: AndroidPresentationMode
+    let densityDPI: UInt32
 }
 
-struct AndroidPresentationResizePipeline: Equatable {
-    private(set) var requestedGeneration: UInt64
-    private(set) var requestedMode: AndroidPresentationMode
-    private(set) var pendingMode: AndroidPresentationMode?
-    private(set) var resizeInFlight = false
+struct AndroidPresentationConfigurationRequest: Equatable {
+    let generation: UInt64
+    let configuration: AndroidPresentationConfiguration
 
     init(
         generation: UInt64,
-        mode: AndroidPresentationMode
+        configuration: AndroidPresentationConfiguration
+    ) {
+        self.generation = generation
+        self.configuration = configuration
+    }
+
+    init(
+        generation: UInt64,
+        mode: AndroidPresentationMode,
+        densityDPI: UInt32 = 160
+    ) {
+        self.init(
+            generation: generation,
+            configuration: AndroidPresentationConfiguration(
+                mode: mode,
+                densityDPI: densityDPI))
+    }
+
+    var mode: AndroidPresentationMode { configuration.mode }
+    var densityDPI: UInt32 { configuration.densityDPI }
+}
+
+struct AndroidPresentationConfigurationPipeline: Equatable {
+    private(set) var requestedGeneration: UInt64
+    private(set) var requestedConfiguration: AndroidPresentationConfiguration
+    private(set) var committedGeneration: UInt64
+    private(set) var committedConfiguration: AndroidPresentationConfiguration
+    private(set) var pendingConfiguration: AndroidPresentationConfiguration?
+    private(set) var configurationInFlight = false
+
+    var requestedMode: AndroidPresentationMode { requestedConfiguration.mode }
+    var requestedDensityDPI: UInt32 { requestedConfiguration.densityDPI }
+    var pendingMode: AndroidPresentationMode? { pendingConfiguration?.mode }
+
+    init(
+        generation: UInt64,
+        mode: AndroidPresentationMode,
+        densityDPI: UInt32 = 160
     ) {
         requestedGeneration = generation
-        requestedMode = mode
+        let configuration = AndroidPresentationConfiguration(
+            mode: mode,
+            densityDPI: densityDPI)
+        requestedConfiguration = configuration
+        committedGeneration = generation
+        committedConfiguration = configuration
     }
 
     mutating func configure(
         _ mode: AndroidPresentationMode
-    ) -> AndroidPresentationResizeRequest? {
-        if resizeInFlight {
-            pendingMode = mode == requestedMode ? nil : mode
+    ) -> AndroidPresentationConfigurationRequest? {
+        let current = pendingConfiguration ?? requestedConfiguration
+        return configure(
+            AndroidPresentationConfiguration(
+                mode: mode,
+                densityDPI: current.densityDPI))
+    }
+
+    mutating func configure(
+        densityDPI: UInt32
+    ) -> AndroidPresentationConfigurationRequest? {
+        let current = pendingConfiguration ?? requestedConfiguration
+        return configure(
+            AndroidPresentationConfiguration(
+                mode: current.mode,
+                densityDPI: densityDPI))
+    }
+
+    private mutating func configure(
+        _ configuration: AndroidPresentationConfiguration
+    ) -> AndroidPresentationConfigurationRequest? {
+        if configurationInFlight {
+            pendingConfiguration =
+                configuration == requestedConfiguration ? nil : configuration
             return nil
         }
-        guard mode != requestedMode else { return nil }
-        return begin(mode)
+        guard configuration != requestedConfiguration else { return nil }
+        return begin(configuration)
     }
 
     mutating func committedFrame(
         generation: UInt64,
         mode: AndroidPresentationMode
-    ) -> AndroidPresentationResizeRequest? {
+    ) -> AndroidPresentationConfigurationRequest? {
         guard generation == requestedGeneration,
             mode == requestedMode
         else { return nil }
-        resizeInFlight = false
-        guard let pendingMode else { return nil }
-        self.pendingMode = nil
-        guard pendingMode != requestedMode else { return nil }
-        return begin(pendingMode)
+        configurationInFlight = false
+        committedGeneration = generation
+        committedConfiguration = requestedConfiguration
+        guard let pendingConfiguration else { return nil }
+        self.pendingConfiguration = nil
+        guard pendingConfiguration != requestedConfiguration else { return nil }
+        return begin(pendingConfiguration)
     }
 
     private mutating func begin(
-        _ mode: AndroidPresentationMode
-    ) -> AndroidPresentationResizeRequest {
+        _ configuration: AndroidPresentationConfiguration
+    ) -> AndroidPresentationConfigurationRequest {
         requestedGeneration &+= 1
-        requestedMode = mode
-        resizeInFlight = true
-        return AndroidPresentationResizeRequest(
+        requestedConfiguration = configuration
+        configurationInFlight = true
+        return AndroidPresentationConfigurationRequest(
             generation: requestedGeneration,
-            mode: mode)
+            configuration: configuration)
     }
+}
+
+package func androidDensityDPI(preferredScale120: UInt32) -> UInt32? {
+    guard preferredScale120 > 0 else { return nil }
+    let scaled = (UInt64(preferredScale120) * 160 + 60) / 120
+    return UInt32(min(max(scaled, 120), 640))
 }
 
 private struct AndroidPresentedFrame {
@@ -704,12 +773,12 @@ func receiveComposerTopologySubscription(
         presenter.topologySink = { [weak self] update in
             self?.publishTopology(update)
         }
-        presenter.resizeSink = {
-            [weak self] presentationID, generation, mode in
+        presenter.configurationSink = {
+            [weak self] presentationID, generation, configuration in
             self?.sendDisplayConfiguration(
                 presentationID: presentationID,
                 generation: generation,
-                mode: mode)
+                configuration: configuration)
         }
         presenter.presentationClosedSink = { [weak self] presentationID in
             self?.presentationClosedByCompositor(presentationID)
@@ -929,8 +998,6 @@ func receiveComposerTopologySubscription(
             displayControlConnections[presentationID] = connection
             try sendDisplayConfiguration(
                 connection: connection,
-                operation: UInt32(
-                    NUCLEUS_ANDROID_DISPLAY_CONTROL_CONFIGURE.rawValue),
                 presentation: presentation)
         } catch {
             _ = close(connection)
@@ -941,21 +1008,19 @@ func receiveComposerTopologySubscription(
     private func sendDisplayConfiguration(
         presentationID: UInt64,
         generation: UInt64,
-        mode: AndroidPresentationMode
+        configuration: AndroidPresentationConfiguration
     ) {
         let id = AndroidPresentationID(rawValue: presentationID)
         do {
             try presentations.updateConfiguration(
                 id: id,
                 generation: generation,
-                mode: mode)
+                configuration: configuration)
             guard let connection = displayControlConnections[id],
                 let presentation = presentations.presentation(id: id)
             else { return }
             try sendDisplayConfiguration(
                 connection: connection,
-                operation: UInt32(
-                    NUCLEUS_ANDROID_DISPLAY_CONTROL_RESIZE.rawValue),
                 presentation: presentation)
         } catch {
             if let connection = displayControlConnections.removeValue(
@@ -968,14 +1033,14 @@ func receiveComposerTopologySubscription(
 
     private func sendDisplayConfiguration(
         connection: Int32,
-        operation: UInt32,
         presentation: AndroidPresentation
     ) throws {
         guard let width = UInt32(exactly: presentation.mode.width),
             let height = UInt32(exactly: presentation.mode.height)
         else { throw DisplayHostError.invalidRequest }
         var configuration = nucleus_android_display_control_configuration()
-        configuration.operation = operation
+        configuration.operation = UInt32(
+            NUCLEUS_ANDROID_DISPLAY_CONTROL_CONFIGURE.rawValue)
         configuration.byte_count = UInt32(
             MemoryLayout.size(ofValue: configuration))
         configuration.fd_count = 0
@@ -983,7 +1048,7 @@ func receiveComposerTopologySubscription(
         configuration.generation = presentation.configurationGeneration
         configuration.width = width
         configuration.height = height
-        configuration.density_dpi = 160
+        configuration.density_dpi = presentation.densityDPI
         configuration.refresh_millihertz = 60_000
         let configurationSize = MemoryLayout.size(ofValue: configuration)
         let sent = withUnsafePointer(to: &configuration) { bytes in
@@ -1447,9 +1512,14 @@ func receiveComposerTopologySubscription(
 
 @MainActor
 private final class DisplaySeatHandler:
-    WlSeatEvents, WlPointerEvents, WlKeyboardEvents
+    WlSeatEvents, WlPointerEvents, WlKeyboardEvents, WlTouchEvents
 {
     enum Event {
+        case pointerEnter(
+            surfaceIdentity: UInt,
+            x: Double,
+            y: Double)
+        case pointerLeave(surfaceIdentity: UInt)
         case move(
             surfaceIdentity: UInt,
             time: UInt32,
@@ -1474,6 +1544,18 @@ private final class DisplaySeatHandler:
             time: UInt32,
             keyCode: UInt32,
             pressed: Bool)
+        case keyboardFocus(
+            surfaceIdentity: UInt,
+            focused: Bool)
+        case touch(
+            surfaceIdentity: UInt,
+            time: UInt32,
+            contactID: Int32,
+            x: Double,
+            y: Double,
+            action: AndroidInputAction)
+        case touchCancel(surfaceIdentity: UInt)
+        case configurationChanged(surfaceIdentity: UInt)
     }
 
     var sink: ((Event) -> Void)?
@@ -1482,12 +1564,15 @@ private final class DisplaySeatHandler:
     private var cursorShapeManager: WaylandProxy<WpCursorShapeManagerV1Client>?
     private var cursorShapeDevice: WaylandProxy<WpCursorShapeDeviceV1Client>?
     private var keyboard: WaylandProxy<WlKeyboardClient>?
+    private var touch: WaylandProxy<WlTouchClient>?
     private var pointerSurfaceIdentity: UInt?
     private var pointerEnterSerial: UInt32 = 0
+    private var pressedPointerButtons: Set<UInt32> = []
     private var cursorShapeBySurface: [UInt: UInt32] = [:]
     private var cursorHiddenSurfaces: Set<UInt> = []
     private var keyboardSurfaceIdentity: UInt?
     private var pressedKeys: Set<UInt32> = []
+    private var touchContacts: [Int32: (surface: UInt, x: Double, y: Double)] = [:]
     private var x = 0.0
     private var y = 0.0
     private var pendingHorizontalScroll: Double?
@@ -1521,9 +1606,42 @@ private final class DisplaySeatHandler:
         cursorShapeBySurface.removeValue(forKey: surfaceIdentity)
         cursorHiddenSurfaces.remove(surfaceIdentity)
         if pointerSurfaceIdentity == surfaceIdentity {
+            sink?(.pointerLeave(surfaceIdentity: surfaceIdentity))
+            pressedPointerButtons.removeAll()
             pointerSurfaceIdentity = nil
             pointerEnterSerial = 0
         }
+        if keyboardSurfaceIdentity == surfaceIdentity {
+            releasePressedKeys()
+            sink?(
+                .keyboardFocus(
+                    surfaceIdentity: surfaceIdentity,
+                    focused: false))
+            keyboardSurfaceIdentity = nil
+        }
+        if touchContacts.values.contains(where: {
+            $0.surface == surfaceIdentity
+        }) {
+            sink?(.touchCancel(surfaceIdentity: surfaceIdentity))
+            touchContacts = touchContacts.filter {
+                $0.value.surface != surfaceIdentity
+            }
+        }
+    }
+
+    func configurationChanged(for surfaceIdentity: UInt) {
+        if keyboardSurfaceIdentity == surfaceIdentity {
+            pressedKeys.removeAll()
+        }
+        touchContacts = touchContacts.filter {
+            $0.value.surface != surfaceIdentity
+        }
+        if pointerSurfaceIdentity == surfaceIdentity {
+            pendingHorizontalScroll = nil
+            pendingVerticalScroll = nil
+            pressedPointerButtons.removeAll()
+        }
+        sink?(.configurationChanged(surfaceIdentity: surfaceIdentity))
     }
 
     private func bindCursorShapeDeviceIfPossible() {
@@ -1564,6 +1682,10 @@ private final class DisplaySeatHandler:
                 bindCursorShapeDeviceIfPossible()
             } catch {}
         } else if !capabilities.contains(.pointer), let pointer {
+            if let pointerSurfaceIdentity {
+                sink?(.pointerLeave(surfaceIdentity: pointerSurfaceIdentity))
+            }
+            pressedPointerButtons.removeAll()
             try? cursorShapeDevice?.destroy()
             cursorShapeDevice = nil
             try? pointer.release()
@@ -1581,9 +1703,28 @@ private final class DisplaySeatHandler:
             } catch {}
         } else if !capabilities.contains(.keyboard), let keyboard {
             releasePressedKeys()
+            if let keyboardSurfaceIdentity {
+                sink?(
+                    .keyboardFocus(
+                        surfaceIdentity: keyboardSurfaceIdentity,
+                        focused: false))
+            }
             try? keyboard.release()
             self.keyboard = nil
             keyboardSurfaceIdentity = nil
+        }
+        if capabilities.contains(.touch), touch == nil,
+            let seat
+        {
+            do {
+                let touch = try seat.getTouch()
+                try touch.installListener(self)
+                self.touch = touch
+            } catch {}
+        } else if !capabilities.contains(.touch), let touch {
+            cancelTouchContacts()
+            try? touch.release()
+            self.touch = nil
         }
     }
 
@@ -1608,9 +1749,8 @@ private final class DisplaySeatHandler:
                 ? nil
                 : cursorShapeBySurface[surface.identity] ?? 1)
         sink?(
-            .move(
+            .pointerEnter(
                 surfaceIdentity: surface.identity,
-                time: 0,
                 x: surface_x,
                 y: surface_y))
     }
@@ -1620,6 +1760,8 @@ private final class DisplaySeatHandler:
         serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
+        sink?(.pointerLeave(surfaceIdentity: surface.identity))
+        pressedPointerButtons.removeAll()
         pointerSurfaceIdentity = nil
         pointerEnterSerial = 0
     }
@@ -1649,6 +1791,13 @@ private final class DisplaySeatHandler:
         state: WlPointerButtonState
     ) {
         guard let surfaceIdentity = pointerSurfaceIdentity else { return }
+        let pressed = state == .pressed
+        if pressed {
+            pressedPointerButtons.insert(button)
+        } else {
+            guard pressedPointerButtons.contains(button) else { return }
+            pressedPointerButtons.remove(button)
+        }
         sink?(
             .button(
                 surfaceIdentity: surfaceIdentity,
@@ -1656,7 +1805,7 @@ private final class DisplaySeatHandler:
                 x: x,
                 y: y,
                 button: button,
-                pressed: state == .pressed))
+                pressed: pressed))
     }
 
     func axis(
@@ -1753,6 +1902,10 @@ private final class DisplaySeatHandler:
     ) {
         releasePressedKeys()
         keyboardSurfaceIdentity = surface.identity
+        sink?(
+            .keyboardFocus(
+                surfaceIdentity: surface.identity,
+                focused: true))
         guard let enteredKeys = keys.copiedElements(of: UInt32.self)
         else { return }
         for keyCode in enteredKeys {
@@ -1772,6 +1925,10 @@ private final class DisplaySeatHandler:
         surface: WaylandBorrowedProxy<WlSurfaceClient>
     ) {
         releasePressedKeys()
+        sink?(
+            .keyboardFocus(
+                surfaceIdentity: surface.identity,
+                focused: false))
         keyboardSurfaceIdentity = nil
     }
 
@@ -1787,6 +1944,7 @@ private final class DisplaySeatHandler:
         if pressed {
             pressedKeys.insert(key)
         } else {
+            guard pressedKeys.contains(key) else { return }
             pressedKeys.remove(key)
         }
         sink?(
@@ -1827,6 +1985,91 @@ private final class DisplaySeatHandler:
         }
         pressedKeys.removeAll()
     }
+
+    func down(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>,
+        serial: UInt32,
+        time: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>,
+        id: Int32,
+        x: Double,
+        y: Double
+    ) {
+        guard (0..<16).contains(id) else { return }
+        touchContacts[id] = (surface.identity, x, y)
+        sink?(
+            .touch(
+                surfaceIdentity: surface.identity,
+                time: time,
+                contactID: id,
+                x: x,
+                y: y,
+                action: .touchDown))
+    }
+
+    func up(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>,
+        serial: UInt32,
+        time: UInt32,
+        id: Int32
+    ) {
+        guard let contact = touchContacts.removeValue(forKey: id) else {
+            return
+        }
+        sink?(
+            .touch(
+                surfaceIdentity: contact.surface,
+                time: time,
+                contactID: id,
+                x: contact.x,
+                y: contact.y,
+                action: .touchUp))
+    }
+
+    func motion(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>,
+        time: UInt32,
+        id: Int32,
+        x: Double,
+        y: Double
+    ) {
+        guard let contact = touchContacts[id] else { return }
+        touchContacts[id] = (contact.surface, x, y)
+        sink?(
+            .touch(
+                surfaceIdentity: contact.surface,
+                time: time,
+                contactID: id,
+                x: x,
+                y: y,
+                action: .touchMotion))
+    }
+
+    func frame(_ proxy: WaylandBorrowedProxy<WlTouchClient>) {}
+
+    func cancel(_ proxy: WaylandBorrowedProxy<WlTouchClient>) {
+        cancelTouchContacts()
+    }
+
+    func shape(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>,
+        id: Int32,
+        major: Double,
+        minor: Double
+    ) {}
+
+    func orientation(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>,
+        id: Int32,
+        orientation: Double
+    ) {}
+
+    private func cancelTouchContacts() {
+        for surfaceIdentity in Set(touchContacts.values.map { $0.surface }) {
+            sink?(.touchCancel(surfaceIdentity: surfaceIdentity))
+        }
+        touchContacts.removeAll()
+    }
 }
 
 @MainActor
@@ -1834,7 +2077,8 @@ private final class DisplaySeatHandler:
 private final class AndroidDisplayPresenter:
     @MainActor XdgSurfaceEvents,
     @MainActor XdgToplevelEvents,
-    @MainActor WlBufferEvents
+    @MainActor WlBufferEvents,
+    @MainActor WpFractionalScaleV1Events
 {
     private final class DisplaySurface {
         let displayID: UInt64
@@ -1842,6 +2086,7 @@ private final class AndroidDisplayPresenter:
         let xdgSurface: WaylandProxy<XdgSurfaceClient>
         let toplevel: WaylandProxy<XdgToplevelClient>
         let viewport: WaylandProxy<WpViewportClient>
+        let fractionalScale: WaylandProxy<WpFractionalScaleV1Client>
         let syncSurface: WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
         let acquireTimeline: WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
         var configured = false
@@ -1850,7 +2095,7 @@ private final class AndroidDisplayPresenter:
         var bufferHeight: UInt32
         var destinationWidth: Int32
         var destinationHeight: Int32
-        var resizePipeline: AndroidPresentationResizePipeline
+        var configurationPipeline: AndroidPresentationConfigurationPipeline
         var androidDisplayID: Int32 = -1
 
         init(
@@ -1859,6 +2104,7 @@ private final class AndroidDisplayPresenter:
             xdgSurface: WaylandProxy<XdgSurfaceClient>,
             toplevel: WaylandProxy<XdgToplevelClient>,
             viewport: WaylandProxy<WpViewportClient>,
+            fractionalScale: WaylandProxy<WpFractionalScaleV1Client>,
             syncSurface:
                 WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>,
             acquireTimeline:
@@ -1871,13 +2117,14 @@ private final class AndroidDisplayPresenter:
             self.xdgSurface = xdgSurface
             self.toplevel = toplevel
             self.viewport = viewport
+            self.fractionalScale = fractionalScale
             self.syncSurface = syncSurface
             self.acquireTimeline = acquireTimeline
             self.bufferWidth = bufferWidth
             self.bufferHeight = bufferHeight
             destinationWidth = Int32(bufferWidth)
             destinationHeight = Int32(bufferHeight)
-            resizePipeline = AndroidPresentationResizePipeline(
+            configurationPipeline = AndroidPresentationConfigurationPipeline(
                 generation: 1,
                 mode: AndroidPresentationMode(
                     width: Int32(bufferWidth),
@@ -1896,6 +2143,7 @@ private final class AndroidDisplayPresenter:
     private let wmBase: WaylandProxy<XdgWmBaseClient>
     private let activation: WaylandProxy<XdgActivationV1Client>
     private let viewporter: WaylandProxy<WpViewporterClient>
+    private let fractionalScaleManager: WaylandProxy<WpFractionalScaleManagerV1Client>
     private let syncobjManager: WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>
     private let seatHandler: DisplaySeatHandler
     private let inputClient: AndroidDisplayInteractionClient
@@ -1911,12 +2159,13 @@ private final class AndroidDisplayPresenter:
     var connectedOutputs: [AndroidOutputTopology.Output] {
         outputTopology.connectedOutputs
     }
-    var resizeSink: ((UInt64, UInt64, AndroidPresentationMode) -> Void)?
+    var configurationSink: ((UInt64, UInt64, AndroidPresentationConfiguration) -> Void)?
     var presentationClosedSink: ((AndroidPresentationID) -> Void)?
     private var surfaces: [UInt64: DisplaySurface] = [:]
     private var displayIDByXdgSurface: [UInt: UInt64] = [:]
     private var displayIDByToplevel: [UInt: UInt64] = [:]
     private var displayIDBySurface: [UInt: UInt64] = [:]
+    private var displayIDByFractionalScale: [UInt: UInt64] = [:]
     private var buffers: [UInt64: DisplayBuffer] = [:]
     private var reportedInputForwardingFailure = false
     private var nextAcquirePoint: UInt64 = 1
@@ -1963,6 +2212,8 @@ private final class AndroidDisplayPresenter:
                     DesiredGlobal<XdgWmBaseClient>(maximumVersion: 6),
                     DesiredGlobal<XdgActivationV1Client>(maximumVersion: 1),
                     DesiredGlobal<WpViewporterClient>(maximumVersion: 1),
+                    DesiredGlobal<WpFractionalScaleManagerV1Client>(
+                        maximumVersion: 1),
                     DesiredGlobal<WpLinuxDrmSyncobjManagerV1Client>(
                         maximumVersion: 1),
                     DesiredGlobal<WlSeatClient>(
@@ -1994,6 +2245,8 @@ private final class AndroidDisplayPresenter:
             let activation = registry.singleton(XdgActivationV1Client.self),
             let viewporter = registry.singleton(
                 WpViewporterClient.self),
+            let fractionalScaleManager = registry.singleton(
+                WpFractionalScaleManagerV1Client.self),
             let syncobjManager = registry.singleton(
                 WpLinuxDrmSyncobjManagerV1Client.self)
         else { throw DisplayHostError.wayland("required protocol is unavailable") }
@@ -2012,6 +2265,7 @@ private final class AndroidDisplayPresenter:
         self.wmBase = wmBase
         self.activation = activation
         self.viewporter = viewporter
+        self.fractionalScaleManager = fractionalScaleManager
         self.syncobjManager = syncobjManager
         self.seatHandler = seatHandler
         self.inputClient = inputClient
@@ -2026,20 +2280,23 @@ private final class AndroidDisplayPresenter:
 
     private func retirePresentation(id: AndroidPresentationID) {
         guard
-            let displaySurface = surfaces.removeValue(
-                forKey: id.rawValue)
+            let displaySurface = surfaces[id.rawValue]
         else { return }
         displayIDByXdgSurface.removeValue(
             forKey: displaySurface.xdgSurface.identity)
         displayIDByToplevel.removeValue(
             forKey: displaySurface.toplevel.identity)
-        displayIDBySurface.removeValue(
-            forKey: displaySurface.surface.identity)
+        displayIDByFractionalScale.removeValue(
+            forKey: displaySurface.fractionalScale.identity)
         seatHandler.removeCursorState(
             for: displaySurface.surface.identity)
+        surfaces.removeValue(forKey: id.rawValue)
+        displayIDBySurface.removeValue(
+            forKey: displaySurface.surface.identity)
         try? displaySurface.acquireTimeline.destroy()
         try? displaySurface.syncSurface.destroy()
         try? displaySurface.viewport.destroy()
+        try? displaySurface.fractionalScale.destroy()
         try? displaySurface.toplevel.destroy()
         try? displaySurface.xdgSurface.destroy()
         try? displaySurface.surface.destroy()
@@ -2091,8 +2348,8 @@ private final class AndroidDisplayPresenter:
             width: bufferWidth,
             height: bufferHeight)
         if frame.configurationGeneration
-            != displaySurface.resizePipeline.requestedGeneration
-            || bufferMode != displaySurface.resizePipeline.requestedMode
+            != displaySurface.configurationPipeline.requestedGeneration
+            || bufferMode != displaySurface.configurationPipeline.requestedMode
         {
             if frame.hasAcquireFence {
                 let descriptor = dup(descriptors[2])
@@ -2163,14 +2420,22 @@ private final class AndroidDisplayPresenter:
             timeline: buffer.releaseTimeline,
             point: releasePoint,
             fence: nativeRelease.fence)
-        if let next = displaySurface.resizePipeline.committedFrame(
+        let previousGeneration =
+            displaySurface.configurationPipeline.committedGeneration
+        let next = displaySurface.configurationPipeline.committedFrame(
             generation: frame.configurationGeneration,
             mode: bufferMode)
+        if displaySurface.configurationPipeline.committedGeneration
+            != previousGeneration
         {
-            resizeSink?(
+            seatHandler.configurationChanged(
+                for: displaySurface.surface.identity)
+        }
+        if let next {
+            configurationSink?(
                 displaySurface.displayID,
                 next.generation,
-                next.mode)
+                next.configuration)
         }
         return nativeRelease.fileDescriptor
     }
@@ -2290,12 +2555,15 @@ private final class AndroidDisplayPresenter:
         let xdgSurface: WaylandProxy<XdgSurfaceClient>
         let toplevel: WaylandProxy<XdgToplevelClient>
         let viewport: WaylandProxy<WpViewportClient>
+        let fractionalScale: WaylandProxy<WpFractionalScaleV1Client>
         let syncSurface: WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
         do {
             surface = try compositor.createSurface()
             xdgSurface = try wmBase.getXdgSurface(surface: surface)
             toplevel = try xdgSurface.getToplevel()
             viewport = try viewporter.getViewport(surface: surface)
+            fractionalScale = try fractionalScaleManager.getFractionalScale(
+                surface: surface)
             syncSurface = try syncobjManager.getSurface(surface: surface)
         } catch {
             throw DisplayHostError.wayland("surface creation failed")
@@ -2318,6 +2586,7 @@ private final class AndroidDisplayPresenter:
             xdgSurface: xdgSurface,
             toplevel: toplevel,
             viewport: viewport,
+            fractionalScale: fractionalScale,
             syncSurface: syncSurface,
             acquireTimeline: acquireTimeline,
             bufferWidth: width,
@@ -2330,10 +2599,12 @@ private final class AndroidDisplayPresenter:
             }
         }
         displayIDBySurface[surface.identity] = displayID
+        displayIDByFractionalScale[fractionalScale.identity] = displayID
         displayIDByXdgSurface[xdgSurface.identity] = displayID
         displayIDByToplevel[toplevel.identity] = displayID
         try xdgSurface.installListener(self)
         try toplevel.installListener(self)
+        try fractionalScale.installListener(self)
         try toplevel.setAppId(app_id: presentation.appID)
         try toplevel.setTitle(title: presentation.title)
         try toplevel.setMinSize(width: 320, height: 320)
@@ -2470,58 +2741,86 @@ private final class AndroidDisplayPresenter:
                 width: width,
                 height: height)
             if let request =
-                displaySurface.resizePipeline.configure(mode)
+                displaySurface.configurationPipeline.configure(mode)
             {
-                resizeSink?(
+                configurationSink?(
                     displayID,
                     request.generation,
-                    request.mode)
+                    request.configuration)
             }
         }
     }
 
-    private func sendInputEvent(_ event: DisplaySeatHandler.Event) {
-        if case .key(
-            let surfaceIdentity,
-            _,
-            let keyCode,
-            let pressed
-        ) = event {
-            guard
-                let presentationID =
-                    displayIDBySurface[surfaceIdentity],
-                let surface = surfaces[presentationID],
-                surface.androidDisplayID >= 0
-            else { return }
-            forwardInputEvent {
-                try inputClient.send(
-                    AndroidInputEvent(
-                        displayID: surface.androidDisplayID,
-                        eventTimeNanoseconds:
-                            androidInputEventTimeNanoseconds(),
-                        keyCode: keyCode,
-                        pressed: pressed,
-                        action: .key))
-            }
-            return
-        }
+    func preferredScale(
+        _ proxy: WaylandBorrowedProxy<WpFractionalScaleV1Client>,
+        scale: UInt32
+    ) {
+        guard let displayID = displayIDByFractionalScale[proxy.identity],
+            let displaySurface = surfaces[displayID],
+            let densityDPI = androidDensityDPI(preferredScale120: scale),
+            let request = displaySurface.configurationPipeline.configure(
+                densityDPI: densityDPI)
+        else { return }
+        let diagnostic =
+            "{\"component\":\"nucleus-android-display-host\","
+            + "\"stage\":\"presentation.density.changed\","
+            + "\"presentationID\":\(displayID),"
+            + "\"preferredScale120\":\(scale),"
+            + "\"densityDPI\":\(densityDPI)}\n"
+        FileHandle.standardError.write(Data(diagnostic.utf8))
+        configurationSink?(
+            displayID,
+            request.generation,
+            request.configuration)
+    }
 
+    private func sendInputEvent(_ event: DisplaySeatHandler.Event) {
         let surfaceIdentity: UInt
-        let hostX: Double
-        let hostY: Double
+        let hostX: Double?
+        let hostY: Double?
         let action: AndroidInputAction
         let button: UInt32?
+        let keyCode: UInt32?
+        let contactID: Int32?
         let pressed: Bool?
+        let focused: Bool?
         let scrollX: Double?
         let scrollY: Double?
         switch event {
+        case .pointerEnter(let identity, let x, let y):
+            surfaceIdentity = identity
+            hostX = x
+            hostY = y
+            action = .pointerEnter
+            button = nil
+            keyCode = nil
+            contactID = nil
+            pressed = nil
+            focused = nil
+            scrollX = nil
+            scrollY = nil
+        case .pointerLeave(let identity):
+            surfaceIdentity = identity
+            hostX = nil
+            hostY = nil
+            action = .pointerLeave
+            button = nil
+            keyCode = nil
+            contactID = nil
+            pressed = nil
+            focused = nil
+            scrollX = nil
+            scrollY = nil
         case .move(let identity, _, let x, let y):
             surfaceIdentity = identity
             hostX = x
             hostY = y
             action = .pointerMotion
             button = nil
+            keyCode = nil
+            contactID = nil
             pressed = nil
+            focused = nil
             scrollX = nil
             scrollY = nil
         case .button(
@@ -2537,7 +2836,10 @@ private final class AndroidDisplayPresenter:
             hostY = y
             action = .pointerButton
             button = code
+            keyCode = nil
+            contactID = nil
             pressed = isPressed
+            focused = nil
             scrollX = nil
             scrollY = nil
         case .scroll(
@@ -2553,40 +2855,120 @@ private final class AndroidDisplayPresenter:
             hostY = y
             action = .pointerScroll
             button = nil
+            keyCode = nil
+            contactID = nil
             pressed = nil
+            focused = nil
             scrollX = horizontal
             scrollY = vertical
-        case .key:
-            return
+        case .key(let identity, _, let code, let isPressed):
+            surfaceIdentity = identity
+            hostX = nil
+            hostY = nil
+            action = .key
+            button = nil
+            keyCode = code
+            contactID = nil
+            pressed = isPressed
+            focused = nil
+            scrollX = nil
+            scrollY = nil
+        case .keyboardFocus(let identity, let isFocused):
+            surfaceIdentity = identity
+            hostX = nil
+            hostY = nil
+            action = .keyboardFocus
+            button = nil
+            keyCode = nil
+            contactID = nil
+            pressed = nil
+            focused = isFocused
+            scrollX = nil
+            scrollY = nil
+        case .touch(
+            let identity,
+            _,
+            let id,
+            let x,
+            let y,
+            let touchAction
+        ):
+            surfaceIdentity = identity
+            hostX = x
+            hostY = y
+            action = touchAction
+            button = nil
+            keyCode = nil
+            contactID = id
+            pressed = nil
+            focused = nil
+            scrollX = nil
+            scrollY = nil
+        case .touchCancel(let identity):
+            surfaceIdentity = identity
+            hostX = nil
+            hostY = nil
+            action = .touchCancel
+            button = nil
+            keyCode = nil
+            contactID = nil
+            pressed = nil
+            focused = nil
+            scrollX = nil
+            scrollY = nil
+        case .configurationChanged(let identity):
+            surfaceIdentity = identity
+            hostX = nil
+            hostY = nil
+            action = .configurationChanged
+            button = nil
+            keyCode = nil
+            contactID = nil
+            pressed = nil
+            focused = nil
+            scrollX = nil
+            scrollY = nil
         }
         guard
             let presentationID =
                 displayIDBySurface[surfaceIdentity],
-            let surface = surfaces[presentationID],
-            surface.androidDisplayID >= 0,
-            surface.destinationWidth > 0,
-            surface.destinationHeight > 0
+            let surface = surfaces[presentationID]
         else { return }
-        guard
-            let x = androidDisplayCoordinate(
-                hostCoordinate: hostX,
-                bufferExtent: surface.bufferWidth,
-                destinationExtent: surface.destinationWidth),
-            let y = androidDisplayCoordinate(
-                hostCoordinate: hostY,
-                bufferExtent: surface.bufferHeight,
-                destinationExtent: surface.destinationHeight)
-        else { return }
+        let x: Double?
+        let y: Double?
+        if let hostX, let hostY {
+            guard surface.destinationWidth > 0,
+                surface.destinationHeight > 0,
+                let mappedX = androidDisplayCoordinate(
+                    hostCoordinate: hostX,
+                    bufferExtent: surface.bufferWidth,
+                    destinationExtent: surface.destinationWidth),
+                let mappedY = androidDisplayCoordinate(
+                    hostCoordinate: hostY,
+                    bufferExtent: surface.bufferHeight,
+                    destinationExtent: surface.destinationHeight)
+            else { return }
+            x = mappedX
+            y = mappedY
+        } else {
+            x = nil
+            y = nil
+        }
         forwardInputEvent {
             try inputClient.send(
                 AndroidInputEvent(
-                    displayID: surface.androidDisplayID,
+                    presentationID: presentationID,
+                    configurationGeneration:
+                        surface.configurationPipeline.committedGeneration,
                     eventTimeNanoseconds:
                         androidInputEventTimeNanoseconds(),
                     x: x,
                     y: y,
                     button: button,
+                    keyCode: keyCode,
+                    contactID: contactID,
                     pressed: pressed,
+                    focused: focused,
                     scrollX: scrollX,
                     scrollY: scrollY,
                     action: action))

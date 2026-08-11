@@ -20,6 +20,7 @@ struct AndroidPresentation: Equatable, Sendable {
     let title: String
     var configurationGeneration: UInt64
     var mode: AndroidPresentationMode
+    var densityDPI: UInt32
 }
 
 struct AndroidPresentationRegistry {
@@ -37,7 +38,8 @@ struct AndroidPresentationRegistry {
             appID: "nucleus.android.desktop",
             title: "Android",
             configurationGeneration: 1,
-            mode: desktopMode)
+            mode: desktopMode,
+            densityDPI: 160)
         presentations = [.desktop: desktop]
     }
 
@@ -77,7 +79,8 @@ struct AndroidPresentationRegistry {
             appID: appID,
             title: title,
             configurationGeneration: 1,
-            mode: initialMode)
+            mode: initialMode,
+            densityDPI: 160)
         presentations[id] = presentation
         return presentation
     }
@@ -85,15 +88,17 @@ struct AndroidPresentationRegistry {
     mutating func updateConfiguration(
         id: AndroidPresentationID,
         generation: UInt64,
-        mode: AndroidPresentationMode
+        configuration: AndroidPresentationConfiguration
     ) throws {
         guard generation > 0,
-            mode.width > 0,
-            mode.height > 0,
+            configuration.mode.width > 0,
+            configuration.mode.height > 0,
+            configuration.densityDPI > 0,
             var presentation = presentations[id]
         else { throw DisplayHostError.invalidRequest }
         presentation.configurationGeneration = generation
-        presentation.mode = mode
+        presentation.mode = configuration.mode
+        presentation.densityDPI = configuration.densityDPI
         presentations[id] = presentation
     }
 

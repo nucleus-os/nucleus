@@ -1,0 +1,5 @@
+module NucleusTextBackendNative {
+    requires cplusplus
+    header "nucleus/text/TextLayoutBuilder.hpp"
+    export *
+}

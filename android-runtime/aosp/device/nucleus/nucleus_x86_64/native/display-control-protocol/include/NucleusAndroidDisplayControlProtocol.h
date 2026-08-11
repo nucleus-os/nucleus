@@ -12,7 +12,6 @@ static const uint32_t NUCLEUS_ANDROID_DISPLAY_CONTROL_MAX_MESSAGE_BYTES = 64;
 enum nucleus_android_display_control_operation {
     NUCLEUS_ANDROID_DISPLAY_CONTROL_REGISTER = 1,
     NUCLEUS_ANDROID_DISPLAY_CONTROL_CONFIGURE = 2,
-    NUCLEUS_ANDROID_DISPLAY_CONTROL_RESIZE = 3,
 };
 
 struct nucleus_android_display_control_header {

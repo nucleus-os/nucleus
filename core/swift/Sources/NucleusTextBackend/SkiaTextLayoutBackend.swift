@@ -1,4 +1,4 @@
-internal import NucleusTextCxxBridge
+internal import NucleusTextBackendNative
 internal import NucleusTextRenderingBridge
 package import NucleusUI
 import Tracy

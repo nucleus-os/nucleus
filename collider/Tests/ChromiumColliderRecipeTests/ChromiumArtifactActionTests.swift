@@ -45,7 +45,6 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
                 product: .browser,
                 target: target),
             compilerCacheWorkspace: chromiumCompilerCacheWorkspace(
-                product: .browser,
                 target: target),
             containerImageID: FilePath(imageID.path),
             gnArguments: "is_debug=false",

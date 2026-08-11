@@ -54,8 +54,8 @@ Status as of 2026-08-10:
 | 4. Android application publication | Complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane, and the full signed AOSP image graph passes | Confirm publication in the next standard interactive Android session |
 | 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout. The host owns presentation identity, metadata, configuration, and teardown independently per window behind a broker-facing control boundary. The framework adapter owns one native surface controller and logical display device per presentation identity with independent teardown. | Pass the two-live-presentation gate through the Phase 6 launch path. |
 | 6. Android activity launch and tracking | Implementation complete; launch success waits for an observed task/display binding, exact task reuse activates the existing host presentation, and task removal, host close, bridge disconnect, and rollback converge on one presentation teardown path | Pass the two-live-application, relaunch, force-stop, crash, package-removal, host-close, and runtime-shutdown gates in a standard interactive Android session |
-| 7. Input and focus | Primary-display pointer/keyboard transport implemented through display-targeted Android input injection; native virtual-device, focus, gesture-generation, and presentation-scoped completion remains | Depends on Phase 6 |
-| 8. Density, resize, and activation | Single-flight configure coalescing, exact-frame host geometry, and in-place framework host-display resize are implemented; output-derived density and activation remain | Depends on Phase 7 |
+| 7. Input and focus | Implementation complete; every presentation owns display-associated native mouse, keyboard, and touchscreen devices, and focus/lifetime/generation handling is presentation-scoped | Pass the two-window pointer, scrolling, multitouch, keyboard, focus-loss, and IME gate in a standard interactive Android session |
+| 8. Density, resize, and activation | Implementation complete; fractional output scale, geometry, frame acceptance, input mapping, and Android configuration use one coalesced presentation generation, and activation remains shell-authorized | Pass the mixed-density resize and activation gate in a standard interactive Android session |
 | 9. Clipboard | Not started | Depends on Phase 8 |
 | 10. Notifications | Not started | Depends on Phase 9 |
 | 11. Lifecycle integration and bring-up removal | Not started | Depends on Phase 10 |
@@ -107,10 +107,11 @@ Phase 1 now includes:
   events captured from `wl_seat`, mapped through the resizable viewport, and
   carried over a private host input socket without teaching the compositor
   about Android;
-- display-targeted pointer and keyboard events injected by the dedicated
-  platform bridge through `InputManager`, with the Wayland compositor remaining
-  the sole visible cursor authority; bridge negotiation publishes either
-  durable input readiness or the complete Android exception chain;
+- display-associated virtual mouse, keyboard, and touchscreen devices owned by
+  the dedicated platform bridge through `InputManager`, with the Wayland
+  compositor remaining the sole visible cursor authority; bridge negotiation
+  publishes either durable input readiness or the complete Android exception
+  chain;
 - Android pointer-icon semantics published by InputManagerService through the
   platform bridge and translated into `wp_cursor_shape_manager_v1` requests by
   the display host, so Android selects arrow, text, link, resize, grab, and
@@ -648,6 +649,25 @@ Verification gate:
 
 ## Phase 7: Route Input and Focus
 
+Status: implementation complete; the live gate remains. The display host consumes
+pointer, keyboard, and touch events from `wl_seat`, maps coordinate-bearing events
+through the exact committed presentation configuration, and sends presentation
+identity plus configuration generation over the bounded bridge protocol. The
+platform bridge owns one display-associated `VirtualMouse`, `VirtualKeyboard`, and
+`VirtualTouchscreen` per presentation. It rejects stale generations, recreates the
+device set when a newer generation commits, focuses the top task on the target
+display before button or touch-down dispatch, and releases the exact affected input
+state on Wayland leave, cancellation, capability loss, or presentation teardown.
+Committing a new presentation configuration immediately retires the old device
+generation and clears active gestures; no later input event is required to trigger
+that cancellation.
+Application display devices retain the authenticated runtime caller as their Android
+owner, so InputManager's display-association ownership check remains intact instead
+of granting a global bypass. The Nucleus product enables Android per-display focus. Android's own
+InputMethodManager and InputConnection remain authoritative for composition inside
+the focused presentation; the host never synthesizes Unicode key events or proxies
+Android text state through Wayland text-input.
+
 Add Wayland seat handling to each presentation for pointer motion/buttons,
 axis scrolling, touch, keyboard, focus, and cancellation. Normalize coordinates
 in logical window space, then transform them into the current Android display
@@ -691,6 +711,19 @@ Verification gate:
 
 ## Phase 8: Complete Density, Resize, and Activation Semantics
 
+Status: implementation complete; the live gate remains. Each presentation owns one
+fractional-scale object. Its preferred scale is converted to Android density and
+coalesced with Wayland size changes through the same configuration pipeline. The
+pipeline retains the newest complete size-and-density configuration while one
+relayout is in flight; only a matching frame commits that generation, and input is
+tagged with the last committed generation. The product-wide fixed LCD density is
+removed, while 160 dpi remains the initial presentation baseline until the
+compositor supplies an output-derived value. The original shell gesture token is
+carried through launch and task reuse to `xdg_activation_v1`. Android has no endpoint
+that can mint or request a host activation token, so background Android work cannot
+raise a window. A future notification activation enters through the shell in Phase
+10 and therefore uses the same user-authorized activation path as native software.
+
 Remove the hard-coded `ro.sf.lcd_density=160` policy. Use a product baseline only
 until a presentation joins a host output, then derive Android density from that
 output's logical-to-physical mapping. Clamp only to Android's supported density
@@ -706,10 +739,10 @@ only with a frame whose generation and dimensions exactly match the requested
 configuration. Never scale or stretch a stale Android frame as a resize
 preview.
 
-Carry the original shell activation token through the launch transaction.
-Subsequent Android-originated activation requests go to the shell policy
-service, which may mint or deny a compositor activation token using the same
-rules as native applications.
+Carry the original shell activation token through the launch transaction. Do not
+expose an Android-originated host-activation request. Android notification actions
+introduced in Phase 10 enter through the shell and carry a shell-authorized token;
+background Android processes otherwise have no path to host focus.
 
 Verification gate:
 

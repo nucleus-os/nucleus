@@ -520,7 +520,6 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     product: product,
                     target: target)
                 let compilerCacheWorkspace = chromiumCompilerCacheWorkspace(
-                    product: product,
                     target: target)
                 let productEnvironment = childEnvironment.merging([
                     "NUCLEUS_CHROMIUM_TARGET_ARCHITECTURE":
@@ -728,7 +727,6 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         outputWorkspace: workspace,
                                         compilerCacheWorkspace:
                                             chromiumCompilerCacheWorkspace(
-                                                product: .browser,
                                                 target: target),
                                         jobs: layout.jobs,
                                         targets: [],
@@ -1412,7 +1410,7 @@ package func chromiumGNArguments(
     target: ChromiumLinuxTarget
 ) -> String {
     let base = product == .cef ? cefGNArguments : browserGNArguments
-    return
+    let arguments =
         base
         .replacingOccurrences(of: #"cc_wrapper="""#, with: #"cc_wrapper="ccache""#)
         .replacingOccurrences(
@@ -1424,6 +1422,10 @@ package func chromiumGNArguments(
             with: target.architecture == .x86_64
                 ? "chrome_pgo_phase=2"
                 : "chrome_pgo_phase=0")
+    guard target.architecture == .arm64 else { return arguments }
+    return
+        arguments
+        + #" v8_snapshot_toolchain="//build/toolchain/linux:clang_arm64""#
 }
 
 private let cefGNArguments =

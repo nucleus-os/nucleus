@@ -1,6 +1,7 @@
 import NucleusAndroidComposerProtocolC
-@testable import NucleusAndroidDisplayHostCore
 import Testing
+
+@testable import NucleusAndroidDisplayHostCore
 
 @Test
 func waylandMillihertzConvertsToRoundedComposerPeriods() {
@@ -13,34 +14,40 @@ func waylandMillihertzConvertsToRoundedComposerPeriods() {
 
 @Test
 func resizedPresentationCoordinatesMapBackToAndroidPixels() {
-    #expect(androidDisplayCoordinate(
-        hostCoordinate: 160,
-        bufferExtent: 1_280,
-        destinationExtent: 640) == 320)
-    #expect(androidDisplayCoordinate(
-        hostCoordinate: 700,
-        bufferExtent: 1_280,
-        destinationExtent: 640) == 1_279)
-    #expect(androidDisplayCoordinate(
-        hostCoordinate: -5,
-        bufferExtent: 720,
-        destinationExtent: 360) == 0)
-    #expect(androidDisplayCoordinate(
-        hostCoordinate: .nan,
-        bufferExtent: 720,
-        destinationExtent: 360) == nil)
+    #expect(
+        androidDisplayCoordinate(
+            hostCoordinate: 160,
+            bufferExtent: 1_280,
+            destinationExtent: 640) == 320)
+    #expect(
+        androidDisplayCoordinate(
+            hostCoordinate: 700,
+            bufferExtent: 1_280,
+            destinationExtent: 640) == 1_279)
+    #expect(
+        androidDisplayCoordinate(
+            hostCoordinate: -5,
+            bufferExtent: 720,
+            destinationExtent: 360) == 0)
+    #expect(
+        androidDisplayCoordinate(
+            hostCoordinate: .nan,
+            bufferExtent: 720,
+            destinationExtent: 360) == nil)
 }
 
 @Test
 func presentationModeComesFromWindowGeometryRatherThanPhysicalOutput() {
-    #expect(androidPresentationMode(
-        configuredWidth: nil,
-        configuredHeight: nil
-    ) == AndroidPresentationMode(width: 1_280, height: 720))
-    #expect(androidPresentationMode(
-        configuredWidth: 1_440,
-        configuredHeight: 900
-    ) == AndroidPresentationMode(width: 1_440, height: 900))
+    #expect(
+        androidPresentationMode(
+            configuredWidth: nil,
+            configuredHeight: nil
+        ) == AndroidPresentationMode(width: 1_280, height: 720))
+    #expect(
+        androidPresentationMode(
+            configuredWidth: 1_440,
+            configuredHeight: 900
+        ) == AndroidPresentationMode(width: 1_440, height: 900))
 }
 
 @Test
@@ -49,30 +56,35 @@ func androidResizeKeepsOneRelayoutInFlightAndCoalescesToTheNewestSize() {
     let first = AndroidPresentationMode(width: 1_300, height: 740)
     let skipped = AndroidPresentationMode(width: 1_360, height: 800)
     let latest = AndroidPresentationMode(width: 1_440, height: 900)
-    var pipeline = AndroidPresentationResizePipeline(
+    var pipeline = AndroidPresentationConfigurationPipeline(
         generation: 1,
         mode: initial)
 
-    #expect(pipeline.configure(first)
-        == AndroidPresentationResizeRequest(
-            generation: 2,
-            mode: first))
+    #expect(
+        pipeline.configure(first)
+            == AndroidPresentationConfigurationRequest(
+                generation: 2,
+                mode: first))
     #expect(pipeline.configure(skipped) == nil)
     #expect(pipeline.configure(latest) == nil)
     #expect(pipeline.pendingMode == latest)
-    #expect(pipeline.committedFrame(
-        generation: 1,
-        mode: initial) == nil)
-    #expect(pipeline.committedFrame(
-        generation: 2,
-        mode: first) == AndroidPresentationResizeRequest(
-            generation: 3,
-            mode: latest))
+    #expect(
+        pipeline.committedFrame(
+            generation: 1,
+            mode: initial) == nil)
+    #expect(
+        pipeline.committedFrame(
+            generation: 2,
+            mode: first)
+            == AndroidPresentationConfigurationRequest(
+                generation: 3,
+                mode: latest))
     #expect(pipeline.pendingMode == nil)
-    #expect(pipeline.committedFrame(
-        generation: 3,
-        mode: latest) == nil)
-    #expect(!pipeline.resizeInFlight)
+    #expect(
+        pipeline.committedFrame(
+            generation: 3,
+            mode: latest) == nil)
+    #expect(!pipeline.configurationInFlight)
 }
 
 @Test
@@ -80,7 +92,7 @@ func androidResizeCancelsAQueuedSizeWhenTheCompositorReturnsToInFlightSize() {
     let initial = AndroidPresentationMode(width: 1_280, height: 720)
     let inFlight = AndroidPresentationMode(width: 1_360, height: 800)
     let discarded = AndroidPresentationMode(width: 1_440, height: 900)
-    var pipeline = AndroidPresentationResizePipeline(
+    var pipeline = AndroidPresentationConfigurationPipeline(
         generation: 8,
         mode: initial)
 
@@ -89,10 +101,60 @@ func androidResizeCancelsAQueuedSizeWhenTheCompositorReturnsToInFlightSize() {
     #expect(pipeline.pendingMode == discarded)
     #expect(pipeline.configure(inFlight) == nil)
     #expect(pipeline.pendingMode == nil)
-    #expect(pipeline.committedFrame(
-        generation: 9,
-        mode: inFlight) == nil)
-    #expect(!pipeline.resizeInFlight)
+    #expect(
+        pipeline.committedFrame(
+            generation: 9,
+            mode: inFlight) == nil)
+    #expect(!pipeline.configurationInFlight)
+}
+
+@Test
+func androidDensityUsesFractionalOutputScaleAndSharesResizeGeneration() {
+    #expect(androidDensityDPI(preferredScale120: 120) == 160)
+    #expect(androidDensityDPI(preferredScale120: 180) == 240)
+    #expect(androidDensityDPI(preferredScale120: 240) == 320)
+    #expect(androidDensityDPI(preferredScale120: 60) == 120)
+    #expect(androidDensityDPI(preferredScale120: 600) == 640)
+    #expect(androidDensityDPI(preferredScale120: 0) == nil)
+
+    let mode = AndroidPresentationMode(width: 1_280, height: 720)
+    var pipeline = AndroidPresentationConfigurationPipeline(
+        generation: 4,
+        mode: mode)
+    #expect(
+        pipeline.configure(densityDPI: 240)
+            == AndroidPresentationConfigurationRequest(
+                generation: 5,
+                mode: mode,
+                densityDPI: 240))
+    #expect(pipeline.committedGeneration == 4)
+    #expect(
+        pipeline.committedFrame(generation: 5, mode: mode) == nil)
+    #expect(pipeline.committedGeneration == 5)
+    #expect(pipeline.committedConfiguration.densityDPI == 240)
+}
+
+@Test
+func androidConfigurationCoalescesSizeAndDensityWithoutDiscardingEither() {
+    let initial = AndroidPresentationMode(width: 1_280, height: 720)
+    let resized = AndroidPresentationMode(width: 1_440, height: 900)
+    var pipeline = AndroidPresentationConfigurationPipeline(
+        generation: 2,
+        mode: initial)
+
+    #expect(pipeline.configure(densityDPI: 240)?.generation == 3)
+    #expect(pipeline.configure(resized) == nil)
+    #expect(
+        pipeline.pendingConfiguration
+            == AndroidPresentationConfiguration(
+                mode: resized,
+                densityDPI: 240))
+    #expect(
+        pipeline.committedFrame(generation: 3, mode: initial)
+            == AndroidPresentationConfigurationRequest(
+                generation: 4,
+                mode: resized,
+                densityDPI: 240))
 }
 
 @Test

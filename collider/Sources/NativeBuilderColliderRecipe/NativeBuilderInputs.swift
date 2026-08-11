@@ -123,7 +123,7 @@ private func ubuntuSnapshotIndexRecords(
         let fields = line.split(whereSeparator: \.isWhitespace)
         guard fields.count == 3,
             let size = Int64(fields[1]),
-            size > 0,
+            size >= 0,
             ArtifactDigest(sha256Hex: String(fields[0])) != nil
         else {
             throw NativeBuilderInputFailure.invalidPackageIndex

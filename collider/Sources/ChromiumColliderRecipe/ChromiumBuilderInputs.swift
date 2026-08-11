@@ -62,7 +62,7 @@ func chromiumBuilderAPTIndexDownloads(
             return []
         }
         let contents = String(decoding: try files.read(download.destination), as: UTF8.self)
-        let records = try ubuntuSnapshotIndexRecords(contents)
+        let records = try chromiumUbuntuSnapshotIndexRecords(contents)
         return try ["main", "universe"].flatMap { component in
             try ["arm64", "amd64"].map { architecture in
                 let relativePath = "\(component)/binary-\(architecture)/Packages.gz"
@@ -83,7 +83,7 @@ func chromiumBuilderAPTIndexDownloads(
     }
 }
 
-private func ubuntuSnapshotIndexRecords(
+package func chromiumUbuntuSnapshotIndexRecords(
     _ inRelease: String
 ) throws -> [String: (digest: String, size: Int64)] {
     guard let section = inRelease.range(of: "\nSHA256:\n") else {
@@ -95,7 +95,7 @@ private func ubuntuSnapshotIndexRecords(
         let fields = line.split(whereSeparator: \.isWhitespace)
         guard fields.count == 3,
             let size = Int64(fields[1]),
-            size > 0,
+            size >= 0,
             ArtifactDigest(sha256Hex: String(fields[0])) != nil
         else {
             throw ChromiumBuilderInputFailure.invalidPackageIndex

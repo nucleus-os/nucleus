@@ -198,43 +198,60 @@ package struct AndroidTaskVanished: Codable, Equatable, Sendable {
 }
 
 package enum AndroidInputAction: String, Codable, Equatable, Sendable {
+    case pointerEnter
+    case pointerLeave
     case pointerMotion
     case pointerButton
     case pointerScroll
+    case keyboardFocus
     case key
+    case touchDown
+    case touchMotion
+    case touchUp
+    case touchCancel
+    case configurationChanged
 }
 
 package struct AndroidInputEvent: Codable, Equatable, Sendable {
-    package let displayID: Int32
+    package let presentationID: UInt64
+    package let configurationGeneration: UInt64
     package let eventTimeNanoseconds: UInt64
     package let x: Double?
     package let y: Double?
     package let button: UInt32?
     package let keyCode: UInt32?
+    package let contactID: Int32?
     package let pressed: Bool?
+    package let focused: Bool?
     package let scrollX: Double?
     package let scrollY: Double?
     package let action: AndroidInputAction
 
     package init(
-        displayID: Int32,
+        presentationID: UInt64,
+        configurationGeneration: UInt64,
         eventTimeNanoseconds: UInt64,
         x: Double? = nil,
         y: Double? = nil,
         button: UInt32? = nil,
         keyCode: UInt32? = nil,
+        contactID: Int32? = nil,
         pressed: Bool? = nil,
+        focused: Bool? = nil,
         scrollX: Double? = nil,
         scrollY: Double? = nil,
         action: AndroidInputAction
     ) throws {
-        self.displayID = displayID
+        self.presentationID = presentationID
+        self.configurationGeneration = configurationGeneration
         self.eventTimeNanoseconds = eventTimeNanoseconds
         self.x = x
         self.y = y
         self.button = button
         self.keyCode = keyCode
+        self.contactID = contactID
         self.pressed = pressed
+        self.focused = focused
         self.scrollX = scrollX
         self.scrollY = scrollY
         self.action = action
@@ -242,11 +259,12 @@ package struct AndroidInputEvent: Codable, Equatable, Sendable {
     }
 
     package func validate() throws {
-        guard displayID >= 0,
+        guard configurationGeneration > 0,
             x?.isFinite ?? true,
             y?.isFinite ?? true,
             (x ?? 0) >= 0, (y ?? 0) >= 0,
             (x ?? 0) <= 65_536, (y ?? 0) <= 65_536,
+            contactID.map({ (0..<16).contains($0) }) ?? true,
             scrollX?.isFinite ?? true,
             scrollY?.isFinite ?? true
         else {
@@ -254,13 +272,23 @@ package struct AndroidInputEvent: Codable, Equatable, Sendable {
                 "Android input event is invalid")
         }
         switch action {
-        case .pointerMotion:
+        case .pointerEnter, .pointerMotion:
             guard x != nil, y != nil,
-                button == nil, keyCode == nil, pressed == nil,
+                button == nil, keyCode == nil, contactID == nil,
+                pressed == nil, focused == nil,
                 scrollX == nil, scrollY == nil
             else {
                 throw AndroidRuntimeFailure(
                     "Android pointer motion has invalid fields")
+            }
+        case .pointerLeave, .touchCancel, .configurationChanged:
+            guard x == nil, y == nil,
+                button == nil, keyCode == nil, contactID == nil,
+                pressed == nil, focused == nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android input cancellation has invalid fields")
             }
         case .pointerButton:
             guard let button,
@@ -268,7 +296,8 @@ package struct AndroidInputEvent: Codable, Equatable, Sendable {
                     || button == 0x112 || button == 0x113
                     || button == 0x114,
                 x != nil, y != nil,
-                keyCode == nil, pressed != nil,
+                keyCode == nil, contactID == nil, pressed != nil,
+                focused == nil,
                 scrollX == nil, scrollY == nil
             else {
                 throw AndroidRuntimeFailure(
@@ -276,20 +305,39 @@ package struct AndroidInputEvent: Codable, Equatable, Sendable {
             }
         case .pointerScroll:
             guard x != nil, y != nil,
-                button == nil, keyCode == nil, pressed == nil,
+                button == nil, keyCode == nil, contactID == nil,
+                pressed == nil, focused == nil,
                 scrollX != nil || scrollY != nil
             else {
                 throw AndroidRuntimeFailure(
                     "Android pointer scroll is invalid")
             }
+        case .keyboardFocus:
+            guard x == nil, y == nil,
+                button == nil, keyCode == nil, contactID == nil,
+                pressed == nil, focused != nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android keyboard focus event is invalid")
+            }
         case .key:
             guard x == nil, y == nil, button == nil,
                 let keyCode, keyCode <= 0x2ff,
-                pressed != nil,
+                contactID == nil, pressed != nil, focused == nil,
                 scrollX == nil, scrollY == nil
             else {
                 throw AndroidRuntimeFailure(
                     "Android keyboard event is invalid")
+            }
+        case .touchDown, .touchMotion, .touchUp:
+            guard x != nil, y != nil,
+                button == nil, keyCode == nil, contactID != nil,
+                pressed == nil, focused == nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android touch event is invalid")
             }
         }
     }

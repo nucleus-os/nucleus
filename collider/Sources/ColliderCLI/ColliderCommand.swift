@@ -135,17 +135,18 @@ public struct ColliderCommand: AsyncParsableCommand {
             let wasInterrupted = await application.cancellation.wasInterrupted()
             let interruptionSignal =
                 await application.cancellation.receivedInterruptionSignal()
-            let contextualFailure = recordedExecutionFailure(
+            let status = commandFailureStatus(
                 error,
+                wasInterrupted: wasInterrupted)
+            let contextualFailure = reportedExecutionFailure(
+                error,
+                status: status,
                 runLogPath: application.run?.directory.appending("run.log").string)
-            if let run = application.run {
+            if let run = application.run, let contextualFailure {
                 try? await application.registry.appendLog(
                     Array("Error: \(contextualFailure)\n".utf8),
                     in: run)
             }
-            let status = commandFailureStatus(
-                error,
-                wasInterrupted: wasInterrupted)
             if status == .interrupted, let run = application.run {
                 try? await application.registry.record(
                     .interruption(
@@ -158,9 +159,11 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try? await application.registry.finish(
                     run,
                     status: status,
-                    failedTask: status == .failed ? contextualFailure.task : nil)
+                    failedTask: contextualFailure?.task)
             }
-            try? console.failure(contextualFailure)
+            if let contextualFailure {
+                try? console.failure(contextualFailure)
+            }
             if let run = application.run {
                 if !suppressTerminalSummary {
                     try? await reportTerminalSummary(
@@ -238,6 +241,15 @@ func recordedExecutionFailure(
         (error as? ExecutionFailure)
         ?? ExecutionFailure(reason: String(describing: error))
     return failure.addingContext(logPath: runLogPath)
+}
+
+func reportedExecutionFailure(
+    _ error: any Error,
+    status: RunStatus,
+    runLogPath: String?
+) -> ExecutionFailure? {
+    guard status == .failed else { return nil }
+    return recordedExecutionFailure(error, runLogPath: runLogPath)
 }
 
 func commandExitCode(
