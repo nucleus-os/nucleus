@@ -17,17 +17,11 @@
     "installerSHA256": "d140d4076ff0593d6b4f7c58722717b2abe87d75452cfe0a203792ba7f48f07c",
     "executable": "/usr/local/bin/container",
     "apiServerExecutable": "/usr/local/bin/container-apiserver",
-    "appRoot": "/Volumes/NucleusOCI/apple-container",
-    "volumeRoot": "/Volumes/NucleusBuild/apple-container-volumes",
     "installRoot": "/usr/local",
     "network": "nucleus-build-internal"
   },
   "launchd": {
     "label": "com.nucleus.container-system-start",
-    "plistRelativePath": "Library/LaunchAgents/com.nucleus.container-system-start.plist",
-    "starterRelativePath": "Library/Application Support/Nucleus/bin/container-system-start",
-    "standardOutPath": "/Volumes/NucleusLogs/apple-container-apiserver.log",
-    "standardErrorPath": "/Volumes/NucleusLogs/apple-container-apiserver.error.log",
     "maximumOpenFileCount": 245760
   },
   "resources": {
@@ -39,73 +33,5 @@
     "xdgCacheHome": "/Volumes/NucleusCache",
     "nativeSDKRoot": "/Volumes/NucleusCache/nucleus/nucleus-native-sdk/linux-arm64",
     "androidSDKRoot": "/Volumes/NucleusCache/android-sdk"
-  },
-  "storage": [
-    {
-      "name": "NucleusDev",
-      "mountPath": "/Volumes/NucleusDev",
-      "owner": "remote-development",
-      "storageClass": "source",
-      "quotaBytes": 300000000000,
-      "reserveBytes": 100000000000,
-      "recoverability": "protected",
-      "retention": "until explicitly deprovisioned",
-      "cleanupPolicy": "protected"
-    },
-    {
-      "name": "NucleusBuild",
-      "mountPath": "/Volumes/NucleusBuild",
-      "owner": "collider-build-workspaces",
-      "storageClass": "incremental",
-      "quotaBytes": 500000000000,
-      "reserveBytes": 0,
-      "recoverability": "reconstructible",
-      "retention": "inactive materializations are explicit prune candidates",
-      "cleanupPolicy": "explicitClean"
-    },
-    {
-      "name": "NucleusCache",
-      "mountPath": "/Volumes/NucleusCache",
-      "owner": "collider-cache",
-      "storageClass": "cache",
-      "quotaBytes": 350000000000,
-      "reserveBytes": 0,
-      "recoverability": "reconstructible",
-      "retention": "least-recently-used entries are explicit prune candidates",
-      "cleanupPolicy": "explicitPrune"
-    },
-    {
-      "name": "NucleusOCI",
-      "mountPath": "/Volumes/NucleusOCI",
-      "owner": "apple-container",
-      "storageClass": "container",
-      "quotaBytes": 250000000000,
-      "reserveBytes": 0,
-      "recoverability": "reconstructible",
-      "retention": "unreferenced images and snapshots are explicit prune candidates",
-      "cleanupPolicy": "explicitPrune"
-    },
-    {
-      "name": "NucleusArtifacts",
-      "mountPath": "/Volumes/NucleusArtifacts",
-      "owner": "artifact-publisher",
-      "storageClass": "published",
-      "quotaBytes": 120000000000,
-      "reserveBytes": 0,
-      "recoverability": "immutable",
-      "retention": "artifact lifecycle policy",
-      "cleanupPolicy": "protected"
-    },
-    {
-      "name": "NucleusLogs",
-      "mountPath": "/Volumes/NucleusLogs",
-      "owner": "collider-diagnostics",
-      "storageClass": "diagnostic",
-      "quotaBytes": 30000000000,
-      "reserveBytes": 0,
-      "recoverability": "diagnostic",
-      "retention": "bounded run-log policy",
-      "cleanupPolicy": "explicitPrune"
-    }
-  ]
+  }
 }

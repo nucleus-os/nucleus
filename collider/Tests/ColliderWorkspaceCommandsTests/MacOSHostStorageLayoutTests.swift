@@ -26,7 +26,13 @@ func macOSHostStorageLayoutUsesConventionalUserDirectories() {
             == FilePath("/Users/Developer With Spaces/Library/LaunchAgents"))
 
     #expect(layout.serviceSupport == layout.applicationSupportRoot.appending("service"))
-    #expect(layout.launchAgentState == layout.serviceSupport.appending("launch-agent"))
+    #expect(
+        layout.containerServiceStarter
+            == layout.serviceSupport.appending("container-system-start"))
+    #expect(
+        layout.launchAgentPlist(label: "com.nucleus.container-system-start")
+            == layout.launchAgentsDirectory.appending(
+                "com.nucleus.container-system-start.plist"))
     #expect(
         layout.appleContainerApplicationRoot
             == layout.developerRoot.appending("apple-container"))
@@ -40,4 +46,10 @@ func macOSHostStorageLayoutUsesConventionalUserDirectories() {
     #expect(layout.androidSDKs == layout.cacheRoot.appending("android-sdks"))
     #expect(layout.runLogs == layout.logsRoot.appending("runs"))
     #expect(layout.serviceLogs == layout.logsRoot.appending("service"))
+    #expect(
+        layout.containerServiceStandardOutput
+            == layout.serviceLogs.appending("apple-container-apiserver.log"))
+    #expect(
+        layout.containerServiceStandardError
+            == layout.serviceLogs.appending("apple-container-apiserver.error.log"))
 }

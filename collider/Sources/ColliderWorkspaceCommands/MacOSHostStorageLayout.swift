@@ -72,8 +72,12 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
         applicationSupportRoot.appending("service")
     }
 
-    package var launchAgentState: FilePath {
-        serviceSupport.appending("launch-agent")
+    package var containerServiceStarter: FilePath {
+        serviceSupport.appending("container-system-start")
+    }
+
+    package func launchAgentPlist(label: String) -> FilePath {
+        launchAgentsDirectory.appending("\(label).plist")
     }
 
     package var appleContainerApplicationRoot: FilePath {
@@ -110,5 +114,13 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
 
     package var serviceLogs: FilePath {
         logsRoot.appending("service")
+    }
+
+    package var containerServiceStandardOutput: FilePath {
+        serviceLogs.appending("apple-container-apiserver.log")
+    }
+
+    package var containerServiceStandardError: FilePath {
+        serviceLogs.appending("apple-container-apiserver.error.log")
     }
 }

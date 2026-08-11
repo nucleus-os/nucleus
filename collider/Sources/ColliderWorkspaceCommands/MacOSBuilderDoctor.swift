@@ -24,18 +24,12 @@ struct MacOSBuilderContract: Codable, Sendable {
         let installerSHA256: String
         let executable: String
         let apiServerExecutable: String
-        let appRoot: String
-        let volumeRoot: String
         let installRoot: String
         let network: String
     }
 
     struct Launchd: Codable, Sendable {
         let label: String
-        let plistRelativePath: String
-        let starterRelativePath: String
-        let standardOutPath: String
-        let standardErrorPath: String
         let maximumOpenFileCount: UInt64
     }
 
@@ -51,32 +45,12 @@ struct MacOSBuilderContract: Codable, Sendable {
         let androidSDKRoot: String
     }
 
-    struct Storage: Codable, Sendable {
-        enum Recoverability: String, Codable, Sendable {
-            case protected
-            case reconstructible
-            case immutable
-            case diagnostic
-        }
-
-        let name: String
-        let mountPath: String
-        let owner: String
-        let storageClass: StorageClass
-        let quotaBytes: UInt64
-        let reserveBytes: UInt64
-        let recoverability: Recoverability
-        let retention: String
-        let cleanupPolicy: StorageCleanupPolicy
-    }
-
     let operatingSystem: OperatingSystem
     let xcode: Xcode
     let appleContainer: AppleContainer
     let launchd: Launchd
     let resources: Resources
     let environment: Environment
-    let storage: [Storage]
 
     static let relativePath = "tools/macos-builder/contract.json"
 
@@ -90,56 +64,20 @@ struct MacOSBuilderContract: Codable, Sendable {
     }
 
     private func validate() throws {
-        guard Set(storage.map(\.name)).count == storage.count,
-            Set(storage.map(\.mountPath)).count == storage.count
-        else {
-            throw MacOSBuilderContractFailure.invalid(
-                "storage names and mount paths must be unique")
-        }
         guard launchd.maximumOpenFileCount > 0 else {
             throw MacOSBuilderContractFailure.invalid(
                 "launchd maximum open-file count must be positive")
         }
-        for declaration in storage {
-            guard declaration.mountPath.hasPrefix("/"),
-                declaration.quotaBytes > 0,
-                declaration.quotaBytes >= declaration.reserveBytes
-            else {
-                throw MacOSBuilderContractFailure.invalid(
-                    "invalid storage capacity declaration: \(declaration.name)")
-            }
-            if [.source, .published].contains(
-                declaration.storageClass),
-                declaration.cleanupPolicy != .protected
-            {
-                throw MacOSBuilderContractFailure.invalid(
-                    "protected storage class has a cleanup policy: \(declaration.name)")
-            }
-            if [.protected, .immutable].contains(declaration.recoverability),
-                declaration.cleanupPolicy != .protected
-            {
-                throw MacOSBuilderContractFailure.invalid(
-                    "protected storage is reclaimable: \(declaration.name)")
-            }
-        }
         guard
-            let build = storage.first(where: { $0.name == "NucleusBuild" }),
-            isDescendant(environment.buildRoot, of: build.mountPath),
-            isDescendant(appleContainer.volumeRoot, of: build.mountPath),
-            let cache = storage.first(where: { $0.name == "NucleusCache" }),
-            isDescendant(environment.xdgCacheHome, of: cache.mountPath),
-            isDescendant(environment.nativeSDKRoot, of: cache.mountPath),
+            environment.buildRoot.hasPrefix("/"),
+            environment.xdgCacheHome.hasPrefix("/"),
+            isDescendant(environment.nativeSDKRoot, of: environment.xdgCacheHome),
             URL(fileURLWithPath: environment.nativeSDKRoot).lastPathComponent
                 == "linux-arm64",
-            isDescendant(environment.androidSDKRoot, of: cache.mountPath),
-            let oci = storage.first(where: { $0.name == "NucleusOCI" }),
-            isDescendant(appleContainer.appRoot, of: oci.mountPath),
-            let logs = storage.first(where: { $0.name == "NucleusLogs" }),
-            isDescendant(launchd.standardOutPath, of: logs.mountPath),
-            isDescendant(launchd.standardErrorPath, of: logs.mountPath)
+            isDescendant(environment.androidSDKRoot, of: environment.xdgCacheHome)
         else {
             throw MacOSBuilderContractFailure.invalid(
-                "service and build paths must remain inside their declared storage volumes")
+                "legacy build and SDK paths must be absolute and internally consistent")
         }
     }
 }
@@ -173,18 +111,29 @@ struct MacOSBuilderDoctor {
                 ) { nil }
             ]
         }
+        let storageLayout: MacOSHostStorageLayout
+        do {
+            storageLayout = try MacOSHostStorageLayout.current()
+        } catch {
+            return [
+                HostPrerequisite(
+                    id: "macos-builder:storage-layout",
+                    scope: scope,
+                    description: "standard per-user macOS storage layout",
+                    remediation: "restore access to the current user's Library directories"
+                ) { nil }
+            ]
+        }
 
         return [
             operatingSystem(contract, scope: scope),
             xcode(contract, scope: scope),
             swiftBootstrap(contract, scope: scope),
             resources(contract, scope: scope),
-            containerVolumeStorage(contract, scope: scope),
-            persistentService(contract, scope: scope),
-            containerSystem(contract, scope: scope),
+            persistentService(contract, storageLayout: storageLayout, scope: scope),
+            containerSystem(contract, storageLayout: storageLayout, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
             storageEnvironment(contract, scope: scope),
-            storage(contract, scope: scope),
         ]
     }
 
@@ -293,6 +242,7 @@ struct MacOSBuilderDoctor {
 
     private func persistentService(
         _ contract: MacOSBuilderContract,
+        storageLayout: MacOSHostStorageLayout,
         scope: String
     ) -> HostPrerequisite {
         HostPrerequisite(
@@ -303,18 +253,15 @@ struct MacOSBuilderDoctor {
                 "stop the login-session service, then run tools/macos-builder/install-container-service.sh"
         ) {
             let fileManager = FileManager.default
-            guard let home = context.environment["HOME"] else { return nil }
-            let starterPath = URL(fileURLWithPath: home, isDirectory: true)
-                .appendingPathComponent(contract.launchd.starterRelativePath)
-                .path
+            let starterPath = storageLayout.containerServiceStarter.string
+            let plistPath = storageLayout.launchAgentPlist(
+                label: contract.launchd.label
+            ).string
             guard
                 fileManager.isExecutableFile(
                     atPath: starterPath),
                 let plistData = fileManager.contents(
-                    atPath: URL(fileURLWithPath: home)
-                        .appendingPathComponent(
-                            contract.launchd.plistRelativePath
-                        ).path),
+                    atPath: plistPath),
                 let uid = try? await context.run(
                     "/usr/bin/id", ["-u"], capture: true),
                 let launchd = try? await context.run(
@@ -325,40 +272,17 @@ struct MacOSBuilderDoctor {
                     plistData,
                     launchdOutput: launchd,
                     starterPath: starterPath,
+                    standardOutPath: storageLayout.containerServiceStandardOutput.string,
+                    standardErrorPath: storageLayout.containerServiceStandardError.string,
                     contract: contract)
             else { return nil }
             return serviceDetail
         }
     }
 
-    private func containerVolumeStorage(
-        _ contract: MacOSBuilderContract,
-        scope: String
-    ) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "macos-builder:container-volume-storage",
-            scope: scope,
-            description: "Apple container volumes rooted in NucleusBuild",
-            remediation: "run tools/macos-builder/migrate-container-volumes.sh"
-        ) {
-            let serviceRoot = URL(
-                fileURLWithPath: contract.appleContainer.appRoot,
-                isDirectory: true
-            ).appendingPathComponent("volumes").path
-            guard
-                let destination = try? FileManager.default.destinationOfSymbolicLink(
-                    atPath: serviceRoot),
-                normalizedPath(destination)
-                    == normalizedPath(contract.appleContainer.volumeRoot),
-                FileManager.default.fileExists(
-                    atPath: contract.appleContainer.volumeRoot)
-            else { return nil }
-            return contract.appleContainer.volumeRoot
-        }
-    }
-
     private func containerSystem(
         _ contract: MacOSBuilderContract,
+        storageLayout: MacOSHostStorageLayout,
         scope: String
     ) -> HostPrerequisite {
         HostPrerequisite(
@@ -372,7 +296,9 @@ struct MacOSBuilderDoctor {
             guard
                 let health = try? await context.runtime.ociRuntimeHealth(),
                 let detail = Self.containerSystemDetail(
-                    health, contract: contract)
+                    health,
+                    expectedAppRoot: storageLayout.appleContainerApplicationRoot,
+                    contract: contract)
             else { return nil }
             return detail
         }
@@ -397,51 +323,6 @@ struct MacOSBuilderDoctor {
                     network, contract: contract)
             else { return nil }
             return detail
-        }
-    }
-
-    private func storage(
-        _ contract: MacOSBuilderContract,
-        scope: String
-    ) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "macos-builder:storage",
-            scope: scope,
-            description: "declared case-sensitive APFS storage and quotas",
-            remediation:
-                "provision every volume and quota declared by \(MacOSBuilderContract.relativePath)"
-        ) {
-            guard
-                let listOutput = try? await context.run(
-                    "/usr/sbin/diskutil", ["apfs", "list", "-plist"],
-                    capture: true),
-                let volumes = try? APFSStorageInventory.decode(listOutput)
-            else { return nil }
-            let declaredNames = Set(contract.storage.map(\.name))
-            guard declaredNames.isSubset(of: Set(volumes.keys)) else { return nil }
-            var details: [String] = []
-            for declaration in contract.storage {
-                guard
-                    let volume = volumes[declaration.name],
-                    volume.capacityQuota >= declaration.quotaBytes,
-                    volume.capacityReserve >= declaration.reserveBytes,
-                    let infoOutput = try? await context.run(
-                        "/usr/sbin/diskutil",
-                        ["info", "-plist", declaration.mountPath],
-                        capture: true),
-                    let info = try? PropertyListDecoder().decode(
-                        MountedVolumeInfo.self,
-                        from: Data(infoOutput.utf8)),
-                    info.volumeName == declaration.name,
-                    info.mountPoint == declaration.mountPath,
-                    info.filesystemName == "Case-sensitive APFS",
-                    info.globalPermissionsEnabled
-                else { return nil }
-                details.append(
-                    "\(declaration.name)=\(volume.capacityInUse)/\(volume.capacityQuota)"
-                        + " \(declaration.cleanupPolicy.rawValue)")
-            }
-            return details.joined(separator: ", ")
         }
     }
 
@@ -476,6 +357,8 @@ struct MacOSBuilderDoctor {
         _ data: Data,
         launchdOutput: String,
         starterPath: String,
+        standardOutPath: String,
+        standardErrorPath: String,
         contract: MacOSBuilderContract
     ) -> String? {
         guard
@@ -484,8 +367,8 @@ struct MacOSBuilderDoctor {
                 from: data),
             plist.label == contract.launchd.label,
             plist.programArguments == [starterPath],
-            plist.standardOutPath == contract.launchd.standardOutPath,
-            plist.standardErrorPath == contract.launchd.standardErrorPath,
+            plist.standardOutPath == standardOutPath,
+            plist.standardErrorPath == standardErrorPath,
             plist.runAtLoad,
             Set(plist.limitLoadToSessionType) == ["Aqua", "Background"],
             plist.softResourceLimits.numberOfFiles
@@ -502,6 +385,7 @@ struct MacOSBuilderDoctor {
 
     static func containerSystemDetail(
         _ health: OCIRuntimeHealth,
+        expectedAppRoot: FilePath,
         contract: MacOSBuilderContract
     ) -> String? {
         guard
@@ -510,7 +394,7 @@ struct MacOSBuilderDoctor {
                 "version \(contract.appleContainer.version)"),
             health.apiServerCommit == contract.appleContainer.commit,
             normalizedPath(health.appRoot.path)
-                == normalizedPath(contract.appleContainer.appRoot),
+                == normalizedPath(expectedAppRoot.string),
             normalizedPath(health.installRoot.path)
                 == normalizedPath(contract.appleContainer.installRoot)
         else { return nil }
@@ -558,20 +442,6 @@ private struct PersistentServicePlist: Decodable {
         case standardErrorPath = "StandardErrorPath"
         case softResourceLimits = "SoftResourceLimits"
         case hardResourceLimits = "HardResourceLimits"
-    }
-}
-
-private struct MountedVolumeInfo: Decodable {
-    let volumeName: String
-    let mountPoint: String
-    let filesystemName: String
-    let globalPermissionsEnabled: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case volumeName = "VolumeName"
-        case mountPoint = "MountPoint"
-        case filesystemName = "FilesystemName"
-        case globalPermissionsEnabled = "GlobalPermissionsEnabled"
     }
 }
 

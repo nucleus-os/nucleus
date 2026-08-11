@@ -35,8 +35,8 @@
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>StandardOutPath</key>
-  <string>/Volumes/NucleusLogs/apple-container-apiserver.log</string>
+  <string>NUCLEUS_CONTAINER_STANDARD_OUTPUT_PATH</string>
   <key>StandardErrorPath</key>
-  <string>/Volumes/NucleusLogs/apple-container-apiserver.error.log</string>
+  <string>NUCLEUS_CONTAINER_STANDARD_ERROR_PATH</string>
 </dict>
 </plist>

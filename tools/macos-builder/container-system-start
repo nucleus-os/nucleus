@@ -2,9 +2,7 @@
 set -euo pipefail
 
 readonly container_executable="/usr/local/bin/container"
-readonly app_root="/Volumes/NucleusOCI/apple-container"
-readonly volume_root="/Volumes/NucleusBuild/apple-container-volumes"
-readonly service_volume_root="$app_root/volumes"
+readonly app_root="$HOME/Library/Developer/Nucleus/Collider/apple-container"
 
 if [[ ! -x "$container_executable" ]]; then
   echo "error: pinned Apple container executable is absent: $container_executable" >&2
@@ -12,18 +10,8 @@ if [[ ! -x "$container_executable" ]]; then
 fi
 
 if [[ ! -d "$app_root" ]]; then
-  echo "error: Apple container application root is not mounted: $app_root" >&2
+  echo "error: Apple container application root is absent: $app_root" >&2
   exit 75
-fi
-if [[ ! -d "$volume_root" ]]; then
-  echo "error: Apple container volume root is not mounted: $volume_root" >&2
-  exit 75
-fi
-if [[ ! -L "$service_volume_root" \
-    || "$(/usr/bin/readlink "$service_volume_root")" != "$volume_root" ]]; then
-  echo "error: Apple container volumes are not rooted at $volume_root" >&2
-  echo "run tools/macos-builder/migrate-container-volumes.sh" >&2
-  exit 78
 fi
 
 exec "$container_executable" system start \

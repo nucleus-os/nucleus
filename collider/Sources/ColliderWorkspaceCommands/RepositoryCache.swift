@@ -189,8 +189,6 @@ struct RepositoryCache {
             } else {
                 [:]
             }
-        let contract = try? MacOSBuilderContract.load(root: context.root)
-        let apfs = contract == nil ? [:] : try await apfsVolumes()
         let ociUsage = try await containerDiskUsage()
         let declaredWorkspaceIdentities = Set(
             catalog.components.flatMap(\.persistentWorkspaces).map(\.identity))
@@ -227,49 +225,6 @@ struct RepositoryCache {
                 rollbackGenerationCount: declaration.rollbackGenerationCount,
                 quotaBytes: nil,
                 reserveBytes: nil)
-        }
-        if let contract {
-            records += contract.storage.map { declaration in
-                let volume = apfs[declaration.name]
-                let reclaimableBytes: UInt64?
-                let hasReclaimableStorage: Bool
-                if declaration.storageClass == .container {
-                    reclaimableBytes = ociUsage?.reclaimableBytes ?? 0
-                    hasReclaimableStorage = (reclaimableBytes ?? 0) > 0
-                } else {
-                    let mount = FilePath(declaration.mountPath).normalizedForComparison()
-                    let contained = records.filter { record in
-                        let path = FilePath(record.path).normalizedForComparison()
-                        return path.isContained(in: mount)
-                    }
-                    hasReclaimableStorage = contained.contains {
-                        $0.state == "reclaimable"
-                    }
-                    reclaimableBytes =
-                        contained.contains {
-                            $0.reclaimableBytes == nil
-                        }
-                        ? nil
-                        : contained.reduce(into: UInt64(0)) {
-                            $0 &+= $1.reclaimableBytes ?? 0
-                        }
-                }
-                return StorageStatusRecord(
-                    id: "volume:\(declaration.name)",
-                    owner: declaration.owner,
-                    storageClass: declaration.storageClass,
-                    path: declaration.mountPath,
-                    allocatedBytes: volume?.capacityInUse ?? 0,
-                    reclaimableBytes: reclaimableBytes,
-                    cleanupPolicy: declaration.cleanupPolicy,
-                    state: volume == nil
-                        ? "missing"
-                        : hasReclaimableStorage ? "reclaimable" : "mounted",
-                    retention: declaration.retention,
-                    rollbackGenerationCount: nil,
-                    quotaBytes: declaration.quotaBytes,
-                    reserveBytes: declaration.reserveBytes)
-            }
         }
         records.sort { $0.id < $1.id }
         let report = StorageStatusReport(
@@ -556,15 +511,6 @@ struct RepositoryCache {
                 })
         }
         return result
-    }
-
-    private func apfsVolumes() async throws -> [String: APFSStorageInventory.Volume] {
-        guard FileManager.default.isExecutableFile(atPath: "/usr/sbin/diskutil") else {
-            return [:]
-        }
-        let output = try await context.run(
-            "/usr/sbin/diskutil", ["apfs", "list", "-plist"], capture: true)
-        return try APFSStorageInventory.decode(output)
     }
 
     private func containerDiskUsage() async throws -> OCIRuntimeDiskUsage? {

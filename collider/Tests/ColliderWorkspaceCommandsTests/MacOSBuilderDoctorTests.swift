@@ -24,12 +24,6 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
         contract.appleContainer.commit
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
-    #expect(
-        contract.appleContainer.volumeRoot
-            == "/Volumes/NucleusBuild/apple-container-volumes")
-    #expect(
-        contract.launchd.starterRelativePath
-            == "Library/Application Support/Nucleus/bin/container-system-start")
     #expect(contract.launchd.maximumOpenFileCount == 245_760)
     #expect(contract.environment.buildRoot == "/Volumes/NucleusBuild")
     #expect(contract.environment.xdgCacheHome == "/Volumes/NucleusCache")
@@ -39,31 +33,15 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(
         contract.environment.androidSDKRoot
             == "/Volumes/NucleusCache/android-sdk")
-    #expect(Set(contract.storage.map(\.name)).count == contract.storage.count)
-    #expect(contract.storage.allSatisfy { $0.quotaBytes > 0 })
-    #expect(
-        contract.storage.filter { $0.storageClass == .source }
-            .allSatisfy { $0.cleanupPolicy == .protected })
-    #expect(
-        contract.storage.filter { $0.recoverability == .immutable }
-            .allSatisfy { $0.cleanupPolicy == .protected })
-    #expect(
-        contract.storage.first { $0.name == "NucleusDev" }?.owner
-            == "remote-development")
-    #expect(contract.storage.allSatisfy { $0.name != "NucleusSnapshots" })
-    #expect(
-        contract.storage.first { $0.name == "NucleusBuild" }?.owner
-            == "collider-build-workspaces")
-    #expect(
-        contract.storage.first { $0.name == "NucleusOCI" }?.owner
-            == "apple-container")
 }
 
 @Test
 func macOSBuilderDoctorAcceptsPinnedContainerEvidence() throws {
     let contract = try loadMacOSBuilderContract()
+    let layout = MacOSHostStorageLayout(
+        homeDirectory: FilePath("/Users/developer"))
     let health = OCIRuntimeHealth(
-        appRoot: URL(fileURLWithPath: "/Volumes/NucleusOCI/apple-container/"),
+        appRoot: URL(fileURLWithPath: layout.appleContainerApplicationRoot.string),
         installRoot: URL(fileURLWithPath: "/usr/local/"),
         apiServerVersion:
             "container-apiserver version 1.2.0 (build: release, commit: 6e65319)",
@@ -76,7 +54,9 @@ func macOSBuilderDoctorAcceptsPinnedContainerEvidence() throws {
 
     #expect(
         MacOSBuilderDoctor.containerSystemDetail(
-            health, contract: contract) != nil)
+            health,
+            expectedAppRoot: layout.appleContainerApplicationRoot,
+            contract: contract) != nil)
     #expect(
         MacOSBuilderDoctor.hostOnlyNetworkDetail(
             network, contract: contract) != nil)
@@ -99,7 +79,10 @@ func macOSBuilderDoctorRejectsDriftedContainerEvidence() throws {
 
     #expect(
         MacOSBuilderDoctor.containerSystemDetail(
-            driftedHealth, contract: contract) == nil)
+            driftedHealth,
+            expectedAppRoot: FilePath(
+                "/Users/developer/Library/Developer/Nucleus/Collider/apple-container"),
+            contract: contract) == nil)
     #expect(
         MacOSBuilderDoctor.hostOnlyNetworkDetail(
             routedNetwork, contract: contract) == nil)
@@ -114,10 +97,18 @@ func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
             "tools/macos-builder/com.nucleus.container-system-start.plist.in"),
         encoding: .utf8)
     let starterPath =
-        "/Users/builder/Library/Application Support/Nucleus/bin/container-system-start"
+        "/Users/builder/Library/Application Support/Nucleus/Collider/service/container-system-start"
     let rendered = template.replacingOccurrences(
         of: "NUCLEUS_CONTAINER_STARTER_PATH",
-        with: starterPath)
+        with: starterPath
+    ).replacingOccurrences(
+        of: "NUCLEUS_CONTAINER_STANDARD_OUTPUT_PATH",
+        with: "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.log"
+    ).replacingOccurrences(
+        of: "NUCLEUS_CONTAINER_STANDARD_ERROR_PATH",
+        with:
+            "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.error.log"
+    )
 
     #expect(
         MacOSBuilderDoctor.persistentServiceDetail(
@@ -129,6 +120,10 @@ func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
                 }
                 """,
             starterPath: starterPath,
+            standardOutPath:
+                "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.log",
+            standardErrorPath:
+                "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.error.log",
             contract: contract)
             == "login-session/com.nucleus.container-system-start")
 
@@ -142,6 +137,10 @@ func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
                 }
                 """,
             starterPath: starterPath,
+            standardOutPath:
+                "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.log",
+            standardErrorPath:
+                "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.error.log",
             contract: contract) == nil)
 }
 

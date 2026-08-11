@@ -66,6 +66,13 @@ constructs a `/Volumes/Nucleus*` path.
 
 ## Phase 2: Remove APFS policy from the builder contract and service
 
+Status: complete. The builder contract and doctor contain no APFS volume,
+quota, reserve, ownership, recoverability, or cleanup policy. The user-domain
+installer renders the standard application, developer, cache, log, and
+LaunchAgent paths, while Apple container owns its natural in-tree `volumes`
+directory. The obsolete cross-volume migration helper and symlink checks are
+removed. Activation remains part of the one-time data cutover in Phase 6.
+
 Delete the builder contract's storage-volume inventory, volume ownership,
 quota, reserve, recoverability, and cleanup-policy records. Delete doctor logic
 that queries APFS containers or validates named mounts.
@@ -79,9 +86,10 @@ the migration script that exists only to maintain it.
 The installer remains a user-domain operation. It does not use sudo, mutate
 disks, or depend on a particular synthesized disk identifier.
 
-Gate: a generated launch agent starts the API server from the standard layout,
-survives logout and login, and passes service health checks without any custom
-volume mounted.
+Gate: the generated LaunchAgent and starter lint with standard paths, the
+builder doctor resolves the same typed layout without `diskutil`, and no
+service script names a custom volume. Phase 6 activates the generated service;
+Phase 7 owns restart persistence and live health verification.
 
 ## Phase 3: Move case-sensitive workspaces behind container volumes
 

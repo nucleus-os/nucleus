@@ -5,14 +5,9 @@ readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly contract="$script_directory/contract.json"
 readonly starter_source="$script_directory/container-system-start"
 readonly plist_template="$script_directory/com.nucleus.container-system-start.plist.in"
-readonly service_label="com.nucleus.container-system-start"
-readonly app_root="$(
-  /usr/bin/plutil -extract appleContainer.appRoot raw -o - "$contract"
+readonly service_label="$(
+  /usr/bin/plutil -extract launchd.label raw -o - "$contract"
 )"
-readonly volume_root="$(
-  /usr/bin/plutil -extract appleContainer.volumeRoot raw -o - "$contract"
-)"
-readonly service_volume_root="$app_root/volumes"
 
 if [[ $EUID -eq 0 ]]; then
   echo "error: run this installer as the logged-in builder user, without sudo" >&2
@@ -30,16 +25,16 @@ readonly service_home="$(
   /usr/bin/dscl . -read "/Users/$service_user" NFSHomeDirectory \
     | /usr/bin/sed 's/^NFSHomeDirectory: //'
 )"
-readonly starter_relative_path="$(
-  /usr/bin/plutil -extract launchd.starterRelativePath raw -o - "$contract"
-)"
-if [[ -z "$starter_relative_path" || "$starter_relative_path" == /* \
-    || "/$starter_relative_path/" == *"/../"* ]]; then
-  echo "error: launchd starter path must be relative to the current user's home" >&2
-  exit 69
-fi
-readonly starter_target="$service_home/$starter_relative_path"
-readonly starter_directory="$(/usr/bin/dirname "$starter_target")"
+readonly application_support_root="$service_home/Library/Application Support/Nucleus/Collider"
+readonly service_support_root="$application_support_root/service"
+readonly starter_target="$service_support_root/container-system-start"
+readonly developer_root="$service_home/Library/Developer/Nucleus/Collider"
+readonly app_root="$developer_root/apple-container"
+readonly cache_root="$service_home/Library/Caches/Nucleus/Collider"
+readonly logs_root="$service_home/Library/Logs/Nucleus/Collider"
+readonly service_logs="$logs_root/service"
+readonly standard_output_path="$service_logs/apple-container-apiserver.log"
+readonly standard_error_path="$service_logs/apple-container-apiserver.error.log"
 readonly agent_directory="$service_home/Library/LaunchAgents"
 readonly agent_target="$agent_directory/$service_label.plist"
 
@@ -88,33 +83,36 @@ if [[ "$installed_container_version" != "$expected_container_version" ]]; then
 fi
 
 for required_path in \
+  "$application_support_root" \
+  "$service_support_root" \
+  "$developer_root" \
   "$app_root" \
-  "$volume_root" \
-  /Volumes/NucleusLogs
+  "$developer_root/build" \
+  "$developer_root/artifacts" \
+  "$cache_root" \
+  "$cache_root/downloads" \
+  "$cache_root/native-sdks" \
+  "$cache_root/android-sdks" \
+  "$logs_root" \
+  "$logs_root/runs" \
+  "$service_logs" \
+  "$agent_directory"
 do
-  if [[ ! -d "$required_path" ]]; then
-    echo "error: required macOS builder path is absent: $required_path" >&2
-    exit 72
-  fi
+  /usr/bin/install -d -m 0755 "$required_path"
   if [[ $(/usr/bin/stat -f '%u' "$required_path") -ne $service_uid ]]; then
     echo "error: $required_path is not owned by $service_user" >&2
     exit 77
   fi
 done
-if [[ ! -L "$service_volume_root" \
-    || "$(/usr/bin/readlink "$service_volume_root")" != "$volume_root" ]]; then
-  echo "error: Apple container volumes are not rooted at $volume_root" >&2
-  echo "run $script_directory/migrate-container-volumes.sh" >&2
-  exit 78
-fi
 
 /bin/launchctl bootout "gui/$service_uid/$service_label" >/dev/null 2>&1 || true
-/usr/bin/install -d -m 0755 "$starter_directory"
 /usr/bin/install -m 0755 "$starter_source" "$starter_target"
-/usr/bin/install -d -m 0755 "$agent_directory"
 /usr/bin/install -m 0644 "$plist_template" "$agent_target"
-/usr/bin/plutil -remove ProgramArguments.0 "$agent_target"
-/usr/bin/plutil -insert ProgramArguments.0 -string "$starter_target" \
+/usr/bin/plutil -replace ProgramArguments.0 -string "$starter_target" \
+  "$agent_target"
+/usr/bin/plutil -replace StandardOutPath -string "$standard_output_path" \
+  "$agent_target"
+/usr/bin/plutil -replace StandardErrorPath -string "$standard_error_path" \
   "$agent_target"
 /usr/bin/plutil -lint "$agent_target" >/dev/null
 
@@ -135,7 +133,7 @@ done
 
 echo "error: Apple container did not become healthy in the login session" >&2
 /bin/launchctl print "gui/$service_uid/$service_label" >&2 || true
-echo "--- /Volumes/NucleusLogs/apple-container-apiserver.error.log ---" >&2
-/usr/bin/tail -100 /Volumes/NucleusLogs/apple-container-apiserver.error.log >&2 \
+echo "--- $standard_error_path ---" >&2
+/usr/bin/tail -100 "$standard_error_path" >&2 \
   || true
 exit 70

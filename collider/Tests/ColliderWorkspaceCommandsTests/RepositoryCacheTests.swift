@@ -504,25 +504,3 @@ private func workspaceRuntime(
     let remaining = try FileManager.default.contentsOfDirectory(atPath: generations.path)
     #expect(remaining == [active.lastPathComponent])
 }
-
-@Test func apfsInventoryRejectsAmbiguousNamesWithoutLosingUniqueVolumes() throws {
-    let plist = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0"><dict><key>Containers</key><array>
-          <dict><key>Volumes</key><array>
-            <dict><key>Name</key><string>Recovery</string><key>CapacityInUse</key><integer>1</integer><key>CapacityQuota</key><integer>0</integer><key>CapacityReserve</key><integer>0</integer></dict>
-            <dict><key>Name</key><string>NucleusCache</string><key>CapacityInUse</key><integer>2</integer><key>CapacityQuota</key><integer>350</integer><key>CapacityReserve</key><integer>0</integer></dict>
-          </array></dict>
-          <dict><key>Volumes</key><array>
-            <dict><key>Name</key><string>Recovery</string><key>CapacityInUse</key><integer>3</integer><key>CapacityQuota</key><integer>0</integer><key>CapacityReserve</key><integer>0</integer></dict>
-          </array></dict>
-        </array></dict></plist>
-        """
-
-    let inventory = try APFSStorageInventory.decode(plist)
-
-    #expect(inventory["Recovery"] == nil)
-    #expect(inventory["NucleusCache"]?.capacityInUse == 2)
-    #expect(inventory["NucleusCache"]?.capacityQuota == 350)
-}
