@@ -92,13 +92,11 @@ import Testing
         #expect(
             androidRuntimeContainerNames(
                 """
-                unrelated nucleus-framework-7 nucleus-android-runtime-42
-                nucleus-framework- nucleus-framework-owner
+                unrelated nucleus-runtime-7 nucleus-android-runtime-42
                 nucleus-android-runtime-4x nucleus-android-runtime-42.scope
                 """
             ) == [
-                "nucleus-framework-7",
-                "nucleus-android-runtime-42",
+                "nucleus-android-runtime-42"
             ])
         #expect(
             isNucleusAndroidRuntimeContainerName(
@@ -111,10 +109,10 @@ import Testing
                 "nucleus-android-runtime-\u{0661}"))
         #expect(
             androidRuntimeMountDiscoveryArguments(
-                instance: "/run/nucleus/android/nucleus-framework-7"
+                instance: "/run/nucleus/android/nucleus-android-runtime-42"
             ) == [
                 "--target",
-                "/run/nucleus/android/nucleus-framework-7",
+                "/run/nucleus/android/nucleus-android-runtime-42",
                 "--submounts",
                 "--noheadings",
                 "--raw",
@@ -126,15 +124,15 @@ import Testing
                 """
                 /run
                 /run/unrelated
-                /run/nucleus/android/nucleus-framework-7/rootfs
-                /run/nucleus/android/nucleus-framework-7/rootfs/apex/runtime
-                /run/nucleus/android/nucleus-framework-7/binder
+                /run/nucleus/android/nucleus-android-runtime-42/rootfs
+                /run/nucleus/android/nucleus-android-runtime-42/rootfs/apex/runtime
+                /run/nucleus/android/nucleus-android-runtime-42/binder
                 """,
-                instance: "/run/nucleus/android/nucleus-framework-7"
+                instance: "/run/nucleus/android/nucleus-android-runtime-42"
             ) == [
-                "/run/nucleus/android/nucleus-framework-7/rootfs/apex/runtime",
-                "/run/nucleus/android/nucleus-framework-7/binder",
-                "/run/nucleus/android/nucleus-framework-7/rootfs",
+                "/run/nucleus/android/nucleus-android-runtime-42/rootfs/apex/runtime",
+                "/run/nucleus/android/nucleus-android-runtime-42/binder",
+                "/run/nucleus/android/nucleus-android-runtime-42/rootfs",
             ])
     }
 

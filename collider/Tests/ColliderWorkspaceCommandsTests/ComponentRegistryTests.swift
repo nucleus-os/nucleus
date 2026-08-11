@@ -183,7 +183,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             root: root,
             environment: [:],
             runtime: ColliderRuntime()))
-    let shellConfiguration = try registry.shellRuntimeInstallConfiguration(
+    let shellConfiguration = try registry.shellRuntimePublicationConfiguration(
         prefix: FilePath("/nucleus-runtime"),
         selection: RuntimeBuildSelection())
 
@@ -411,6 +411,16 @@ private func fixtureReactNativeNodeModules(
                 access: .readOnly)))
     #expect(armExecution.mounts.allSatisfy { $0.isReadOnly })
     #expect(x86Execution.mounts.allSatisfy { $0.isReadOnly })
+    #expect(
+        armExecution.mounts.contains {
+            $0.target == SwiftPMInvocation.ociSwiftSDKDirectory.string
+        })
+    #expect(
+        armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.contains(
+            "/usr/lib/aarch64-linux-gnu") == false)
+    #expect(
+        x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.contains(
+            "/usr/lib/x86_64-linux-gnu") == false)
     #expect(armExecution.hostDependencyCache == x86Execution.hostDependencyCache)
     #expect(
         armExecution.hostDependencyCache.string.hasSuffix(
@@ -721,6 +731,9 @@ private func fixtureReactNativeNodeModules(
                 execution.imageID == image.path
                     && execution.command.first == "bash"
                     && !execution.command.contains("gfxstream")
+                    && execution.containerEnvironment["CC"] == "/usr/bin/clang"
+                    && execution.containerEnvironment["CXX"] == "/usr/bin/clang++"
+                    && execution.containerEnvironment["LD_LIBRARY_PATH"] == nil
                     && execution.mounts.contains {
                         $0.target == "/export" && $0.purpose == .boundedExport
                     }
@@ -1310,15 +1323,25 @@ private func fixtureReactNativeNodeModules(
     #expect(gnExecutions[0].command == ["extract-gn"])
     #expect(gnExecutions[0].executionPlatform == .linuxARM64OCI)
     #expect(gnExecutions[0].artifactTarget == .linuxARM64)
+    let linuxTask = try CoreColliderRecipe.buildSkiaLinux(
+        root: root,
+        sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
+        environment: environment,
+        target: linuxARM64,
+        sources: sources,
+        builder: builder
+    ).task
+    let linuxExecutions = try await ociExecutions(in: linuxTask.action)
+    #expect(
+        linuxExecutions[0].command.contains {
+            $0.contains(#"cc="/usr/bin/clang""#)
+        })
+    #expect(
+        linuxExecutions[0].command.contains {
+            $0.contains(#"cxx="/usr/bin/clang++""#)
+        })
     for task in [
-        try CoreColliderRecipe.buildSkiaLinux(
-            root: root,
-            sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
-            environment: environment,
-            target: linuxARM64,
-            sources: sources,
-            builder: builder
-        ).task,
+        linuxTask,
         try CoreColliderRecipe.buildSkiaAndroid(
             root: root,
             sdkRoot: FilePath("/cache/native-sdk/android-arm64"),
@@ -1366,6 +1389,69 @@ private func fixtureReactNativeNodeModules(
             })
         #expect(workspaceKeys == ["core-skia-intermediates", "core-skia-ccache"])
     }
+}
+
+@Test func skiaExportReplacesAFormerBuildDirectorySymlink() async throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-skia-export-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+
+    let legacyBuild = workspace.appendingPathComponent("legacy-build", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: legacyBuild,
+        withIntermediateDirectories: true)
+    let marker = legacyBuild.appendingPathComponent("preserved")
+    try Data().write(to: marker)
+
+    let sdkRoot = FilePath(workspace.appendingPathComponent("sdk").path)
+    let exportDirectory = sdkRoot.appending("render/lib/skia-graphite")
+    try FileManager.default.createDirectory(
+        atPath: exportDirectory.removingLastComponent().string,
+        withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+        atPath: exportDirectory.string,
+        withDestinationPath: legacyBuild.path)
+
+    let root = fixtureRepositoryRoot.appending("core")
+    let environment = [
+        "PATH": "/usr/bin",
+        "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
+    ]
+    let builder = try fixtureNativeBuilder(
+        context: root.appending("build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+    let sources = try CoreColliderRecipe.prepareSkiaDependencies(
+        root: root,
+        downloadRoot: FilePath("/cache/inputs/skia"),
+        environment: environment,
+        builder: builder.base)
+    let task = try CoreColliderRecipe.buildSkiaLinux(
+        root: root,
+        sdkRoot: sdkRoot,
+        environment: environment,
+        target: NativeLinuxTarget(architecture: .arm64),
+        sources: sources,
+        builder: builder
+    ).task
+    let action = try #require(task.action)
+    let context = ActionContext(
+        files: ColliderRuntime().actionFileSystem(),
+        cancellation: ActionCancellation {},
+        logger: ActionLogger { _ in },
+        commands: ActionCommandExecutor { _ in CommandResult(status: 1) },
+        downloads: ActionDownloader { _, _ in },
+        containers: ActionContainerExecutor(run: { _ in CommandResult(status: 0) }))
+
+    try await action.execute(in: context)
+
+    #expect(
+        try context.files.metadataWithoutFollowingSymlinks(for: exportDirectory)?.type
+            == .directory)
+    #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
 @Test func nativeArchitectureBuildsHaveIndependentWritableState() async throws {
@@ -1569,6 +1655,11 @@ private func fixtureReactNativeNodeModules(
         #expect(
             nativeOperations.allSatisfy {
                 $0.containerEnvironment["CCACHE_DIR"] == "/ccache"
+                    && $0.containerEnvironment["LD_LIBRARY_PATH"] == nil
+                    && $0.command.contains("-DCMAKE_C_COMPILER=/usr/bin/clang")
+                        == ($0.command.contains("cmake"))
+                    && $0.command.contains("-DCMAKE_CXX_COMPILER=/usr/bin/clang++")
+                        == ($0.command.contains("cmake"))
             })
     }
     #expect(
@@ -1624,7 +1715,10 @@ private func fixtureReactNativeNodeModules(
             TaskID(rawValue: "rn.javascript-dependencies")))
     #expect(build.command.contains("ninja"))
     #expect(merge.command.contains("/tools/merge-static-archives.sh"))
-    #expect(export.command.contains("/export/libhermes_lean_combined.a"))
+    #expect(
+        export.command.contains {
+            $0.contains("/export/libhermes_lean_combined.a")
+        })
     #expect(
         Set(
             executions.flatMap(\.persistentWorkspaceMounts).map {
@@ -1712,6 +1806,8 @@ private func fixtureReactNativeNodeModules(
     #expect(
         Set(armConfigure.persistentWorkspaceMounts.map(\.target)) == ["/build", "/ccache"])
     #expect(armConfigure.containerEnvironment["CCACHE_DIR"] == "/ccache")
+    #expect(armConfigure.containerEnvironment["CC"] == "/usr/bin/clang")
+    #expect(armConfigure.containerEnvironment["LD_LIBRARY_PATH"] == nil)
 
     #expect(x86Configure.executionPlatform == .linuxARM64OCI)
     #expect(x86Configure.artifactTarget == .linuxX86_64)
@@ -1750,6 +1846,7 @@ private func fixtureReactNativeNodeModules(
     #expect(
         x86Configure.containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"]
             == "/native-wayland/lib/pkgconfig")
+    #expect(x86Configure.containerEnvironment["LD_LIBRARY_PATH"] == nil)
 }
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {

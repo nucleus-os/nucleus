@@ -226,6 +226,25 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
     #expect(closeEnvelope.kind == .closePresentation)
     #expect(closeEnvelope.presentationClose == close)
 
+    let shellClipboard = try AndroidClipboardUpdate(
+        source: .shell,
+        generation: 3,
+        text: "from shell")
+    try server.setClipboard(shellClipboard)
+    let clipboardCommand = try receive(from: connection)
+    #expect(clipboardCommand.kind == .setClipboard)
+    #expect(clipboardCommand.clipboardUpdate == shellClipboard)
+    let androidClipboard = try AndroidClipboardUpdate(
+        source: .android,
+        generation: 8,
+        text: "from Android")
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .clipboardChanged,
+            generation: generation,
+            clipboardUpdate: androidClipboard),
+        over: connection)
+
     try send(
         AndroidRuntimeBridgeEnvelope(
             kind: .runtimeState,
@@ -240,6 +259,59 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
             userUnlocked: true,
             userSerial: 42),
         over: connection)
+    let notification = AndroidNotification(
+        id: "notification-key",
+        packageName: "org.example",
+        applicationName: "Example",
+        title: "Ready",
+        body: "The operation completed.",
+        iconDigest: nil,
+        urgency: .normal,
+        progress: AndroidNotificationProgress(value: 1, total: 2),
+        hasDefaultAction: true,
+        actions: [
+            AndroidNotificationAction(id: "action:0", title: "Open")
+        ])
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .replaceNotifications,
+            generation: generation,
+            userUnlocked: true,
+            userSerial: 42,
+            notifications: [notification]),
+        over: connection)
+    try server.dismissNotification("notification-key")
+    let dismissEnvelope = try receive(from: connection)
+    #expect(dismissEnvelope.kind == .dismissNotification)
+    #expect(dismissEnvelope.notificationCommand?.notificationID == "notification-key")
+    let notificationActivation = Task {
+        await server.activateNotification(
+            "notification-key",
+            actionID: "action:0",
+            activationToken: "token",
+            presentationID: 9)
+    }
+    let activationEnvelope = try receive(from: connection)
+    #expect(activationEnvelope.kind == .activateNotification)
+    #expect(activationEnvelope.notificationCommand?.actionID == "action:0")
+    #expect(activationEnvelope.notificationCommand?.activationToken == "token")
+    #expect(activationEnvelope.notificationCommand?.presentationID == 9)
+    let activationRequestID = try #require(
+        activationEnvelope.notificationCommand?.requestID)
+    let activationResult = try AndroidActivityLaunchResult(
+        requestID: activationRequestID,
+        requestedPresentationID: 9,
+        presentationID: 9,
+        displayID: 4,
+        taskID: 20,
+        outcome: .created)
+    try send(
+        AndroidRuntimeBridgeEnvelope(
+            kind: .launchResult,
+            generation: generation,
+            activityLaunchResult: activationResult),
+        over: connection)
+    #expect(await notificationActivation.value == activationResult)
     let activities = [
         AndroidRuntimeBridgeActivity(
             packageName: "org.example",
@@ -297,7 +369,7 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
         over: connection)
 
     let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-    while await recorder.events.count < 10,
+    while await recorder.events.count < 12,
         ContinuousClock.now < deadline
     {
         try await ContinuousClock().sleep(for: .milliseconds(10))
@@ -308,7 +380,14 @@ func bridgePublishesOneUnlockedSnapshotForTheNegotiatedGeneration()
             .inputReady(generation: generation),
             .taskChanged(generation: generation, task: taskState),
             .taskVanished(generation: generation, task: vanishedTask),
+            .clipboardChanged(
+                generation: generation,
+                update: androidClipboard),
             .userUnlocked(generation: generation, userSerial: 42),
+            .notificationsReplaced(
+                generation: generation,
+                userSerial: 42,
+                notifications: [notification]),
             .iconAsset(
                 generation: generation,
                 userSerial: 42,

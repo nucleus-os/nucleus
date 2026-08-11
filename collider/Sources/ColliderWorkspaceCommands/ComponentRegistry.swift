@@ -605,16 +605,16 @@ package struct ComponentRegistry {
             quiet: true)
     }
 
-    package func shellRuntimeInstallConfiguration(
+    package func shellRuntimePublicationConfiguration(
         prefix: FilePath,
         selection: RuntimeBuildSelection
-    ) throws -> ShellRuntimeInstallConfiguration {
+    ) throws -> ShellRuntimePublicationConfiguration {
         let swiftPM = try context.swiftPMInvocation(
             configuration: selection.optimization == .debug ? .debug : .release,
             sanitizer: selection.sanitizer?.rawValue,
             cFlags: selection.tracy ? ["-DTRACY_ENABLE"] : [],
             linkerFlags: selection.sanitizer == .undefined ? ["-lubsan"] : [])
-        return ShellRuntimeInstallConfiguration(
+        return ShellRuntimePublicationConfiguration(
             swiftPM: swiftPM,
             prefix: prefix,
             generationsRoot: runtimeGenerationsRoot(for: prefix),
@@ -682,7 +682,7 @@ package struct ComponentRegistry {
         let resolvedTriple = triple ?? target.targetTriple
         let resolvedArtifactTarget = artifactTarget ?? target.artifactTarget
         let resolvedTranslation = translation ?? target.intelBinaryTranslationPolicy
-        let guestSDKRoot = "/home/nucleus-build/.swiftpm/swift-sdks"
+        let guestSDKRoot = SwiftPMInvocation.ociSwiftSDKDirectory.string
         let sourceID =
             context.taskEnvironment["NUCLEUS_SWIFT_SOURCE_ID"]
             ?? "swift-6.4"
@@ -747,7 +747,6 @@ package struct ComponentRegistry {
                         ).string,
                     "LD_LIBRARY_PATH": [
                         guestTargetSDK + "/usr/lib/swift/linux",
-                        targetRuntimeLibraryDirectory,
                         waylandSDK.appending("lib").string,
                     ].joined(separator: ":"),
                     "PKG_CONFIG_PATH":

@@ -15,6 +15,7 @@ git
 gnupg
 libc++-dev
 libc++abi-dev
+libunwind-18
 libblocksruntime-dev
 libbsd-dev
 libcurl4-openssl-dev

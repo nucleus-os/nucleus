@@ -6,6 +6,8 @@ import android.app.ActivityTaskManager;
 import android.app.Application;
 import android.app.TaskStackListener;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -69,10 +71,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class RuntimeBridgeApplication extends Application {
     private static final String TAG = "NucleusRuntimeBridge";
@@ -81,11 +86,22 @@ public final class RuntimeBridgeApplication extends Application {
     private static final int MAXIMUM_PACKET_BYTES = 256 * 1024;
     private static final AtomicBoolean STARTED = new AtomicBoolean();
 
+    private static final class ClipboardSnapshot {
+        final long generation;
+        final String text;
+
+        ClipboardSnapshot(long generation, String text) {
+            this.generation = generation;
+            this.text = text;
+        }
+    }
+
     private static final class PendingLaunch {
         final String requestId;
         final long requestedPresentationId;
         final int displayId;
         final ComponentName component;
+        final long minimumLastActiveTime;
         final long deadlineMillis;
 
         PendingLaunch(
@@ -97,6 +113,20 @@ public final class RuntimeBridgeApplication extends Application {
             this.requestedPresentationId = requestedPresentationId;
             this.displayId = displayId;
             this.component = component;
+            minimumLastActiveTime = 0;
+            deadlineMillis = SystemClock.elapsedRealtime() + 20_000;
+        }
+
+        PendingLaunch(
+                String requestId,
+                long requestedPresentationId,
+                int displayId,
+                long minimumLastActiveTime) {
+            this.requestId = requestId;
+            this.requestedPresentationId = requestedPresentationId;
+            this.displayId = displayId;
+            component = null;
+            this.minimumLastActiveTime = minimumLastActiveTime;
             deadlineMillis = SystemClock.elapsedRealtime() + 20_000;
         }
     }
@@ -333,6 +363,13 @@ public final class RuntimeBridgeApplication extends Application {
     private final ConcurrentLinkedQueue<Integer> removedTaskIds =
             new ConcurrentLinkedQueue<>();
     private final AtomicBoolean taskStateDirty = new AtomicBoolean();
+    private final AtomicLong clipboardGeneration = new AtomicLong();
+    private final AtomicReference<ClipboardSnapshot> pendingClipboard =
+            new AtomicReference<>();
+    private final Object clipboardLock = new Object();
+    private long lastShellClipboardGeneration;
+    private boolean awaitingShellClipboardCallback;
+    private String expectedShellClipboardText;
     private final Map<Long, PresentationInputDevices> inputDevicesByPresentation =
             new HashMap<>();
     private final ConcurrentHashMap<Integer, Integer> pendingPointerIcons =
@@ -374,6 +411,9 @@ public final class RuntimeBridgeApplication extends Application {
                 }
             };
 
+    private final ClipboardManager.OnPrimaryClipChangedListener
+            clipboardChangedListener = this::primaryClipboardChanged;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -398,6 +438,8 @@ public final class RuntimeBridgeApplication extends Application {
                         pointerIconChangedListener);
         ActivityTaskManager.getInstance()
                 .registerTaskStackListener(taskStackListener);
+        getSystemService(ClipboardManager.class)
+                .addPrimaryClipChangedListener(clipboardChangedListener);
         IntentFilter packages = new IntentFilter();
         packages.addAction(Intent.ACTION_PACKAGE_ADDED);
         packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
@@ -506,6 +548,16 @@ public final class RuntimeBridgeApplication extends Application {
             sendActivitySnapshot(output, generation, serial);
             catalogPublished = true;
         }
+        if (unlocked) {
+            queueClipboardSnapshot();
+        } else {
+            queueClipboard(null);
+        }
+        long notificationRevision = -1;
+        if (unlocked) {
+            notificationRevision = sendNotificationSnapshot(
+                    output, generation, serial);
+        }
 
         StructPollfd descriptor = new StructPollfd();
         descriptor.fd = socket.getFileDescriptor();
@@ -546,6 +598,20 @@ public final class RuntimeBridgeApplication extends Application {
                                 command.getJSONObject("presentationClose")
                                         .getLong("presentationID"));
                         break;
+                    case "setClipboard":
+                        applyClipboardUpdate(
+                                command.getJSONObject("clipboardUpdate"));
+                        break;
+                    case "dismissNotification":
+                        dismissNotification(
+                                command.getJSONObject("notificationCommand"));
+                        break;
+                    case "activateNotification":
+                        activateNotification(
+                                output,
+                                generation,
+                                command.getJSONObject("notificationCommand"));
+                        break;
                     default:
                         throw new IOException(
                                 "unsupported broker command " + kind);
@@ -563,10 +629,14 @@ public final class RuntimeBridgeApplication extends Application {
                     sendActivitySnapshot(output, generation, serial);
                     catalogPublished = true;
                     dirtyPackages.clear();
+                    queueClipboardSnapshot();
+                    notificationRevision = sendNotificationSnapshot(
+                            output, generation, serial);
                 } else if (!currentlyUnlocked && catalogPublished) {
                     sendRuntimeState(output, generation, false, serial);
                     catalogPublished = false;
                     dirtyPackages.clear();
+                    queueClipboard(null);
                 }
             }
             if (catalogPublished) {
@@ -579,7 +649,232 @@ public final class RuntimeBridgeApplication extends Application {
             }
             sendTaskUpdates(output, generation);
             sendPendingPointerIcons(output, generation);
+            sendPendingClipboard(output, generation);
+            long currentNotificationRevision =
+                    NucleusNotificationListenerService.revision();
+            if (catalogPublished
+                    && currentNotificationRevision != notificationRevision) {
+                notificationRevision = sendNotificationSnapshot(
+                        output, generation, serial);
+            }
         }
+    }
+
+    private void primaryClipboardChanged() {
+        if (!getSystemService(UserManager.class).isUserUnlocked()) {
+            queueClipboard(null);
+            return;
+        }
+        String text = readPlainTextClipboard();
+        synchronized (clipboardLock) {
+            if (awaitingShellClipboardCallback
+                    && Objects.equals(expectedShellClipboardText, text)) {
+                awaitingShellClipboardCallback = false;
+                expectedShellClipboardText = null;
+                return;
+            }
+            awaitingShellClipboardCallback = false;
+            expectedShellClipboardText = null;
+        }
+        queueClipboard(text);
+    }
+
+    private void queueClipboardSnapshot() {
+        queueClipboard(readPlainTextClipboard());
+    }
+
+    private void queueClipboard(String text) {
+        if (text != null
+                && text.getBytes(StandardCharsets.UTF_8).length > 128 * 1024) {
+            text = null;
+        }
+        long generation = clipboardGeneration.incrementAndGet();
+        if (generation <= 0) {
+            throw new IllegalStateException(
+                    "Android clipboard generation exhausted");
+        }
+        pendingClipboard.set(new ClipboardSnapshot(generation, text));
+    }
+
+    private String readPlainTextClipboard() {
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            return null;
+        }
+        CharSequence text = clip.getItemAt(0).getText();
+        return text == null ? null : text.toString();
+    }
+
+    private void applyClipboardUpdate(JSONObject update)
+            throws JSONException, IOException {
+        if (!getSystemService(UserManager.class).isUserUnlocked()) {
+            throw new IOException("clipboard is unavailable while the user is locked");
+        }
+        if (!"shell".equals(update.getString("source"))) {
+            throw new IOException("clipboard command has invalid source");
+        }
+        long generation = update.getLong("generation");
+        String text = update.isNull("text") ? null : update.getString("text");
+        if (generation <= 0
+                || (text != null
+                        && text.getBytes(StandardCharsets.UTF_8).length
+                                > 128 * 1024)) {
+            throw new IOException("clipboard command is invalid");
+        }
+        synchronized (clipboardLock) {
+            if (generation <= lastShellClipboardGeneration) {
+                return;
+            }
+            lastShellClipboardGeneration = generation;
+            awaitingShellClipboardCallback = true;
+            expectedShellClipboardText = text;
+        }
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        if (text == null) {
+            clipboard.clearPrimaryClip();
+        } else {
+            clipboard.setPrimaryClip(
+                    ClipData.newPlainText("Nucleus clipboard", text));
+        }
+    }
+
+    private void sendPendingClipboard(
+            OutputStream output,
+            String generation) throws IOException, JSONException {
+        ClipboardSnapshot snapshot = pendingClipboard.getAndSet(null);
+        if (snapshot == null) {
+            return;
+        }
+        JSONObject update = new JSONObject()
+                .put("source", "android")
+                .put("generation", snapshot.generation);
+        if (snapshot.text == null) {
+            update.put("text", JSONObject.NULL);
+        } else {
+            update.put("text", snapshot.text);
+        }
+        send(output, new JSONObject()
+                .put("kind", "clipboardChanged")
+                .put("generation", generation)
+                .put("clipboardUpdate", update));
+    }
+
+    private long sendNotificationSnapshot(
+            OutputStream output,
+            String generation,
+            long serial) throws IOException, JSONException {
+        long revision = NucleusNotificationListenerService.revision();
+        send(output, new JSONObject()
+                .put("kind", "replaceNotifications")
+                .put("generation", generation)
+                .put("userUnlocked", true)
+                .put("userSerial", serial)
+                .put("notifications",
+                        NucleusNotificationListenerService.snapshot()));
+        return revision;
+    }
+
+    private void dismissNotification(JSONObject command)
+            throws JSONException, IOException {
+        String notificationID = command.getString("notificationID");
+        if (!validField(notificationID, 4096)
+                || !command.isNull("actionID")
+                || !command.isNull("activationToken")) {
+            throw new IOException("notification dismissal is invalid");
+        }
+        NucleusNotificationListenerService.dismiss(notificationID);
+    }
+
+    private void activateNotification(
+            OutputStream output,
+            String generation,
+            JSONObject command)
+            throws JSONException, IOException {
+        String notificationID = command.getString("notificationID");
+        String actionID = command.isNull("actionID")
+                ? null : command.getString("actionID");
+        String activationToken = command.isNull("activationToken")
+                ? null : command.getString("activationToken");
+        String requestId = command.getString("requestID");
+        long presentationId = command.getLong("presentationID");
+        if (!validField(notificationID, 4096)
+                || (actionID != null && !validField(actionID, 1024))
+                || (activationToken != null
+                        && !validField(activationToken, 4096))
+                || !validField(requestId, 128)
+                || presentationId <= 0) {
+            throw new IOException("notification activation is invalid");
+        }
+        if (!NucleusNotificationListenerService.presentsActivity(
+                    notificationID, actionID)) {
+            try {
+                NucleusNotificationListenerService.activate(
+                        notificationID, actionID, null);
+                sendLaunchResult(
+                        output,
+                        generation,
+                        requestId,
+                        presentationId,
+                        null,
+                        null,
+                        null,
+                        "failed",
+                        "Android notification action completed without a presentation");
+            } catch (android.app.PendingIntent.CanceledException error) {
+                throw new IOException("notification action was cancelled", error);
+            }
+            return;
+        }
+        int displayId;
+        try {
+            IDisplayManager displays = IDisplayManager.Stub.asInterface(
+                    ServiceManager.getService(Context.DISPLAY_SERVICE));
+            if (displays == null) {
+                throw new IllegalStateException(
+                        "Android display manager is unavailable");
+            }
+            displayId = displays.createNucleusPresentation(presentationId);
+            activePresentations.add(presentationId);
+            presentationByDisplayId.put(displayId, presentationId);
+            displayByPresentationId.put(presentationId, displayId);
+            pendingLaunches.put(
+                    requestId,
+                    new PendingLaunch(
+                            requestId,
+                            presentationId,
+                            displayId,
+                            SystemClock.elapsedRealtime()));
+            ActivityOptions options = ActivityOptions.makeBasic();
+            options.setLaunchDisplayId(displayId);
+            NucleusNotificationListenerService.activate(
+                    notificationID, actionID, options.toBundle());
+            taskStateDirty.set(true);
+        } catch (android.app.PendingIntent.CanceledException error) {
+            pendingLaunches.remove(requestId);
+            closeFrameworkPresentation(presentationId);
+            throw new IOException("notification action was cancelled", error);
+        } catch (Exception error) {
+            pendingLaunches.remove(requestId);
+            if (activePresentations.contains(presentationId)) {
+                closeFrameworkPresentation(presentationId);
+            }
+            sendLaunchResult(
+                    output,
+                    generation,
+                    requestId,
+                    presentationId,
+                    null,
+                    null,
+                    null,
+                    "failed",
+                    describeFailure(error));
+        }
+    }
+
+    private static boolean validField(String value, int maximumBytes) {
+        return value != null && !value.isEmpty() && !value.contains("\0")
+                && value.getBytes(StandardCharsets.UTF_8).length <= maximumBytes;
     }
 
     private void beginActivityLaunch(
@@ -749,11 +1044,22 @@ public final class RuntimeBridgeApplication extends Application {
             long presentationId,
             ActivityManager.RunningTaskInfo task) throws IOException, JSONException {
         for (PendingLaunch pending : new ArrayList<>(pendingLaunches.values())) {
-            if (pending.displayId != task.displayId
-                    || (!pending.component.equals(task.baseActivity)
-                            && !pending.component.equals(task.topActivity))
+            ComponentName activity = task.topActivity != null
+                    ? task.topActivity : task.baseActivity;
+            boolean matches = pending.component != null
+                    ? pending.component.equals(task.baseActivity)
+                            || pending.component.equals(task.topActivity)
+                    : activity != null
+                            && task.lastActiveTime
+                                    >= pending.minimumLastActiveTime;
+            if (!matches
+                    || (pending.component != null
+                            && pending.displayId != task.displayId)
                     || pendingLaunches.remove(pending.requestId) == null) {
                 continue;
+            }
+            if (presentationId != pending.requestedPresentationId) {
+                closeFrameworkPresentation(pending.requestedPresentationId);
             }
             sendLaunchResult(
                     output,
@@ -763,7 +1069,8 @@ public final class RuntimeBridgeApplication extends Application {
                     presentationId,
                     task.displayId,
                     task.taskId,
-                    "created",
+                    presentationId == pending.requestedPresentationId
+                            ? "created" : "activatedExistingPresentation",
                     null);
         }
     }

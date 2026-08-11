@@ -96,8 +96,8 @@ input. Deactivation and uninstall retain the disjoint persistent state root.
   exact device surface, and APEX archive validation.
 - `NucleusAndroidRuntimeCore` owns the complete runtime unit. Its privileged
   container launcher watches the user-side owner with `pidfd`, stops LXC if that
-  owner disappears, and reconciles legacy orphan containers and their mount
-  trees before launch. The private uinput node is owned by mapped Android
+  owner disappears, and reconciles abandoned current-format containers and
+  their mount trees before launch. The private uinput node is owned by mapped Android
   `system`, and the Android bridge proves the device path by creating its native
   virtual mouse and keyboard during the versioned runtime handshake.
 - The current `nucleus_x86_64-cp2a-userdebug` Android 17 product emits separate immutable

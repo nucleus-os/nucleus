@@ -9,6 +9,7 @@ package final class ShellNoticeView: View {
     package let bodyLabel: Label
 
     private let column: StackView
+    private var actionButtons: [Button] = []
 
     package init(title: String = "", body: String = "") {
         column = StackView(axis: .vertical, spacing: 4, alignment: .fill)
@@ -34,6 +35,52 @@ package final class ShellNoticeView: View {
     }
 
     package override func layout() {
-        column.arrange(in: bounds)
+        let actionHeight = actionButtons.isEmpty ? 0.0 : 30.0
+        column.arrange(
+            in: Rect(
+                x: 0,
+                y: 0,
+                width: bounds.size.width,
+                height: max(0, bounds.size.height - actionHeight)))
+        guard !actionButtons.isEmpty else { return }
+        let width = bounds.size.width / Double(actionButtons.count)
+        for (index, button) in actionButtons.enumerated() {
+            button.frame = Rect(
+                x: Double(index) * width,
+                y: bounds.size.height - actionHeight,
+                width: width,
+                height: actionHeight)
+        }
+    }
+
+    package func configureActions(
+        _ actions: [ShellNoticeActionContent],
+        hasDefaultAction: Bool,
+        activate: @escaping @MainActor (String?) -> Void,
+        dismiss: @escaping @MainActor () -> Void
+    ) {
+        for button in actionButtons {
+            button.removeFromSuperview()
+        }
+        actionButtons.removeAll(keepingCapacity: true)
+        if hasDefaultAction {
+            addActionButton(title: "Open") { activate(nil) }
+        }
+        for action in actions.prefix(3) {
+            addActionButton(title: action.title) { activate(action.id) }
+        }
+        addActionButton(title: "Dismiss", perform: dismiss)
+        accessibilityChildren = [titleLabel, bodyLabel] + actionButtons
+        setNeedsLayout()
+    }
+
+    private func addActionButton(
+        title: String,
+        perform: @escaping @MainActor () -> Void
+    ) {
+        let button = Button(title: title)
+        button.onPress { _ in perform() }
+        addSubview(button)
+        actionButtons.append(button)
     }
 }

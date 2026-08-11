@@ -115,6 +115,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
     private let limits: NucleusDesktopTransferLimits
     private let diagnosticHandler: DiagnosticHandler
     private let pollSetDidChange: @MainActor () -> Void
+    private let selectionDidChange: @MainActor @Sendable () -> Void
     private lazy var transferExecutor = DataTransferExecutor(
         pollSetDidChange: pollSetDidChange
     ) {
@@ -137,6 +138,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         seat: NucleusDesktopSeat,
         limits: NucleusDesktopTransferLimits = NucleusDesktopTransferLimits(),
         pollSetDidChange: @escaping @MainActor () -> Void = {},
+        selectionDidChange: @escaping @MainActor @Sendable () -> Void = {},
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
         guard let manager = client.dataControl,
@@ -149,6 +151,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         self.device = device
         self.limits = limits
         self.pollSetDidChange = pollSetDidChange
+        self.selectionDidChange = selectionDidChange
         self.diagnosticHandler = diagnosticHandler
         do {
             try device.installListener(self)
@@ -512,6 +515,7 @@ extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
         if rawID == nil {
             activeOffer = nil
         }
+        selectionDidChange()
     }
 
     package func finished(

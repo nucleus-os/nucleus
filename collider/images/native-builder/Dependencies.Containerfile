@@ -59,7 +59,7 @@ RUN sed -i 's/if delta > 0\.001:/if delta > 1.0:/' \
         /usr/lib/python3/dist-packages/mesonbuild/backend/backends.py
 
 COPY inputs/archives/swift-arm64.tar.gz /tmp/swift.tar.gz
-RUN echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift.tar.gz' \
+RUN echo 'faa0928cc0298c985c5cfcd457be5939bc8b52ec8499c79a3f611cfcb1f3d463  /tmp/swift.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift \
     && tar --extract --gzip \
@@ -67,6 +67,8 @@ RUN echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp
         --directory /opt/swift \
         --strip-components=1 \
     && rm -f /tmp/swift.tar.gz \
+    && /opt/swift/usr/bin/swift --version \
+        | grep --fixed-strings 'Swift version 6.5-dev' \
     && /opt/swift/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'aarch64-unknown-linux-gnu'
 
@@ -74,7 +76,7 @@ RUN echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp
 # architecture. Give the translated amd64 lane a matching official compiler
 # so its host tools and target SDK share one architecture.
 COPY inputs/archives/swift-amd64.tar.gz /tmp/swift-x86_64.tar.gz
-RUN echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp/swift-x86_64.tar.gz' \
+RUN echo '9dd4b8ff559d46f9dbd6e9daa89455cd7c0a5aa96b223b75e30a19e41601261b  /tmp/swift-x86_64.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-x86_64 \
     && tar --extract --gzip \
@@ -82,6 +84,8 @@ RUN echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp
         --directory /opt/swift-x86_64 \
         --strip-components=1 \
     && rm -f /tmp/swift-x86_64.tar.gz \
+    && /opt/swift-x86_64/usr/bin/swift --version \
+        | grep --fixed-strings 'Swift version 6.5-dev' \
     && /opt/swift-x86_64/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'x86_64-unknown-linux-gnu'
 

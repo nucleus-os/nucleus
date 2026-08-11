@@ -5,6 +5,7 @@
   the intentionally bounded memlock allowance.
 -->
 <resources>
+    <string name="config_defaultListenerAccessPackages" translatable="false">org.nucleus.android.runtimebridge</string>
     <bool name="config_perDisplayFocusEnabled">true</bool>
     <integer name="config_pinnerHomePinBytes">0</integer>
     <integer name="config_pinnerCameraPinBytes">0</integer>

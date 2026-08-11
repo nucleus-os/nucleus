@@ -35,7 +35,7 @@ struct InstallAndroidAddon: AsyncParsableCommand {
             let resolvedBase =
                 basePrefix.map {
                     URL(resolveWorkspacePath($0, relativeTo: workspace.root))
-                } ?? URL(workspace.layout.installPrefix)
+                } ?? URL(workspace.layout.developmentRuntimeCurrent)
             try AndroidAddonInstallCommand().install(
                 artifact: URL(
                     resolveWorkspacePath(artifact, relativeTo: workspace.root)),

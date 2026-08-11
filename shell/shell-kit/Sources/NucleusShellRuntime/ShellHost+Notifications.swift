@@ -37,14 +37,25 @@ extension ShellHost {
                 view.update(
                     notifications.map {
                         ShellNoticeContent(
-                            id: $0.id,
+                            id: $0.id.stableID,
                             title: $0.applicationName.isEmpty
                                 ? $0.summary
                                 : "\($0.applicationName): \($0.summary)",
-                            body: $0.body)
+                            body: $0.body,
+                            hasDefaultAction: $0.hasDefaultAction,
+                            actions: $0.actions.map {
+                                ShellNoticeActionContent(
+                                    id: $0.id,
+                                    title: $0.title)
+                            })
                     })
                 view.onDismiss = { [weak self] id in
-                    self?.notifications.dismiss(id: id)
+                    self?.notifications.dismiss(stableID: id)
+                }
+                view.onActivate = { [weak self] id, actionID in
+                    self?.notifications.activate(
+                        stableID: id,
+                        actionID: actionID)
                 }
                 let window = Window(
                     title: "Nucleus Notifications",

@@ -59,6 +59,7 @@ package final class ShellHost {
         case configService
         case shellPolicy
         case applicationProvider
+        case platformService
     }
 
     static let reactorKindShift: UInt64 = 56
@@ -88,6 +89,7 @@ package final class ShellHost {
     let actionDispatcher: ShellActionDispatcher
     let notifications = NotificationService()
     var remoteApplicationProviders: RemoteApplicationProviderService?
+    var remotePlatformServices: RemotePlatformService?
 
     var nativePublicationContext: WindowScenePublicationContext?
     var surfaceRegistry: NativeSurfaceRegistry?

@@ -17,7 +17,7 @@ struct NucleusRuntimeAssembler {
         let runtime = ColliderRuntime()
         do {
             try await runtime.execute(
-                InstallRuntimeAction(
+                PublishRuntimeGenerationAction(
                     products: FilePath(arguments[0]),
                     prefix: FilePath(arguments[1]),
                     generationsRoot: FilePath(arguments[2]),

@@ -2,7 +2,7 @@ import ColliderWorkspaceCommands
 import Foundation
 import SystemPackage
 
-struct RuntimeInstallation {
+struct DevelopmentRuntimeGeneration {
     let prefix: URL
 
     var session: URL { prefix.appendingPathComponent("bin/nucleus-session") }
@@ -23,24 +23,24 @@ struct RuntimeInstallation {
     }
 }
 
-struct RuntimeInstaller {
-    func existingSession(
+struct DevelopmentRuntimeStore {
+    func existingGeneration(
         prefix: URL,
         options: RuntimeBuildSelection
-    ) throws -> RuntimeInstallation {
-        let installation = RuntimeInstallation(prefix: prefix)
+    ) throws -> DevelopmentRuntimeGeneration {
+        let generation = DevelopmentRuntimeGeneration(prefix: prefix)
         for executable in [
-            installation.session,
-            installation.sessionSupervisor,
-            installation.configService,
-            installation.controlService,
-            installation.compositor,
-            installation.shell,
-            installation.controlCLI,
-            installation.pamHelper,
+            generation.session,
+            generation.sessionSupervisor,
+            generation.configService,
+            generation.controlService,
+            generation.compositor,
+            generation.shell,
+            generation.controlCLI,
+            generation.pamHelper,
         ] where !FileManager.default.isExecutableFile(atPath: executable.path) {
             throw WorkspaceFailure.message(
-                "runtime is not installed at \(prefix.path); rerun without --no-build")
+                "development runtime is not published at \(prefix.path); rerun without --no-build")
         }
 
         let metadata = prefix.appendingPathComponent("share/nucleus/runtime-build.txt")
@@ -48,9 +48,10 @@ struct RuntimeInstaller {
             installed == options.metadata
         else {
             throw WorkspaceFailure.message(
-                "installed runtime does not match the requested build; rerun without --no-build")
+                "published development runtime does not match the requested build; rerun without --no-build"
+            )
         }
-        return installation
+        return generation
     }
 }
 
@@ -62,13 +63,13 @@ struct InstallCommand {
         controls: TaskControls
     ) async throws {
         let prefix = resolvedPrefix(explicit: explicitPrefix)
-        try await ComponentRegistry(context: context).installSession(
+        try await ComponentRegistry(context: context).publishDevelopmentRuntime(
             prefix: FilePath(prefix),
             selection: RuntimeBuildSelection(),
             controls: controls)
         if !controls.dryRun {
             try context.console.diagnostic(
-                "installed session runtime → \(CommandConsole.render(path: prefix.path))")
+                "published development runtime → \(CommandConsole.render(path: prefix.path))")
         }
     }
 
@@ -78,6 +79,6 @@ struct InstallCommand {
         if let value {
             return URL(resolveWorkspacePath(value, relativeTo: context.root))
         }
-        return URL(context.layout.installPrefix)
+        return URL(context.layout.developmentRuntimeCurrent)
     }
 }

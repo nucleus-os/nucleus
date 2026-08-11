@@ -94,7 +94,7 @@ func runRejectsUnknownBoundedValues() {
 }
 
 @Test
-func runtimeInstallationNormalizesTheTypedLeafPrefix() throws {
+func developmentRuntimePublicationNormalizesTheTypedLeafPrefix() throws {
     let command = InstallCommand(
         context: WorkspaceContext(
             root: FilePath("/workspace"),
@@ -106,28 +106,28 @@ func runtimeInstallationNormalizesTheTypedLeafPrefix() throws {
             == "/workspace/out/runtime")
     #expect(
         command.resolvedPrefix(explicit: nil).path
-            == "/workspace/.install")
+            == "/workspace/.nucleus/runtime/development-runtime/current")
 }
 
 @Test
-func runtimeInstallationUsesTheRelocatableFrameworkLayout() {
-    let installation = RuntimeInstallation(
+func developmentRuntimeUsesTheRelocatableFrameworkLayout() {
+    let runtime = DevelopmentRuntimeGeneration(
         prefix: URL(fileURLWithPath: "/runtime", isDirectory: true))
 
-    #expect(installation.compositor.path == "/runtime/bin/NucleusCompositor")
-    #expect(installation.shell.path == "/runtime/bin/NucleusShell")
-    #expect(installation.controlCLI.path == "/runtime/bin/nucleus")
+    #expect(runtime.compositor.path == "/runtime/bin/NucleusCompositor")
+    #expect(runtime.shell.path == "/runtime/bin/NucleusShell")
+    #expect(runtime.controlCLI.path == "/runtime/bin/nucleus")
     #expect(
-        installation.configService.path
+        runtime.configService.path
             == "/runtime/libexec/NucleusConfigService")
     #expect(
-        installation.controlService.path
+        runtime.controlService.path
             == "/runtime/libexec/NucleusControlService")
     #expect(
-        installation.sessionSupervisor.path
+        runtime.sessionSupervisor.path
             == "/runtime/libexec/NucleusSessionSupervisor")
     #expect(
-        installation.pamHelper.path
+        runtime.pamHelper.path
             == "/runtime/libexec/NucleusShellPamHelper")
 }
 #endif

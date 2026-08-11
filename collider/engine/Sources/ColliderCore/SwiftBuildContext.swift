@@ -245,6 +245,8 @@ public struct SwiftBuildContext: Hashable, Sendable {
 
 /// The shared construction contract for SwiftPM-backed task declarations.
 public struct SwiftPMInvocation: Hashable, Sendable {
+    public static let ociSwiftSDKDirectory = FilePath("/swift-sdks")
+
     public let context: SwiftBuildContext
     public let scratchPath: FilePath
     public let swiftExecutable: CommandSpec.Executable
@@ -499,6 +501,11 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             arguments += ["--triple", triple]
         }
         if case .swiftSDK(let name, let targetTriple) = context.target {
+            if case .oci = context.execution {
+                arguments += [
+                    "--swift-sdks-path", Self.ociSwiftSDKDirectory.string,
+                ]
+            }
             arguments += ["--swift-sdk", name, "--triple", targetTriple]
         }
         for toolset in context.toolsets {

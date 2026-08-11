@@ -3,13 +3,13 @@
   "archives": [
     {
       "name": "swift-arm64.tar.gz",
-      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz",
-      "sha256": "0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34"
+      "url": "https://download.swift.org/development/ubuntu2604-aarch64/swift-DEVELOPMENT-SNAPSHOT-2026-08-08-a/swift-DEVELOPMENT-SNAPSHOT-2026-08-08-a-ubuntu26.04-aarch64.tar.gz",
+      "sha256": "faa0928cc0298c985c5cfcd457be5939bc8b52ec8499c79a3f611cfcb1f3d463"
     },
     {
       "name": "swift-amd64.tar.gz",
-      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz",
-      "sha256": "05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5"
+      "url": "https://download.swift.org/development/ubuntu2604/swift-DEVELOPMENT-SNAPSHOT-2026-08-08-a/swift-DEVELOPMENT-SNAPSHOT-2026-08-08-a-ubuntu26.04.tar.gz",
+      "sha256": "9dd4b8ff559d46f9dbd6e9daa89455cd7c0a5aa96b223b75e30a19e41601261b"
     },
     {
       "name": "cmake-arm64.tar.gz",

@@ -22,9 +22,10 @@ public func androidPersistentDataMountPoint(instance: URL) -> URL {
 }
 
 public func androidLXCPrimaryFailure(logFile: URL) -> String? {
-    guard let contents = try? String(
-        contentsOf: logFile,
-        encoding: .utf8)
+    guard
+        let contents = try? String(
+            contentsOf: logFile,
+            encoding: .utf8)
     else { return nil }
     let lines = contents.split(separator: "\n").map(String.init)
     if let hookLoaderFailure = lines.first(where: {
@@ -69,17 +70,13 @@ public func androidRuntimeContainerNames(
 public func isNucleusAndroidRuntimeContainerName(
     _ name: String
 ) -> Bool {
-    for prefix in [
-        "nucleus-android-runtime-",
-        "nucleus-framework-",
-    ] where name.hasPrefix(prefix) {
-        let identifier = name.dropFirst(prefix.count)
-        return !identifier.isEmpty
-            && identifier.allSatisfy {
-                $0.isASCII && $0.isNumber
-            }
-    }
-    return false
+    let prefix = "nucleus-android-runtime-"
+    guard name.hasPrefix(prefix) else { return false }
+    let identifier = name.dropFirst(prefix.count)
+    return !identifier.isEmpty
+        && identifier.allSatisfy {
+            $0.isASCII && $0.isNumber
+        }
 }
 
 public func androidRuntimeMountDiscoveryArguments(

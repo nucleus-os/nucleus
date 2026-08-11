@@ -45,8 +45,8 @@ extension ComponentRegistry {
             seccompPolicy: context.layout.androidRuntime.appending(
                 "container/nucleus-android.seccomp"),
             environment: context.taskEnvironment)
-        let shellConfiguration = try shellRuntimeInstallConfiguration(
-            prefix: context.layout.installPrefix,
+        let shellConfiguration = try shellRuntimePublicationConfiguration(
+            prefix: context.layout.developmentRuntimeCurrent,
             selection: RuntimeBuildSelection())
         let catalog = try componentCatalog(
             hostAugmentation: .linux(
@@ -62,12 +62,12 @@ extension ComponentRegistry {
             controls: controls)
     }
 
-    func installSession(
+    func publishDevelopmentRuntime(
         prefix: FilePath,
         selection: RuntimeBuildSelection,
         controls: TaskControls = TaskControls()
     ) async throws {
-        let configuration = try shellRuntimeInstallConfiguration(
+        let configuration = try shellRuntimePublicationConfiguration(
             prefix: prefix,
             selection: selection)
         let catalog = try componentCatalog(

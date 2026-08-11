@@ -139,6 +139,9 @@ private func executeWithSwiftPM(
     #expect(
         container.task.action?.requirements.networkAccess
             == ActionNetworkAccess.none)
+    #expect(
+        container.task.action?.requirements.effects.contains(
+            ActionEffect(.readWrite, scope: .scratch(scratch))) == true)
     #expect(container.prerequisites.contains(host.task.id))
     let execution = try invocation.ociExecution(
         arguments: ["build"],

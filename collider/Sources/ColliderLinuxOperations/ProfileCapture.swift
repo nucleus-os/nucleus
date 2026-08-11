@@ -9,7 +9,7 @@ struct ProfileCapture {
 
     func run(
         options: RunOptions,
-        installation: RuntimeInstallation,
+        runtime: DevelopmentRuntimeGeneration,
         environment configuredEnvironment: [String: String],
         sessionLog: URL?
     ) async throws {
@@ -52,7 +52,7 @@ struct ProfileCapture {
         try writeMetadata(
             options,
             port: port,
-            binary: installation.compositor,
+            binary: runtime.compositor,
             directory: runDirectory)
 
         var environment = configuredEnvironment
@@ -68,10 +68,10 @@ struct ProfileCapture {
         }
         sessionArguments +=
             [
-                "--", installation.compositor.path,
+                "--", runtime.compositor.path,
             ] + options.compositorArguments
         try await context.withRunningCommand(
-            installation.session.path,
+            runtime.session.path,
             sessionArguments,
             directory: compositor,
             environmentOverrides: runtimeEnvironment,

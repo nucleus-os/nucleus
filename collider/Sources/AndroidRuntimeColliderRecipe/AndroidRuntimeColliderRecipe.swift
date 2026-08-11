@@ -1225,12 +1225,11 @@ private func gfxstreamExecution(
         intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
         resourceLimits: .parallelBuild,
         containerEnvironment: [
-            "CC": "clang",
+            "CC": "/usr/bin/clang",
             "CCACHE_DIR": "/ccache",
-            "CXX": "clang++",
+            "CXX": "/usr/bin/clang++",
             "CXXFLAGS": "-stdlib=libc++",
             "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld",
-            "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
             "PKG_CONFIG_LIBDIR":
                 "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
         ],

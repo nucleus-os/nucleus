@@ -27,6 +27,133 @@ package enum AndroidRuntimeBridgeMessageKind:
     case closePresentation
     case taskChanged
     case taskVanished
+    case clipboardChanged
+    case setClipboard
+    case replaceNotifications
+    case dismissNotification
+    case activateNotification
+}
+
+package enum AndroidClipboardSource: String, Codable, Equatable, Sendable {
+    case android
+    case shell
+}
+
+package struct AndroidClipboardUpdate: Codable, Equatable, Sendable {
+    package static let maximumTextBytes = 128 * 1_024
+
+    package let source: AndroidClipboardSource
+    package let generation: UInt64
+    package let text: String?
+
+    package init(
+        source: AndroidClipboardSource,
+        generation: UInt64,
+        text: String?
+    ) throws {
+        self.source = source
+        self.generation = generation
+        self.text = text
+        try validate()
+    }
+
+    package func validate() throws {
+        guard generation > 0,
+            text?.utf8.count ?? 0 <= Self.maximumTextBytes,
+            !(text?.contains("\0") ?? false)
+        else {
+            throw AndroidRuntimeFailure("invalid Android clipboard update")
+        }
+    }
+}
+
+package struct AndroidNotificationAction: Codable, Equatable, Sendable {
+    package let id: String
+    package let title: String
+
+    package func validate() throws {
+        guard AndroidRuntimeBridgeEnvelope.validIdentifier(id, maximumBytes: 1_024),
+            AndroidRuntimeBridgeEnvelope.validIdentifier(title, maximumBytes: 4_096)
+        else {
+            throw AndroidRuntimeFailure("invalid Android notification action")
+        }
+    }
+}
+
+package enum AndroidNotificationUrgency: String, Codable, Equatable, Sendable {
+    case low
+    case normal
+    case critical
+}
+
+package struct AndroidNotificationProgress: Codable, Equatable, Sendable {
+    package let value: UInt64
+    package let total: UInt64
+
+    package func validate() throws {
+        guard total > 0, value <= total else {
+            throw AndroidRuntimeFailure("invalid Android notification progress")
+        }
+    }
+}
+
+package struct AndroidNotification: Codable, Equatable, Sendable {
+    package let id: String
+    package let packageName: String
+    package let applicationName: String
+    package let title: String
+    package let body: String
+    package let iconDigest: String?
+    package let urgency: AndroidNotificationUrgency
+    package let progress: AndroidNotificationProgress?
+    package let hasDefaultAction: Bool
+    package let actions: [AndroidNotificationAction]
+
+    package func validate() throws {
+        guard AndroidRuntimeBridgeEnvelope.validIdentifier(id, maximumBytes: 4_096),
+            AndroidRuntimeBridgeEnvelope.validActivityField(packageName),
+            AndroidRuntimeBridgeEnvelope.validActivityField(applicationName),
+            AndroidRuntimeBridgeEnvelope.validText(title, maximumBytes: 16_384),
+            body.utf8.count <= 64 * 1_024,
+            !body.contains("\0"),
+            iconDigest.map(AndroidRuntimeBridgeEnvelope.validDigest) ?? true,
+            actions.count <= 16,
+            Set(actions.map(\.id)).count == actions.count
+        else {
+            throw AndroidRuntimeFailure("invalid Android notification")
+        }
+        try progress?.validate()
+        try actions.forEach { try $0.validate() }
+    }
+}
+
+package struct AndroidNotificationCommand: Codable, Equatable, Sendable {
+    package let notificationID: String
+    package let actionID: String?
+    package let activationToken: String?
+    package let requestID: String?
+    package let presentationID: UInt64?
+
+    package func validate() throws {
+        guard
+            AndroidRuntimeBridgeEnvelope.validIdentifier(
+                notificationID,
+                maximumBytes: 4_096),
+            actionID.map({
+                AndroidRuntimeBridgeEnvelope.validIdentifier($0, maximumBytes: 1_024)
+            }) ?? true,
+            activationToken.map({
+                AndroidRuntimeBridgeEnvelope.validIdentifier($0, maximumBytes: 4_096)
+            }) ?? true,
+            requestID.map({
+                AndroidRuntimeBridgeEnvelope.validIdentifier($0, maximumBytes: 128)
+            }) ?? true,
+            (requestID == nil) == (presentationID == nil),
+            presentationID.map({ $0 > 0 }) ?? true
+        else {
+            throw AndroidRuntimeFailure("invalid Android notification command")
+        }
+    }
 }
 
 package struct AndroidActivityLaunchCommand: Codable, Equatable, Sendable {
@@ -419,6 +546,9 @@ package struct AndroidRuntimeBridgeEnvelope:
     package let presentationClose: AndroidPresentationCloseCommand?
     package let taskState: AndroidTaskState?
     package let vanishedTask: AndroidTaskVanished?
+    package let clipboardUpdate: AndroidClipboardUpdate?
+    package let notifications: [AndroidNotification]?
+    package let notificationCommand: AndroidNotificationCommand?
 
     package init(
         kind: AndroidRuntimeBridgeMessageKind,
@@ -436,7 +566,10 @@ package struct AndroidRuntimeBridgeEnvelope:
         activityLaunchResult: AndroidActivityLaunchResult? = nil,
         presentationClose: AndroidPresentationCloseCommand? = nil,
         taskState: AndroidTaskState? = nil,
-        vanishedTask: AndroidTaskVanished? = nil
+        vanishedTask: AndroidTaskVanished? = nil,
+        clipboardUpdate: AndroidClipboardUpdate? = nil,
+        notifications: [AndroidNotification]? = nil,
+        notificationCommand: AndroidNotificationCommand? = nil
     ) throws {
         self.kind = kind
         self.generation = generation
@@ -454,6 +587,9 @@ package struct AndroidRuntimeBridgeEnvelope:
         self.presentationClose = presentationClose
         self.taskState = taskState
         self.vanishedTask = vanishedTask
+        self.clipboardUpdate = clipboardUpdate
+        self.notifications = notifications
+        self.notificationCommand = notificationCommand
         try validate()
     }
 
@@ -535,6 +671,30 @@ package struct AndroidRuntimeBridgeEnvelope:
         else {
             throw AndroidRuntimeFailure(
                 "Android input-service error is invalid")
+        }
+        if let clipboardUpdate {
+            guard kind == .clipboardChanged || kind == .setClipboard else {
+                throw AndroidRuntimeFailure(
+                    "Android clipboard payload has the wrong message kind")
+            }
+            try clipboardUpdate.validate()
+        }
+        if let notifications {
+            guard kind == .replaceNotifications,
+                notifications.count <= 4_096,
+                Set(notifications.map(\.id)).count == notifications.count
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android notifications have the wrong message kind")
+            }
+            try notifications.forEach { try $0.validate() }
+        }
+        if let notificationCommand {
+            guard kind == .dismissNotification || kind == .activateNotification else {
+                throw AndroidRuntimeFailure(
+                    "Android notification command has the wrong message kind")
+            }
+            try notificationCommand.validate()
         }
         switch kind {
         case .bridgeHello:
@@ -825,6 +985,82 @@ package struct AndroidRuntimeBridgeEnvelope:
                     "invalid vanished Android task update")
             }
             try vanishedTask?.validate()
+        case .clipboardChanged, .setClipboard:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil,
+                let clipboardUpdate,
+                clipboardUpdate.source
+                    == (kind == .clipboardChanged ? .android : .shell)
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android clipboard message")
+            }
+        case .replaceNotifications:
+            guard generation != nil,
+                userUnlocked == true,
+                userSerial != nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil,
+                clipboardUpdate == nil,
+                notifications != nil,
+                notificationCommand == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android notification snapshot")
+            }
+        case .dismissNotification, .activateNotification:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                packageName == nil,
+                activities == nil,
+                iconAsset == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil,
+                activityLaunch == nil,
+                activityLaunchResult == nil,
+                presentationClose == nil,
+                taskState == nil,
+                vanishedTask == nil,
+                clipboardUpdate == nil,
+                notifications == nil,
+                let notificationCommand,
+                kind == .activateNotification
+                    ? notificationCommand.requestID != nil
+                        && notificationCommand.presentationID != nil
+                    : notificationCommand.actionID == nil
+                        && notificationCommand.activationToken == nil
+                        && notificationCommand.requestID == nil
+                        && notificationCommand.presentationID == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android notification command")
+            }
         }
     }
 
@@ -843,7 +1079,14 @@ package struct AndroidRuntimeBridgeEnvelope:
             && !value.contains("\0")
     }
 
-    private static func validDigest(_ value: String) -> Bool {
+    fileprivate static func validText(
+        _ value: String,
+        maximumBytes: Int
+    ) -> Bool {
+        value.utf8.count <= maximumBytes && !value.contains("\0")
+    }
+
+    fileprivate static func validDigest(_ value: String) -> Bool {
         value.count == 64
             && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
@@ -873,6 +1116,11 @@ package enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
         update: AndroidCursorShapeUpdate)
     case taskChanged(generation: String, task: AndroidTaskState)
     case taskVanished(generation: String, task: AndroidTaskVanished)
+    case clipboardChanged(generation: String, update: AndroidClipboardUpdate)
+    case notificationsReplaced(
+        generation: String,
+        userSerial: Int64,
+        notifications: [AndroidNotification])
     case disconnected(generation: String)
 }
 
@@ -920,6 +1168,87 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
         }
     }
 
+    package func setClipboard(_ update: AndroidClipboardUpdate) throws {
+        guard update.source == .shell else {
+            throw AndroidRuntimeFailure(
+                "Android clipboard command must originate from the shell")
+        }
+        try state.withLock { state in
+            guard let connection = state.connection else {
+                throw AndroidRuntimeFailure(
+                    "Android runtime bridge is not connected")
+            }
+            try send(
+                AndroidRuntimeBridgeEnvelope(
+                    kind: .setClipboard,
+                    generation: generation,
+                    clipboardUpdate: update),
+                over: connection)
+        }
+    }
+
+    package func dismissNotification(_ notificationID: String) throws {
+        try sendNotificationCommand(
+            kind: .dismissNotification,
+            command: AndroidNotificationCommand(
+                notificationID: notificationID,
+                actionID: nil,
+                activationToken: nil,
+                requestID: nil,
+                presentationID: nil))
+    }
+
+    package func activateNotification(
+        _ notificationID: String,
+        actionID: String?,
+        activationToken: String?,
+        presentationID: UInt64
+    ) async -> AndroidActivityLaunchResult {
+        let requestID = UUID().uuidString.lowercased()
+        let command = AndroidNotificationCommand(
+            notificationID: notificationID,
+            actionID: actionID,
+            activationToken: activationToken,
+            requestID: requestID,
+            presentationID: presentationID)
+        let envelope: AndroidRuntimeBridgeEnvelope
+        do {
+            try command.validate()
+            envelope = try AndroidRuntimeBridgeEnvelope(
+                kind: .activateNotification,
+                generation: generation,
+                notificationCommand: command)
+        } catch {
+            return failedLaunch(
+                requestID: requestID,
+                presentationID: presentationID,
+                message: String(describing: error))
+        }
+        return await waitForLaunch(
+            requestID: requestID,
+            presentationID: presentationID,
+            envelope: envelope)
+    }
+
+    private func sendNotificationCommand(
+        kind: AndroidRuntimeBridgeMessageKind,
+        command: AndroidNotificationCommand
+    ) throws {
+        try command.validate()
+        try state.withLock { state in
+            guard let connection = state.connection else {
+                throw AndroidRuntimeFailure(
+                    "Android runtime bridge is not connected")
+            }
+            try send(
+                AndroidRuntimeBridgeEnvelope(
+                    kind: kind,
+                    generation: generation,
+                    notificationCommand: command),
+                over: connection)
+        }
+    }
+
     package func close(presentationID: UInt64) throws {
         let command = try AndroidPresentationCloseCommand(
             presentationID: presentationID)
@@ -945,6 +1274,7 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
     ) async -> AndroidActivityLaunchResult {
         let requestID = UUID().uuidString.lowercased()
         let command: AndroidActivityLaunchCommand
+        let envelope: AndroidRuntimeBridgeEnvelope
         do {
             command = try AndroidActivityLaunchCommand(
                 requestID: requestID,
@@ -952,17 +1282,26 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                 packageName: packageName,
                 activityName: activityName,
                 activationToken: activationToken)
+            envelope = try AndroidRuntimeBridgeEnvelope(
+                kind: .launchActivity,
+                generation: generation,
+                activityLaunch: command)
         } catch {
             return failedLaunch(
                 requestID: requestID,
                 presentationID: presentationID,
                 message: String(describing: error))
         }
-        return await waitForLaunch(command)
+        return await waitForLaunch(
+            requestID: command.requestID,
+            presentationID: command.presentationID,
+            envelope: envelope)
     }
 
     private func waitForLaunch(
-        _ command: AndroidActivityLaunchCommand
+        requestID: String,
+        presentationID: UInt64,
+        envelope: AndroidRuntimeBridgeEnvelope
     ) async -> AndroidActivityLaunchResult {
         await withCheckedContinuation { continuation in
             do {
@@ -971,19 +1310,14 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                         throw AndroidRuntimeFailure(
                             "Android runtime bridge is not connected")
                     }
-                    state.pendingLaunches[command.requestID] = PendingLaunch(
-                        presentationID: command.presentationID,
+                    state.pendingLaunches[requestID] = PendingLaunch(
+                        presentationID: presentationID,
                         continuation: continuation)
                     do {
-                        try send(
-                            AndroidRuntimeBridgeEnvelope(
-                                kind: .launchActivity,
-                                generation: generation,
-                                activityLaunch: command),
-                            over: connection)
+                        try send(envelope, over: connection)
                     } catch {
                         state.pendingLaunches.removeValue(
-                            forKey: command.requestID)
+                            forKey: requestID)
                         throw error
                     }
                 }
@@ -992,15 +1326,15 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     guard let self else { return }
                     self.completeLaunch(
                         self.failedLaunch(
-                            requestID: command.requestID,
-                            presentationID: command.presentationID,
+                            requestID: requestID,
+                            presentationID: presentationID,
                             message: "Android activity launch timed out"))
                 }
             } catch {
                 continuation.resume(
                     returning: failedLaunch(
-                        requestID: command.requestID,
-                        presentationID: command.presentationID,
+                        requestID: requestID,
+                        presentationID: presentationID,
                         message: String(describing: error)))
             }
         }
@@ -1237,8 +1571,31 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     .taskVanished(
                         generation: generation,
                         task: task))
+            case .clipboardChanged:
+                guard let update = envelope.clipboardUpdate else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge omitted clipboard state")
+                }
+                await onEvent(
+                    .clipboardChanged(
+                        generation: generation,
+                        update: update))
+            case .replaceNotifications:
+                guard let serial = unlockedUserSerial,
+                    envelope.userSerial == serial,
+                    let notifications = envelope.notifications
+                else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge published notifications before unlock")
+                }
+                await onEvent(
+                    .notificationsReplaced(
+                        generation: generation,
+                        userSerial: serial,
+                        notifications: notifications))
             case .bridgeHello, .brokerHello, .inputEvent, .launchActivity,
-                .closePresentation:
+                .closePresentation, .setClipboard, .dismissNotification,
+                .activateNotification:
                 throw AndroidRuntimeFailure(
                     "unexpected Android bridge handshake message")
             }

@@ -34,7 +34,9 @@ package struct WorkspaceLayout: Sendable {
     }
     var benchmarkBuilds: FilePath { state.appending("benchmarks") }
     var nativeSanitizerBuilds: FilePath { state.appending("native-sanitizers") }
-    package var installPrefix: FilePath { root.appending(".install") }
+    package var developmentRuntimeCurrent: FilePath {
+        runtimeState.appending("development-runtime/current")
+    }
 
     var swiftSDK: FilePath { root.appending("swift-sdk") }
     var swiftTracy: FilePath { root.appending("swift-tracy") }

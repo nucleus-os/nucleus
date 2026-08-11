@@ -326,6 +326,8 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(operation.containerEnvironment["PROJECT_PRIVATE"] == nil)
     #expect(invocation.executionScratchPath.string.hasPrefix("/swiftpm-workspace/"))
     #expect(operation.command.contains(invocation.executionScratchPath.string))
+    #expect(operation.command.contains("--swift-sdks-path"))
+    #expect(operation.command.contains(SwiftPMInvocation.ociSwiftSDKDirectory.string))
     #expect(
         Set(operation.persistentWorkspaceMounts.map(\.target))
             == ["/swiftpm-workspace", "/ccache"])

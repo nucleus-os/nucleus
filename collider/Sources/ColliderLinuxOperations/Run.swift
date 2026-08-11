@@ -138,16 +138,16 @@ struct RunCommand {
             environment: context.environment)
         try requireLaunchableSeatEnvironment()
 
-        let prefix = URL(context.layout.installPrefix)
-        let installer = RuntimeInstaller()
-        let installation: RuntimeInstallation
+        let prefix = URL(context.layout.developmentRuntimeCurrent)
+        let store = DevelopmentRuntimeStore()
+        let runtime: DevelopmentRuntimeGeneration
         if options.build {
-            try await ComponentRegistry(context: context).installSession(
+            try await ComponentRegistry(context: context).publishDevelopmentRuntime(
                 prefix: FilePath(prefix),
                 selection: options.buildOptions)
-            installation = RuntimeInstallation(prefix: prefix)
+            runtime = DevelopmentRuntimeGeneration(prefix: prefix)
         } else {
-            installation = try installer.existingSession(
+            runtime = try store.existingGeneration(
                 prefix: prefix,
                 options: options.buildOptions)
         }
@@ -168,7 +168,7 @@ struct RunCommand {
             try await authenticateAndroidRuntimeIfNeeded(options)
             try await ProfileCapture(context: context).run(
                 options: options,
-                installation: installation,
+                runtime: runtime,
                 environment: environment,
                 sessionLog: environment["NUCLEUS_RUN_LOG"].map {
                     URL(fileURLWithPath: $0)
@@ -189,13 +189,13 @@ struct RunCommand {
                     "--num-callers=40",
                     "--track-origins=yes",
                     "--leak-check=no",
-                    installation.compositor.path,
+                    runtime.compositor.path,
                 ] + options.compositorArguments
             try context.console.diagnostic(
                 "valgrind log: \(CommandConsole.render(path: log.path))")
         } else {
             compositorCommand =
-                [installation.compositor.path]
+                [runtime.compositor.path]
                 + options.compositorArguments
         }
         try await authenticateAndroidRuntimeIfNeeded(options)
@@ -208,7 +208,7 @@ struct RunCommand {
         sessionArguments += ["--"] + compositorCommand
         try await runSession(
             options: options,
-            installation: installation,
+            runtime: runtime,
             arguments: sessionArguments,
             environment: environment)
     }
@@ -292,7 +292,7 @@ struct RunCommand {
 
     private func runSession(
         options: RunOptions,
-        installation: RuntimeInstallation,
+        runtime: DevelopmentRuntimeGeneration,
         arguments: [String],
         environment: [String: String]
     ) async throws {
@@ -303,7 +303,7 @@ struct RunCommand {
         }
         guard options.android else {
             try await context.run(
-                installation.session.path,
+                runtime.session.path,
                 arguments,
                 environmentOverrides: environment,
                 timeoutSeconds: options.seconds,
@@ -327,7 +327,7 @@ struct RunCommand {
             withIntermediateDirectories: true)
         let kittyLog = diagnostics.appendingPathComponent("kitty.log")
         try await context.withRunningCommand(
-            installation.session.path,
+            runtime.session.path,
             arguments,
             environmentOverrides: environment,
             terminal: true,
@@ -355,7 +355,7 @@ struct RunCommand {
                         || result.timedOut && options.seconds != nil
                 else {
                     throw WorkspaceFailure.process(
-                        [installation.session.path] + arguments,
+                        [runtime.session.path] + arguments,
                         result.status)
                 }
             }

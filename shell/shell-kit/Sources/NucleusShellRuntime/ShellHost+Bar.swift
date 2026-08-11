@@ -48,11 +48,21 @@ extension ShellHost {
         if let runtimePath = ProcessInfo.processInfo.environment[
             "NUCLEUS_SESSION_RUNTIME_DIR"
         ], runtimePath.hasPrefix("/") {
+            let runtimeDirectory = URL(
+                fileURLWithPath: runtimePath,
+                isDirectory: true)
             remoteApplicationProviders = RemoteApplicationProviderService(
                 launcher: actionDispatcher.launcher,
-                sessionRuntimeDirectory: URL(
-                    fileURLWithPath: runtimePath,
-                    isDirectory: true))
+                sessionRuntimeDirectory: runtimeDirectory)
+            if let pasteboard = nativePublicationContext?.semanticContext
+                .services.pasteboard
+            {
+                remotePlatformServices = try? RemotePlatformService(
+                    providerID: "android",
+                    pasteboard: pasteboard,
+                    notifications: notifications,
+                    sessionRuntimeDirectory: runtimeDirectory)
+            }
         }
         guard let bus = try? DBusConnection(.system) else {
             writeErr("shell: no system bus; running without system services")

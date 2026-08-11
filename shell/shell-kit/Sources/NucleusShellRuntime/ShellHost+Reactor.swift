@@ -18,6 +18,7 @@ extension ShellHost {
         nowNanoseconds: UInt64
     ) -> ShellReactorWaitPlan {
         remoteApplicationProviders?.scan(nowNanoseconds: nowNanoseconds)
+        remotePlatformServices?.scan(nowNanoseconds: nowNanoseconds)
         if renderWorkDue, nextPresentationDeadlineNs == nil {
             nextPresentationDeadlineNs = nowNanoseconds
         }
@@ -88,6 +89,14 @@ extension ShellHost {
                     events: Int16(POLLIN),
                     mode: .multishot))
         }
+        if let descriptor = remotePlatformServices?.pollDescriptor {
+            interests.append(
+                LinuxReactorInterest(
+                    token: Self.reactorToken(.platformService),
+                    fileDescriptor: descriptor.fileDescriptor,
+                    events: Int16(POLLIN),
+                    mode: .multishot))
+        }
         for descriptor in applicationProviderDescriptors {
             interests.append(
                 LinuxReactorInterest(
@@ -101,6 +110,10 @@ extension ShellHost {
         deadlines.add(
             relativeNanoseconds:
                 remoteApplicationProviders?.nanosecondsUntilScan(
+                    nowNanoseconds: nowNanoseconds))
+        deadlines.add(
+            relativeNanoseconds:
+                remotePlatformServices?.nanosecondsUntilScan(
                     nowNanoseconds: nowNanoseconds))
         for descriptor in authDescriptors {
             interests.append(
@@ -325,6 +338,15 @@ extension ShellHost {
                 {
                     outcome.hadHostEvent = true
                     requestRender(nativeSceneChanged: true)
+                }
+            case .platformService:
+                if result.isTerminal {
+                    remotePlatformServices?.disconnect()
+                    outcome.hadHostEvent = true
+                } else if result.isReadable,
+                    remotePlatformServices?.process() == true
+                {
+                    outcome.hadHostEvent = true
                 }
             }
             if outcome.shouldStop { break }

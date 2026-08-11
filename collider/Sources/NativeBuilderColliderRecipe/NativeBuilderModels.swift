@@ -46,10 +46,6 @@ package struct NativeLinuxTarget: Hashable, Sendable {
             + targetTriple + "/" + NucleusLinuxABI.sdkDirectoryName
     }
 
-    package var containerRuntimeLibraryPath: String {
-        "\(containerSwiftSDKRoot)/usr/lib/\(gnuArchitecture):"
-            + "\(containerSwiftSDKRoot)/lib/\(gnuArchitecture)"
-    }
 }
 
 /// The rootless native builder image and its host-owned mutable caches. This

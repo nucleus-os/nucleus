@@ -5,6 +5,7 @@
     android:sharedUserId="android.uid.nucleus_runtime">
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.READ_CLIPBOARD_IN_BACKGROUND" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY" />
     <uses-permission android:name="android.permission.ADD_TRUSTED_DISPLAY" />
@@ -32,5 +33,15 @@
                 <action android:name="android.intent.action.USER_UNLOCKED" />
             </intent-filter>
         </receiver>
+        <service
+            android:name=".NucleusNotificationListenerService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:label="Nucleus Notifications"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

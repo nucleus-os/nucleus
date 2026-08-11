@@ -56,6 +56,8 @@ extension ShellHost {
         await reactor.shutdown()
         remoteApplicationProviders?.shutdown()
         remoteApplicationProviders = nil
+        remotePlatformServices?.shutdown()
+        remotePlatformServices = nil
         environmentAdapter?.stop()
         environmentAdapter = nil
         dragDropAdapter?.shutdown()

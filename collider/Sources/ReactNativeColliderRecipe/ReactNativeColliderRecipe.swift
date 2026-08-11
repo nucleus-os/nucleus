@@ -985,8 +985,8 @@ private func commonCMakeArguments(
         "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
         "-DCMAKE_SYSTEM_NAME=Linux",
         "-DCMAKE_SYSTEM_PROCESSOR=\(target.architecture.rawValue)",
-        "-DCMAKE_C_COMPILER=clang",
-        "-DCMAKE_CXX_COMPILER=clang++",
+        "-DCMAKE_C_COMPILER=/usr/bin/clang",
+        "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
         "-DCMAKE_C_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_CXX_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_ASM_COMPILER_TARGET=\(target.targetTriple)",
@@ -1133,7 +1133,6 @@ private func nativeContainerOperation(
             "CCACHE_DIR": "/ccache",
             "PKG_CONFIG_LIBDIR":
                 "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
-            "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
         ],
         command: ["react-native"] + command,
         environment: environment,

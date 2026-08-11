@@ -46,7 +46,7 @@ plan's package-manager boundary.
 
 ## Current State
 
-Collider currently exposes three product installation surfaces:
+Collider currently retains three transitional product installation surfaces:
 
 - `collider install session` assembles a generation below the checkout-local
   `.install` prefix;
@@ -55,8 +55,11 @@ Collider currently exposes three product installation surfaces:
 - `collider install android-addon` validates and mutates an add-on store directly
   on Linux.
 
-`collider run` calls the session installation graph before launching a developer
-session. This is development staging presented as product installation.
+`collider run` now publishes or reuses the requested checkout-private development
+generation directly. Its active generation lives below
+`.nucleus/runtime/development-runtime`; no run workflow calls the transitional
+session install command. The shell recipe and runtime assembler describe runtime
+publication rather than installation.
 
 The Linux distribution portability work already provides the common relocatable
 runtime payload, explicit host dependency contract, content-addressed
@@ -121,6 +124,8 @@ package before repository metadata begins using it. Compromise recovery revokes
 the affected subkey through that same established trust path.
 
 ## Phase 1: Separate Development Staging from Installation
+
+Status: complete.
 
 Replace checkout-local product-installation terminology with a development
 runtime publication boundary. Give the staged generation a checkout-private

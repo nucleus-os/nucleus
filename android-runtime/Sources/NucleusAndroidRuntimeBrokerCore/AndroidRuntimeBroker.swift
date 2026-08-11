@@ -140,10 +140,19 @@ package func runAndroidRuntimeBroker<
         let applicationCatalog = try AndroidApplicationCatalogPublisher(
             server: applicationProvider,
             sessionRuntimeDirectory: configuration.sessionRuntimeDirectory)
+        let platformServices = try PlatformServicePublicationServer(
+            providerID: "android",
+            sessionRuntimeDirectory: configuration.sessionRuntimeDirectory,
+            expectedUserID: getuid())
         let applicationLaunches = AndroidApplicationLaunchCoordinator(
             catalog: applicationCatalog,
             bridge: bridge,
             presentationControlSocket: layout.presentationControlSocket.path)
+        let platformServiceCoordinator = AndroidPlatformServiceCoordinator(
+            server: platformServices,
+            bridge: bridge,
+            catalog: applicationCatalog,
+            applicationLaunches: applicationLaunches)
         try await session.recordRuntimeBridgeListener()
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -153,6 +162,7 @@ package func runAndroidRuntimeBroker<
                     }
                     await applicationLaunches.handle(event)
                     try? await applicationCatalog.handle(event)
+                    await platformServiceCoordinator.handle(event)
                     await recordRuntimeBridgeEvent(
                         event,
                         session: session)
@@ -161,6 +171,11 @@ package func runAndroidRuntimeBroker<
             group.addTask {
                 try await applicationProvider.run { request in
                     await applicationLaunches.launch(request)
+                }
+            }
+            group.addTask {
+                try await platformServices.run { command in
+                    await platformServiceCoordinator.handle(command)
                 }
             }
             group.addTask {
@@ -285,7 +300,8 @@ actor AndroidApplicationCatalogPublisher {
             try? server.publish(.replace([]))
             garbageCollectIcons()
         case .connected, .inputReady, .inputFailed, .userUnlocked,
-            .cursorShapeChanged, .taskChanged, .taskVanished:
+            .cursorShapeChanged, .taskChanged, .taskVanished,
+            .clipboardChanged, .notificationsReplaced:
             break
         }
     }
@@ -297,6 +313,14 @@ actor AndroidApplicationCatalogPublisher {
         return activities.values.first { activity in
             localID(for: key(for: activity), serial: userSerial) == launchID
         }
+    }
+
+    func iconDigest(forPackage packageName: String) -> String? {
+        activities.values
+            .filter { $0.packageName == packageName }
+            .compactMap(\.iconDigest)
+            .sorted()
+            .first
     }
 
     private func records() throws -> [ApplicationProviderRecord] {
@@ -414,21 +438,14 @@ private actor AndroidApplicationLaunchCoordinator {
         guard let activity = await catalog.activity(forLaunchID: request.launchID) else {
             return .failed("Android activity is no longer available")
         }
-        let presentationID: UInt64
-        do {
-            let control = try AndroidPresentationControlConnection.connect(
-                socketPath: presentationControlSocket)
-            try control.send(
-                .create(
-                    appID: "\(activity.packageName)/\(activity.activityName)",
-                    title: activity.label,
-                    width: 1_280,
-                    height: 720,
-                    activationToken: request.activationToken))
-            presentationID = try control.receiveReply().presentationID
-        } catch {
+        guard
+            let presentationID = createPresentation(
+                appID: "\(activity.packageName)/\(activity.activityName)",
+                title: activity.label,
+                activationToken: request.activationToken)
+        else {
             return .failed(
-                "Creating Android presentation failed: \(error)")
+                "Creating Android presentation failed")
         }
 
         launchingPresentationIDs.insert(presentationID)
@@ -438,6 +455,41 @@ private actor AndroidApplicationLaunchCoordinator {
             activityName: activity.activityName,
             activationToken: request.activationToken)
         launchingPresentationIDs.remove(presentationID)
+        return integrateLaunchResult(
+            result,
+            provisionalPresentationID: presentationID,
+            activationToken: request.activationToken)
+    }
+
+    func activateNotification(
+        _ notification: PlatformNotification,
+        activation: PlatformNotificationActivation
+    ) async {
+        guard
+            let presentationID = createPresentation(
+                appID: notification.applicationID,
+                title: notification.applicationName.isEmpty
+                    ? notification.title : notification.applicationName,
+                activationToken: activation.activationToken)
+        else { return }
+        launchingPresentationIDs.insert(presentationID)
+        let result = await bridge.activateNotification(
+            activation.notificationID,
+            actionID: activation.actionID,
+            activationToken: activation.activationToken,
+            presentationID: presentationID)
+        launchingPresentationIDs.remove(presentationID)
+        _ = integrateLaunchResult(
+            result,
+            provisionalPresentationID: presentationID,
+            activationToken: activation.activationToken)
+    }
+
+    private func integrateLaunchResult(
+        _ result: AndroidActivityLaunchResult,
+        provisionalPresentationID presentationID: UInt64,
+        activationToken: String?
+    ) -> ApplicationProviderLaunchResult {
         if retiredPresentationIDs.contains(presentationID) {
             if result.outcome == .created,
                 let actualPresentationID = result.presentationID
@@ -477,7 +529,7 @@ private actor AndroidApplicationLaunchCoordinator {
             presentations[existingPresentationID] = ManagedPresentation(
                 displayID: displayID,
                 taskIDs: [taskID])
-            if let token = request.activationToken {
+            if let token = activationToken {
                 activatePresentation(
                     existingPresentationID,
                     token: token)
@@ -487,6 +539,27 @@ private actor AndroidApplicationLaunchCoordinator {
             closePresentation(presentationID)
             return .failed(
                 result.failure ?? "Android rejected activity launch")
+        }
+    }
+
+    private func createPresentation(
+        appID: String,
+        title: String,
+        activationToken: String?
+    ) -> UInt64? {
+        do {
+            let control = try AndroidPresentationControlConnection.connect(
+                socketPath: presentationControlSocket)
+            try control.send(
+                .create(
+                    appID: appID,
+                    title: title,
+                    width: 1_280,
+                    height: 720,
+                    activationToken: activationToken))
+            return try control.receiveReply().presentationID
+        } catch {
+            return nil
         }
     }
 
@@ -519,7 +592,7 @@ private actor AndroidApplicationLaunchCoordinator {
             }
         case .connected, .inputReady, .inputFailed, .userUnlocked, .userLocked,
             .activitiesReplaced, .packageActivitiesReplaced, .iconAsset,
-            .cursorShapeChanged:
+            .cursorShapeChanged, .clipboardChanged, .notificationsReplaced:
             break
         }
     }
@@ -560,6 +633,136 @@ private actor AndroidApplicationLaunchCoordinator {
         } catch {
             // The task remains usable even if a stale activation token is rejected.
         }
+    }
+}
+
+private actor AndroidPlatformServiceCoordinator {
+    private let server: PlatformServicePublicationServer
+    private let bridge: AndroidRuntimeBridgeServer
+    private let catalog: AndroidApplicationCatalogPublisher
+    private let applicationLaunches: AndroidApplicationLaunchCoordinator
+    private var lastAndroidGeneration: UInt64 = 0
+    private var nextPublicationGeneration: UInt64 = 1
+    private var shellGeneration: UInt64 = 0
+    private var notifications: [String: PlatformNotification] = [:]
+
+    init(
+        server: PlatformServicePublicationServer,
+        bridge: AndroidRuntimeBridgeServer,
+        catalog: AndroidApplicationCatalogPublisher,
+        applicationLaunches: AndroidApplicationLaunchCoordinator
+    ) {
+        self.server = server
+        self.bridge = bridge
+        self.catalog = catalog
+        self.applicationLaunches = applicationLaunches
+    }
+
+    func handle(_ event: AndroidRuntimeBridgeEvent) async {
+        switch event {
+        case .clipboardChanged(_, let update):
+            guard update.source == .android,
+                update.generation > lastAndroidGeneration
+            else { return }
+            lastAndroidGeneration = update.generation
+            publishAndroidClipboard(update.text)
+        case .userLocked, .disconnected:
+            publishAndroidClipboard(nil)
+            notifications.removeAll(keepingCapacity: true)
+            try? server.publish(.notificationsReplace([]))
+        case .notificationsReplaced(_, _, let notifications):
+            var mapped: [PlatformNotification] = []
+            mapped.reserveCapacity(notifications.count)
+            for notification in notifications {
+                guard let value = await mapNotification(notification) else {
+                    return
+                }
+                mapped.append(value)
+            }
+            self.notifications = Dictionary(
+                uniqueKeysWithValues: mapped.map { ($0.id, $0) })
+            try? server.publish(.notificationsReplace(mapped))
+        case .connected, .inputReady, .inputFailed, .userUnlocked,
+            .activitiesReplaced, .packageActivitiesReplaced, .iconAsset,
+            .cursorShapeChanged, .taskChanged, .taskVanished:
+            break
+        }
+    }
+
+    func handle(_ command: PlatformServiceCommand) async {
+        switch command {
+        case .clipboard(let update):
+            guard update.sourceID == "shell",
+                update.generation > shellGeneration
+            else { return }
+            shellGeneration = update.generation
+            guard
+                let command = try? AndroidClipboardUpdate(
+                    source: .shell,
+                    generation: update.generation,
+                    text: update.text)
+            else { return }
+            try? bridge.setClipboard(command)
+        case .dismissNotification(let notificationID):
+            try? bridge.dismissNotification(notificationID)
+        case .activateNotification(let activation):
+            guard let notification = notifications[activation.notificationID]
+            else { return }
+            let actionAvailable =
+                if let actionID = activation.actionID {
+                    notification.actions.contains { $0.id == actionID }
+                } else {
+                    notification.hasDefaultAction
+                }
+            guard actionAvailable else { return }
+            await applicationLaunches.activateNotification(
+                notification,
+                activation: activation)
+        }
+    }
+
+    private func publishAndroidClipboard(_ text: String?) {
+        let generation = nextPublicationGeneration
+        nextPublicationGeneration &+= 1
+        precondition(
+            nextPublicationGeneration != 0,
+            "Android clipboard publication generation exhausted")
+        guard
+            let publication = try? PlatformClipboardUpdate(
+                sourceID: "android",
+                generation: generation,
+                text: text)
+        else { return }
+        try? server.publish(.clipboard(publication))
+    }
+
+    private func mapNotification(
+        _ notification: AndroidNotification
+    ) async -> PlatformNotification? {
+        try? PlatformNotification(
+            sourceID: "android",
+            id: notification.id,
+            applicationID: notification.packageName,
+            applicationName: notification.applicationName,
+            title: notification.title,
+            body: notification.body,
+            iconDigest: notification.iconDigest
+                ?? (await catalog.iconDigest(
+                    forPackage: notification.packageName)),
+            urgency: switch notification.urgency {
+            case .low: .low
+            case .normal: .normal
+            case .critical: .critical
+            },
+            progress: notification.progress.flatMap {
+                try? PlatformNotificationProgress(
+                    value: $0.value,
+                    total: $0.total)
+            },
+            hasDefaultAction: notification.hasDefaultAction,
+            actions: notification.actions.compactMap {
+                try? PlatformNotificationAction(id: $0.id, title: $0.title)
+            })
     }
 }
 
@@ -709,6 +912,22 @@ private func recordRuntimeBridgeEvent<
                 "generation": generation,
                 "presentationId": String(task.presentationID),
                 "taskId": String(task.taskID),
+            ])
+    case .clipboardChanged(let generation, let update):
+        try? await session.recordRuntimeBridgeStage(
+            "clipboard-changed",
+            fields: [
+                "generation": generation,
+                "clipboardGeneration": String(update.generation),
+                "hasText": String(update.text != nil),
+            ])
+    case .notificationsReplaced(let generation, let serial, let notifications):
+        try? await session.recordRuntimeBridgeStage(
+            "notifications-replaced",
+            fields: [
+                "generation": generation,
+                "userSerial": String(serial),
+                "count": String(notifications.count),
             ])
     case .disconnected(let generation):
         try? await session.recordRuntimeBridgeStage(

@@ -2,7 +2,7 @@ import AndroidRuntimeColliderRecipe
 import ShellColliderRecipe
 
 package struct HostCatalogAugmentation: Sendable {
-    package let shellConfiguration: ShellRuntimeInstallConfiguration?
+    package let shellConfiguration: ShellRuntimePublicationConfiguration?
     package let androidAddonConfiguration: AndroidAddonPackageConfiguration?
 
     package var exposesLinuxOperations: Bool {
@@ -14,7 +14,7 @@ package struct HostCatalogAugmentation: Sendable {
         androidAddonConfiguration: nil)
 
     package static func linux(
-        shellConfiguration: ShellRuntimeInstallConfiguration,
+        shellConfiguration: ShellRuntimePublicationConfiguration,
         androidAddonConfiguration: AndroidAddonPackageConfiguration? = nil
     ) -> HostCatalogAugmentation {
         HostCatalogAugmentation(

@@ -1,7 +1,7 @@
 import ColliderCore
 import SystemPackage
 
-public struct ShellRuntimeInstallConfiguration: RecipeConfiguration {
+public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
     public let swiftPM: SwiftPMInvocation
     public let prefix: FilePath
     public let generationsRoot: FilePath
@@ -48,9 +48,9 @@ public enum ShellColliderRecipe: ColliderComponent {
     ) throws -> ComponentDefinition {
         #if os(Linux)
         let configuration = try context.configuration(
-            ShellRuntimeInstallConfiguration.self,
+            ShellRuntimePublicationConfiguration.self,
             for: descriptor.id)
-        let task = try installTask(
+        let task = try publicationTask(
             configuration: configuration,
             repositoryRoot: context.repositoryRoot)
         let tracy = try tracyReceiversTask(in: context)
@@ -72,7 +72,7 @@ public enum ShellColliderRecipe: ColliderComponent {
                     cleanupPolicy: .automaticRetention,
                     activeGenerationLink: configuration.prefix,
                     rollbackGenerationCount: rollbackGenerationCount,
-                    retention: "the active runtime and two rollback generations remain installed"),
+                    retention: "the active runtime and two rollback generations remain reusable"),
                 StorageDeclaration(
                     id: "shell-package-manifest-generations",
                     owner: descriptor.id,
@@ -103,8 +103,8 @@ public enum ShellColliderRecipe: ColliderComponent {
     }
 
     #if os(Linux)
-    private static func installTask(
-        configuration: ShellRuntimeInstallConfiguration,
+    private static func publicationTask(
+        configuration: ShellRuntimePublicationConfiguration,
         repositoryRoot: FilePath
     ) throws -> TaskDeclaration {
         let products = [
@@ -138,10 +138,10 @@ public enum ShellColliderRecipe: ColliderComponent {
             inputs.append(.file(trustKey))
         }
         var builder = TaskBuilder(
-            id: TaskID(rawValue: "shell.install"),
+            id: TaskID(rawValue: "shell.publish-runtime"),
             component: descriptor.id)
         let _: ArtifactReference<PathArtifact> = try builder.output(
-            "active-installation",
+            "active-runtime-generation",
             path: configuration.prefix,
             validation: .symlinkTarget)
         let _: ArtifactReference<PathArtifact> = try builder.output(
@@ -152,11 +152,11 @@ public enum ShellColliderRecipe: ColliderComponent {
             swiftProducts: requirements,
             inputs: inputs,
             locks: [
-                .shared(configuration.generationsRoot.appending(".install.lock"))
+                .shared(configuration.generationsRoot.appending(".publication.lock"))
             ],
             action:
                 try AnyColliderAction(
-                    InstallRuntimeAction(configuration: configuration)))
+                    PublishRuntimeGenerationAction(configuration: configuration)))
     }
 
     private static func tracyReceiversTask(

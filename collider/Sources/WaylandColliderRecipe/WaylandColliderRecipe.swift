@@ -620,7 +620,6 @@ private func sourceGenerationExecution(
     command: [String],
     environment: [String: String]
 ) -> OCIExecution {
-    let target = NativeLinuxTarget(architecture: .arm64)
     return OCIExecution(
         executionPlatform: swiftOCI.executionPlatform,
         artifactTarget: swiftOCI.artifactTarget,
@@ -653,9 +652,7 @@ private func sourceGenerationExecution(
         intelBinaryTranslationPolicy: swiftOCI.intelBinaryTranslationPolicy,
         resourceLimits: swiftOCI.resourceLimits,
         containerEnvironment: [
-            "LD_LIBRARY_PATH":
-                target.containerSwiftSDKRoot + "/usr/lib/swift/linux:"
-                + target.containerRuntimeLibraryPath
+            "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux"
         ],
         command: ["wayland-generate"] + command,
         environment: environment,
@@ -750,11 +747,10 @@ private func nativeExecution(
             access: .readOnly),
     ]
     var containerEnvironment = [
-        "CC": "clang",
+        "CC": "/usr/bin/clang",
         "CCACHE_BASEDIR": "/src",
         "CCACHE_DIR": "/ccache",
         "CCACHE_LOGFILE": "/ccache/ccache.log",
-        "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
         "NUCLEUS_WAYLAND_SDK": target.architecture == .arm64 ? "/native-wayland" : "/sdk",
         "PKG_CONFIG_LIBDIR":
             "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",

@@ -1382,7 +1382,9 @@ let targets: [Target] = [
         ], path: "shell/shell-kit/Tests/NucleusShellLoopTests"),
     .testTarget(
         name: "NucleusShellServicesTests",
-        dependencies: ["NucleusShellServices", "NucleusConfig", "NucleusSessionProtocol"],
+        dependencies: [
+            "NucleusShellServices", "NucleusConfig", "NucleusSessionProtocol", "NucleusUI",
+        ],
         path: "shell/shell-kit/Tests/NucleusShellServicesTests"),
     .testTarget(
         name: "NucleusShellAuthTests",

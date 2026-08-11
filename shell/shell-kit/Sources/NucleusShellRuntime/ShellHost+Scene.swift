@@ -155,6 +155,9 @@ extension ShellHost {
                 client: client,
                 seat: seat,
                 pollSetDidChange: { [weak reactor] in reactor?.wake() },
+                selectionDidChange: { [weak self] in
+                    self?.remotePlatformServices?.nativeSelectionChanged()
+                },
                 diagnosticHandler: { [weak pasteboard] operation, failure in
                     pasteboard?.reportAdapterFailure(
                         failure,

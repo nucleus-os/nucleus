@@ -1193,8 +1193,8 @@ private func linuxGNArguments(_ target: NativeLinuxTarget) -> [String] {
         #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
         #"extra_asmflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)"]"#,
         #"extra_ldflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-fuse-ld=lld","-L/usr/lib/\#(target.gnuArchitecture)"]"#,
-        #"cc="clang""#,
-        #"cxx="clang++""#,
+        #"cc="/usr/bin/clang""#,
+        #"cxx="/usr/bin/clang++""#,
     ] + commonGNArguments
 }
 
@@ -1376,7 +1376,8 @@ private struct RunSkiaBuildAction: ColliderAction {
     var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        if let metadata = try context.files.metadata(for: exportDirectory),
+        if let metadata = try context.files.metadataWithoutFollowingSymlinks(
+            for: exportDirectory),
             metadata.type != .directory
         {
             try context.files.remove(exportDirectory)

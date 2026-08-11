@@ -4,7 +4,7 @@ import Foundation
 import NucleusAndroidRuntimeCore
 import SystemPackage
 
-package struct InstallRuntimeAction: ColliderAction {
+package struct PublishRuntimeGenerationAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let products: FilePath
         let prefix: FilePath
@@ -29,7 +29,7 @@ package struct InstallRuntimeAction: ColliderAction {
         }
     }
 
-    package static let kind: ActionKind = "shell.install-runtime"
+    package static let kind: ActionKind = "shell.publish-runtime-generation"
 
     let products: FilePath
     let prefix: FilePath
@@ -101,7 +101,7 @@ package struct InstallRuntimeAction: ColliderAction {
                 abi: "glibc"))
     }
 
-    init(configuration: ShellRuntimeInstallConfiguration) {
+    init(configuration: ShellRuntimePublicationConfiguration) {
         products = configuration.swiftPM.productsDirectory
         prefix = configuration.prefix
         generationsRoot = configuration.generationsRoot
@@ -143,8 +143,8 @@ package struct InstallRuntimeAction: ColliderAction {
             for: prefix),
             metadata.type != .symbolicLink
         {
-            throw RuntimeInstallFailure(
-                "installation path must be absent or an active-generation symlink: \(prefix)")
+            throw RuntimePublicationFailure(
+                "active runtime path must be absent or a generation symlink: \(prefix)")
         }
 
         try context.files.createDirectory(generationsRoot)
@@ -172,11 +172,11 @@ package struct InstallRuntimeAction: ColliderAction {
             environment: environment,
             productSet: .baseRuntime,
             context: context)
-        try await installHostIntegration(candidate: candidate, context: context)
+        try await stageHostIntegration(candidate: candidate, context: context)
         try context.files.write(
             Array(buildMetadata.utf8),
             to: candidate.appending("share/nucleus/runtime-build.txt"))
-        try await installTrustRoot(candidate: candidate, context: context)
+        try await stageTrustRoot(candidate: candidate, context: context)
         try validateStructure(candidate, files: context.files)
 
         let report = candidate.appending("share/nucleus/runtime-elf-report.json")
@@ -224,7 +224,7 @@ package struct InstallRuntimeAction: ColliderAction {
         context: ActionContext
     ) throws {
         guard !generationName.isEmpty else {
-            throw RuntimeInstallFailure("runtime generation has no name")
+            throw RuntimePublicationFailure("runtime generation has no name")
         }
         let pamTemplate = String(
             decoding: try context.files.read(
@@ -258,7 +258,7 @@ package struct InstallRuntimeAction: ColliderAction {
             active: packageManifestsRoot.appending("current"))
     }
 
-    private func installHostIntegration(
+    private func stageHostIntegration(
         candidate: FilePath,
         context: ActionContext
     ) async throws {
@@ -288,7 +288,7 @@ package struct InstallRuntimeAction: ColliderAction {
         }
 
         guard let unitBytes = source["nucleus@.service"] else {
-            throw RuntimeInstallFailure("missing nucleus@.service source")
+            throw RuntimePublicationFailure("missing nucleus@.service source")
         }
         let unitTemplate = String(decoding: unitBytes, as: UTF8.self)
         let unit = candidate.appending(".nucleus-systemd-validation.service")
@@ -314,7 +314,7 @@ package struct InstallRuntimeAction: ColliderAction {
         try context.files.remove(unit)
     }
 
-    private func installTrustRoot(
+    private func stageTrustRoot(
         candidate: FilePath,
         context: ActionContext
     ) async throws {
@@ -323,7 +323,7 @@ package struct InstallRuntimeAction: ColliderAction {
             try context.files.metadataWithoutFollowingSymlinks(for: trustKey)?.type
                 == .regular
         else {
-            throw RuntimeInstallFailure(
+            throw RuntimePublicationFailure(
                 "Android add-on trust key must be a regular file: \(trustKey)")
         }
         try await requireSuccess(
@@ -357,7 +357,7 @@ package struct InstallRuntimeAction: ColliderAction {
                 metadata.type == .regular,
                 metadata.ownerExecutable
             else {
-                throw RuntimeInstallFailure(
+                throw RuntimePublicationFailure(
                     "runtime candidate is missing executable \(path)")
             }
         }
@@ -369,7 +369,7 @@ package struct InstallRuntimeAction: ColliderAction {
             "share/nucleus/host-requirements.json",
         ] {
             guard try files.metadata(for: candidate.appending(path))?.type == .regular else {
-                throw RuntimeInstallFailure(
+                throw RuntimePublicationFailure(
                     "runtime candidate is missing host integration file \(path)")
             }
         }
@@ -431,7 +431,7 @@ package struct InstallRuntimeAction: ColliderAction {
         let result = try await context.commands.execute(command)
         guard result.succeeded else {
             throw result.executionFailure(
-                reason: "runtime installation command failed: \(result.standardOutput)")
+                reason: "runtime publication command failed: \(result.standardOutput)")
         }
     }
 }
@@ -446,11 +446,11 @@ private func hex(_ bytes: some Sequence<UInt8>) -> String {
     return String(decoding: encoded, as: UTF8.self)
 }
 
-struct RuntimeInstallFailure: Error, CustomStringConvertible {
+struct RuntimePublicationFailure: Error, CustomStringConvertible {
     let description: String
 
     init(_ description: String) {
-        self.description = "runtime installation failed: \(description)"
+        self.description = "runtime publication failed: \(description)"
     }
 }
 #endif

@@ -596,12 +596,23 @@ private struct SwiftPMAction: ColliderAction {
                 lane: .hostExclusive,
                 executionPlatform: .macOSARM64Native)
         case .oci:
-            requirements = try OCIExecutionPipeline(
+            let pipelineRequirements = try OCIExecutionPipeline(
                 processes.compactMap {
                     guard case .oci(let execution) = $0 else { return nil }
                     return execution
                 }
             ).requirements
+            requirements = ActionRequirements(
+                tools: pipelineRequirements.tools,
+                effects: pipelineRequirements.effects.filter {
+                    $0.scope.root != scratchPath
+                } + [ActionEffect(.readWrite, scope: .scratch(scratchPath))],
+                persistentWorkspaceEffects:
+                    pipelineRequirements.persistentWorkspaceEffects,
+                lane: pipelineRequirements.lane,
+                networkAccess: pipelineRequirements.networkAccess,
+                executionPlatform: pipelineRequirements.executionPlatform,
+                artifactTarget: pipelineRequirements.artifactTarget)
         case nil:
             throw SwiftPMLoweringFailure.emptyInvocation
         }
