@@ -412,27 +412,21 @@ uncommitted work, editor state, credentials, or user home data.
 
 ## Phase 9: Complete the Cutover
 
-Implementation complete. Collider's type model now separates read-only host
-inputs, bounded host exports, persistent Linux workspaces, and tmpfs. General
-writable host mounts and host-backed container temporary directories no longer
-exist. The durable boundary is recorded in
-[Collider Build Storage Architecture](collider-build-storage-architecture.md).
-Cold/warm qualification and removal of the now-unused physical legacy
-directories remain before this plan can be marked complete and deleted.
+Status: implementation complete; qualification and physical cleanup remain.
 
-Remove replaced host intermediate declarations, bind mounts, socket/FIFO host
-cleanup, and storage-retention rules. Update Collider cache status, storage
-ownership documentation, builder setup, and agent guidance to state the final
-host-versus-Linux boundary.
+Collider's type model separates read-only host inputs, bounded host exports,
+persistent Linux workspaces, and tmpfs. General writable host mounts,
+host-backed container temporary directories, replaced intermediate
+declarations, socket/FIFO host cleanup, migration-only state, and legacy
+retention rules are removed. The durable boundary is recorded in
+[Collider Build Storage Architecture](collider-build-storage-architecture.md)
+and [Collider Architecture](collider-architecture.md).
 
-Retain host bind mounts only for read-only source/download inputs, bounded
-artifact export, credentials, and run logging. Audit every writable container
-mount and require it to be either a declared persistent workspace, a bounded
-artifact export, or ephemeral tmpfs.
-
-Delete migration-only code and completed migration state. Move the durable
-persistent-workspace invariant into Collider architecture documentation, mark
-this plan complete, and remove it after architecture consolidation.
+Complete the cold and unchanged warm qualification gates from Phases 4 through
+7. Then inspect and remove only the physical host intermediate directories
+confirmed unused by the new graph. Mark this plan complete and delete it after
+those remaining gates pass; no further storage-model implementation belongs to
+this phase.
 
 Gate: repository-wide container planning exposes no writable host build-
 intermediate mount, every persistent volume has one declared owner and target,

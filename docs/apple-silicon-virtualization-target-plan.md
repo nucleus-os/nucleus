@@ -444,10 +444,11 @@ Phase gate:
 
 ## Phase 2 — Complete the Target Coordinates
 
-This phase begins after Phase 4 of
-[Manifest Portability Plan](manifest-portability-plan.md)
-has removed manifest-time environment selection. Immutable Swift SDK generations
-and exact `--swift-sdk` plus `--triple` selection are already implemented.
+The manifest and destination contract in
+[Single-root SwiftPM Architecture](single-root-swiftpm-architecture.md)
+has already removed manifest-time environment selection. Immutable Swift SDK
+generations and exact `--swift-sdk` plus `--triple` selection are also
+implemented.
 
 `ArtifactTarget.linuxARM64`, `ArtifactTarget.linuxX86_64`,
 `ExecutionPlatform.linuxARM64OCI`, `ExecutionPlatform.macOSARM64Native`, exact
@@ -1561,7 +1562,7 @@ distinguishes the shipping virtualization qualifier from the physical Linux
 qualifier. [macOS Remote Development Plan](macos-remote-development-plan.md)
 keeps the shipping VM runtime separate from the host-owned development
 checkout.
-[Manifest Portability Plan](manifest-portability-plan.md)
+[Single-root SwiftPM Architecture](single-root-swiftpm-architecture.md)
 is updated with Linux/amd64, Linux/arm64, Android/amd64, Android/arm64, and
 macOS/arm64 artifact destinations plus the distinct x86_64 Apple-guest runtime
 assembly role.

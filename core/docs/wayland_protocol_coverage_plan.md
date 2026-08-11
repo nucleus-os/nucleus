@@ -11,9 +11,9 @@ when the compositor registers a global, enforces its state machine, isolates
 client failure, and passes behavioral wire tests.
 
 Capture protocols and portal publication belong to
-[`screen_recording_plan.md`](screen_recording_plan.md). Dispatch isolation and
-handler binding belong to
-[`../../docs/wayland-dispatch-isolation-and-handler-binding-plan.md`](../../docs/wayland-dispatch-isolation-and-handler-binding-plan.md).
+[`screen_recording_plan.md`](screen_recording_plan.md). Generated dispatch
+isolation, handler binding, and resource ownership follow
+[Swift Wayland Architecture](../../swift-wayland/ARCHITECTURE.md).
 
 ## Current registered surface
 

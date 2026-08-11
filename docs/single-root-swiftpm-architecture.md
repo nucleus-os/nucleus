@@ -48,6 +48,40 @@ The root graph always declares the Android JNI product and its `swift-java`
 dependency. Collider selects that product with an explicit Swift SDK and target
 triple; ambient environment state never changes the manifest graph.
 
+## Manifest and Destination Contract
+
+The root manifest evaluates from a bare clone with stock Swift 6.4. Evaluation
+reads no environment variables, launches no process, derives no repository root
+from `#filePath`, and embeds no absolute host path. It declares one unconditional,
+destination-independent product, dependency, and target graph. Platform
+conditions and selected products determine the compiled closure without changing
+the declaration graph.
+
+First-party Swift targets share the repository's Swift 6 language mode, strict
+memory-safety, warnings, and C++ interoperability contract. Repository-owned
+headers, shims, and module maps use repository-relative paths. Targets name
+semantic native libraries and link ordering without interpolating SDK roots or
+absolute archives.
+
+Collider owns compiler selection, Swift SDK artifact and directory, target
+triple, native SDK roots, scratch path, generated SwiftPM header locations, and
+execution environment. The selected target SDK owns its sysroot, stable native
+search roots, pkg-config metadata, headers, and libraries. SwiftPM owns package
+topology and generated module maps and `*-Swift.h` headers. None of these values
+crosses boundaries through manifest-time environment lookup.
+
+Linux ABI dependencies use checked-in system-library module maps and semantic
+`pkgConfig` declarations. Collider supplies `PKG_CONFIG_LIBDIR` and
+`PKG_CONFIG_SYSROOT_DIR` exclusively from the selected SDK. Nucleus-built static
+archives retain explicit native-SDK search paths and link groups; target
+toolchain primitives remain toolchain concerns rather than pkg-config packages.
+
+Supported workflows invoke the installed `collider` command without sourcing
+`tools/host-env.sh`. A fresh clone builds Collider with Xcode, publishes target
+SDKs, provisions native SDK artifacts, and then builds and tests the root graph
+through the ordinary setup, doctor, bootstrap, build, and test commands. There
+is no parallel manifest-portability workflow or compatibility layer.
+
 ## SourceKit-LSP Result
 
 The root package produces correct build settings and cross-target semantic

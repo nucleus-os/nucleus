@@ -8,6 +8,7 @@ Architecture and contract documents describe the current system. An implementati
 
 - [Runtime architecture](nucleus-runtime-architecture.md)
 - [Single-root SwiftPM architecture](single-root-swiftpm-architecture.md)
+- [Collider architecture](collider-architecture.md)
 - [NucleusUI API contract](nucleus-ui-api-contract.md)
 - [NucleusUI graphics contract](nucleus-ui-graphics-contract.md)
 - [Core and compositor documentation](../core/docs/README.md)
@@ -15,6 +16,7 @@ Architecture and contract documents describe the current system. An implementati
 - [Direct scanout](../compositor/compositor-core/docs/direct-scanout.md)
 - [Render benchmarking](../compositor/docs/render-benchmarking.md)
 - [Collider build storage](collider-build-storage-architecture.md)
+- [Swift Wayland architecture](../swift-wayland/ARCHITECTURE.md)
 
 ## Active execution plans
 
@@ -26,7 +28,7 @@ Execute the implementation plans in this order:
    consolidate the completed plan into the storage architecture.
 2. Complete Phases 1 through 4 of
    [macOS remote development](macos-remote-development-plan.md).
-3. Resume [Android application integration](android-application-integration-plan.md) at Phase 5.
+3. Resume [Android application integration](android-application-integration-plan.md) at Phase 9.
 4. Execute the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
@@ -45,12 +47,6 @@ implementation inputs are available:
 4. [Android container security](android-container-security-qualification-plan.md)
 5. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
 6. [Nucleus Browser](nucleus-browser-qualification-plan.md)
-
-## Completed plans awaiting architecture consolidation
-
-- [Collider CLI and terminal UX](collider-cli-ux-plan.md)
-- [Manifest portability](manifest-portability-plan.md)
-- [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
 
 ## Deferred product plans
 

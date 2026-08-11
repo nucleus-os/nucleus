@@ -64,11 +64,10 @@ is protected storage, not a backup by itself. Recovery restores source and user
 state only; Linux build workspaces, compiler caches, downloaded packages, OCI
 images, run logs, and generated artifacts remain reconstructible.
 
-Remove `NucleusSnapshots` from the macOS builder contract. Do not delete the
-physical volume until a read-only inspection proves it contains no data that
-must be retained. Rename `NucleusBuild` ownership from the nonexistent Collider
-worker to Collider build workspaces. Remove other storage descriptions that
-refer to the discarded development-machine or snapshot-service architecture.
+The builder contract, physical layout, and storage documentation already omit
+`NucleusSnapshots` and assign `NucleusBuild` to Collider build workspaces. Do
+not recreate a snapshot-service or worker-owned storage role during the checkout
+move.
 
 Gate: the authoritative checkout runs from `NucleusDev`, its backup can be
 inspected independently of the Mac, and `collider doctor ci-macos-builder`
