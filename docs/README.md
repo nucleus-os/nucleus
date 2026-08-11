@@ -26,9 +26,12 @@ Execute the implementation plans in this order:
    [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md),
    then remove the confirmed-unused host intermediate directories and
    consolidate the completed plan into the storage architecture.
-2. Complete Phases 1 through 4 of
+2. Execute the
+   [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
+   in order.
+3. Complete Phases 2 through 4 of
    [macOS remote development](macos-remote-development-plan.md).
-3. Execute the
+4. Execute the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
    complete remote-development Phase 6 immediately afterward, then continue the

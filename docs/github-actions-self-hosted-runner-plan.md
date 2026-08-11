@@ -206,10 +206,14 @@ and their declared capabilities. Cross-build inspection and Apple-translated
 execution cannot satisfy native kernel, performance, GPU, DRM, or release
 gates.
 
-Use a local filesystem artifact store on the builder until a real remote
-qualifier or publisher requires transfer. Do not upload reconstructible
-Chromium, AOSP, Swift, native-SDK, compiler-cache, or incremental-workspace
-state to GitHub Actions caches.
+Use a local filesystem artifact store for build and qualification. After all
+required qualification records bind to a package cohort, the protected
+publisher may upload only its final native package objects and release index to
+the immutable GitHub Release governed by the
+[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+Do not upload reconstructible Chromium, AOSP, Swift, native-SDK, compiler-cache,
+incremental-workspace, or pre-package artifact state to GitHub Actions caches or
+release assets.
 
 Gate: a clean qualifier validates an artifact without builder cache or source,
 modifying any file invalidates its evidence, and publication rejects PR-owned,
@@ -253,8 +257,10 @@ declarations, then repeat cold and warm complete verification.
 Attempt credential reads, trusted-cache mutation, cross-PR state access,
 publication, direct runner addressing, and artifact substitution from approved
 PR code. Each attempt must fail without relying on the tested source to
-cooperate. Finally, publish a release from existing qualified `main` artifacts
-and prove that publication performs no compilation.
+cooperate. Finally, publish an immutable GitHub Release and signed repository
+snapshot from existing qualified `main` package objects and prove that
+publication performs no compilation, package assembly, or artifact
+substitution.
 
 Gate: all PR CI is self-hosted and owner-authorized, PR and `main` verification
 are structurally identical except for trust and publication authority, mutable
@@ -275,6 +281,8 @@ or qualification semantics.
 - Do not use a persistent Linux development machine as a runner or gateway.
 - Do not add `collider ci`, `collider dev`, `collider remote`, or worker-service
   command families merely to rename existing task entrypoints.
-- Do not add a remote artifact backend before an actual remote consumer exists.
+- Do not add a generic remote artifact or cache backend. Immutable GitHub
+  Releases store only final qualified native package objects and their release
+  index at the publication boundary.
 - Do not treat Intel translation, QEMU, or software rendering as native
   qualification.

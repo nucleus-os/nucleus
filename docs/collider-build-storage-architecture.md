@@ -2,7 +2,7 @@
 
 ## Invariant
 
-The macOS checkout owns source, acquired inputs, credentials, provenance, and
+The macOS host owns source, acquired inputs, credentials, provenance, and
 finished artifacts. Linux build intermediates and compiler caches live only in
 Collider-owned persistent workspaces. Container-local temporary state lives on
 tmpfs. Every writable host mount is a bounded export declared as an action
@@ -11,6 +11,12 @@ output; an ordinary host input mount is always read-only.
 Deleting every persistent workspace leaves the checkout capable of rebuilding
 every product from its declared host inputs. A workspace is therefore cache
 state, never source, provenance, or a publication boundary.
+
+A bounded export hands a declared artifact from a build workspace to host-owned
+artifact staging. Native package and repository assembly consume those staged
+artifacts; the signed repository snapshot at `packages.nucleus-os.org` and the
+immutable GitHub Release containing its package objects form the publication
+boundary. Persistent workspaces and Collider caches never do.
 
 ## Storage Classes
 
@@ -47,6 +53,11 @@ The Apple container service stores these volumes under
 the remaining service state stay under `NucleusOCI`. DiskImageKit is not part of
 the build-workspace path because Apple container already owns sparse image
 creation, EXT4 formatting, attachment, and exclusive-use enforcement.
+
+These are the current backing paths. Their hard cutover to conventional
+per-user storage on the default macOS Data filesystem is owned by the
+[macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md).
+This architecture adopts the new paths only when that implementation lands.
 
 The component graph is the workspace lifecycle registry. A workspace used by
 exactly one component belongs to that component; a workspace intentionally used

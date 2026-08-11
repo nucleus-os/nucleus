@@ -5,12 +5,14 @@ Status: active
 ## Invariant
 
 The M2 Ultra is the Nucleus development and build host. The authoritative Git
-checkout, including uncommitted work and submodule worktrees, lives on protected
-macOS storage under `/Volumes/NucleusDev`. Remote computers are replaceable SSH,
-editor, and terminal clients; they do not own a second checkout that must be
-uploaded before it can build. A declared Linux presentation target may receive
-an immutable user-owned development generation for local VT testing, but it
-never receives source or becomes a build host.
+checkout lives at `~/Developer/nucleus`. Durable source state, including
+submodule selections, is pushed to a remote. Uncommitted work and dirty
+submodule worktrees are transient and explicitly outside the host-loss recovery
+guarantee. Remote computers are replaceable SSH, editor, and terminal clients;
+they do not own a second checkout that must be uploaded before it can build. A
+declared Linux presentation target may receive an immutable user-owned
+development generation for local VT testing, but it never receives source or
+becomes a build host.
 
 Collider runs directly on macOS, where it owns Xcode, host-side downloads,
 durable runs, task scheduling, Apple-container execution, and persistent Linux
@@ -24,6 +26,20 @@ Remote access uses the host's standard SSH service over an authenticated private
 network. Long-running work remains attached to a standard terminal multiplexer.
 Collider inspection commands remain available after reconnect, and an
 interrupted run resumes through its existing run identity.
+
+The release root key remains offline. A constrained release-signing subkey
+lives in the host's protected credential store, outside the checkout, and can
+be revoked and replaced from the offline root material after host loss; the same
+private subkey is not reproducible from the root key. Qualified but unpublished
+cohorts remain reconstructible staging outputs. A cohort that must survive host
+loss crosses the signed repository publication boundary into the immutable
+GitHub Release package-object store instead of becoming protected local build
+state.
+
+Host-loss recovery is a fresh clone followed by AOSP synchronization and
+rebuilding all SDKs, container images, compiler caches, and persistent
+workspaces. The accepted current recovery cost is roughly 900 GB of
+reconstructible state. No source snapshot or build-cache backup service exists.
 
 ## Current State
 
@@ -46,37 +62,23 @@ leaving inspection and dry-run commands lock-free. Contended runs publish wait
 events, and cancellation releases admission after normal runtime shutdown and
 run finalization.
 
-The macOS builder contract declares `NucleusDev` as protected source storage,
-but the active checkout has not yet moved there. `NucleusSnapshots` and the
-worker-oriented `NucleusBuild` ownership inherited from the discarded remote-
-worker architecture have been removed from the contract, and the unused
-physical snapshot volume has been deleted.
+The authoritative checkout already lives at `~/Developer/nucleus`. The
+[macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
+removes the remaining custom APFS storage contract and places Collider-managed
+state in conventional per-user directories. No custom volume owns source.
 
 ## Phase 1: Correct Host Storage Ownership
 
-Status: in progress. The builder contract and physical APFS layout now omit
-`NucleusSnapshots`, and `NucleusBuild` is owned by Collider build workspaces.
-Moving the authoritative checkout to `NucleusDev` and establishing its
-encrypted off-host backup remain.
+Status: complete. The authoritative checkout is `~/Developer/nucleus`, Collider
+discovers it directly, and Git plus its remotes own durable source history.
+Custom APFS source and snapshot volumes are not part of the endpoint. The
+remaining builder-storage migration belongs exclusively to the
+[macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md).
 
-Make `/Volumes/NucleusDev/nucleus` the stable authoritative checkout. Preserve
-the complete working tree, Git metadata, submodule selections, ignored local
-configuration, and verified-commit setup during the move. Confirm the new path
-passes Collider workspace discovery and produces unchanged source identities.
-
-Back up `NucleusDev` with an encrypted off-host backup system. The APFS volume
-is protected storage, not a backup by itself. Recovery restores source and user
-state only; Linux build workspaces, compiler caches, downloaded packages, OCI
-images, run logs, and generated artifacts remain reconstructible.
-
-The builder contract, physical layout, and storage documentation already omit
-`NucleusSnapshots` and assign `NucleusBuild` to Collider build workspaces. Do
-not recreate a snapshot-service or worker-owned storage role during the checkout
-move.
-
-Gate: the authoritative checkout runs from `NucleusDev`, its backup can be
-inspected independently of the Mac, and `collider doctor ci-macos-builder`
-passes without requiring `NucleusSnapshots` or a worker service.
+Gate evidence: the active checkout is `~/Developer/nucleus`; local editing and
+Collider workspace discovery use that checkout directly; `NucleusSnapshots` is
+absent; and no source move, backup service, snapshot service, or worker-owned
+source role remains.
 
 ## Phase 2: Establish Private Host Access
 
@@ -95,7 +97,7 @@ Do not add editor-specific commands to Collider. VS Code, Zed, JetBrains,
 terminal clients, and future clients remain interchangeable implementations of
 the SSH client boundary.
 
-Gate: a clean remote client opens `/Volumes/NucleusDev/nucleus`, edits a tracked
+Gate: a clean remote client opens `~/Developer/nucleus`, edits a tracked
 file, creates a non-ignored untracked file, performs Git operations, and runs a
 Collider dry-run without installing a Nucleus build toolchain locally.
 
@@ -120,7 +122,8 @@ run resumes without repeating clean tasks.
 
 ## Phase 4: Add Host-Wide Collider Admission
 
-Status: implementation complete. The cross-checkout operational gate remains.
+Status: active. The implementation is complete; the cross-checkout operational
+gate remains.
 
 Add one cross-process execution lock in a host-owned path outside every
 checkout. Every task-executing Collider command acquires it before execution and
@@ -182,11 +185,12 @@ editing, development builds, or one-shot deployment to a declared presentation
 target.
 
 Gate: remote development from a clean client succeeds through standard SSH;
-the authoritative checkout and uncommitted work survive client replacement;
+client replacement leaves the authoritative host checkout untouched;
 one heavy build can use the M2 Ultra's internal parallelism without competing
 with another Collider process; a Linux presentation target receives no source;
 and deleting every reconstructible build workspace and deployed development
-generation leaves protected source, installed packages, and user state intact.
+generation leaves pushed source history, installed packages, and user state
+intact.
 
 ## Explicit Non-Goals
 
@@ -195,6 +199,8 @@ generation leaves protected source, installed packages, and user state intact.
 - Do not implement source snapshotting, source upload, a custom artifact
   protocol, or a remote artifact daemon. One-shot development-generation
   transfer through standard SSH and rsync is the only deployment path.
+- Do not back up transient working-copy state or reconstructible build state.
+  Push durable source work and publish cohorts that must survive host loss.
 - Do not add a Collider worker daemon or remote-execution API.
 - Do not make remote development depend on GitHub Actions.
 - Do not expose Apple-container services or build containers to remote clients.

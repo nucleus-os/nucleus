@@ -21,6 +21,13 @@ Repository metadata is published atomically, package versions are immutable,
 and ordinary system upgrades keep Nucleus current after one explicit repository
 enrollment.
 
+`https://packages.nucleus-os.org` is the repository and trust origin. Immutable
+GitHub Releases in `nucleus-os/nucleus` are the package-object backend. Release
+automation uploads complete native package objects there before repository
+metadata can reference them. Repository and package signatures authenticate
+content independently of its download location; GitHub release attestations are
+supplemental provenance, not a replacement for package-manager verification.
+
 ## Product and Tool Boundaries
 
 The macOS development host owns source orchestration and Linux artifact
@@ -35,7 +42,8 @@ The boundaries are:
 - `collider dev-deploy linux-runtime` transfers that generation from the macOS build
   host to a declared Linux development target without installing it;
 - `collider package` produces native packages and repository snapshots;
-- release automation signs and uploads an already validated repository snapshot;
+- protected release automation uploads an already signed and validated package
+  cohort to an immutable GitHub Release, then publishes its repository metadata;
 - APT, DNF, or pacman installs and updates Nucleus on Linux; and
 - the installed `nucleus` administration boundary manages optional capability
   activation that must be transactional beyond the package-manager transaction.
@@ -67,6 +75,12 @@ generations, host-integration templates, and deterministic Debian, RPM, and Arch
 package manifests. It does not yet emit native package archives or repositories
 that ordinary package managers can consume.
 
+Immutable releases are enabled for `nucleus-os/nucleus`. Existing browser
+runtime publications and the signed Android image archive fit below GitHub's
+per-asset limit. Final native package assembly must enforce that limit for every
+architecture and package family rather than relying on those preliminary
+measurements.
+
 ## Package Cohort
 
 One release publishes a version-matched package cohort:
@@ -94,6 +108,21 @@ Stable, beta, and nightly are separate, explicit channels. Their enrollment
 packages conflict so one machine cannot unintentionally follow more than one.
 Nightly is the normal package-managed channel for development machines; it is
 not a substitute for deploying an uncommitted development generation.
+
+The origin serves signed repository metadata and stable package paths. Package
+downloads redirect to versioned assets in an immutable GitHub Release for the
+exact package cohort. Asset names include package family, version, and
+architecture and are never reused. The release tag identifies the immutable
+Nucleus version and build, never a mutable channel, so promotion can reference
+the same assets. A release is created as a draft, receives the complete cohort,
+passes digest and size verification, and is published only after every asset is
+present. Publication locks the assets and associated tag.
+
+Each natural native package is one release asset and must be smaller than 2
+GiB. Assembly warns at 1.75 GiB and publication rejects an asset at or above 2
+GiB before upload. Nucleus does not split one package into transport fragments
+to evade the backend limit. A package that outgrows the limit requires a new
+package-object backend before that package can publish.
 
 Repository paths are family-, channel-, and architecture-aware:
 
@@ -294,13 +323,22 @@ Repository assembly accepts explicit signing identities and an immutable package
 set. It performs no upload and no source or package download. Unsigned local test
 snapshots are a distinct test fixture and cannot satisfy a release gate.
 
-Upload versioned package objects before metadata. Publish repository metadata
-last as the atomic visibility point. Never replace a published package version;
-retain prior cohorts needed for supported rollback.
+Release automation creates one draft GitHub Release for the versioned cohort,
+uploads every package object, verifies the remote asset sizes and digests
+against the release index, and publishes the immutable release. It then uploads
+the signed repository metadata to `packages.nucleus-os.org`; metadata publication
+is the atomic visibility point. A published package version is never replaced.
+
+Retain prior cohorts needed for supported rollback. Prune nightly snapshots and
+package objects only after they leave the bounded rollback retention set and no
+retained channel snapshot references them. Pruning deletes the whole eligible
+nightly GitHub Release; it never edits an immutable release or removes an
+individual asset. Stable and retained rollback releases are not prunable.
 
 Gate: each package manager resolves a complete signed cohort from a local copy of
-the generated snapshot, and interrupted publication cannot expose metadata that
-references a missing package.
+the generated snapshot; a publication interrupted before immutable-release
+publication exposes no package cohort; and a publication interrupted afterward
+cannot expose repository metadata that references a missing package.
 
 ## Phase 7: Remove Collider Product Installation
 
@@ -338,10 +376,13 @@ package or documented trust bootstrap. Qualify on arm64 and x86_64:
 7. removal without deleting user-authored or persistent product state; and
 8. reinstallation after removal.
 
-Promote exact qualified repository snapshots from nightly to beta and from beta
-to stable without rebuilding packages. Nucleus OS images carry their selected
-repository configuration and keyring at image creation, so their first update
-uses the ordinary package manager without a bootstrap step.
+Promote exact qualified package cohorts from nightly to beta and from beta to
+stable without rebuilding or copying package payloads. Promotion publishes new
+channel metadata that references the same immutable GitHub release assets and
+package-object digests.
+Nucleus OS images carry their selected repository configuration and keyring at
+image creation, so their first update uses the ordinary package manager without
+a bootstrap step.
 
 Gate: an enrolled system remains current through ordinary `apt upgrade`, `dnf
 upgrade`, or `pacman -Syu`; no Nucleus updater or Collider command participates.

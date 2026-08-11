@@ -1,11 +1,14 @@
 # macOS Host Storage Consolidation Plan
 
+Status: active
+
 ## Invariant
 
-The macOS host uses only its normal system and user APFS volumes. Nucleus does
-not create, mount, reserve, quota, discover, or require custom APFS volumes.
-Collider stores host state in conventional per-user macOS directories resolved
-at runtime from the logged-in user's home directory.
+Collider-managed macOS host storage resolves only within conventional per-user
+directories on the default macOS Data filesystem. Collider does not create,
+mount, reserve, quota, or require custom APFS volumes. An explicit
+user-selected publication or archive destination is outside this managed
+layout; no Collider default path resolves onto it.
 
 Linux source trees, build trees, compiler caches, and other workloads that need
 case-sensitive filesystem semantics live inside sparse Apple-container volumes.
@@ -194,9 +197,10 @@ Never rely on previously observed `diskNsM` identifiers.
 Delete migration-only code, APFS inventory models, quota documentation,
 volume-oriented tests, mount repair instructions, and obsolete remote-development
 storage assumptions. Update the remote-development plan so the authoritative
-checkout remains in `~/Developer/nucleus` and its backup policy is independent
+checkout remains in `~/Developer/nucleus` and its recovery policy is independent
 of build storage.
 
-Gate: `diskutil apfs list` contains no Nucleus-created volume, the default Data
-filesystem owns all Nucleus host storage, and a fresh setup provisions the
-complete builder without sudo or disk administration.
+Gate: Collider resolves no managed path below `/Volumes`, the internal APFS
+container contains no Collider-created volume, and a fresh setup provisions the
+complete builder without sudo or disk administration. Explicit user-selected
+publication and archive destinations remain outside this gate.
