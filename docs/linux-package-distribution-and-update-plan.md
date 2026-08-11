@@ -21,18 +21,30 @@ Repository metadata is published atomically, package versions are immutable,
 and ordinary system upgrades keep Nucleus current after one explicit repository
 enrollment.
 
-`https://packages.nucleus-os.org` is the repository and trust origin. Immutable
-GitHub Releases in `nucleus-os/nucleus` are the package-object backend. Release
+`https://packages.nucleus-os.org` is the repository and trust origin. A
+Cloudflare Worker serves that origin from
+[strongly consistent R2](https://developers.cloudflare.com/r2/reference/consistency/)
+repository snapshots and routes package-object requests. Immutable GitHub
+Releases in `nucleus-os/nucleus` are the initial package-object backend. Release
 automation uploads complete native package objects there before repository
 metadata can reference them. Repository and package signatures authenticate
-content independently of its download location; GitHub release attestations are
-supplemental provenance, not a replacement for package-manager verification.
+content independently of its download location; GitHub release attestations
+are supplemental provenance, not a replacement for package-manager
+verification.
 
 ## Product and Tool Boundaries
 
-The macOS development host owns source orchestration and Linux artifact
-production through Collider and Apple containers. It does not model a Linux
-installation prefix as a product deployment.
+The macOS development host owns official source orchestration, dual-architecture
+Linux artifact production, signing, and publication through Collider and Apple
+containers. It does not model a Linux installation prefix as a product
+deployment.
+
+The independent
+[Linux x86_64 development host](linux-x86-64-development-host-plan.md) may build
+and run local x86_64 development artifacts. Its GHCR contributor inputs are
+build-time OCI artifacts, not native packages, repository objects, release
+channels, or an alternate product updater. This plan does not publish or resolve
+them.
 
 The boundaries are:
 
@@ -42,8 +54,9 @@ The boundaries are:
 - `collider dev-deploy linux-runtime` transfers that generation from the macOS build
   host to a declared Linux development target without installing it;
 - `collider package` produces native packages and repository snapshots;
-- protected release automation uploads an already signed and validated package
-  cohort to an immutable GitHub Release, then publishes its repository metadata;
+- protected release automation signs a validated cohort, publishes its package
+  objects to the active immutable backend, then publishes its repository
+  metadata;
 - APT, DNF, or pacman installs and updates Nucleus on Linux; and
 - the installed `nucleus` administration boundary manages optional capability
   activation that must be transactional beyond the package-manager transaction.
@@ -109,20 +122,44 @@ packages conflict so one machine cannot unintentionally follow more than one.
 Nightly is the normal package-managed channel for development machines; it is
 not a substitute for deploying an uncommitted development generation.
 
-The origin serves signed repository metadata and stable package paths. Package
-downloads redirect to versioned assets in an immutable GitHub Release for the
-exact package cohort. Asset names include package family, version, and
-architecture and are never reused. The release tag identifies the immutable
-Nucleus version and build, never a mutable channel, so promotion can reference
-the same assets. A release is created as a draft, receives the complete cohort,
-passes digest and size verification, and is published only after every asset is
-present. Publication locks the assets and associated tag.
+The origin is a narrowly scoped Cloudflare Worker with
+[read-only R2 bindings](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+to a repository-metadata R2 bucket and a future package-object R2 bucket. The Worker
+serves immutable signed repository snapshots from the metadata bucket. It
+routes stable package-object paths by the release index: initially with an HTTPS
+redirect to a versioned asset in an immutable GitHub Release, and after the
+object-store cutover by streaming the content-addressed R2 object. It performs
+no signing, publication, package selection, or mutation.
+
+Channel state is one small R2 object per package family, channel, and
+architecture. It names an immutable repository snapshot by digest. Publication
+uploads and verifies the complete snapshot before replacing that channel object
+with one atomic write. The Worker reads channel state through its R2 binding
+without edge caching. Immutable snapshot responses use cache keys containing
+the snapshot digest and may be cached indefinitely. A client therefore observes
+one complete old or new snapshot, never a partially uploaded directory or a
+stale cached channel mapping.
+
+Package asset names include package family, version, and architecture and are
+never reused. The GitHub release tag identifies the immutable Nucleus version
+and build, never a mutable channel, so promotion can reference the same assets.
+A release is created as a draft, receives the complete cohort, passes digest and
+size verification, and is published only after every asset is present.
+Publication locks the assets and associated tag.
 
 Each natural native package is one release asset and must be smaller than 2
 GiB. Assembly warns at 1.75 GiB and publication rejects an asset at or above 2
 GiB before upload. Nucleus does not split one package into transport fragments
-to evade the backend limit. A package that outgrows the limit requires a new
-package-object backend before that package can publish.
+to evade the backend limit.
+
+The first cohort containing a natural package at or above 2 GiB performs one
+hard package-object cutover. That complete cohort and every subsequent cohort
+stores all package objects in the dedicated R2 object bucket under
+content-addressed, write-once keys. Earlier cohorts remain in their immutable
+GitHub Releases. The origin paths, repository signatures, package signatures,
+release-index digests, channel model, and package-manager configuration do not
+change. The R2 publisher refuses to overwrite an existing digest key; signature
+and digest verification turn any storage substitution into a loud failure.
 
 Repository paths are family-, channel-, and architecture-aware:
 
@@ -131,6 +168,31 @@ packages.nucleus-os.org/apt/<channel>/
 packages.nucleus-os.org/rpm/<channel>/
 packages.nucleus-os.org/arch/<channel>/$arch/
 ```
+
+## Publication Backend Matrix
+
+| Payload | Backend | Mutation authority |
+|---|---|---|
+| Package and repository signatures | Protected signing environment | Release signer only |
+| Repository HTTP origin | Cloudflare Worker at `packages.nucleus-os.org` | Infrastructure deployment only |
+| Signed APT, RPM, and pacman snapshots and channel objects | Repository-metadata R2 bucket | Repository-metadata publisher only |
+| Package objects before object-store cutover | Immutable GitHub Releases | GitHub release-object publisher only |
+| Package objects from the cutover cohort onward | Package-object R2 bucket | R2 package-object publisher only |
+| Contributor builder images and declared build inputs | GHCR OCI artifacts | Contributor-input publisher only |
+| Build intermediates and compiler caches | Local Collider storage | Owning build identity only |
+
+The release signer receives only the constrained signing subkey and has no
+network publication credential. The release-object publisher receives GitHub
+`contents:write` and no signing, R2, or GHCR credential. The
+repository-metadata publisher receives
+[bucket-scoped R2 Object Read & Write access](https://developers.cloudflare.com/r2/api/tokens/)
+to the metadata bucket and no signing or GitHub write permission. The
+contributor-input publisher receives GitHub `packages:write` and no release or
+R2 credential. After object-store cutover, the R2 package-object publisher
+receives Object Read & Write access only to the object bucket and no signing
+credential. Build and qualification runners receive none of these authorities.
+Worker deployment uses a separate infrastructure identity and its runtime
+bucket bindings are read-only.
 
 APT receives deb822 source configuration, a repository-scoped `Signed-By`
 keyring, and signed `InRelease` metadata. It never uses `apt-key` or a globally
@@ -323,22 +385,32 @@ Repository assembly accepts explicit signing identities and an immutable package
 set. It performs no upload and no source or package download. Unsigned local test
 snapshots are a distinct test fixture and cannot satisfy a release gate.
 
-Release automation creates one draft GitHub Release for the versioned cohort,
-uploads every package object, verifies the remote asset sizes and digests
-against the release index, and publishes the immutable release. It then uploads
-the signed repository metadata to `packages.nucleus-os.org`; metadata publication
-is the atomic visibility point. A published package version is never replaced.
+Before the hard object-store cutover, release automation creates one draft
+GitHub Release for the versioned cohort, uploads every package object, verifies
+the remote asset sizes and digests against the release index, and publishes the
+immutable release. After the cutover, the corresponding publisher instead
+writes and verifies the complete cohort under absent content-addressed keys in
+the package-object R2 bucket.
+
+The repository-metadata publisher uploads the complete signed snapshot beneath
+its digest in the metadata R2 bucket, reads it back for verification, and writes
+the family/channel/architecture channel object last. That final atomic object
+write is the visibility point. The publisher has no package-object or Worker
+deployment credential. A published package version is never replaced.
 
 Retain prior cohorts needed for supported rollback. Prune nightly snapshots and
 package objects only after they leave the bounded rollback retention set and no
-retained channel snapshot references them. Pruning deletes the whole eligible
-nightly GitHub Release; it never edits an immutable release or removes an
-individual asset. Stable and retained rollback releases are not prunable.
+retained channel snapshot references them. Before object-store cutover, pruning
+deletes the whole eligible nightly GitHub Release; it never edits an immutable
+release or removes an individual asset. After cutover, a separate retention
+identity removes unreferenced immutable snapshot prefixes and content-addressed
+R2 objects. Stable and retained rollback cohorts are not prunable.
 
-Gate: each package manager resolves a complete signed cohort from a local copy of
-the generated snapshot; a publication interrupted before immutable-release
-publication exposes no package cohort; and a publication interrupted afterward
-cannot expose repository metadata that references a missing package.
+Gate: each package manager resolves a complete signed cohort from a local copy
+of the generated snapshot and through the Worker origin; an interruption before
+package-object publication exposes no cohort; an interruption before the final
+channel-object write leaves the previous snapshot active; and a completed
+channel write cannot reference a missing or unverified package object.
 
 ## Phase 7: Remove Collider Product Installation
 

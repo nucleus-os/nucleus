@@ -14,13 +14,19 @@ declared Linux presentation target may receive an immutable user-owned
 development generation for local VT testing, but it never receives source or
 becomes a build host.
 
+This plan governs the M2 Ultra remote-development topology, not every supported
+contributor platform. The independent
+[Linux x86_64 development host plan](linux-x86-64-development-host-plan.md)
+adds self-contained contributor clones without becoming part of this remote
+topology or weakening the M2 Ultra's authoritative-checkout role.
+
 Collider runs directly on macOS, where it owns Xcode, host-side downloads,
 durable runs, task scheduling, Apple-container execution, and persistent Linux
 build workspaces. Linux containers remain offline build executors. There is no
-persistent Linux build machine, nested container runtime, Collider worker
-daemon, source-snapshot service, or remote-execution protocol. Development
-artifact deployment uses one-shot SSH and rsync from macOS to a user-owned store
-on a declared Linux presentation target.
+persistent Linux build machine in this topology, nested container runtime,
+Collider worker daemon, source-snapshot service, or remote-execution protocol.
+Development artifact deployment uses one-shot SSH and rsync from macOS to a
+user-owned store on a declared Linux presentation target.
 
 Remote access uses the host's standard SSH service over an authenticated private
 network. Long-running work remains attached to a standard terminal multiplexer.

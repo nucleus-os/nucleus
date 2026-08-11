@@ -67,6 +67,16 @@ credentials, and receive no repository, organization, environment, signing,
 package-publication, or personal secrets. Publication is a separate protected
 workflow and runner authority.
 
+Publication uses mutually exclusive protected identities. The release signer
+receives only the constrained signing subkey and no network publication
+credential. The GitHub release-object publisher receives `contents:write`; the
+repository-metadata publisher receives Object Read & Write access only to the
+metadata R2 bucket; the contributor-input publisher receives `packages:write`;
+and the post-cutover package-object publisher receives Object Read & Write
+access only to the package-object R2 bucket. Worker deployment uses a separate
+infrastructure identity. No build, qualification, approval, signing,
+publication, or deployment job receives more than one of these authorities.
+
 ## Phase 1: Establish the Trusted Workflow Boundary
 
 Create one reusable verification workflow whose definition is loaded only from
@@ -208,9 +218,15 @@ gates.
 
 Use a local filesystem artifact store for build and qualification. After all
 required qualification records bind to a package cohort, the protected
-publisher may upload only its final native package objects and release index to
-the immutable GitHub Release governed by the
+release-object publisher may upload only its final native package objects and
+release index to the immutable GitHub Release governed by the
 [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+It returns the immutable release identity and remote digests without retaining
+publication authority in a later job. The separately authorized metadata
+publisher consumes that evidence and publishes the signed R2 snapshot and final
+channel object. The package plan owns the equivalent separated R2 object path
+after its hard backend cutover.
+
 Do not upload reconstructible Chromium, AOSP, Swift, native-SDK, compiler-cache,
 incremental-workspace, or pre-package artifact state to GitHub Actions caches or
 release assets.
@@ -276,6 +292,9 @@ or qualification semantics.
   `workflow_run`, issue-comment dispatch, or another elevated-token event.
 - Do not give any build or qualification runner signing or publication
   credentials.
+- Do not combine the release signing subkey, GitHub release publication, GHCR
+  publication, R2 metadata publication, R2 package-object publication, or
+  Worker deployment credentials in one identity or job.
 - Do not let PR and trusted builds share writable caches, workspaces, artifacts,
   or Apple-container volumes.
 - Do not use a persistent Linux development machine as a runner or gateway.
@@ -283,6 +302,9 @@ or qualification semantics.
   command families merely to rename existing task entrypoints.
 - Do not add a generic remote artifact or cache backend. Immutable GitHub
   Releases store only final qualified native package objects and their release
-  index at the publication boundary.
+  index at the publication boundary. The allowlisted GHCR inputs owned by the
+  [Linux x86_64 development host
+  plan](linux-x86-64-development-host-plan.md) are a separate contributor-input
+  contract, not CI cache state.
 - Do not treat Intel translation, QEMU, or software rendering as native
   qualification.

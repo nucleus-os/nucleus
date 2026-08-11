@@ -14,9 +14,17 @@ state, never source, provenance, or a publication boundary.
 
 A bounded export hands a declared artifact from a build workspace to host-owned
 artifact staging. Native package and repository assembly consume those staged
-artifacts; the signed repository snapshot at `packages.nucleus-os.org` and the
-immutable GitHub Release containing its package objects form the publication
-boundary. Persistent workspaces and Collider caches never do.
+artifacts. The signed snapshot in the repository-metadata R2 bucket, the
+Cloudflare Worker at `packages.nucleus-os.org`, and the immutable package-object
+backend form the product publication boundary. GitHub Releases are the initial
+package-object backend; a dedicated R2 bucket takes over at the hard cutover
+defined by the Linux package distribution plan. Persistent workspaces and
+Collider caches never form any part of that boundary.
+
+Published contributor OCI inputs in GHCR form a separate build-input
+acquisition boundary. Collider resolves them by immutable manifest and blob
+digest into its host download cache, then mounts them read-only. They are never
+persistent-workspace outputs, end-user packages, or product publication.
 
 ## Storage Classes
 
