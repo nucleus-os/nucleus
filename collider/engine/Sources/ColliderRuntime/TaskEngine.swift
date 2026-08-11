@@ -711,35 +711,15 @@ private func acquireTaskLocks(
             path = sharedPath
             detail = "shared mutation"
         }
-        var recordedWait = false
-        while true {
-            try Task.checkCancellation()
-            if await cancellation.wasInterrupted() { throw CancellationError() }
-            do {
-                held.append(
-                    try ColliderFileLock(
-                        path: path,
-                        purpose: "\(purpose) \(detail)",
-                        waitForExistingOwner: false,
-                        owner: LockOwner(
-                            run: run?.id.rawValue,
-                            task: task?.rawValue)))
-                if recordedWait, let run, let registry {
-                    try? await registry.record(
-                        .wait(.finished(task: task, resource: detail)),
-                        in: run)
-                }
-                break
-            } catch RuntimeLockFailure.alreadyOwned {
-                if !recordedWait, let run, let registry {
-                    recordedWait = true
-                    try? await registry.record(
-                        .wait(.started(task: task, resource: detail)),
-                        in: run)
-                }
-                try await ContinuousClock().sleep(for: .milliseconds(100))
-            }
-        }
+        held.append(
+            try await acquireColliderFileLock(
+                path: path,
+                purpose: "\(purpose) \(detail)",
+                resource: detail,
+                run: run,
+                registry: registry,
+                task: task,
+                cancellation: cancellation))
     }
     return held
 }

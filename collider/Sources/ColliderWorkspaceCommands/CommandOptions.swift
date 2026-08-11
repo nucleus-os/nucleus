@@ -76,11 +76,13 @@ package protocol OutputConfiguredCommand {
 
 package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfiguredCommand {
     var recordsRun: Bool { get }
+    var requiresExecutionAdmission: Bool { get }
     mutating func run(in context: WorkspaceContext) async throws
 }
 
 extension ColliderWorkspaceCommand {
     package var recordsRun: Bool { true }
+    package var requiresExecutionAdmission: Bool { true }
 
     package mutating func run() async throws {
         throw WorkspaceFailure.message(
@@ -92,6 +94,7 @@ package protocol ColliderInspectionCommand: ColliderWorkspaceCommand {}
 
 extension ColliderInspectionCommand {
     package var recordsRun: Bool { false }
+    package var requiresExecutionAdmission: Bool { false }
 }
 
 package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {
@@ -101,6 +104,7 @@ package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {
 extension TaskControlledCommand {
     package var requestedRunID: RunID? { taskOptions.runID?.value }
     package var outputOptions: CommandOutputOptions { taskOptions.outputOptions }
+    package var requiresExecutionAdmission: Bool { !taskOptions.dryRun }
 }
 
 package func requestedRunID(for command: any ParsableCommand) -> RunID? {

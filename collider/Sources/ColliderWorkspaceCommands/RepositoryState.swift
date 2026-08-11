@@ -75,6 +75,13 @@ struct RepositoryState {
                     return nil
                 }.sorted()
                 for task in runningTasks { lines.append("running task: \(task)") }
+                for wait in observed.activeWaits.sorted(by: {
+                    if $0.resource != $1.resource { return $0.resource < $1.resource }
+                    return ($0.task?.rawValue ?? "") < ($1.task?.rawValue ?? "")
+                }) {
+                    let task = wait.task.map { " task \($0.rawValue)" } ?? ""
+                    lines.append("waiting\(task): \(wait.resource)")
+                }
             }
         } else if let latestRun = report.latestRun {
             lines.append("latest run: \(latestRun.runID) (\(latestRun.status.rawValue))")

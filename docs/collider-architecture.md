@@ -56,6 +56,14 @@ It does not perform fractional CPU, memory, or I/O bin packing. Concrete OCI
 resource limits and guest job counts remain action inputs, while independent
 architecture lanes may overlap when their claims do not conflict.
 
+Every command that can execute work or mutate repository-owned state first
+acquires one host-wide kernel lease below the shared Nucleus cache root. The
+lease spans checkouts, local terminals, SSH sessions, and future trusted runner
+invocations, and remains held through runtime shutdown and run finalization.
+Dry-runs and inspection commands never acquire it. Contention is represented by
+the existing run wait events and lock-owner record; `collider status`, run, and
+log inspection remain available while another invocation owns admission.
+
 `ColliderRuntime` owns action execution, process groups, output streaming,
 credential scrubbing, cancellation, teardown, observations, and run records.
 The first interruption requests orderly cancellation through that ownership

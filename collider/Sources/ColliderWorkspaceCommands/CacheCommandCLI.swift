@@ -38,6 +38,8 @@ struct Cache: AsyncParsableCommand {
         @Option(name: .customLong("keep-runs"), help: "Number of recent completed runs to retain.")
         var keepRuns = 20
 
+        var requiresExecutionAdmission: Bool { !dryRun }
+
         mutating func validate() throws {
             guard keepRuns >= 0 else { throw ValidationError("--keep-runs must be nonnegative") }
         }

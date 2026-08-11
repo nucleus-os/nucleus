@@ -12,6 +12,8 @@ struct Clean: ColliderWorkspaceCommand {
 
     @OptionGroup var outputOptions: CommandOutputOptions
 
+    var requiresExecutionAdmission: Bool { !dryRun }
+
     mutating func run(in context: WorkspaceContext) async throws {
         let catalog = try ComponentRegistry(context: context).componentCatalog()
         try await RepositoryCache(context: context, catalog: catalog).clean(

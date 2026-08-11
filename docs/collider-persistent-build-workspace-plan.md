@@ -279,11 +279,12 @@ attach the imported source read-only and never traverse Chromium source through
 VirtioFS.
 
 Give arm64 and x86_64 independent source workspaces, and give CEF and Browser
-independent output and compiler-cache workspaces. The architecture lanes remain
-concurrent while each architecture reuses one immutable source copy across its
-products. Every sequential packaging or validation action attaches the
-corresponding source and output volumes instead of importing either tree onto
-APFS.
+independent output workspaces. Browser and CEF share one compiler-cache
+workspace per architecture, so those two product compilations serialize within
+an architecture while the arm64 and x86_64 lanes remain concurrent. Each
+architecture reuses one immutable source copy across its products. Every
+sequential packaging or validation action attaches the corresponding source and
+output volumes instead of importing either tree onto APFS.
 
 Run each concurrent build at the 12-way Siso concurrency of its 12-vCPU VM. The
 shared Apple container API server retains the host contract's maximum

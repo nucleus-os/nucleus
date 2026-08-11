@@ -103,7 +103,18 @@ public struct ColliderCommand: AsyncParsableCommand {
         defer {
             application.signals.cancel()
         }
+        var executionAdmission: ColliderFileLock?
+        defer { withExtendedLifetime(executionAdmission) {} }
         do {
+            if workspaceCommand.requiresExecutionAdmission {
+                executionAdmission = try await acquireColliderFileLock(
+                    path: hostExecutionAdmissionLockPath(cacheRoot: cacheLayout.root),
+                    purpose: "Collider host execution admission",
+                    resource: "host execution admission",
+                    run: run,
+                    registry: registry,
+                    cancellation: cancellation)
+            }
             try await workspaceCommand.run(in: application.workspace)
             await application.runtime.shutdown()
             if let run = application.run {
@@ -179,6 +190,10 @@ public struct ColliderCommand: AsyncParsableCommand {
                 interruptionSignal: interruptionSignal)
         }
     }
+}
+
+func hostExecutionAdmissionLockPath(cacheRoot: FilePath) -> FilePath {
+    cacheRoot.appending("nucleus/locks/host-execution.lock")
 }
 
 private func reportTerminalSummary(

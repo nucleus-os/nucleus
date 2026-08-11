@@ -1,3 +1,4 @@
+import ColliderCore
 import ColliderPersistence
 import ColliderPlatformC
 import Foundation
@@ -84,6 +85,47 @@ public enum RuntimeLockFailure: Error, CustomStringConvertible, Sendable {
         case .alreadyOwned(let purpose): "\(purpose) is already running"
         case .system(let purpose, let code):
             "could not acquire \(purpose) lock: errno \(code)"
+        }
+    }
+}
+
+/// Acquires one kernel-backed lock without blocking the Swift executor. A run
+/// records the interval only when contention actually occurs.
+public func acquireColliderFileLock(
+    path: FilePath,
+    purpose: String,
+    resource: String,
+    run: RunHandle? = nil,
+    registry: RunRegistry? = nil,
+    task: TaskID? = nil,
+    cancellation: RuntimeCancellation
+) async throws -> ColliderFileLock {
+    var recordedWait = false
+    while true {
+        try Task.checkCancellation()
+        if await cancellation.wasInterrupted() { throw CancellationError() }
+        do {
+            let lock = try ColliderFileLock(
+                path: path,
+                purpose: purpose,
+                waitForExistingOwner: false,
+                owner: LockOwner(
+                    run: run?.id.rawValue,
+                    task: task?.rawValue))
+            if recordedWait, let run, let registry {
+                try? await registry.record(
+                    .wait(.finished(task: task, resource: resource)),
+                    in: run)
+            }
+            return lock
+        } catch RuntimeLockFailure.alreadyOwned {
+            if !recordedWait, let run, let registry {
+                recordedWait = true
+                try? await registry.record(
+                    .wait(.started(task: task, resource: resource)),
+                    in: run)
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(100))
         }
     }
 }

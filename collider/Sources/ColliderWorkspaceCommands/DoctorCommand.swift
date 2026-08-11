@@ -15,6 +15,8 @@ struct Doctor: ColliderWorkspaceCommand {
             "Prerequisite group: all, runtime, swift-sdk, android, browser, or ci-macos-builder.")
     var scope: DoctorScope = .all
 
+    var requiresExecutionAdmission: Bool { false }
+
     mutating func run(in context: WorkspaceContext) async throws {
         try await WorkspaceDoctor(context: context).run(
             scope: scope,

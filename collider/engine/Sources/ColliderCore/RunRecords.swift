@@ -297,6 +297,16 @@ public enum WaitEvent: Codable, Hashable, Sendable {
     case finished(task: TaskID?, resource: String)
 }
 
+public struct ActiveWait: Codable, Hashable, Sendable {
+    public let task: TaskID?
+    public let resource: String
+
+    public init(task: TaskID?, resource: String) {
+        self.task = task
+        self.resource = resource
+    }
+}
+
 public struct ArtifactEvent: Codable, Hashable, Sendable {
     public let name: String
     public let digest: ArtifactDigest
@@ -405,6 +415,7 @@ public struct ReducedRunState: Codable, Hashable, Sendable {
     public fileprivate(set) var resumeCount: Int
     public fileprivate(set) var tasks: [TaskID: ReducedTaskState]
     public fileprivate(set) var failedTask: TaskID?
+    public fileprivate(set) var activeWaits: Set<ActiveWait>
 
     public init() {
         runID = nil
@@ -412,6 +423,7 @@ public struct ReducedRunState: Codable, Hashable, Sendable {
         resumeCount = 0
         tasks = [:]
         failedTask = nil
+        activeWaits = []
     }
 }
 
@@ -471,7 +483,16 @@ public struct RunEventReducer: Sendable {
         case .terminal(let terminal):
             state.status = terminal.status
             state.failedTask = terminal.failedTask ?? state.failedTask
-        case .operation, .download, .wait, .artifact:
+        case .wait(let wait):
+            switch wait {
+            case .started(let task, let resource):
+                state.activeWaits.insert(
+                    ActiveWait(task: task, resource: resource))
+            case .finished(let task, let resource):
+                state.activeWaits.remove(
+                    ActiveWait(task: task, resource: resource))
+            }
+        case .operation, .download, .artifact:
             break
         }
     }

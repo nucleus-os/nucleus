@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import ColliderRuntime
+import SystemPackage
 import Testing
 
 @testable import ColliderCLI
@@ -149,8 +150,46 @@ func inspectionCommandsDoNotCreateRunRecords() throws {
         let parsed = try ColliderCommand.parseAsRoot(arguments)
         let command = try #require(parsed as? any ColliderWorkspaceCommand)
         #expect(!command.recordsRun)
+        #expect(!command.requiresExecutionAdmission)
     }
     let build = try ColliderCommand.parseAsRoot(["build", "core"])
     let buildCommand = try #require(build as? any ColliderWorkspaceCommand)
     #expect(buildCommand.recordsRun)
+    #expect(buildCommand.requiresExecutionAdmission)
+}
+
+@Test
+func dryRunsDoNotAcquireHostExecutionAdmission() throws {
+    for arguments in [
+        ["build", "core", "--dry-run"],
+        ["clean", "core", "--dry-run"],
+        ["cache", "prune", "--dry-run"],
+        ["doctor", "all"],
+        ["doctor", "all", "--dry-run"],
+    ] {
+        let parsed = try ColliderCommand.parseAsRoot(arguments)
+        let command = try #require(parsed as? any ColliderWorkspaceCommand)
+        #expect(!command.requiresExecutionAdmission)
+    }
+}
+
+@Test
+func mutatingCommandsAcquireHostExecutionAdmission() throws {
+    for arguments in [
+        ["build", "core"],
+        ["clean", "core"],
+        ["cache", "prune"],
+    ] {
+        let parsed = try ColliderCommand.parseAsRoot(arguments)
+        let command = try #require(parsed as? any ColliderWorkspaceCommand)
+        #expect(command.requiresExecutionAdmission)
+    }
+}
+
+@Test
+func hostExecutionAdmissionLivesOutsideTheCheckout() {
+    let cacheRoot = FilePath("/host/cache")
+    #expect(
+        hostExecutionAdmissionLockPath(cacheRoot: cacheRoot)
+            == FilePath("/host/cache/nucleus/locks/host-execution.lock"))
 }
