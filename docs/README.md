@@ -22,10 +22,9 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. Finish cold and warm qualification for
-   [Collider persistent build workspaces](collider-persistent-build-workspace-plan.md),
-   then remove the confirmed-unused host intermediate directories and
-   consolidate the completed plan into the storage architecture.
+1. Remove the confirmed-unused host intermediate directories from the
+   [Collider persistent build workspace plan](collider-persistent-build-workspace-plan.md),
+   then consolidate and retire the completed plan.
 2. Execute the
    [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
    in order.

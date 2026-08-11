@@ -257,7 +257,8 @@ leaves no AOSP build intermediates under the host checkout or build root.
 
 ## Phase 4: Migrate Chromium and CEF
 
-Status: implementation complete; build qualification active.
+Status: complete. Cold reconstruction, warm reuse, interruption recovery, and
+artifact qualification passed for the Chromium and CEF workspace migration.
 
 Move Chromium/CEF source snapshots, Ninja output, and compiler cache to
 target-specific persistent workspaces. Keep Chromium, CEF,
@@ -306,12 +307,12 @@ retain their existing concurrency.
 
 ## Phase 5: Migrate Native SDK Builders
 
-Status: implementation complete; cold and warm qualification remains. The
-Skia, gfxstream/Mesa, Wayland, Hermes, support-library, and React Native C++
-workspace implementations are complete. AOSP compilation and artifact
-processing use separate Android-owned thin images, and gfxstream uses its own
-Android-owned thin image. The native builder uses Ubuntu 26.04's packaged
-Vulkan 1.4 loader instead of compiling or staging a private loader.
+Status: complete. Cold reconstruction and warm reuse passed for the Skia,
+gfxstream/Mesa, Wayland, Hermes, support-library, and React Native C++ workspace
+migrations. AOSP compilation and artifact processing use separate Android-owned
+thin images, and gfxstream uses its own Android-owned thin image. The native
+builder uses Ubuntu 26.04's packaged Vulkan 1.4 loader instead of compiling or
+staging a private loader.
 
 Move Skia, gfxstream, Mesa, React Native C++, Hermes, folly, and
 other CMake/GN/Meson/Ninja intermediates into component-and-target-specific
@@ -343,8 +344,8 @@ one volume.
 
 ## Phase 6: Migrate Swift Target-SDK Builders
 
-Status: implementation complete; cold and warm rebuild qualification remains.
-The arm64-native and amd64-cross runtime lanes now attach distinct 200 GiB
+Status: complete. Cold reconstruction and warm reuse passed for both target-SDK
+lanes. The arm64-native and amd64-cross runtime lanes attach distinct 200 GiB
 build workspaces and 50 GiB compiler-cache workspaces. Source, bootstrap
 compilers, downloaded packages, sysroots, and assembled runtime exports remain
 host-owned inputs or artifact boundaries; no runtime intermediate or compiler
@@ -367,15 +368,15 @@ warm reuse, and still produces one relocatable dual-architecture SDK artifact.
 
 ## Phase 7: Migrate Linux SwiftPM Product and Test Builds
 
-Status: implementation complete; cold and warm build/test qualification
-remains. Linux SwiftPM compilation and linking now use target-specific 100 GiB
-workspaces with independent compiler-cache volumes. The runtime assembler uses
-its own tool workspace. Locked dependency acquisition remains a network-capable
-host action backed by one architecture-neutral package cache; Collider copies
-only the resolved dependency graph into the Linux workspace when the manifest
-or lockfile digest changes. The final bin directory is exported to the bounded
-host products directory, so downstream recipes never traverse the volume-backed
-`.build` tree.
+Status: complete. Cold and warm build/test qualification passed. Linux SwiftPM
+compilation and linking use target-specific 100 GiB workspaces with independent
+compiler-cache volumes. The runtime assembler uses its own tool workspace.
+Locked dependency acquisition remains a network-capable host action backed by
+one architecture-neutral package cache; Collider copies only the resolved
+dependency graph into the Linux workspace when the manifest or lockfile digest
+changes. The final bin directory is exported to the bounded host products
+directory, so downstream recipes never traverse the volume-backed `.build`
+tree.
 
 Move architecture-specific Linux SwiftPM `.build` state into persistent
 workspaces. Keep package sources, manifests, generated first-party source, and
@@ -413,8 +414,8 @@ uncommitted work, editor state, credentials, or user home data.
 
 ## Phase 9: Complete the Cutover
 
-Status: lifecycle implementation complete; destructive cold and warm
-qualification and confirmed physical host cleanup remain.
+Status: lifecycle implementation and cold/warm qualification complete;
+confirmed physical host cleanup remains.
 
 Collider's type model separates read-only host inputs, bounded host exports,
 persistent Linux workspaces, and tmpfs. General writable host mounts,
@@ -434,12 +435,12 @@ status distinguishes active, retained, and reclaimable volumes. Running records
 hold kernel-backed leases so the next Collider invocation can terminalize a
 genuinely abandoned run without guessing from age or PID state.
 
-Complete the cold and unchanged warm qualification gates from Phases 4 through
-7. Then inspect and remove only the physical host intermediate directories
+The cold and unchanged warm qualification gates from Phases 4 through 7 are
+complete. Inspect and remove only the physical host intermediate directories
 confirmed unused by the new graph. Mark this plan complete and delete it after
-those remaining gates pass. Existing Browser workspaces remain intact until
-that destructive qualification is deliberately scheduled; no further storage-
-model implementation belongs to this phase.
+that cleanup passes. Existing Browser workspaces remain intact until their
+replaced host-backed directories are confirmed unused; no further storage-model
+implementation belongs to this phase.
 
 Gate: repository-wide container planning exposes no writable host build-
 intermediate mount, every persistent volume has one declared owner and target,
