@@ -51,7 +51,7 @@ implementation inputs are available:
 ## Deferred product plans
 
 - [Linux distribution portability qualification](linux-distribution-portability-plan.md)
-- [GitHub Actions self-hosted runners](github-actions-self-hosted-runner-plan.md)
+- [GitHub Actions self-hosted CI](github-actions-self-hosted-runner-plan.md)
 - [Collider ratatui TUI](collider-ratatui-tui-plan.md)
 - [Browser custom UI](nucleus-browser-custom-ui-plan.md)
 

@@ -1557,7 +1557,7 @@ Proton, Zink, DXVK, vkd3d-proton, game input/audio, and compatibility-matrix
 contracts. Each role builds and qualifies its own declared artifacts from the
 same source revision; none substitutes for another.
 
-[GitHub Actions Self-Hosted Runner Plan](github-actions-self-hosted-runner-plan.md)
+[GitHub Actions Self-Hosted CI Plan](github-actions-self-hosted-runner-plan.md)
 distinguishes the shipping virtualization qualifier from the physical Linux
 qualifier. [macOS Remote Development Plan](macos-remote-development-plan.md)
 keeps the shipping VM runtime separate from the host-owned development
