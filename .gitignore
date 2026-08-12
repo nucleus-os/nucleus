@@ -8,7 +8,8 @@ ehthumbs.db
 Desktop.ini
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/skills
 *.iml
 *~
 *.swp

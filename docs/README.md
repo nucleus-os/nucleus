@@ -16,6 +16,7 @@ Architecture and contract documents describe the current system. An implementati
 - [Direct scanout](../compositor/compositor-core/docs/direct-scanout.md)
 - [Render benchmarking](../compositor/docs/render-benchmarking.md)
 - [Collider build storage](collider-build-storage-architecture.md)
+- [NucleusStorage volume](nucleus-storage-volume.md)
 - [Swift Wayland architecture](../swift-wayland/ARCHITECTURE.md)
 
 ## Active execution plans
