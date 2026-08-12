@@ -46,10 +46,9 @@ public enum VulkanColliderRecipe: ColliderComponent {
         var toolBuilder = TaskBuilder(
             id: TaskID(rawValue: "vulkan.generator"),
             component: descriptor.id)
-        let generator: ArtifactReference<ExecutableArtifact> = try toolBuilder.output(
+        let generator: ExecutableReference = try toolBuilder.executableOutput(
             "executable",
-            path: swiftPM.executable("VulkanGen"),
-            validation: .executableFile)
+            path: swiftPM.executable("VulkanGen"))
         let tool = toolBuilder.build(
             swiftProducts: [
                 swiftPM.product(
@@ -74,7 +73,7 @@ public enum VulkanColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "vulkan.generate"),
             component: descriptor.id)
         builder.consume(generator)
-        let _: ArtifactReference<FileArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "bindings",
             path: output,
             validation: .regularFile)
@@ -101,17 +100,17 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
         let registry: FilePath
         let output: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: generator.string)
-            encoder.append(tag: 2, string: registry.string)
-            encoder.append(tag: 3, string: output.string)
-            encoder.append(tag: 4, integer: 1)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: generator)
+            encoder.append(path: registry)
+            encoder.append(path: output)
+            encoder.append(1)
         }
     }
 
     static let kind: ActionKind = "vulkan.generate-bindings"
 
-    let generator: ArtifactReference<ExecutableArtifact>
+    let generator: ExecutableReference
     let registry: FilePath
     let output: FilePath
     let workingDirectory: FilePath

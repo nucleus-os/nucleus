@@ -22,73 +22,28 @@ let products: [Product] = [
     .executable(
         name: "NucleusAndroidThreadSanitizerHarness",
         targets: ["NucleusAndroidThreadSanitizerHarness"]),
-    .library(name: "NucleusRenderServer", type: .dynamic, targets: ["NucleusRenderServer"]),
     .executable(
         name: "NucleusRenderServerThreadSanitizerHarness",
         targets: ["NucleusRenderServerThreadSanitizerHarness"]),
-    .library(
-        name: "NucleusConfigIO", type: .dynamic,
-        targets: ["NucleusConfigIO", "NucleusConfigSyntax"]),
     .executable(name: "NucleusConfigService", targets: ["NucleusConfigServiceExecutable"]),
-    .library(name: "NucleusConfig", type: .dynamic, targets: ["NucleusConfig"]),
-    .library(
-        name: "Nucleus", type: .dynamic,
-        targets: [
-            "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
-            "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
-            "NucleusTextBackend",
-            "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ]),
+    .library(name: "Nucleus", targets: ["Nucleus"]),
     .executable(name: "NucleusHeadlessBenchmarks", targets: ["NucleusHeadlessBenchmarks"]),
     .executable(
         name: "NucleusCoreThreadSanitizerHarness", targets: ["NucleusCoreThreadSanitizerHarness"]),
     .library(name: "NucleusDesktop", targets: ["NucleusDesktop"]),
-    .library(name: "NucleusFoundation", type: .dynamic, targets: ["NucleusFoundation"]),
+    .library(name: "NucleusFoundation", targets: ["NucleusFoundation"]),
     .executable(name: "nucleus", targets: ["NucleusControlCLI"]),
-    .library(name: "NucleusControlClient", type: .dynamic, targets: ["NucleusControlClient"]),
-    .library(name: "NucleusControlProtocol", type: .dynamic, targets: ["NucleusControlProtocol"]),
     .executable(name: "NucleusControlService", targets: ["NucleusControlServiceExecutable"]),
-    .library(
-        name: "NucleusIPCTransport", type: .dynamic,
-        targets: ["NucleusIPCTransport", "NucleusIPCTransportC"]),
-    .library(
-        name: "NucleusLinux", type: .dynamic,
-        targets: [
-            "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
-            "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
-            "NucleusThemeAssetIO",
-        ]),
     .executable(
         name: "NucleusLinuxThreadSanitizerHarness", targets: ["NucleusLinuxThreadSanitizerHarness"]),
-    .library(
-        name: "NucleusLinuxDesktop", type: .dynamic,
-        targets: ["NucleusLinuxAccessibility", "NucleusLinuxEnvironment"]),
     .executable(name: "NucleusLinuxBenchmarks", targets: ["NucleusLinuxBenchmarks"]),
     .executable(name: "NucleusSessionSupervisor", targets: ["NucleusSessionSupervisor"]),
     .library(name: "NucleusReactRuntime", targets: ["NucleusReactRuntime"]),
     .executable(
         name: "NucleusReactThreadSanitizerHarness", targets: ["NucleusReactThreadSanitizerHarness"]),
     .executable(name: "NucleusReactBenchmarks", targets: ["NucleusReactBenchmarks"]),
-    .library(name: "NucleusReactRuntimeCxx", targets: ["NucleusReactRuntimeCxx"]),
-    .library(name: "NucleusReactRuntimeHostCxx", targets: ["NucleusReactRuntimeHostCxx"]),
-    .library(name: "NucleusSessionProtocol", type: .dynamic, targets: ["NucleusSessionProtocol"]),
-    .library(name: "NucleusShellKit", type: .dynamic, targets: ["NucleusShellRuntime"]),
-    .library(name: "SwiftVulkan", type: .dynamic, targets: ["Vulkan"]),
-    .library(name: "WaylandServer", targets: ["WaylandServer"]),
-    .library(name: "WaylandClient", targets: ["WaylandClient"]),
+    .library(name: "NucleusSessionProtocol", targets: ["NucleusSessionProtocol"]),
     .executable(name: "SwiftWaylandGen", targets: ["SwiftWaylandGen"]),
-    .library(
-        name: "WaylandProtocolRuntime", type: .dynamic,
-        targets: ["WaylandProtocolTypes", "WaylandProtocolsC"]),
-    .library(
-        name: "NucleusWindowClient", type: .dynamic,
-        targets: [
-            "NucleusWindowClientContracts", "NucleusWindowClientRuntime",
-            "NucleusWindowClientWayland",
-            "NucleusWindowClientPasteboard", "NucleusWindowClientRender",
-            "NucleusWindowClientInput",
-            "NucleusWindowClientHost",
-        ]),
     .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidDeployment"]),
 ]
 let dependencies: [Package.Dependency] = [
@@ -522,10 +477,6 @@ let targets: [Target] = [
         swiftSettings: [
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
-    .target(
-        name: "NucleusRenderServer",
-        dependencies: ["NucleusRenderServerRuntime", "NucleusSessionProtocol"],
-        path: "compositor/compositor-core/Sources/NucleusRenderServer"),
     .executableTarget(
         name: "NucleusRenderServerThreadSanitizerHarness",
         dependencies: [
@@ -637,7 +588,9 @@ let targets: [Target] = [
         ], path: "compositor/compositor-core/Tests/NucleusCompositorWindowSceneTests"),
     .executableTarget(
         name: "NucleusCompositor",
-        dependencies: ["NucleusRenderServer", "NucleusFoundation", "NucleusSessionProtocol"],
+        dependencies: [
+            "NucleusRenderServerRuntime", "NucleusFoundation", "NucleusSessionProtocol",
+        ],
         path: "compositor/compositor/Sources/NucleusCompositor",
         linkerSettings: [.unsafeFlags(["-Xlinker", "--as-needed"])]),
     .target(

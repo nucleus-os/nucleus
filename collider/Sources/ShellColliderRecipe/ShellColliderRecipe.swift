@@ -137,11 +137,11 @@ public enum ShellColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "shell.publish-runtime"),
             component: descriptor.id)
-        let _: ArtifactReference<PathArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "active-runtime-generation",
             path: configuration.prefix,
             validation: .symlinkTarget)
-        let _: ArtifactReference<PathArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "active-package-manifests",
             path: configuration.packageManifestsRoot.appending("current"),
             validation: .symlinkTarget)
@@ -168,14 +168,12 @@ public enum ShellColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "shell.tracy-receivers"),
             component: descriptor.id)
-        let _: ArtifactReference<ExecutableArtifact> = try builder.output(
+        let _: ExecutableReference = try builder.executableOutput(
             "tracy-capture",
-            path: build.appending("tracy-capture"),
-            validation: .executableFile)
-        let _: ArtifactReference<ExecutableArtifact> = try builder.output(
+            path: build.appending("tracy-capture"))
+        let _: ExecutableReference = try builder.executableOutput(
             "tracy-csvexport",
-            path: build.appending("tracy-csvexport"),
-            validation: .executableFile)
+            path: build.appending("tracy-csvexport"))
         return builder.build(
             inputs: [
                 .sourceCheckout(source),
@@ -200,12 +198,12 @@ private struct BuildTracyReceiversAction: ColliderAction {
         let build: FilePath
         let workingDirectory: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: source.string)
-            encoder.append(tag: 2, string: build.string)
-            encoder.append(tag: 3, string: workingDirectory.string)
-            encoder.append(tag: 4, string: "tracy-capture\0capture")
-            encoder.append(tag: 5, string: "tracy-csvexport\0csvexport")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: source)
+            encoder.append(path: build)
+            encoder.append(path: workingDirectory)
+            encoder.append("tracy-capture\0capture")
+            encoder.append("tracy-csvexport\0csvexport")
         }
     }
 

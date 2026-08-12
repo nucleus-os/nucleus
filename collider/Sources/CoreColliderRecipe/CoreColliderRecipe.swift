@@ -32,21 +32,21 @@ package enum CoreTaskIDs {
 public enum CoreColliderRecipe: ColliderComponent {
     package struct ComponentArtifacts: Sendable {
         package let component: ComponentDefinition
-        package let skiaExternalSources: ArtifactReference<DirectoryArtifact>
-        package let linuxICULibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
+        package let skiaExternalSources: ArtifactReference
+        package let linuxICULibraries: [NativeLinuxTarget: ArtifactReference]
         package let nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet]
     }
 
     package struct SkiaSourceArtifacts: Sendable {
         package let tasks: [TaskDeclaration]
-        package let externalSources: ArtifactReference<DirectoryArtifact>
-        package let gn: ArtifactReference<ExecutableArtifact>
+        package let externalSources: ArtifactReference
+        package let gn: ExecutableReference
     }
 
     package struct SkiaBuildArtifacts: Sendable {
         package let task: TaskDeclaration
-        package let buildDirectory: ArtifactReference<DirectoryArtifact>
-        package let icuLibrary: ArtifactReference<FileArtifact>
+        package let buildDirectory: ArtifactReference
+        package let icuLibrary: ArtifactReference
     }
 
     package struct NativeSDKArtifacts: Sendable {
@@ -56,16 +56,14 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package struct AndroidHostArtifacts: Sendable {
         package let task: TaskDeclaration
-        package let library: ArtifactReference<FileArtifact>
-        package let swiftJavaLibrary: ArtifactReference<FileArtifact>
-        package let generatedJava: ArtifactReference<DirectoryArtifact>
+        package let library: ArtifactReference
+        package let swiftJavaLibrary: ArtifactReference
+        package let generatedJava: ArtifactReference
     }
-
-    package enum AndroidHostValidationResult: TaskResultValue {}
 
     package struct AndroidHostValidationArtifacts: Sendable {
         package let task: TaskDeclaration
-        package let result: TaskResultReference<AndroidHostValidationResult>
+        package let ordering: TaskOrderingReference
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -94,7 +92,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             builder: native.builder.base)
         var tasks = sources.tasks
         var roots: Set<TaskID> = []
-        var linuxICULibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>] = [:]
+        var linuxICULibraries: [NativeLinuxTarget: ArtifactReference] = [:]
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -149,7 +147,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         let androidBuild = try buildAndroidProject(
             root: root,
             environment: context.environment,
-            validation: androidValidation.result,
+            validation: androidValidation.ordering,
             host: androidHost,
             ndk: ndk)
         tasks += [
@@ -273,7 +271,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         var downloadBuilder = TaskBuilder(
             id: CoreTaskIDs.gnDownload,
             component: ComponentID(rawValue: "core"))
-        let archive: ArtifactReference<FileArtifact> = try downloadBuilder.output(
+        let archive: ArtifactReference = try downloadBuilder.output(
             "archive",
             path: gnArchive,
             validation: .regularFile)
@@ -288,7 +286,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         var sourceBuilder = TaskBuilder(
             id: CoreTaskIDs.sources,
             component: ComponentID(rawValue: "core"))
-        let externalSources: ArtifactReference<DirectoryArtifact> = try sourceBuilder.output(
+        let externalSources: ArtifactReference = try sourceBuilder.output(
             "external-sources",
             path: skia.appending("third_party/externals"),
             validation: .nonEmptyDirectory)
@@ -310,10 +308,9 @@ public enum CoreColliderRecipe: ColliderComponent {
             component: ComponentID(rawValue: "core"))
         installBuilder.consume(archive)
         installBuilder.consume(builder.image)
-        let gn: ArtifactReference<ExecutableArtifact> = try installBuilder.output(
+        let gn: ExecutableReference = try installBuilder.executableOutput(
             "gn",
-            path: skia.appending("bin/gn"),
-            validation: .executableFile)
+            path: skia.appending("bin/gn"))
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
             action:
@@ -430,15 +427,15 @@ public enum CoreColliderRecipe: ColliderComponent {
             id: CoreTaskIDs.androidHostBuild,
             component: ComponentID(rawValue: "core"))
         builder.consume(nativeSDK)
-        let library: ArtifactReference<FileArtifact> = try builder.output(
+        let library: ArtifactReference = try builder.output(
             "android-library",
             path: product,
             validation: .regularFile)
-        let swiftJavaLibrary: ArtifactReference<FileArtifact> = try builder.output(
+        let swiftJavaLibrary: ArtifactReference = try builder.output(
             "swift-java-library",
             path: swiftJavaProduct,
             validation: .regularFile)
-        let generatedJavaArtifact: ArtifactReference<DirectoryArtifact> =
+        let generatedJavaArtifact: ArtifactReference =
             try builder.output(
                 "generated-java",
                 path: generatedJava,
@@ -490,7 +487,7 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func validateAndroidHost(
         root: FilePath,
-        library: ArtifactReference<FileArtifact>,
+        library: ArtifactReference,
         ndk: FilePath,
         environment: [String: String]
     ) throws -> AndroidHostValidationArtifacts {
@@ -503,8 +500,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             id: CoreTaskIDs.validateAndroidHost,
             component: ComponentID(rawValue: "core"))
         builder.consume(library)
-        let result: TaskResultReference<AndroidHostValidationResult> =
-            try builder.result("validation")
+        let ordering = builder.ordering
         let task = builder.build(
             inputs: [.file(kotlinContract)],
             assessmentPolicy: .always,
@@ -516,13 +512,13 @@ public enum CoreColliderRecipe: ColliderComponent {
                         readelf: readelf,
                         minimumSwiftJavaThunkCount: 20,
                         environment: environment)))
-        return AndroidHostValidationArtifacts(task: task, result: result)
+        return AndroidHostValidationArtifacts(task: task, ordering: ordering)
     }
 
     package static func buildAndroidProject(
         root: FilePath,
         environment: [String: String],
-        validation: TaskResultReference<AndroidHostValidationResult>,
+        validation: TaskOrderingReference,
         host: AndroidHostArtifacts,
         ndk: FilePath
     ) throws -> TaskDeclaration {
@@ -530,7 +526,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidBuild,
             component: descriptor.id)
-        builder.consume(validation)
+        builder.after(validation)
         builder.consume(host.library)
         builder.consume(host.swiftJavaLibrary)
         builder.consume(host.generatedJava)
@@ -559,7 +555,7 @@ public enum CoreColliderRecipe: ColliderComponent {
     package static func publishAndroidRenderSDK(
         root: FilePath,
         sdkRoot: FilePath,
-        skia: ArtifactReference<DirectoryArtifact>
+        skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
@@ -572,7 +568,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         builder.consume(skia)
         var outputs = ArtifactReferenceSet(skia)
         for (name, _) in links {
-            let output: ArtifactReference<PathArtifact> = try builder.output(
+            let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
                 validation: .symlinkTarget)
@@ -597,7 +593,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         root: FilePath,
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
-        skia: ArtifactReference<DirectoryArtifact>
+        skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
@@ -610,7 +606,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         builder.consume(skia)
         var outputs = ArtifactReferenceSet(skia)
         for (name, _) in links {
-            let output: ArtifactReference<PathArtifact> = try builder.output(
+            let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
                 validation: .symlinkTarget)
@@ -635,11 +631,11 @@ private struct ValidateAndroidHostAction: ColliderAction {
         let readelf: FilePath
         let minimumSwiftJavaThunkCount: UInt32
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: library.string)
-            encoder.append(tag: 2, string: kotlinContract.string)
-            encoder.append(tag: 3, string: readelf.string)
-            encoder.append(tag: 4, integer: UInt64(minimumSwiftJavaThunkCount))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: library)
+            encoder.append(path: kotlinContract)
+            encoder.append(path: readelf)
+            encoder.append(UInt64(minimumSwiftJavaThunkCount))
         }
     }
 
@@ -804,12 +800,12 @@ private struct PublishRenderSDKAction: ColliderAction {
             }
         }
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sdk.string)
-            encoder.append(
-                tag: 2,
-                string: links.map { "\($0.name)\u{0}\($0.target.string)" }
-                    .joined(separator: "\u{1}"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sdk)
+            encoder.appendSequence(links) { linkEncoder, link in
+                linkEncoder.append(link.name)
+                linkEncoder.append(path: link.target)
+            }
         }
     }
 
@@ -844,13 +840,13 @@ private struct VerifyAndroidProjectAction: ColliderAction {
         let swiftJavaLibrary: FilePath
         let generatedJava: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: project.string)
-            encoder.append(tag: 2, string: "verifyDebug")
-            encoder.append(tag: 3, string: ndk.string)
-            encoder.append(tag: 4, string: nucleusLibrary.string)
-            encoder.append(tag: 5, string: swiftJavaLibrary.string)
-            encoder.append(tag: 6, string: generatedJava.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: project)
+            encoder.append("verifyDebug")
+            encoder.append(path: ndk)
+            encoder.append(path: nucleusLibrary)
+            encoder.append(path: swiftJavaLibrary)
+            encoder.append(path: generatedJava)
         }
     }
 
@@ -926,13 +922,13 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
         let skia: FilePath
         let dependencies: [SkiaGitDependency]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: skia.string)
-            encoder.append(
-                tag: 2,
-                string: dependencies.map {
-                    "\($0.relativePath)\u{1}\($0.remote)\u{1}\($0.commit)"
-                }.joined(separator: "\0"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: skia)
+            encoder.appendSequence(dependencies) { dependencyEncoder, dependency in
+                dependencyEncoder.append(dependency.relativePath)
+                dependencyEncoder.append(dependency.remote)
+                dependencyEncoder.append(dependency.commit)
+            }
         }
     }
 
@@ -1093,11 +1089,9 @@ private struct InstallSkiaGNAction: ColliderAction {
         let execution: OCIExecution
         let executable: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(
-                tag: 1,
-                nested: OCIExecutionActionIdentity(execution))
-            encoder.append(tag: 2, string: executable.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(nested: OCIExecutionActionIdentity(execution))
+            encoder.append(path: executable)
         }
     }
 
@@ -1254,8 +1248,8 @@ private func skiaTask(
     artifactTarget: ArtifactTarget,
     intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
     containerEnvironment: [String: String],
-    externalSources: ArtifactReference<DirectoryArtifact>,
-    gn: ArtifactReference<ExecutableArtifact>,
+    externalSources: ArtifactReference,
+    gn: ExecutableReference,
     builder: NativeOCIConfiguration
 ) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
     let skia = root.appending("third-party/skia")
@@ -1342,16 +1336,16 @@ private func skiaTask(
     task.consume(gn)
     task.consume(builder.image)
     task.consume(builder.swiftSDK)
-    let directory: ArtifactReference<DirectoryArtifact> = try task.output(
+    let directory: ArtifactReference = try task.output(
         "archives",
         path: exportDirectory,
         validation: .nonEmptyDirectory)
-    let icuLibrary: ArtifactReference<FileArtifact> = try task.output(
+    let icuLibrary: ArtifactReference = try task.output(
         "libicu.a",
         path: exportDirectory.appending("libicu.a"),
         validation: .regularFile)
     for archive in requiredArchives where archive != "libicu.a" {
-        let _: ArtifactReference<FileArtifact> = try task.output(
+        let _: ArtifactReference = try task.output(
             OutputSlotID(rawValue: archive),
             path: exportDirectory.appending(archive),
             validation: .regularFile)

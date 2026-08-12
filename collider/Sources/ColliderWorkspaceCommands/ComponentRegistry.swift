@@ -967,7 +967,7 @@ package struct ComponentRegistry {
         environment: [String: String],
         android: AndroidToolchainVersions,
         inputs: SwiftTargetSDKInputs,
-        runtimeBuilderBaseImage: ArtifactReference<FileArtifact>
+        runtimeBuilderBaseImage: ArtifactReference
     ) throws -> SwiftTargetSDKGenerationConfiguration {
         let recipeRoot = context.layout.swiftSDK
         let inputsFile = recipeRoot.appending("target-sdk-inputs.json")

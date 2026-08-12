@@ -282,7 +282,7 @@ private func fixtureNativeBuilder(
     var dependencyProducer = TaskBuilder(
         id: TaskID(rawValue: "native.builder-dependencies"),
         component: ComponentID(rawValue: "native"))
-    let dependencyImage: ArtifactReference<FileArtifact> =
+    let dependencyImage: ArtifactReference =
         try dependencyProducer.output(
             "image-id",
             path: imageID.removingLastComponent().appending(
@@ -291,14 +291,14 @@ private func fixtureNativeBuilder(
     var producer = TaskBuilder(
         id: TaskID(rawValue: "native.builder"),
         component: ComponentID(rawValue: "native"))
-    let image: ArtifactReference<FileArtifact> = try producer.output(
+    let image: ArtifactReference = try producer.output(
         "image-id",
         path: imageID,
         validation: .regularFile)
     var swiftSDKProducer = TaskBuilder(
         id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
         component: ComponentID(rawValue: "swift-sdk"))
-    let swiftSDK: ArtifactReference<PathArtifact> = try swiftSDKProducer.output(
+    let swiftSDK: ArtifactReference = try swiftSDKProducer.output(
         "active-sdk",
         path: swiftSDKRoot,
         validation: .symlinkTarget)
@@ -315,7 +315,7 @@ private func fixtureNativeBuilder(
 private func fixtureICULibrary(
     _ target: NativeLinuxTarget,
     root _: FilePath = FilePath("/workspace/core")
-) throws -> ArtifactReference<FileArtifact> {
+) throws -> ArtifactReference {
     var producer = TaskBuilder(
         id: TaskID(rawValue: "core.skia.\(target.identifier)"),
         component: ComponentID(rawValue: "core"))
@@ -328,7 +328,7 @@ private func fixtureICULibrary(
 
 private func fixtureSkiaExternalSources(
     root: FilePath = FilePath("/workspace/core")
-) throws -> ArtifactReference<DirectoryArtifact> {
+) throws -> ArtifactReference {
     var producer = TaskBuilder(
         id: TaskID(rawValue: "core.sources"),
         component: ComponentID(rawValue: "core"))
@@ -340,7 +340,7 @@ private func fixtureSkiaExternalSources(
 
 private func fixtureReactNativeNodeModules(
     root: FilePath
-) throws -> ArtifactReference<DirectoryArtifact> {
+) throws -> ArtifactReference {
     var producer = TaskBuilder(
         id: TaskID(rawValue: "rn.javascript-dependencies"),
         component: ComponentID(rawValue: "rn"))
@@ -413,12 +413,18 @@ private func fixtureReactNativeNodeModules(
             "/usr/lib/x86_64-linux-gnu") == false)
     #expect(
         armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
-            NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
+            SwiftPMInvocation.ociSwiftSDKDirectory.string
+                + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                + NativeLinuxTarget(architecture: .arm64).targetTriple + "/"
+                + NucleusLinuxABI.sdkDirectoryName
                 + "/usr/lib/swift/linux:/opt/swift/usr/lib/swift/linux:"
                 + "/opt/swift-compat/arm64:") == true)
     #expect(
         x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
-            NativeLinuxTarget(architecture: .x86_64).containerSwiftSDKRoot
+            SwiftPMInvocation.ociSwiftSDKDirectory.string
+                + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                + NativeLinuxTarget(architecture: .x86_64).targetTriple + "/"
+                + NucleusLinuxABI.sdkDirectoryName
                 + "/usr/lib/swift/linux:/opt/swift-x86_64/usr/lib/swift/linux:"
                 + "/opt/swift-compat/amd64:") == true)
     #expect(
@@ -694,7 +700,7 @@ private func fixtureReactNativeNodeModules(
     var imageBuilder = TaskBuilder(
         id: AndroidRuntimeTaskIDs.gfxstreamTools,
         component: ComponentID(rawValue: "android-runtime"))
-    let image: ArtifactReference<FileArtifact> = try imageBuilder.output(
+    let image: ArtifactReference = try imageBuilder.output(
         "image-id",
         path: FilePath("/cache/gfxstream/image-id"),
         validation: .regularFile)
@@ -1907,14 +1913,14 @@ private func fixtureReactNativeNodeModules(
     var buildImageBuilder = TaskBuilder(
         id: AndroidRuntimeTaskIDs.aospBuildTools,
         component: ComponentID(rawValue: "fixture"))
-    let buildImage: ArtifactReference<FileArtifact> = try buildImageBuilder.output(
+    let buildImage: ArtifactReference = try buildImageBuilder.output(
         "image",
         path: FilePath("/cache/aosp/build-image-id"),
         validation: .regularFile)
     var artifactImageBuilder = TaskBuilder(
         id: AndroidRuntimeTaskIDs.aospArtifactTools,
         component: ComponentID(rawValue: "fixture"))
-    let artifactImage: ArtifactReference<FileArtifact> =
+    let artifactImage: ArtifactReference =
         try artifactImageBuilder.output(
             "image",
             path: FilePath("/cache/aosp/artifact-image-id"),

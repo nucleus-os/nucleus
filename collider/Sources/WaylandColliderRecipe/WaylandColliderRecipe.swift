@@ -12,7 +12,7 @@ package enum WaylandTaskIDs {
 public enum WaylandColliderRecipe: ColliderComponent {
     package struct NativeSDKArtifacts: Sendable {
         package let task: TaskDeclaration
-        package let scanner: ArtifactReference<ExecutableArtifact>?
+        package let scanner: ExecutableReference?
         package let outputs: ArtifactReferenceSet
     }
 
@@ -120,7 +120,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
-        nativeScanner: ArtifactReference<ExecutableArtifact>?,
+        nativeScanner: ExecutableReference?,
         builder: NativeOCIConfiguration
     ) throws -> NativeSDKArtifacts {
         let source = root.appending("third-party/wayland")
@@ -163,37 +163,36 @@ public enum WaylandColliderRecipe: ColliderComponent {
             task.consume(nativeScanner)
         }
         var outputs = ArtifactReferenceSet()
-        let serverHeader: ArtifactReference<FileArtifact> = try task.output(
+        let serverHeader: ArtifactReference = try task.output(
             "server-header",
             path: sdk.appending("include/wayland-server.h"),
             validation: .regularFile)
         outputs.append(serverHeader)
-        let serverProtocolHeader: ArtifactReference<FileArtifact> = try task.output(
+        let serverProtocolHeader: ArtifactReference = try task.output(
             "server-protocol-header",
             path: sdk.appending("include/wayland-server-protocol.h"),
             validation: .regularFile)
         outputs.append(serverProtocolHeader)
-        let serverLibrary: ArtifactReference<PathArtifact> = try task.output(
+        let serverLibrary: ArtifactReference = try task.output(
             "server-library",
             path: sdk.appending("lib/libwayland-server.so"),
             validation: .symlinkTarget)
         outputs.append(serverLibrary)
-        let clientLibrary: ArtifactReference<PathArtifact> = try task.output(
+        let clientLibrary: ArtifactReference = try task.output(
             "client-library",
             path: sdk.appending("lib/libwayland-client.so"),
             validation: .symlinkTarget)
-        let scanner: ArtifactReference<ExecutableArtifact>? =
+        let scanner: ExecutableReference? =
             if target.architecture == .arm64 {
-                try task.output(
+                try task.executableOutput(
                     "scanner",
-                    path: sdk.appending("bin/wayland-scanner"),
-                    validation: .executableFile)
+                    path: sdk.appending("bin/wayland-scanner"))
             } else {
                 nil
             }
         outputs.append(clientLibrary)
         if let scanner {
-            outputs.append(scanner)
+            outputs.append(scanner.artifact)
         }
         let declaration = task.build(
             inputs: inputs,
@@ -247,7 +246,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
         builder: NativeOCIConfiguration,
-        scanner: ArtifactReference<ExecutableArtifact>
+        scanner: ExecutableReference
     ) throws -> Generation {
         let protocolsRoot = root.appending("Protocols")
         let records = try protocolRecords(under: protocolsRoot)
@@ -290,11 +289,10 @@ public enum WaylandColliderRecipe: ColliderComponent {
             component: descriptor.id)
         generatorBuilder.consume(swiftOCI.image)
         generatorBuilder.consume(builder.swiftSDK)
-        let generator: ArtifactReference<ExecutableArtifact> =
-            try generatorBuilder.output(
+        let generator: ExecutableReference =
+            try generatorBuilder.executableOutput(
                 "executable",
-                path: swiftPM.executable("SwiftWaylandGen"),
-                validation: .executableFile)
+                path: swiftPM.executable("SwiftWaylandGen"))
         let generatorTask = generatorBuilder.build(
             swiftProducts: [
                 swiftPM.product(
@@ -332,7 +330,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         task.consume(swiftOCI.image)
         task.consume(builder.swiftSDK)
         for (index, directory) in generatedDirectories.enumerated() {
-            let _: ArtifactReference<DirectoryArtifact> = try task.output(
+            let _: ArtifactReference = try task.output(
                 OutputSlotID(rawValue: "generated-\(index)"),
                 path: directory,
                 validation: .nonEmptyDirectory)
@@ -424,29 +422,23 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         let pipeline: OCIExecutionPipelineIdentity
         let manifests: [FilePath]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: generator.string)
-            encoder.append(tag: 2, string: scanner.string)
-            encoder.append(tag: 3, string: protocolsRoot.string)
-            encoder.append(tag: 4, string: waylandXML.string)
-            encoder.append(
-                tag: 5,
-                string: generatedDirectories.map(\.string).joined(separator: "\0"))
-            encoder.append(
-                tag: 6,
-                string: stagedDirectories.map(\.string).joined(separator: "\0"))
-            encoder.append(tag: 7, nested: pipeline)
-            encoder.append(
-                tag: 8,
-                string: manifests.map(\.string).joined(separator: "\0"))
-            encoder.append(tag: 9, string: stagedProtocols.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: generator)
+            encoder.append(path: scanner)
+            encoder.append(path: protocolsRoot)
+            encoder.append(path: waylandXML)
+            encoder.appendSequence(generatedDirectories) { $0.append(path: $1) }
+            encoder.appendSequence(stagedDirectories) { $0.append(path: $1) }
+            encoder.append(nested: pipeline)
+            encoder.appendSequence(manifests) { $0.append(path: $1) }
+            encoder.append(path: stagedProtocols)
         }
     }
 
     static let kind: ActionKind = "wayland.generate-swift-sources"
 
-    let generator: ArtifactReference<ExecutableArtifact>
-    let scanner: ArtifactReference<ExecutableArtifact>
+    let generator: ExecutableReference
+    let scanner: ExecutableReference
     let protocolsRoot: FilePath
     let waylandXML: FilePath
     let generatedDirectories: [FilePath]
@@ -456,8 +448,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
     let manifests: [FilePath]
 
     init(
-        generator: ArtifactReference<ExecutableArtifact>,
-        scanner: ArtifactReference<ExecutableArtifact>,
+        generator: ExecutableReference,
+        scanner: ExecutableReference,
         protocolsRoot: FilePath,
         waylandXML: FilePath,
         generatedDirectories: [FilePath],
@@ -815,9 +807,9 @@ private struct RunWaylandNativeBuildAction: ColliderAction {
         let sdk: FilePath
         let pipeline: OCIExecutionPipelineIdentity
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sdk.string)
-            encoder.append(tag: 2, nested: pipeline)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sdk)
+            encoder.append(nested: pipeline)
         }
     }
 

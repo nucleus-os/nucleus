@@ -83,7 +83,7 @@ import Testing
     var producerBuilder = TaskBuilder(
         id: TaskID(rawValue: "core.android-host.build"),
         component: ComponentID(rawValue: "core"))
-    let libraryArtifact: ArtifactReference<FileArtifact> = try producerBuilder.output(
+    let libraryArtifact: ArtifactReference = try producerBuilder.output(
         "android-library",
         path: FilePath(library.path),
         validation: .regularFile)

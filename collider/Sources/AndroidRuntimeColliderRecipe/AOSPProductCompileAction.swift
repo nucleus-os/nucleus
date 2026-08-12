@@ -6,49 +6,36 @@ struct CompileAOSPProductAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let build: AOSPProductBuild
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            for (tag, path) in [
-                (1, build.productSource),
-                (4, build.sourceProvenance),
-                (5, build.artifactRoot),
-                (7, build.buildImageID),
+        func encode(into encoder: inout IdentityEncoder) {
+            for path in [
+                build.productSource,
+                build.sourceProvenance,
+                build.artifactRoot,
+                build.buildImageID,
             ] {
-                encoder.append(tag: UInt64(tag), string: path.string)
+                encoder.append(path: path)
             }
-            encoder.append(tag: 8, string: build.product)
-            encoder.append(tag: 9, string: build.release)
-            encoder.append(tag: 10, string: build.variant)
-            encoder.append(tag: 11, string: build.buildNumber)
-            encoder.append(tag: 12, integer: build.buildTimestamp)
-            encoder.append(tag: 13, integer: UInt64(build.expectedPlatformSDK))
-            encoder.append(tag: 14, integer: UInt64(build.expectedVendorAPILevel))
-            var overlays = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for overlay in build.sourceOverlays.sorted(by: {
-                $0.relativeDestination < $1.relativeDestination
-            }) {
-                overlays.append(tag: 1, string: overlay.source.string)
-                overlays.append(tag: 2, string: overlay.relativeDestination)
+            encoder.append(build.product)
+            encoder.append(build.release)
+            encoder.append(build.variant)
+            encoder.append(build.buildNumber)
+            encoder.append(build.buildTimestamp)
+            encoder.append(UInt64(build.expectedPlatformSDK))
+            encoder.append(UInt64(build.expectedVendorAPILevel))
+            encoder.appendSequence(
+                build.sourceOverlays.sorted(by: {
+                    $0.relativeDestination < $1.relativeDestination
+                })
+            ) { overlayEncoder, overlay in
+                overlayEncoder.append(path: overlay.source)
+                overlayEncoder.append(overlay.relativeDestination)
             }
-            encoder.append(tag: 15, bytes: overlays.bytes)
-            encoder.append(
-                tag: 16,
-                string: build.outputWorkspace.identity.key)
-            encoder.append(
-                tag: 17,
-                integer: build.outputWorkspace.capacityBytes)
-            encoder.append(
-                tag: 18,
-                string: build.compilerCacheWorkspace.identity.key)
-            encoder.append(
-                tag: 19,
-                integer: build.compilerCacheWorkspace.capacityBytes)
-            encoder.append(
-                tag: 20,
-                string: build.sourceWorkspace.identity.key)
-            encoder.append(
-                tag: 21,
-                integer: build.sourceWorkspace.capacityBytes)
+            encoder.append(build.outputWorkspace.identity.key)
+            encoder.append(build.outputWorkspace.capacityBytes)
+            encoder.append(build.compilerCacheWorkspace.identity.key)
+            encoder.append(build.compilerCacheWorkspace.capacityBytes)
+            encoder.append(build.sourceWorkspace.identity.key)
+            encoder.append(build.sourceWorkspace.capacityBytes)
         }
     }
 

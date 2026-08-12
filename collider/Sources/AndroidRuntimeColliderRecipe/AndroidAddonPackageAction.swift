@@ -53,7 +53,7 @@ extension AndroidRuntimeColliderRecipe {
     static func addonPackageTask(
         configuration: AndroidAddonPackageConfiguration,
         repositoryRoot: FilePath,
-        managedAOSPGeneration: ArtifactReference<PathArtifact>
+        managedAOSPGeneration: ArtifactReference
     ) throws -> TaskDeclaration {
         let productNames = [
             "nucleus-android-runtime",
@@ -96,7 +96,7 @@ extension AndroidRuntimeColliderRecipe {
         if configuration.usesManagedAOSPGeneration {
             builder.consume(managedAOSPGeneration)
         }
-        let _: ArtifactReference<DirectoryArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "addon",
             path: configuration.output,
             validation: .nonEmptyDirectory)
@@ -127,17 +127,17 @@ struct PackageAndroidAddonAction: ColliderAction {
         let appArmorPolicy: FilePath
         let seccompPolicy: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: runtimeProducts.string)
-            encoder.append(tag: 2, string: runtimeRoot?.string ?? "")
-            encoder.append(tag: 3, string: runtimeScratch.string)
-            encoder.append(tag: 4, string: aospGeneration.string)
-            encoder.append(tag: 5, string: compatibility.string)
-            encoder.append(tag: 6, string: aospSigningKey.string)
-            encoder.append(tag: 7, string: addonSigningKey.string)
-            encoder.append(tag: 8, string: output.string)
-            encoder.append(tag: 9, string: appArmorPolicy.string)
-            encoder.append(tag: 10, string: seccompPolicy.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: runtimeProducts)
+            encoder.append(runtimeRoot?.string ?? "")
+            encoder.append(path: runtimeScratch)
+            encoder.append(path: aospGeneration)
+            encoder.append(path: compatibility)
+            encoder.append(path: aospSigningKey)
+            encoder.append(path: addonSigningKey)
+            encoder.append(path: output)
+            encoder.append(path: appArmorPolicy)
+            encoder.append(path: seccompPolicy)
         }
     }
 

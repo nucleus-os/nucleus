@@ -5,23 +5,20 @@ struct FixtureCommandAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let command: CommandSpec
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: String(describing: command.executable))
-            encoder.append(tag: 2, string: command.workingDirectory.string)
-            var arguments = CanonicalDigestEncoder()
-            for argument in command.arguments {
-                arguments.append(tag: 1, string: argument)
-            }
-            encoder.append(tag: 3, bytes: arguments.bytes)
-            var environment = CanonicalDigestEncoder()
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(String(describing: command.executable))
+            encoder.append(path: command.workingDirectory)
+            encoder.appendSequence(command.arguments) { $0.append($1) }
             let volatile = Set(["PATH", "TERM"])
-            for (name, value) in command.environment.filter({
-                !volatile.contains($0.key)
-            }).sorted(by: { $0.key < $1.key }) {
-                environment.append(tag: 1, string: name)
-                environment.append(tag: 2, string: value)
+            encoder.appendSequence(
+                command.environment.filter({
+                    !volatile.contains($0.key)
+                }).sorted(by: { $0.key < $1.key })
+            ) {
+                environment, entry in
+                environment.append(entry.key)
+                environment.append(entry.value)
             }
-            encoder.append(tag: 4, bytes: environment.bytes)
         }
     }
 
@@ -88,9 +85,9 @@ struct FixtureWriteAction: ColliderAction {
         let path: FilePath
         let bytes: [UInt8]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: path.string)
-            encoder.append(tag: 2, bytes: bytes)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: path)
+            encoder.append(bytes: bytes)
         }
     }
 
@@ -124,8 +121,8 @@ struct FixtureCreateDirectoryAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let path: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: path.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: path)
         }
     }
 
@@ -156,8 +153,8 @@ struct FixturePrepareDirectoryAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let path: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: path.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: path)
         }
     }
 
@@ -192,11 +189,11 @@ struct FixturePrepareAndWriteAction: ColliderAction {
         let bytes: [UInt8]
         let reset: Bool
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: root.string)
-            encoder.append(tag: 2, string: file.string)
-            encoder.append(tag: 3, bytes: bytes)
-            encoder.append(tag: 4, integer: reset ? 1 : 0)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: root)
+            encoder.append(path: file)
+            encoder.append(bytes: bytes)
+            encoder.append(reset)
         }
     }
 
@@ -240,9 +237,9 @@ struct FixtureReplaceSymlinkAction: ColliderAction {
         let path: FilePath
         let target: String
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: path.string)
-            encoder.append(tag: 2, string: target)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: path)
+            encoder.append(target)
         }
     }
 
@@ -279,18 +276,14 @@ struct FixturePruneDirectoriesAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let plan: DirectoryRetentionPlan
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: plan.safetyRoot.string)
-            encoder.append(
-                tag: 2,
-                string: plan.rules.map {
-                    [
-                        $0.root.string,
-                        $0.current?.string ?? "",
-                        String($0.retain),
-                        $0.naming.rawValue,
-                    ].joined(separator: "\u{0}")
-                }.joined(separator: "\u{1}"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: plan.safetyRoot)
+            encoder.appendSequence(plan.rules) { ruleEncoder, rule in
+                ruleEncoder.append(path: rule.root)
+                ruleEncoder.appendOptional(rule.current) { $0.append(path: $1) }
+                ruleEncoder.append(UInt64(rule.retain))
+                ruleEncoder.appendEnum(rule.naming)
+            }
         }
     }
 
@@ -330,10 +323,10 @@ struct FixtureActivateGenerationAction: ColliderAction {
         let generation: FilePath
         let active: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: candidate.string)
-            encoder.append(tag: 2, string: generation.string)
-            encoder.append(tag: 3, string: active.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: candidate)
+            encoder.append(path: generation)
+            encoder.append(path: active)
         }
     }
 

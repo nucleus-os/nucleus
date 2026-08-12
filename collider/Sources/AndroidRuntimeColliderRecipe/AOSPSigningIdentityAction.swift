@@ -13,9 +13,9 @@ struct PrepareAOSPSigningIdentityAction: ColliderAction {
         let destination: FilePath
         let subject: String
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: destination.string)
-            encoder.append(tag: 2, string: subject)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: destination)
+            encoder.append(subject)
         }
     }
 

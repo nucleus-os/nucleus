@@ -6,18 +6,11 @@ package struct InstallBrowserAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let installation: BrowserInstallation
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: installation.distributionRoot.string)
-            encoder.append(tag: 2, string: installation.prefix.string)
-            encoder.append(
-                tag: 3,
-                string: installation.systemSandboxDirectory.string)
-            var candidates = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for candidate in installation.widevineCandidates {
-                candidates.append(tag: 1, string: candidate.string)
-            }
-            encoder.append(tag: 4, bytes: candidates.bytes)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: installation.distributionRoot)
+            encoder.append(path: installation.prefix)
+            encoder.append(path: installation.systemSandboxDirectory)
+            encoder.appendSequence(installation.widevineCandidates) { $0.append(path: $1) }
         }
     }
 

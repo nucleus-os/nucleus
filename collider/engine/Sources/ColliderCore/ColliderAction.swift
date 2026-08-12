@@ -16,113 +16,8 @@ public struct ActionKind: RawRepresentable, Hashable, Sendable,
     public var description: String { rawValue }
 }
 
-public enum ActionIdentityEncodingFailure: Error, CustomStringConvertible, Sendable {
-    case invalidTag(UInt64)
-    case duplicateTag(UInt64)
-
-    public var description: String {
-        switch self {
-        case .invalidTag(let tag):
-            "action identity tag must be positive; received \(tag)"
-        case .duplicateTag(let tag):
-            "action identity tag \(tag) was encoded more than once"
-        }
-    }
-}
-
-public struct ActionIdentityEncoder: Sendable {
-    private enum Value: Sendable {
-        case bytes([UInt8])
-        case integer(UInt64)
-        case string(String)
-    }
-
-    private var fields: [UInt64: Value] = [:]
-    private var failure: ActionIdentityEncodingFailure?
-    public let identityPathMap: IdentityPathMap
-
-    public init(identityPathMap: IdentityPathMap = .empty) {
-        self.identityPathMap = identityPathMap
-    }
-
-    public mutating func append(tag: UInt64, string: String) {
-        append(
-            tag: tag,
-            value: .string(identityPathMap.canonicalize(string)))
-    }
-
-    public mutating func append(tag: UInt64, bytes: [UInt8]) {
-        append(tag: tag, value: .bytes(bytes))
-    }
-
-    public mutating func append(tag: UInt64, integer: UInt64) {
-        append(tag: tag, value: .integer(integer))
-    }
-
-    public mutating func append<Identity: ColliderActionIdentity>(
-        tag: UInt64,
-        nested identity: Identity
-    ) {
-        var nested = ActionIdentityEncoder(identityPathMap: identityPathMap)
-        identity.encode(into: &nested)
-        if let failure = nested.failure {
-            self.failure = failure
-            return
-        }
-        append(tag: tag, value: .bytes(nested.canonicalBytes()))
-    }
-
-    public func encodedBytes() throws -> [UInt8] {
-        if let failure { throw failure }
-        return canonicalBytes()
-    }
-
-    private func canonicalBytes() -> [UInt8] {
-        var bytes: [UInt8] = []
-        for tag in fields.keys.sorted() {
-            guard let value = fields[tag] else { continue }
-            bytes += actionIdentityIntegerBytes(tag)
-            switch value {
-            case .bytes(let value):
-                bytes.append(1)
-                bytes += actionIdentityIntegerBytes(UInt64(value.count))
-                bytes += value
-            case .integer(let value):
-                bytes.append(2)
-                bytes += actionIdentityIntegerBytes(8)
-                bytes += actionIdentityIntegerBytes(value)
-            case .string(let value):
-                let value = Array(value.utf8)
-                bytes.append(3)
-                bytes += actionIdentityIntegerBytes(UInt64(value.count))
-                bytes += value
-            }
-        }
-        return bytes
-    }
-
-    private mutating func append(tag: UInt64, value: Value) {
-        guard failure == nil else { return }
-        guard tag > 0 else {
-            failure = .invalidTag(tag)
-            return
-        }
-        guard fields[tag] == nil else {
-            failure = .duplicateTag(tag)
-            return
-        }
-        fields[tag] = value
-    }
-}
-
-private func actionIdentityIntegerBytes(_ value: UInt64) -> [UInt8] {
-    (0..<8).reversed().map { shift in
-        UInt8(truncatingIfNeeded: value >> UInt64(shift * 8))
-    }
-}
-
 public protocol ColliderActionIdentity: Hashable, Sendable {
-    func encode(into encoder: inout ActionIdentityEncoder)
+    func encode(into encoder: inout IdentityEncoder)
 }
 
 public struct DownloadActionIdentity: ColliderActionIdentity {
@@ -134,32 +29,23 @@ public struct DownloadActionIdentity: ColliderActionIdentity {
         self.destination = destination
     }
 
-    public func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: specification.url.absoluteString)
-        encoder.append(tag: 2, bytes: specification.expectedDigest.bytes)
-        encoder.append(tag: 3, string: destination.string)
-
-        var redirectOrigins = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for origin in specification.permittedRedirectOrigins.sorted() {
-            redirectOrigins.append(tag: 1, string: origin)
+    public func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(specification.url.absoluteString)
+        encoder.append(bytes: specification.expectedDigest.bytes)
+        encoder.append(path: destination)
+        encoder.appendSequence(specification.permittedRedirectOrigins.sorted()) {
+            $0.append($1)
         }
-        encoder.append(tag: 4, bytes: redirectOrigins.bytes)
-        encoder.append(
-            tag: 5,
-            integer: UInt64(specification.maximumResponseSize))
+        encoder.append(UInt64(specification.maximumResponseSize))
 
-        var mediaTypes = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for mediaType in specification.acceptedMediaTypes.map({ $0.lowercased() }).sorted() {
-            mediaTypes.append(tag: 1, string: mediaType)
-        }
-        encoder.append(tag: 6, bytes: mediaTypes.bytes)
-        encoder.append(tag: 7, integer: specification.requestTimeoutSeconds)
-        encoder.append(tag: 8, integer: specification.inactivityTimeoutSeconds)
-        encoder.append(tag: 9, integer: UInt64(specification.maximumRedirects))
-        encoder.append(tag: 10, integer: UInt64(specification.maximumRetries))
-        encoder.append(tag: 11, string: specification.resumption.rawValue)
+        encoder.appendSequence(
+            specification.acceptedMediaTypes.map { $0.lowercased() }.sorted()
+        ) { $0.append($1) }
+        encoder.append(specification.requestTimeoutSeconds)
+        encoder.append(specification.inactivityTimeoutSeconds)
+        encoder.append(UInt64(specification.maximumRedirects))
+        encoder.append(UInt64(specification.maximumRetries))
+        encoder.append(specification.resumption.rawValue)
     }
 
     public func validateOutput(using files: ActionFileSystem) throws {
@@ -331,25 +217,17 @@ public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
         self.preparation = preparation
     }
 
-    public func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(
-            tag: 1,
-            string: preparation.executionPlatform.environment.rawValue)
-        encoder.append(
-            tag: 2,
-            string: preparation.executionPlatform.operatingSystem.rawValue)
-        encoder.append(
-            tag: 3,
-            string: preparation.executionPlatform.architecture.rawValue)
-        encoder.append(tag: 4, string: preparation.context.string)
-        encoder.append(tag: 5, string: preparation.containerFile.string)
-        encoder.append(tag: 6, string: preparation.imageID.string)
-        encoder.append(tag: 7, string: preparation.imageName)
-        encoder.append(tag: 8, string: preparation.baseImageSource.rawValue)
-        encoder.append(tag: 9, string: preparation.localBaseImageID?.string ?? "")
-        encoder.append(
-            tag: 10,
-            integer: UInt64(preparation.rollbackGenerationCount))
+    public func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(preparation.executionPlatform.environment.rawValue)
+        encoder.append(preparation.executionPlatform.operatingSystem.rawValue)
+        encoder.append(preparation.executionPlatform.architecture.rawValue)
+        encoder.append(path: preparation.context)
+        encoder.append(path: preparation.containerFile)
+        encoder.append(path: preparation.imageID)
+        encoder.append(preparation.imageName)
+        encoder.append(preparation.baseImageSource.rawValue)
+        encoder.appendOptional(preparation.localBaseImageID) { $0.append(path: $1) }
+        encoder.append(UInt64(preparation.rollbackGenerationCount))
     }
 }
 
@@ -360,78 +238,55 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         self.execution = execution
     }
 
-    public func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: execution.executionPlatform.environment.rawValue)
-        encoder.append(tag: 2, string: execution.executionPlatform.operatingSystem.rawValue)
-        encoder.append(tag: 3, string: execution.executionPlatform.architecture.rawValue)
-        encoder.append(tag: 4, string: execution.artifactTarget.operatingSystem.rawValue)
-        encoder.append(tag: 5, string: execution.artifactTarget.architecture.rawValue)
-        encoder.append(tag: 6, string: execution.artifactTarget.abi ?? "")
-        encoder.append(
-            tag: 7,
-            integer: UInt64(execution.artifactTarget.androidAPILevel ?? 0))
-        encoder.append(tag: 8, string: execution.imageID.string)
-        encoder.append(tag: 9, string: execution.hostname)
-        encoder.append(tag: 10, string: execution.workingDirectory)
-        encoder.append(tag: 11, string: execution.hostWorkingDirectory.string)
+    public func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(execution.executionPlatform.environment.rawValue)
+        encoder.append(execution.executionPlatform.operatingSystem.rawValue)
+        encoder.append(execution.executionPlatform.architecture.rawValue)
+        encoder.append(execution.artifactTarget.operatingSystem.rawValue)
+        encoder.append(execution.artifactTarget.architecture.rawValue)
+        encoder.append(execution.artifactTarget.abi ?? "")
+        encoder.append(UInt64(execution.artifactTarget.androidAPILevel ?? 0))
+        encoder.append(path: execution.imageID)
+        encoder.append(execution.hostname)
+        encoder.append(execution.workingDirectory)
+        encoder.append(path: execution.hostWorkingDirectory)
 
-        var mounts = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for mount in execution.mounts {
-            mounts.append(tag: 1, string: mount.source.string)
-            mounts.append(tag: 2, string: mount.target)
-            mounts.append(tag: 3, string: mount.purpose.rawValue)
+        encoder.appendSequence(execution.mounts) { mountEncoder, mount in
+            mountEncoder.append(path: mount.source)
+            mountEncoder.append(mount.target)
+            mountEncoder.appendEnum(mount.purpose)
         }
-        encoder.append(tag: 12, bytes: mounts.bytes)
-        var persistentWorkspaces = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for mount in execution.persistentWorkspaceMounts {
-            persistentWorkspaces.append(tag: 1, string: mount.workspace.identity.key)
-            persistentWorkspaces.append(
-                tag: 2,
-                string: mount.workspace.identity.artifactTarget.operatingSystem.rawValue)
-            persistentWorkspaces.append(
-                tag: 3,
-                string: mount.workspace.identity.artifactTarget.architecture.rawValue)
-            persistentWorkspaces.append(
-                tag: 4,
-                string: mount.workspace.identity.artifactTarget.abi ?? "")
-            persistentWorkspaces.append(
-                tag: 5,
-                integer: UInt64(
-                    mount.workspace.identity.artifactTarget.androidAPILevel ?? 0))
-            persistentWorkspaces.append(tag: 6, string: mount.workspace.identity.role)
-            persistentWorkspaces.append(tag: 7, string: mount.target)
-            persistentWorkspaces.append(tag: 8, string: mount.access.rawValue)
+        encoder.appendSequence(execution.persistentWorkspaceMounts) { workspace, mount in
+            workspace.append(mount.workspace.identity.key)
+            workspace.appendEnum(mount.workspace.identity.artifactTarget.operatingSystem)
+            workspace.appendEnum(mount.workspace.identity.artifactTarget.architecture)
+            workspace.appendOptional(mount.workspace.identity.artifactTarget.abi) {
+                $0.append($1)
+            }
+            workspace.appendOptional(mount.workspace.identity.artifactTarget.androidAPILevel) {
+                $0.append(UInt64($1))
+            }
+            workspace.append(mount.workspace.identity.role)
+            workspace.append(mount.target)
+            workspace.appendEnum(mount.access)
         }
-        encoder.append(tag: 14, bytes: persistentWorkspaces.bytes)
-        encoder.append(tag: 15, integer: UInt64(execution.userPolicy.userID))
-        encoder.append(tag: 16, integer: UInt64(execution.userPolicy.groupID))
-        encoder.append(tag: 17, string: execution.capabilityPolicy.rawValue)
-        encoder.append(tag: 18, string: execution.privilegePolicy.rawValue)
-        encoder.append(tag: 19, string: execution.processFilesystemPolicy.rawValue)
-        encoder.append(tag: 20, string: execution.intelBinaryTranslationPolicy.rawValue)
+        encoder.append(UInt64(execution.userPolicy.userID))
+        encoder.append(UInt64(execution.userPolicy.groupID))
+        encoder.append(execution.capabilityPolicy.rawValue)
+        encoder.append(execution.privilegePolicy.rawValue)
+        encoder.append(execution.processFilesystemPolicy.rawValue)
+        encoder.append(execution.intelBinaryTranslationPolicy.rawValue)
 
         // Resource limits schedule an execution but cannot change its declared
         // result. Tuning them must not invalidate otherwise clean artifacts.
 
-        var containerEnvironment = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for (name, value) in execution.containerEnvironment.sorted(by: {
-            $0.key < $1.key
-        }) {
-            containerEnvironment.append(tag: 1, string: name)
-            containerEnvironment.append(tag: 2, string: value)
+        encoder.appendSequence(execution.containerEnvironment.sorted { $0.key < $1.key }) {
+            entry, value in
+            entry.append(value.key)
+            entry.append(value.value)
         }
-        encoder.append(tag: 25, bytes: containerEnvironment.bytes)
-
-        var command = CanonicalDigestEncoder(
-            identityPathMap: encoder.identityPathMap)
-        for argument in execution.command {
-            command.append(tag: 1, string: argument)
-        }
-        encoder.append(tag: 26, bytes: command.bytes)
-        encoder.append(tag: 27, string: ociActionOutputIdentity(execution.output))
+        encoder.appendSequence(execution.command) { $0.append($1) }
+        encoder.append(ociActionOutputIdentity(execution.output))
     }
 }
 
@@ -442,12 +297,9 @@ public struct OCIExecutionPipelineIdentity: ColliderActionIdentity {
         self.executions = executions
     }
 
-    public func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, integer: UInt64(executions.count))
-        for (index, execution) in executions.enumerated() {
-            encoder.append(
-                tag: UInt64(index + 2),
-                nested: OCIExecutionActionIdentity(execution))
+    public func encode(into encoder: inout IdentityEncoder) {
+        encoder.appendSequence(executions) { executionEncoder, execution in
+            OCIExecutionActionIdentity(execution).encode(into: &executionEncoder)
         }
     }
 }
@@ -746,19 +598,19 @@ public struct AnyColliderAction: Hashable, Sendable {
 
     private let body: @Sendable (ActionContext) async throws -> Void
     private let validationBody: @Sendable (ActionFileSystem) throws -> Void
-    private let identityBody: @Sendable (IdentityPathMap) throws -> [UInt8]
+    private let identityBody: @Sendable (IdentityPathMap) -> [UInt8]
 
     public init<Action: ColliderAction>(_ action: Action) throws {
         try Self.validate(kind: Action.kind, requirements: action.requirements)
-        var encoder = ActionIdentityEncoder()
+        var encoder = IdentityEncoder()
         action.identity.encode(into: &encoder)
         kind = Action.kind
         implementationType = String(reflecting: Action.self)
-        identity = try encoder.encodedBytes()
+        identity = encoder.bytes
         identityBody = { pathMap in
-            var encoder = ActionIdentityEncoder(identityPathMap: pathMap)
+            var encoder = IdentityEncoder(identityPathMap: pathMap)
             action.identity.encode(into: &encoder)
-            return try encoder.encodedBytes()
+            return encoder.bytes
         }
         requirements = action.requirements
         environment = action.environment
@@ -870,8 +722,8 @@ public struct AnyColliderAction: Hashable, Sendable {
         try validationBody(files)
     }
 
-    public func identity(using pathMap: IdentityPathMap) throws -> [UInt8] {
-        try identityBody(pathMap)
+    public func identity(using pathMap: IdentityPathMap) -> [UInt8] {
+        identityBody(pathMap)
     }
 
     public static func == (

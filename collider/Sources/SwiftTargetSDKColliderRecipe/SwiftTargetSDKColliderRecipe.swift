@@ -151,7 +151,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let sourceWorkspace: FilePath
     public let sourceID: String
     public let runtimeBuilderContext: FilePath
-    public let runtimeBuilderBaseImage: ArtifactReference<FileArtifact>
+    public let runtimeBuilderBaseImage: ArtifactReference
     public let linuxTargets: [SwiftLinuxTargetBuildConfiguration]
     public let sysrootPreparer: FilePath
     public let sdkPackageSanitizer: FilePath
@@ -177,7 +177,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         sourceWorkspace: FilePath,
         sourceID: String,
         runtimeBuilderContext: FilePath,
-        runtimeBuilderBaseImage: ArtifactReference<FileArtifact>,
+        runtimeBuilderBaseImage: ArtifactReference,
         linuxTargets: [SwiftLinuxTargetBuildConfiguration],
         sysrootPreparer: FilePath,
         sdkPackageSanitizer: FilePath,
@@ -223,8 +223,8 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
 public struct SwiftTargetSDKTaskSet: Sendable {
     public let tasks: [TaskDeclaration]
     public let selected: [TaskID]
-    public let activeSDK: ArtifactReference<PathArtifact>
-    public let activeSwift: ArtifactReference<ExecutableArtifact>
+    public let activeSDK: ArtifactReference
+    public let activeSwift: ExecutableReference
 }
 
 public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendable {
@@ -240,8 +240,8 @@ public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendabl
 public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     package struct PreparedComponent: Sendable {
         package let component: ComponentDefinition
-        package let activeSDK: ArtifactReference<PathArtifact>
-        package let activeSwift: ArtifactReference<ExecutableArtifact>
+        package let activeSDK: ArtifactReference
+        package let activeSwift: ExecutableReference
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -310,14 +310,13 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.use-active-generation"),
             component: component)
-        let activeSDK: ArtifactReference<PathArtifact> = try builder.output(
+        let activeSDK: ArtifactReference = try builder.output(
             "active-sdk",
             path: configuration.active.appending("swift-sdks"),
             validation: .nonEmptyDirectory)
-        let activeSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+        let activeSwift: ExecutableReference = try builder.executableOutput(
             "active-swift",
-            path: configuration.active.appending("toolchain/usr/bin/swift"),
-            validation: .executableFile)
+            path: configuration.active.appending("toolchain/usr/bin/swift"))
         let task = builder.build(
             inputs: [.file(configuration.inputsFile)],
             locks: [
@@ -499,53 +498,53 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             [host.task, android.task] + linux.flatMap(\.tasks)
         }
 
-        var artifacts: [ArtifactReference<FileArtifact>] {
+        var artifacts: [ArtifactReference] {
             [host.artifact, android.artifact] + linux.flatMap(\.allPackages)
         }
     }
 
     private struct DownloadArtifact {
         let task: TaskDeclaration
-        let artifact: ArtifactReference<FileArtifact>
+        let artifact: ArtifactReference
     }
 
     private struct SysrootArtifact {
         let task: TaskDeclaration
-        let artifact: ArtifactReference<DirectoryArtifact>
+        let artifact: ArtifactReference
     }
 
     private struct RuntimeArtifact {
         let task: TaskDeclaration
-        let install: ArtifactReference<DirectoryArtifact>
+        let install: ArtifactReference
     }
 
     private struct GeneratorArtifact {
         let task: TaskDeclaration
-        let executable: ArtifactReference<ExecutableArtifact>
+        let executable: ExecutableReference
     }
 
     private struct AssemblyArtifacts {
         let task: TaskDeclaration
-        let hostSwift: ArtifactReference<ExecutableArtifact>
-        let linuxSDK: ArtifactReference<DirectoryArtifact>
-        let androidSDK: ArtifactReference<DirectoryArtifact>
+        let hostSwift: ExecutableReference
+        let linuxSDK: ArtifactReference
+        let androidSDK: ArtifactReference
     }
 
     private struct ValidationArtifacts {
         let tasks: [TaskDeclaration]
-        let marker: ArtifactReference<FileArtifact>
+        let marker: ArtifactReference
     }
 
     private struct ActivationArtifact {
         let task: TaskDeclaration
-        let generationMarker: ArtifactReference<FileArtifact>
-        let activeSDK: ArtifactReference<PathArtifact>
-        let activeSwift: ArtifactReference<ExecutableArtifact>
+        let generationMarker: ArtifactReference
+        let activeSDK: ArtifactReference
+        let activeSwift: ExecutableReference
     }
 
     private struct DiscoveryArtifact {
         let task: TaskDeclaration
-        let link: ArtifactReference<PathArtifact>
+        let link: ArtifactReference
     }
 
     private struct LinuxDownloads {
@@ -557,7 +556,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             (runtimePackages + sdkPackages).map(\.task)
         }
 
-        var allPackages: [ArtifactReference<FileArtifact>] {
+        var allPackages: [ArtifactReference] {
             (runtimePackages + sdkPackages).map(\.artifact)
         }
     }
@@ -565,7 +564,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private struct SanitizedLinuxPackages {
         let architecture: SwiftTargetSDKInputs.LinuxArchitecture
         let task: TaskDeclaration
-        let packages: [ArtifactReference<FileArtifact>]
+        let packages: [ArtifactReference]
     }
 
     private static func validate(_ inputs: SwiftTargetSDKInputs) throws {
@@ -665,7 +664,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: id),
             component: component)
-        let artifact: ArtifactReference<FileArtifact> = try builder.output(
+        let artifact: ArtifactReference = try builder.output(
             "download",
             path: destination,
             validation: .regularFile)
@@ -694,7 +693,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         for input in inputs {
             builder.consume(input)
         }
-        let outputs: [ArtifactReference<FileArtifact>] = try inputs.enumerated().map {
+        let outputs: [ArtifactReference] = try inputs.enumerated().map {
             index, _ in
             try builder.output(
                 OutputSlotID(rawValue: "package-\(index)"),
@@ -731,7 +730,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         for package in downloads.runtimePackages {
             builder.consume(package.artifact)
         }
-        let artifact: ArtifactReference<DirectoryArtifact> = try builder.output(
+        let artifact: ArtifactReference = try builder.output(
             "sysroot",
             path: target.sysroot,
             validation: .nonEmptyDirectory)
@@ -753,8 +752,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func linuxRuntimeTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         target: SwiftLinuxTargetBuildConfiguration,
-        builderImage: ArtifactReference<FileArtifact>,
-        sysroot: ArtifactReference<DirectoryArtifact>
+        builderImage: ArtifactReference,
+        sysroot: ArtifactReference
     ) throws -> RuntimeArtifact {
         let architecture = target.target.architecture
         let runtimeLibrary = target.runtimeInstall.appending(
@@ -804,19 +803,19 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             component: component)
         taskBuilder.consume(sysroot)
         taskBuilder.consume(builderImage)
-        let install: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
+        let install: ArtifactReference = try taskBuilder.output(
             "runtime-install",
             path: target.runtimeInstall,
             validation: .nonEmptyDirectory)
-        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let _: ArtifactReference = try taskBuilder.output(
             "swift-core-runtime",
             path: runtimeLibrary,
             validation: .regularFile)
-        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let _: ArtifactReference = try taskBuilder.output(
             "swift-testing-module",
             path: swiftTestingModule,
             validation: .regularFile)
-        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let _: ArtifactReference = try taskBuilder.output(
             "swift-testing-runtime",
             path: swiftTestingLibrary,
             validation: .regularFile)
@@ -881,10 +880,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.build-sdk-generator"),
             component: component)
-        let artifact: ArtifactReference<ExecutableArtifact> = try builder.output(
+        let artifact: ExecutableReference = try builder.executableOutput(
             "executable",
-            path: executable,
-            validation: .executableFile)
+            path: executable)
         let task = builder.build(
             inputs: [
                 .sourceCheckout(configuration.generatorSource),
@@ -960,15 +958,14 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         for runtime in runtimes {
             builder.consume(runtime.install)
         }
-        let hostSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+        let hostSwift: ExecutableReference = try builder.executableOutput(
             "host-swift",
-            path: hostToolchain.appending("usr/bin/swift"),
-            validation: .executableFile)
-        let linuxSDK: ArtifactReference<DirectoryArtifact> = try builder.output(
+            path: hostToolchain.appending("usr/bin/swift"))
+        let linuxSDK: ArtifactReference = try builder.output(
             "linux-sdk",
             path: sdkRoot.appending(linuxBundle),
             validation: .nonEmptyDirectory)
-        let androidSDK: ArtifactReference<DirectoryArtifact> = try builder.output(
+        let androidSDK: ArtifactReference = try builder.output(
             "android-sdk",
             path: sdkRoot.appending(androidBundle),
             validation: .nonEmptyDirectory)
@@ -1089,7 +1086,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 id: String,
                 sdk: String,
                 triple: String,
-                sdkArtifact: ArtifactReference<DirectoryArtifact>
+                sdkArtifact: ArtifactReference
             )] = [
                 (
                     "linux-arm64",
@@ -1117,7 +1114,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 ),
             ]
         var tasks: [TaskDeclaration] = []
-        var executables: [ArtifactReference<ExecutableArtifact>] = []
+        var executables: [ExecutableReference] = []
         for target in targets {
             let scratch = validationRoot.appending(target.id)
             let executablePath = productsRoot.appending(target.id).appending("hello")
@@ -1126,10 +1123,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 component: component)
             builder.consume(assembly.hostSwift)
             builder.consume(target.sdkArtifact)
-            let executable: ArtifactReference<ExecutableArtifact> = try builder.output(
+            let executable: ExecutableReference = try builder.executableOutput(
                 "executable",
-                path: executablePath,
-                validation: .executableFile)
+                path: executablePath)
             tasks.append(
                 builder.build(
                     inputs: [.sourceCheckout(configuration.validationFixture)],
@@ -1157,7 +1153,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         for executable in executables {
             verificationBuilder.consume(executable)
         }
-        let marker: ArtifactReference<FileArtifact> = try verificationBuilder.output(
+        let marker: ArtifactReference = try verificationBuilder.output(
             "validation-marker",
             path: validationRoot.appending(".validated"),
             validation: .regularFile)
@@ -1186,19 +1182,18 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
             component: component)
         builder.consume(validation.marker)
-        let marker: ArtifactReference<FileArtifact> = try builder.output(
+        let marker: ArtifactReference = try builder.output(
             "generation-marker",
             path: configuration.generation.appending(
                 ".nucleus-target-sdk-generation"),
             validation: .regularFile)
-        let activeSDK: ArtifactReference<PathArtifact> = try builder.output(
+        let activeSDK: ArtifactReference = try builder.output(
             "active-sdk",
             path: configuration.active.appending("swift-sdks"),
             validation: .nonEmptyDirectory)
-        let activeSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+        let activeSwift: ExecutableReference = try builder.executableOutput(
             "active-swift",
-            path: configuration.active.appending("toolchain/usr/bin/swift"),
-            validation: .executableFile)
+            path: configuration.active.appending("toolchain/usr/bin/swift"))
         let task = builder.build(
             postconditions: [
                 PathPostcondition(
@@ -1237,7 +1232,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     id: TaskID(rawValue: "swift-sdk.discover-\(bundleID)"),
                     component: component)
                 builder.consume(activation.generationMarker)
-                let artifact: ArtifactReference<PathArtifact> = try builder.output(
+                let artifact: ArtifactReference = try builder.output(
                     "discovery-link",
                     path: link,
                     validation: .symlinkTarget)
@@ -1271,11 +1266,9 @@ private struct BuildSwiftLinuxRuntimeAction: ColliderAction {
         let install: FilePath
         let execution: OCIExecution
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: install.string)
-            encoder.append(
-                tag: 2,
-                nested: OCIExecutionActionIdentity(execution))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: install)
+            encoder.append(nested: OCIExecutionActionIdentity(execution))
         }
     }
 
@@ -1340,10 +1333,10 @@ private struct ActivateSwiftSDKGenerationAction: ColliderAction {
         let generation: FilePath
         let active: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: candidate.string)
-            encoder.append(tag: 2, string: generation.string)
-            encoder.append(tag: 3, string: active.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: candidate)
+            encoder.append(path: generation)
+            encoder.append(path: active)
         }
     }
 
@@ -1398,10 +1391,10 @@ package struct PublishSwiftSDKDiscoveryAction: ColliderAction {
         let target: String
         let displacedItem: FilePath
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: path.string)
-            encoder.append(tag: 2, string: target)
-            encoder.append(tag: 3, string: displacedItem.string)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: path)
+            encoder.append(target)
+            encoder.append(path: displacedItem)
         }
     }
 
@@ -1493,15 +1486,11 @@ private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
         let outputRoot: FilePath
         let outputs: [FilePath]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sanitizer.string)
-            encoder.append(
-                tag: 2,
-                string: inputs.map(\.string).joined(separator: "\0"))
-            encoder.append(tag: 3, string: outputRoot.string)
-            encoder.append(
-                tag: 4,
-                string: outputs.map(\.string).joined(separator: "\0"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sanitizer)
+            encoder.appendSequence(inputs) { $0.append(path: $1) }
+            encoder.append(path: outputRoot)
+            encoder.appendSequence(outputs) { $0.append(path: $1) }
         }
     }
 
@@ -1573,29 +1562,25 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
         let linuxManifest: [UInt8]
         let linuxMetadata: [UInt8]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: candidate.string)
-            encoder.append(tag: 2, string: hostArchive.string)
-            encoder.append(tag: 3, string: androidArchive.string)
-            encoder.append(tag: 4, string: ndkRoot.string)
-            encoder.append(tag: 5, string: generator.string)
-            encoder.append(tag: 6, string: snapshot)
-            encoder.append(tag: 7, string: linuxBundleID)
-            encoder.append(tag: 8, string: androidBundleID)
-            encoder.append(
-                tag: 9,
-                string: targets.map { target in
-                    [
-                        target.architecture,
-                        target.gnuArchitecture,
-                        target.triple,
-                        target.runtimeInstall.string,
-                        target.packages.map(\.string).joined(separator: "\u{1}"),
-                    ].joined(separator: "\u{2}")
-                }.joined(separator: "\0"))
-            encoder.append(tag: 10, bytes: linuxManifest)
-            encoder.append(tag: 11, bytes: linuxMetadata)
-            encoder.append(tag: 12, string: pkgConfigDirectory.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: candidate)
+            encoder.append(path: hostArchive)
+            encoder.append(path: androidArchive)
+            encoder.append(path: ndkRoot)
+            encoder.append(path: generator)
+            encoder.append(snapshot)
+            encoder.append(linuxBundleID)
+            encoder.append(androidBundleID)
+            encoder.appendSequence(targets) { targetEncoder, target in
+                targetEncoder.append(target.architecture)
+                targetEncoder.append(target.gnuArchitecture)
+                targetEncoder.append(target.triple)
+                targetEncoder.append(path: target.runtimeInstall)
+                targetEncoder.appendSequence(target.packages) { $0.append(path: $1) }
+            }
+            encoder.append(bytes: linuxManifest)
+            encoder.append(bytes: linuxMetadata)
+            encoder.append(path: pkgConfigDirectory)
         }
     }
 
@@ -1834,12 +1819,12 @@ private struct BuildSwiftSDKGeneratorAction: ColliderAction {
         let source: FilePath
         let scratch: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: swift.string)
-            encoder.append(tag: 2, string: source.string)
-            encoder.append(tag: 3, string: scratch.string)
-            encoder.append(tag: 4, string: "swift-sdk-generator")
-            encoder.append(tag: 5, string: "release")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: swift)
+            encoder.append(path: source)
+            encoder.append(path: scratch)
+            encoder.append("swift-sdk-generator")
+            encoder.append("release")
         }
     }
 
@@ -1903,17 +1888,17 @@ private struct ValidateSwiftTargetSDKConsumerAction: ColliderAction {
         let triple: String
         let executable: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: hostSwift.string)
-            encoder.append(tag: 2, string: hostToolset.string)
-            encoder.append(tag: 3, bytes: hostToolsetBytes)
-            encoder.append(tag: 4, string: sdkRoot.string)
-            encoder.append(tag: 5, string: scratch.string)
-            encoder.append(tag: 6, string: fixture.string)
-            encoder.append(tag: 7, string: ndkRoot.string)
-            encoder.append(tag: 8, string: sdk)
-            encoder.append(tag: 9, string: triple)
-            encoder.append(tag: 10, string: executable.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: hostSwift)
+            encoder.append(path: hostToolset)
+            encoder.append(bytes: hostToolsetBytes)
+            encoder.append(path: sdkRoot)
+            encoder.append(path: scratch)
+            encoder.append(path: fixture)
+            encoder.append(path: ndkRoot)
+            encoder.append(sdk)
+            encoder.append(triple)
+            encoder.append(path: executable)
         }
     }
 
@@ -2044,16 +2029,14 @@ private struct ValidateSwiftTargetSDKArtifactsAction: ColliderAction {
         let executablePaths: [FilePath]
         let marker: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: linuxSDK.string)
-            encoder.append(tag: 2, string: validationRoot.string)
-            encoder.append(tag: 3, string: validator.string)
-            encoder.append(tag: 4, string: linuxSDKDirectoryName)
-            encoder.append(tag: 5, string: minimumGlibcVersion)
-            encoder.append(
-                tag: 6,
-                string: executablePaths.map(\.string).joined(separator: "\0"))
-            encoder.append(tag: 7, string: marker.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: linuxSDK)
+            encoder.append(path: validationRoot)
+            encoder.append(path: validator)
+            encoder.append(linuxSDKDirectoryName)
+            encoder.append(minimumGlibcVersion)
+            encoder.appendSequence(executablePaths) { $0.append(path: $1) }
+            encoder.append(path: marker)
         }
     }
 
@@ -2151,13 +2134,11 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
         let architecture: String
         let packages: [FilePath]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: preparer.string)
-            encoder.append(tag: 2, string: sysroot.string)
-            encoder.append(tag: 3, string: architecture)
-            encoder.append(
-                tag: 4,
-                string: packages.map(\.string).joined(separator: "\0"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: preparer)
+            encoder.append(path: sysroot)
+            encoder.append(architecture)
+            encoder.appendSequence(packages) { $0.append(path: $1) }
         }
     }
 

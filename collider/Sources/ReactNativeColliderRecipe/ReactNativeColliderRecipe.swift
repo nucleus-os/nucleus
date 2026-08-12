@@ -11,28 +11,28 @@ package enum ReactNativeTaskIDs {
 
 package struct BoostArtifacts: Sendable {
     package let tasks: [TaskDeclaration]
-    package let active: ArtifactReference<PathArtifact>
+    package let active: ArtifactReference
 }
 
 package struct JavaScriptDependencyArtifacts: Sendable {
     package let task: TaskDeclaration
-    package let nodeModules: ArtifactReference<DirectoryArtifact>
+    package let nodeModules: ArtifactReference
 }
 
 package struct HermesArtifacts: Sendable {
     package let task: TaskDeclaration
-    package let libraries: [ArtifactReference<FileArtifact>]
-    package let compiler: ArtifactReference<ExecutableArtifact>
+    package let libraries: [ArtifactReference]
+    package let compiler: ExecutableReference
 }
 
 package struct SupportLibraryArtifacts: Sendable {
     package let task: TaskDeclaration
-    package let libraries: [ArtifactReference<FileArtifact>]
+    package let libraries: [ArtifactReference]
 }
 
 package struct CxxRuntimeArtifacts: Sendable {
     package let task: TaskDeclaration
-    package let outputs: [ArtifactReference<FileArtifact>]
+    package let outputs: [ArtifactReference]
 }
 
 public enum ReactNativeColliderRecipe {
@@ -58,8 +58,8 @@ public enum ReactNativeColliderRecipe {
 
     package static func prepare(
         in context: RecipeContext,
-        skiaExternalSources: ArtifactReference<DirectoryArtifact>,
-        icuLibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
+        skiaExternalSources: ArtifactReference,
+        icuLibraries: [NativeLinuxTarget: ArtifactReference]
     ) throws -> PreparedComponent {
         let native = try context.configuration(
             NativeBuilderGraphConfiguration.self,
@@ -193,7 +193,7 @@ public enum ReactNativeColliderRecipe {
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
-        let nodeModules: ArtifactReference<DirectoryArtifact> = try task.output(
+        let nodeModules: ArtifactReference = try task.output(
             "node-modules",
             path: active,
             validation: .nonEmptyDirectory)
@@ -252,7 +252,7 @@ public enum ReactNativeColliderRecipe {
         var downloadBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.boost-download"),
             component: ComponentID(rawValue: "rn"))
-        let downloadedArchive: ArtifactReference<FileArtifact> = try downloadBuilder.output(
+        let downloadedArchive: ArtifactReference = try downloadBuilder.output(
             "archive",
             path: archive,
             validation: .regularFile)
@@ -268,11 +268,11 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.boost"),
             component: ComponentID(rawValue: "rn"))
         boostBuilder.consume(downloadedArchive)
-        let _: ArtifactReference<FileArtifact> = try boostBuilder.output(
+        let _: ArtifactReference = try boostBuilder.output(
             "version-header",
             path: generation.appending("version.hpp"),
             validation: .regularFile)
-        let activeArtifact: ArtifactReference<PathArtifact> = try boostBuilder.output(
+        let activeArtifact: ArtifactReference = try boostBuilder.output(
             "active-generation",
             path: active,
             validation: .symlinkTarget)
@@ -303,9 +303,9 @@ public enum ReactNativeColliderRecipe {
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
-        dependencies: ArtifactReference<DirectoryArtifact>,
-        skiaExternalSources: ArtifactReference<DirectoryArtifact>,
-        icuLibrary: ArtifactReference<FileArtifact>,
+        dependencies: ArtifactReference,
+        skiaExternalSources: ArtifactReference,
+        icuLibrary: ArtifactReference,
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
         let source = root.appending("third-party/hermes")
@@ -327,14 +327,13 @@ public enum ReactNativeColliderRecipe {
         taskBuilder.consume(dependencies)
         taskBuilder.consume(skiaExternalSources)
         taskBuilder.consume(icuLibrary)
-        let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let combinedArtifact: ArtifactReference = try taskBuilder.output(
             "combined-library",
             path: combined,
             validation: .regularFile)
-        let compilerArtifact: ArtifactReference<ExecutableArtifact> = try taskBuilder.output(
+        let compilerArtifact: ExecutableReference = try taskBuilder.executableOutput(
             "compiler",
-            path: hermesc,
-            validation: .executableFile)
+            path: hermesc)
         let task = taskBuilder.build(
             inputs: [
                 .sourceCheckout(source),
@@ -465,11 +464,11 @@ public enum ReactNativeColliderRecipe {
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
         taskBuilder.consume(builder.swiftSDK)
-        let fmt: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let fmt: ArtifactReference = try taskBuilder.output(
             "fmt-library",
             path: artifacts.appending("fmt/libfmt.a"),
             validation: .regularFile)
-        let conversion: ArtifactReference<FileArtifact> = try taskBuilder.output(
+        let conversion: ArtifactReference = try taskBuilder.output(
             "double-conversion-library",
             path: artifacts.appending(
                 "double-conversion/src/libdouble-conversion.a"),
@@ -556,8 +555,8 @@ public enum ReactNativeColliderRecipe {
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
-        dependencies: ArtifactReference<DirectoryArtifact>,
-        boost: ArtifactReference<PathArtifact>,
+        dependencies: ArtifactReference,
+        boost: ArtifactReference,
         hermes: HermesArtifacts,
         support: SupportLibraryArtifacts,
         builder: NativeOCIConfiguration
@@ -577,7 +576,7 @@ public enum ReactNativeColliderRecipe {
             taskBuilder.consume(library)
         }
         taskBuilder.consume(hermes.compiler)
-        var outputArtifacts: [ArtifactReference<FileArtifact>] = []
+        var outputArtifacts: [ArtifactReference] = []
         let generatedGlogHeaders =
             ["logging.h", "raw_logging.h", "stl_logging.h", "vlog_is_on.h"].map {
                 artifacts.appending("glog/glog/\($0)")
@@ -590,7 +589,7 @@ public enum ReactNativeColliderRecipe {
                 "libreact_cxx_platform.a", "libyogacore.a",
             ].map({ artifacts.appending("reactnative/\($0)") })
         for output in runtimeOutputs {
-            let artifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            let artifact: ArtifactReference = try taskBuilder.output(
                 OutputSlotID(rawValue: output.lastComponent?.string ?? "output"),
                 path: output,
                 validation: .regularFile)
@@ -714,8 +713,8 @@ public enum ReactNativeColliderRecipe {
         root: FilePath,
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
-        dependencies: ArtifactReference<DirectoryArtifact>,
-        boost: ArtifactReference<PathArtifact>,
+        dependencies: ArtifactReference,
+        boost: ArtifactReference,
         hermes: HermesArtifacts,
         support: SupportLibraryArtifacts,
         runtime: CxxRuntimeArtifacts
@@ -772,13 +771,13 @@ public enum ReactNativeColliderRecipe {
         builder.consume(dependencies)
         builder.consume(boost)
         var outputs = ArtifactReferenceSet()
-        let boostOutput: ArtifactReference<DirectoryArtifact> = try builder.output(
+        let boostOutput: ArtifactReference = try builder.output(
             OutputSlotID(rawValue: "include/boost"),
             path: boostHeaders,
             validation: .nonEmptyDirectory)
         outputs.append(boostOutput)
         for (name, _) in links {
-            let output: ArtifactReference<PathArtifact> = try builder.output(
+            let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
                 validation: .symlinkTarget)
@@ -842,17 +841,30 @@ private struct DownloadBoostAction: ColliderAction {
 }
 
 private struct PublishReactNativeSDKAction: ColliderAction {
+    struct SDKLink: Hashable, Sendable {
+        let name: String
+        let target: FilePath
+
+        init(_ link: (name: String, target: FilePath)) {
+            name = link.name
+            target = link.target
+        }
+    }
+
     struct Identity: ColliderActionIdentity {
         let sdk: FilePath
         let boostSource: FilePath
         let boostHeaders: FilePath
-        let encodedLinks: String
+        let links: [SDKLink]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sdk.string)
-            encoder.append(tag: 2, string: boostSource.string)
-            encoder.append(tag: 3, string: boostHeaders.string)
-            encoder.append(tag: 4, string: encodedLinks)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sdk)
+            encoder.append(path: boostSource)
+            encoder.append(path: boostHeaders)
+            encoder.appendSequence(links) { linkEncoder, link in
+                linkEncoder.append(link.name)
+                linkEncoder.append(path: link.target)
+            }
         }
     }
 
@@ -868,8 +880,7 @@ private struct PublishReactNativeSDKAction: ColliderAction {
             sdk: sdk,
             boostSource: boostSource,
             boostHeaders: boostHeaders,
-            encodedLinks: links.map { "\($0.name)\u{0}\($0.target.string)" }
-                .joined(separator: "\u{1}"))
+            links: links.map(SDKLink.init))
     }
 
     var requirements: ActionRequirements {
@@ -898,13 +909,13 @@ private struct ProvisionBoostAction: ColliderAction {
         let generation: FilePath
         let active: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: archive.string)
-            encoder.append(tag: 2, string: candidate.string)
-            encoder.append(tag: 3, string: generation.string)
-            encoder.append(tag: 4, string: active.string)
-            encoder.append(tag: 5, string: "boost_1_84_0/boost")
-            encoder.append(tag: 6, integer: 2)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: archive)
+            encoder.append(path: candidate)
+            encoder.append(path: generation)
+            encoder.append(path: active)
+            encoder.append("boost_1_84_0/boost")
+            encoder.append(2)
         }
     }
 
@@ -1170,12 +1181,12 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
         let root: FilePath
         let cache: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: root.string)
-            encoder.append(tag: 2, string: cache.string)
-            encoder.append(tag: 3, string: "linux")
-            encoder.append(tag: 4, string: "multiarch")
-            encoder.append(tag: 5, string: "copyfile")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: root)
+            encoder.append(path: cache)
+            encoder.append("linux")
+            encoder.append("multiarch")
+            encoder.append("copyfile")
         }
     }
 
@@ -1229,12 +1240,12 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
 
 private struct RunReactNativeNativeBuildAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let encodedArtifactRoots: String
+        let artifactRoots: [FilePath]
         let pipeline: OCIExecutionPipelineIdentity
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: encodedArtifactRoots)
-            encoder.append(tag: 2, nested: pipeline)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.appendSequence(artifactRoots) { $0.append(path: $1) }
+            encoder.append(nested: pipeline)
         }
     }
 
@@ -1250,7 +1261,7 @@ private struct RunReactNativeNativeBuildAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            encodedArtifactRoots: artifactRoots.map(\.string).joined(separator: "\u{0}"),
+            artifactRoots: artifactRoots,
             pipeline: pipeline.identity)
     }
 

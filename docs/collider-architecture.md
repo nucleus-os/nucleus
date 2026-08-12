@@ -48,6 +48,23 @@ SwiftPM product locations come from its public interfaces. Collider does not
 reconstruct private SwiftPM intermediate directories or duplicate SwiftPM's
 build-before-test semantics.
 
+Collider cache identities use one `IdentityEncoder`. Values are appended in
+semantic source order with explicit primitive discriminators and unambiguous
+length framing; records, optionals, and ordered sequences preserve their
+boundaries. Callers sort only collections whose domain semantics are unordered.
+`FilePath` values alone pass through the relocation map. Identity bytes are an
+internal same-build implementation detail: an encoding change deliberately
+invalidates recorded task state instead of introducing field numbers, schema
+versions, compatibility readers, or parallel encoders.
+
+Task outputs have one description: producer, slot, path, and `PathValidation`.
+An `ExecutableReference` is the only additional capability and the only output
+reference that can become a command executable. Ordinary dependency ordering
+uses `TaskOrderingReference`; Collider has no value-less typed result channel,
+erased artifact-kind mirror, or reflected Swift type identity. Graph validation
+checks real construction failures—unknown producers and slots—rather than
+rechecking facts that `TaskBuilder` minted together.
+
 ## Execution and Scheduling
 
 The scheduler protects declared filesystem effects and uses explicit execution

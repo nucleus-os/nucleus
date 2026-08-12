@@ -6,30 +6,21 @@ package struct BuildChromiumProductAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let build: ChromiumProductBuild
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: build.product.rawValue)
-            encoder.append(tag: 2, string: build.target.architecture.rawValue)
-            encoder.append(tag: 3, string: build.sourceRoot.string)
-            encoder.append(tag: 4, string: build.buildManifest.string)
-            encoder.append(tag: 5, string: build.containerImageID.string)
-            encoder.append(tag: 6, string: build.gnArguments ?? "")
-            var targets = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for target in build.targets {
-                targets.append(tag: 1, string: target)
-            }
-            encoder.append(tag: 7, bytes: targets.bytes)
-            encoder.append(tag: 8, integer: UInt64(build.jobs))
-            encoder.append(tag: 9, string: build.outputWorkspace.identity.key)
-            encoder.append(tag: 10, integer: build.outputWorkspace.capacityBytes)
-            encoder.append(
-                tag: 11,
-                string: build.compilerCacheWorkspace.identity.key)
-            encoder.append(
-                tag: 12,
-                integer: build.compilerCacheWorkspace.capacityBytes)
-            encoder.append(tag: 13, string: build.sourceWorkspace.identity.key)
-            encoder.append(tag: 14, integer: build.sourceWorkspace.capacityBytes)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(build.product.rawValue)
+            encoder.append(build.target.architecture.rawValue)
+            encoder.append(path: build.sourceRoot)
+            encoder.append(path: build.buildManifest)
+            encoder.append(path: build.containerImageID)
+            encoder.appendOptional(build.gnArguments) { $0.append($1) }
+            encoder.appendSequence(build.targets) { $0.append($1) }
+            encoder.append(UInt64(build.jobs))
+            encoder.append(build.outputWorkspace.identity.key)
+            encoder.append(build.outputWorkspace.capacityBytes)
+            encoder.append(build.compilerCacheWorkspace.identity.key)
+            encoder.append(build.compilerCacheWorkspace.capacityBytes)
+            encoder.append(build.sourceWorkspace.identity.key)
+            encoder.append(build.sourceWorkspace.capacityBytes)
         }
     }
 

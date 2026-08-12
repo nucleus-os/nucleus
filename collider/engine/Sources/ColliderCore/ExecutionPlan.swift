@@ -178,12 +178,11 @@ public struct TaskPlanningServices {
         self.digestSourceCheckout = digestSourceCheckout
         self.digestSourceCheckoutClosure =
             digestSourceCheckoutClosure ?? { paths in
-                var encoder = CanonicalDigestEncoder()
-                for path in paths.sorted(by: { $0.string < $1.string }) {
-                    encoder.append(tag: 1, string: path.string)
-                    encoder.append(
-                        tag: 2,
-                        bytes: try digestSourceCheckout(path).bytes)
+                var encoder = IdentityEncoder()
+                try encoder.appendSequence(paths.sorted { $0.string < $1.string }) {
+                    entry, path in
+                    entry.append(path: path)
+                    entry.append(bytes: try digestSourceCheckout(path).bytes)
                 }
                 return digestBytes(encoder.bytes)
             }

@@ -23,6 +23,24 @@ Component recipe modules live under `collider/Sources`. Collider and its engine
 remain separate tooling packages, so the runtime graph has no dependency back
 into orchestration.
 
+The supported external Swift source products are `Nucleus`, `NucleusDesktop`,
+`NucleusReactRuntime`, `NucleusFoundation`, `NucleusSessionProtocol`, and
+`NucleusAndroidRuntimeCore`. They are automatic SwiftPM libraries because a
+source-consumer boundary does not imply a shared-object deployment boundary.
+`nucleus-android` remains explicitly dynamic because Android loads that JNI
+artifact as a shared object. Internal protocols, generated Wayland modules,
+Vulkan bindings, C++ bridges, shell implementation groups, and Linux
+implementation groups remain targets rather than independently supported
+library products.
+
+A target boundary remains only when it owns behavior, visibility, a language or
+toolchain seam, focused tests, a supported product, or a process entry point.
+Thin executables depend directly on substantive testable runtimes; pass-through
+targets that only reshape arguments, translate an exit status, or reexport an
+unsupported product do not survive. `NucleusCompositor` therefore calls
+`NucleusRenderServerRuntime` directly, while the runtime and its focused tests
+remain separate from the executable process-policy entry point.
+
 ## Command Contract
 
 The build and test commands use only stock SwiftPM interfaces:

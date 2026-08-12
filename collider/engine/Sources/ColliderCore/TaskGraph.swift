@@ -400,10 +400,8 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let component: ComponentID
     public let dependencies: [TaskID]
     public let orderingDependencies: [TaskOrderingReference]
-    public let artifactReferences: [AnyArtifactReference]
-    public let resultReferences: [AnyTaskResultReference]
-    public let outputSlots: [AnyTaskOutputSlot]
-    public let resultSlots: [AnyTaskResultSlot]
+    public let artifactReferences: [ArtifactReference]
+    public let outputSlots: [TaskOutputSlot]
     public let swiftProducts: [SwiftProductRequirement]
     public let swiftTests: [SwiftTestRequirement]
     public let inputs: [ArtifactInput]
@@ -419,10 +417,8 @@ public struct TaskDeclaration: Hashable, Sendable {
         component: ComponentID,
         dependencies: [TaskID] = [],
         orderingDependencies: [TaskOrderingReference] = [],
-        artifactReferences: [AnyArtifactReference] = [],
-        resultReferences: [AnyTaskResultReference] = [],
-        outputSlots: [AnyTaskOutputSlot] = [],
-        resultSlots: [AnyTaskResultSlot] = [],
+        artifactReferences: [ArtifactReference] = [],
+        outputSlots: [TaskOutputSlot] = [],
         swiftProducts: [SwiftProductRequirement] = [],
         swiftTests: [SwiftTestRequirement] = [],
         inputs: [ArtifactInput] = [],
@@ -441,14 +437,10 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.id = id
         self.component = component
         self.dependencies = Self.uniqued(
-            dependencies
-                + allArtifactReferences.map(\.producer)
-                + resultReferences.map(\.producer))
+            dependencies + allArtifactReferences.map(\.producer))
         self.orderingDependencies = orderingDependencies
         self.artifactReferences = allArtifactReferences
-        self.resultReferences = resultReferences
         self.outputSlots = outputSlots
-        self.resultSlots = resultSlots
         self.swiftProducts = swiftProducts
         self.swiftTests = swiftTests
         self.inputs = inputs
@@ -481,9 +473,7 @@ public struct TaskDeclaration: Hashable, Sendable {
                 },
             orderingDependencies: orderingDependencies,
             artifactReferences: artifactReferences,
-            resultReferences: resultReferences,
             outputSlots: outputSlots,
-            resultSlots: resultSlots,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,
@@ -502,9 +492,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             dependencies: dependencies,
             orderingDependencies: orderingDependencies,
             artifactReferences: artifactReferences,
-            resultReferences: resultReferences,
             outputSlots: outputSlots,
-            resultSlots: resultSlots,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,
@@ -522,20 +510,6 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
     case missing(task: TaskID, dependency: TaskID)
     case unknownArtifactReference(
         task: TaskID, producer: TaskID, slot: OutputSlotID)
-    case artifactReferenceMismatch(
-        task: TaskID,
-        producer: TaskID,
-        slot: OutputSlotID,
-        expected: ArtifactValueKind,
-        actual: ArtifactValueKind)
-    case unknownResultReference(
-        task: TaskID, producer: TaskID, slot: OutputSlotID)
-    case resultReferenceMismatch(
-        task: TaskID,
-        producer: TaskID,
-        slot: OutputSlotID,
-        expected: String,
-        actual: String)
     case cycle([TaskID])
 
     public var description: String {
@@ -545,16 +519,6 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
             "task '\(task)' has missing dependency '\(dependency)'"
         case .unknownArtifactReference(let task, let producer, let slot):
             "task '\(task)' references unknown artifact slot '\(producer).\(slot)'"
-        case .artifactReferenceMismatch(
-            let task, let producer, let slot, let expected, let actual):
-            "task '\(task)' expects '\(expected.rawValue)' from "
-                + "'\(producer).\(slot)', which produces '\(actual.rawValue)'"
-        case .unknownResultReference(let task, let producer, let slot):
-            "task '\(task)' references unknown result slot '\(producer).\(slot)'"
-        case .resultReferenceMismatch(
-            let task, let producer, let slot, let expected, let actual):
-            "task '\(task)' expects result '\(expected)' from "
-                + "'\(producer).\(slot)', which produces '\(actual)'"
         case .cycle(let path):
             "task dependency cycle: " + path.map(\.rawValue).joined(separator: " -> ")
         }
@@ -583,7 +547,7 @@ public struct TaskGraph: Sendable {
             for reference in declaration.artifactReferences {
                 guard
                     let producer = tasks[reference.producer],
-                    let slot = producer.outputSlots.first(where: {
+                    producer.outputSlots.contains(where: {
                         $0.id == reference.slot && $0.path == reference.path
                     })
                 else {
@@ -591,35 +555,6 @@ public struct TaskGraph: Sendable {
                         task: declaration.id,
                         producer: reference.producer,
                         slot: reference.slot)
-                }
-                guard slot.kind == reference.kind else {
-                    throw TaskGraphFailure.artifactReferenceMismatch(
-                        task: declaration.id,
-                        producer: reference.producer,
-                        slot: reference.slot,
-                        expected: reference.kind,
-                        actual: slot.kind)
-                }
-            }
-            for reference in declaration.resultReferences {
-                guard
-                    let producer = tasks[reference.producer],
-                    let slot = producer.resultSlots.first(where: {
-                        $0.id == reference.slot
-                    })
-                else {
-                    throw TaskGraphFailure.unknownResultReference(
-                        task: declaration.id,
-                        producer: reference.producer,
-                        slot: reference.slot)
-                }
-                guard slot.valueType == reference.valueType else {
-                    throw TaskGraphFailure.resultReferenceMismatch(
-                        task: declaration.id,
-                        producer: reference.producer,
-                        slot: reference.slot,
-                        expected: reference.valueType,
-                        actual: slot.valueType)
                 }
             }
         }
@@ -650,34 +585,4 @@ public struct TaskGraph: Sendable {
         for id in selected { try visit(id) }
         return result
     }
-}
-
-public struct CanonicalDigestEncoder: Sendable {
-    public private(set) var bytes: [UInt8] = []
-    private let identityPathMap: IdentityPathMap
-
-    public init(identityPathMap: IdentityPathMap = .empty) {
-        self.identityPathMap = identityPathMap
-    }
-
-    public mutating func append(tag: UInt8, string: String) {
-        append(
-            tag: tag,
-            bytes: Array(identityPathMap.canonicalize(string).utf8))
-    }
-
-    public mutating func append(tag: UInt8, bytes value: [UInt8]) {
-        bytes.append(tag)
-        bytes += withBigEndianBytes(UInt64(value.count))
-        bytes += value
-    }
-
-    public mutating func append(tag: UInt8, integer: UInt64) {
-        append(tag: tag, bytes: withBigEndianBytes(integer))
-    }
-}
-
-private func withBigEndianBytes<T: FixedWidthInteger>(_ value: T) -> [UInt8] {
-    var bigEndian = value.bigEndian
-    return withUnsafeBytes(of: &bigEndian) { unsafe Array($0) }
 }

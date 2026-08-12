@@ -87,7 +87,7 @@ private func executeWithSwiftPM(
     var imageBuilder = TaskBuilder(
         id: TaskID(rawValue: "fixture.image"),
         component: ComponentID(rawValue: "fixture"))
-    let image: ArtifactReference<FileArtifact> = try imageBuilder.output(
+    let image: ArtifactReference = try imageBuilder.output(
         "image-id",
         path: FilePath("/fixture/image-id"),
         validation: .regularFile)
@@ -155,10 +155,9 @@ private func executeWithSwiftPM(
     var compilerBuilder = TaskBuilder(
         id: TaskID(rawValue: "fixture.swift-compiler"),
         component: ComponentID(rawValue: "fixture"))
-    let compiler: ArtifactReference<ExecutableArtifact> = try compilerBuilder.output(
+    let compiler: ExecutableReference = try compilerBuilder.executableOutput(
         "swift",
-        path: FilePath("/fixture/toolchain/bin/swift"),
-        validation: .executableFile)
+        path: FilePath("/fixture/toolchain/bin/swift"))
     let compilerTask = compilerBuilder.build()
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(

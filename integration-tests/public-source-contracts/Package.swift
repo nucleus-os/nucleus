@@ -36,9 +36,22 @@ let package = Package(
             dependencies: [.product(name: "NucleusFoundation", package: "nucleus")],
             swiftSettings: swiftSettings
         ),
+        .target(
+            name: "SessionProtocolClient",
+            dependencies: [.product(name: "NucleusSessionProtocol", package: "nucleus")],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "AndroidRuntimeCoreClient",
+            dependencies: [.product(name: "NucleusAndroidRuntimeCore", package: "nucleus")],
+            swiftSettings: swiftSettings
+        ),
         .testTarget(
             name: "PublicSourceContractTests",
-            dependencies: ["FoundationClient"],
+            dependencies: [
+                "AndroidRuntimeCoreClient", "DesktopClient", "FoundationClient",
+                "PortableAuthoringClient", "ReactRuntimeClient", "SessionProtocolClient",
+            ],
             swiftSettings: swiftSettings
         ),
     ]

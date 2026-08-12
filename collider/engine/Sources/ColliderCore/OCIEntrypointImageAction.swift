@@ -17,14 +17,12 @@ public struct PrepareOCIEntrypointImageAction<Kind: OCIEntrypointImageActionKind
         let generatedContext: FilePath
         let preparation: OCIImagePreparation
 
-        public func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: baseImageID.string)
-            encoder.append(tag: 2, string: entrypoint.string)
-            encoder.append(tag: 3, string: entrypointDestination)
-            encoder.append(tag: 4, string: generatedContext.string)
-            encoder.append(
-                tag: 5,
-                nested: OCIImagePreparationActionIdentity(preparation))
+        public func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: baseImageID)
+            encoder.append(path: entrypoint)
+            encoder.append(entrypointDestination)
+            encoder.append(path: generatedContext)
+            encoder.append(nested: OCIImagePreparationActionIdentity(preparation))
         }
     }
 

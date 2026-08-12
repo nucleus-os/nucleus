@@ -44,32 +44,26 @@ public enum ArtifactHasher {
         let entries = enumerator.compactMap { $0 as? String }
             .filter { !excludedRelativePaths.contains($0) }
             .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-        var treeHasher = SHA256()
-
-        for relative in entries {
+        var framing = IdentityEncoder()
+        try framing.appendSequence(entries) { entry, relative in
             let path = root.appending(relative)
             let metadata = try path.stat(followTargetSymlink: false)
-            var framing = CanonicalDigestEncoder()
-            framing.append(tag: 1, string: relative)
-            framing.append(tag: 2, integer: metadata.permissions.contains(.ownerExecute) ? 1 : 0)
+            entry.append(relative)
+            entry.append(metadata.permissions.contains(.ownerExecute))
             if metadata.type == .regular {
-                framing.append(tag: 3, string: "file")
-                framing.append(
-                    tag: 4,
-                    bytes: try digestFile(path, metadata).bytes)
+                entry.append("file")
+                entry.append(bytes: try digestFile(path, metadata).bytes)
             } else if metadata.type == .directory {
-                framing.append(tag: 3, string: "directory")
+                entry.append("directory")
             } else if metadata.type == .symbolicLink {
-                framing.append(tag: 3, string: "symlink")
-                framing.append(
-                    tag: 4,
-                    string: try FileManager.default.destinationOfSymbolicLink(
+                entry.append("symlink")
+                entry.append(
+                    try FileManager.default.destinationOfSymbolicLink(
                         atPath: path.string))
             } else {
-                framing.append(tag: 3, string: "other:\(metadata.type.rawValue)")
+                entry.append("other:\(metadata.type.rawValue)")
             }
-            treeHasher.update(data: framing.bytes)
         }
-        return ArtifactDigest(bytes: Array(treeHasher.finalize()))
+        return digest(bytes: framing.bytes)
     }
 }

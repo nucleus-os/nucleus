@@ -12,15 +12,15 @@ struct SignAOSPProductAction: ColliderAction {
         let variant: String
         let expectedPlatformSDK: UInt32
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sourceWorkspace.identity.key)
-            encoder.append(tag: 8, integer: sourceWorkspace.capacityBytes)
-            encoder.append(tag: 2, string: buildRoot.string)
-            encoder.append(tag: 3, string: containerImageID.string)
-            encoder.append(tag: 4, string: signingIdentity.string)
-            encoder.append(tag: 5, string: product)
-            encoder.append(tag: 6, string: variant)
-            encoder.append(tag: 7, integer: UInt64(expectedPlatformSDK))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(sourceWorkspace.identity.key)
+            encoder.append(sourceWorkspace.capacityBytes)
+            encoder.append(path: buildRoot)
+            encoder.append(path: containerImageID)
+            encoder.append(path: signingIdentity)
+            encoder.append(product)
+            encoder.append(variant)
+            encoder.append(UInt64(expectedPlatformSDK))
         }
     }
 

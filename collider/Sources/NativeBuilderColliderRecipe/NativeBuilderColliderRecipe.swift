@@ -65,7 +65,7 @@ public enum NativeBuilderColliderRecipe {
         var dependencyBuilder = TaskBuilder(
             id: NativeBuilderTaskIDs.dependencies,
             component: descriptor.id)
-        let dependencyImage: ArtifactReference<FileArtifact> =
+        let dependencyImage: ArtifactReference =
             try dependencyBuilder.output(
                 "image-id",
                 path: dependencyImageID,
@@ -94,7 +94,7 @@ public enum NativeBuilderColliderRecipe {
             id: NativeBuilderTaskIDs.prepare,
             component: descriptor.id)
         builder.consume(dependencyImage)
-        let image: ArtifactReference<FileArtifact> = try builder.output(
+        let image: ArtifactReference = try builder.output(
             "image-id",
             path: imageID,
             validation: .regularFile)
@@ -171,20 +171,16 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
         let resolverPreparation: OCIImagePreparation
         let dependencyPreparation: OCIImagePreparation
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sourceContext.string)
-            encoder.append(tag: 2, string: inputRoot.string)
-            encoder.append(tag: 3, string: generatedContext.string)
-            encoder.append(tag: 4, string: resolverOutput.string)
-            encoder.append(tag: 5, string: cache.string)
-            encoder.append(tag: 8, string: ubuntuSnapshot)
-            encoder.append(tag: 9, string: ubuntuSuites.joined(separator: "\n"))
-            encoder.append(
-                tag: 6,
-                nested: OCIImagePreparationActionIdentity(resolverPreparation))
-            encoder.append(
-                tag: 7,
-                nested: OCIImagePreparationActionIdentity(dependencyPreparation))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sourceContext)
+            encoder.append(path: inputRoot)
+            encoder.append(path: generatedContext)
+            encoder.append(path: resolverOutput)
+            encoder.append(path: cache)
+            encoder.append(ubuntuSnapshot)
+            encoder.append(ubuntuSuites.joined(separator: "\n"))
+            encoder.append(nested: OCIImagePreparationActionIdentity(resolverPreparation))
+            encoder.append(nested: OCIImagePreparationActionIdentity(dependencyPreparation))
         }
     }
 

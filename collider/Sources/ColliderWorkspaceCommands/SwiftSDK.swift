@@ -25,25 +25,19 @@ func swiftTargetSDKArtifactID(
     pkgConfigDirectory: FilePath,
     generatorSourceID: String
 ) throws -> String {
-    var encoder = CanonicalDigestEncoder()
-    encoder.append(tag: 1, bytes: try ArtifactHasher.digest(file: inputsFile).bytes)
-    encoder.append(
-        tag: 2,
-        bytes: try ArtifactHasher.digest(tree: validationFixture).bytes)
-    encoder.append(tag: 3, bytes: try ArtifactHasher.digest(file: validator).bytes)
-    encoder.append(tag: 4, string: ndkIdentity)
-    encoder.append(tag: 5, string: xcodeIdentity)
-    encoder.append(tag: 6, string: sourceID)
-    encoder.append(
-        tag: 7,
-        bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
-    encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
-    encoder.append(tag: 10, bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
-    encoder.append(tag: 11, string: generatorSourceID)
-    encoder.append(
-        tag: 12,
-        bytes: try ArtifactHasher.digest(file: sdkPackageSanitizer).bytes)
+    var encoder = IdentityEncoder()
+    encoder.append(bytes: try ArtifactHasher.digest(file: inputsFile).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(tree: validationFixture).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(file: validator).bytes)
+    encoder.append(ndkIdentity)
+    encoder.append(xcodeIdentity)
+    encoder.append(sourceID)
+    encoder.append(bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
+    encoder.append(generatorSourceID)
+    encoder.append(bytes: try ArtifactHasher.digest(file: sdkPackageSanitizer).bytes)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 
@@ -55,19 +49,17 @@ func swiftTargetRuntimeBuildID(
     runtimePreset: FilePath,
     sysrootPreparer: FilePath
 ) throws -> String {
-    var encoder = CanonicalDigestEncoder()
-    encoder.append(tag: 1, string: inputs.snapshot)
-    encoder.append(tag: 2, string: target.architecture.rawValue)
+    var encoder = IdentityEncoder()
+    encoder.append(inputs.snapshot)
+    encoder.append(target.architecture.rawValue)
     for package in target.runtimeUbuntuPackages {
-        encoder.append(tag: 3, string: package.url)
-        encoder.append(tag: 4, string: package.sha256)
+        encoder.append(package.url)
+        encoder.append(package.sha256)
     }
-    encoder.append(tag: 5, string: sourceID)
-    encoder.append(
-        tag: 6,
-        bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
-    encoder.append(tag: 7, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
+    encoder.append(sourceID)
+    encoder.append(bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
+    encoder.append(bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 

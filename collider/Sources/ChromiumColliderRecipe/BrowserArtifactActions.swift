@@ -6,7 +6,7 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let assembly: BrowserArtifactAssembly
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
+        package func encode(into encoder: inout IdentityEncoder) {
             encodeBrowserArtifactIdentity(assembly, into: &encoder)
         }
     }
@@ -110,16 +110,16 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
 
 private func encodeBrowserArtifactIdentity(
     _ assembly: BrowserArtifactAssembly,
-    into encoder: inout ActionIdentityEncoder
+    into encoder: inout IdentityEncoder
 ) {
-    encoder.append(tag: 1, string: assembly.chromiumSource.string)
-    encoder.append(tag: 2, string: assembly.buildManifest.string)
-    encoder.append(tag: 3, string: assembly.distributionRoot.string)
-    encoder.append(tag: 4, string: assembly.launcher.string)
-    encoder.append(tag: 5, string: assembly.desktopTemplate.string)
-    encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
-    encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
-    encoder.append(tag: 8, string: assembly.sourceWorkspace.identity.key)
+    encoder.append(path: assembly.chromiumSource)
+    encoder.append(path: assembly.buildManifest)
+    encoder.append(path: assembly.distributionRoot)
+    encoder.append(path: assembly.launcher)
+    encoder.append(path: assembly.desktopTemplate)
+    encoder.append(assembly.target.architecture.rawValue)
+    encoder.append(assembly.outputWorkspace.identity.key)
+    encoder.append(assembly.sourceWorkspace.identity.key)
 }
 
 private func browserArtifactRequirements(

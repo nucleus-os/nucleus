@@ -402,9 +402,6 @@ public struct SwiftPMLowering: TaskPlanLowering {
             for reference in owner.artifactReferences {
                 builder.consume(reference)
             }
-            for reference in owner.resultReferences {
-                builder.consume(reference)
-            }
         }
     }
 
@@ -491,16 +488,16 @@ public struct SwiftPMLowering: TaskPlanLowering {
         prebuildTargets: [String],
         arguments: [String] = []
     ) -> TaskID {
-        var encoder = CanonicalDigestEncoder()
-        encoder.append(tag: 1, bytes: context.identityBytes)
+        var encoder = IdentityEncoder()
+        encoder.append(bytes: context.identityBytes)
         for product in products {
-            encoder.append(tag: 2, string: product)
+            encoder.append(product)
         }
         for target in prebuildTargets {
-            encoder.append(tag: 3, string: target)
+            encoder.append(target)
         }
         for argument in arguments {
-            encoder.append(tag: 4, string: argument)
+            encoder.append(argument)
         }
         return TaskID(
             rawValue: "swift.package.\(role).\(ArtifactDigest.sha256(encoder.bytes))")
@@ -533,24 +530,17 @@ private struct SwiftPMAction: ColliderAction {
         let processes: [SwiftPMProcess]
         let productsDirectory: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, integer: UInt64(processes.count))
-            for (index, process) in processes.enumerated() {
-                let tag = UInt64(index + 2)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(UInt64(processes.count))
+            for process in processes {
                 switch process {
                 case .host(let command):
-                    encoder.append(
-                        tag: tag,
-                        nested: HostSwiftPMCommandIdentity(command: command))
+                    encoder.append(nested: HostSwiftPMCommandIdentity(command: command))
                 case .oci(let execution):
-                    encoder.append(
-                        tag: tag,
-                        nested: OCIExecutionActionIdentity(execution))
+                    encoder.append(nested: OCIExecutionActionIdentity(execution))
                 }
             }
-            encoder.append(
-                tag: UInt64(processes.count + 2),
-                string: productsDirectory.string)
+            encoder.append(path: productsDirectory)
         }
     }
 
@@ -670,22 +660,18 @@ private struct SwiftPMAction: ColliderAction {
 private struct HostSwiftPMCommandIdentity: ColliderActionIdentity {
     let command: CommandSpec
 
-    func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: command.workingDirectory.string)
-        var environment = CanonicalDigestEncoder()
+    func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(path: command.workingDirectory)
         let volatile = Set(["PATH", "NUCLEUS_RUN_DIR", "NUCLEUS_RUN_LOG", "TERM"])
-        for (name, value) in command.environment.filter({
-            !volatile.contains($0.key)
-        }).sorted(by: { $0.key < $1.key }) {
-            environment.append(tag: 1, string: name)
-            environment.append(tag: 2, string: value)
+        encoder.appendSequence(
+            command.environment.filter({
+                !volatile.contains($0.key)
+            }).sorted(by: { $0.key < $1.key })
+        ) { environment, entry in
+            environment.append(entry.key)
+            environment.append(entry.value)
         }
-        encoder.append(tag: 2, bytes: environment.bytes)
-        var arguments = CanonicalDigestEncoder()
-        for argument in command.arguments {
-            arguments.append(tag: 1, string: argument)
-        }
-        encoder.append(tag: 3, bytes: arguments.bytes)
+        encoder.appendSequence(command.arguments) { $0.append($1) }
     }
 }
 
@@ -695,12 +681,10 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         let dependencyCache: FilePath
         let marker: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(
-                tag: 1,
-                nested: HostSwiftPMCommandIdentity(command: command))
-            encoder.append(tag: 2, string: dependencyCache.string)
-            encoder.append(tag: 3, string: marker.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(nested: HostSwiftPMCommandIdentity(command: command))
+            encoder.append(path: dependencyCache)
+            encoder.append(path: marker)
         }
     }
 
@@ -754,13 +738,9 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
             throw result.executionFailure(reason: "Swift package command failed")
         }
         try context.files.createDirectory(marker.removingLastComponent())
-        var encoder = CanonicalDigestEncoder()
-        encoder.append(
-            tag: 1,
-            string: try context.files.digest(file: packageManifest).description)
-        encoder.append(
-            tag: 2,
-            string: try context.files.digest(file: lock).description)
+        var encoder = IdentityEncoder()
+        encoder.append(try context.files.digest(file: packageManifest).description)
+        encoder.append(try context.files.digest(file: lock).description)
         let digest = ArtifactDigest.sha256(encoder.bytes)
         try context.files.write(Array("\(digest)\n".utf8), to: marker)
     }

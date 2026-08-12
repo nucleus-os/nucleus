@@ -73,7 +73,7 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                 id: TaskID(rawValue: "benchmark.\(outputDirectory)"),
                 component: descriptor.id)
             builder.consume(targetArtifacts)
-            let _: ArtifactReference<DirectoryArtifact> = try builder.output(
+            let _: ArtifactReference = try builder.output(
                 "results",
                 path: output,
                 validation: .nonEmptyDirectory)
@@ -131,11 +131,9 @@ private struct RunBenchmarkAction: ColliderAction {
         let output: FilePath
         let execution: OCIExecution
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: output.string)
-            encoder.append(
-                tag: 2,
-                nested: OCIExecutionActionIdentity(execution))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: output)
+            encoder.append(nested: OCIExecutionActionIdentity(execution))
         }
     }
 

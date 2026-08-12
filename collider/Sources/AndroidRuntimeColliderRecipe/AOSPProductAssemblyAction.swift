@@ -9,13 +9,13 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         let product: String
         let expectedPlatformSDK: UInt32
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sourceWorkspace.identity.key)
-            encoder.append(tag: 6, integer: sourceWorkspace.capacityBytes)
-            encoder.append(tag: 2, string: buildRoot.string)
-            encoder.append(tag: 3, string: containerImageID.string)
-            encoder.append(tag: 4, string: product)
-            encoder.append(tag: 5, integer: UInt64(expectedPlatformSDK))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(sourceWorkspace.identity.key)
+            encoder.append(sourceWorkspace.capacityBytes)
+            encoder.append(path: buildRoot)
+            encoder.append(path: containerImageID)
+            encoder.append(product)
+            encoder.append(UInt64(expectedPlatformSDK))
         }
     }
 

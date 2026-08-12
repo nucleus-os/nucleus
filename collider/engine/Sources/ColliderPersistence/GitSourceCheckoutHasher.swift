@@ -19,18 +19,18 @@ enum GitSourceCheckoutHasher {
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
         digestNestedCheckout: (FilePath) throws -> ArtifactDigest
     ) throws -> ArtifactDigest {
-        let checkouts = Array(Set(checkouts.map { $0.normalizedForComparison() }))
+        let checkouts = Array(Set(checkouts.map { canonicalFileSystemPath($0) }))
             .sorted { $0.string < $1.string }
         guard let first = checkouts.first else {
             throw GitSourceCheckoutFailure("source closure is empty")
         }
-        let repository = FilePath(
-            try git(
-                at: first,
-                arguments: ["rev-parse", "--show-toplevel"]
-            ).textOutput
-        )
-        .normalizedForComparison()
+        let repository = canonicalFileSystemPath(
+            FilePath(
+                try git(
+                    at: first,
+                    arguments: ["rev-parse", "--show-toplevel"]
+                ).textOutput
+            ))
         let relatives = try checkouts.map { checkout -> FilePath in
             guard let relative = checkout.relativeSubpath(from: repository) else {
                 throw GitSourceCheckoutFailure(
@@ -65,8 +65,8 @@ enum GitSourceCheckoutHasher {
                 "--ignored=no", "--no-renames", "--",
             ] + pathspecs)
 
-        var encoder = CanonicalDigestEncoder()
-        encoder.append(tag: 1, string: "git-source-checkout-closure")
+        var encoder = IdentityEncoder()
+        encoder.append("git-source-checkout-closure")
         let treeExpressions = scopes.map { scope in
             scope.components.isEmpty
                 ? "HEAD^{tree}"
@@ -80,9 +80,9 @@ enum GitSourceCheckoutHasher {
             throw GitSourceCheckoutFailure(
                 "Git returned \(baseTrees.count) trees for \(scopes.count) source scopes")
         }
-        for (scope, baseTree) in zip(scopes, baseTrees) {
-            encoder.append(tag: 2, string: scope.string)
-            encoder.append(tag: 3, string: baseTree)
+        encoder.appendSequence(Array(zip(scopes, baseTrees))) { entry, pair in
+            entry.append(pair.0.string)
+            entry.append(pair.1)
         }
         let records = try status.output.split(separator: 0).map { record -> DirtyPath in
             guard record.count >= 4, record[record.startIndex + 2] == 0x20 else {
@@ -110,49 +110,46 @@ enum GitSourceCheckoutHasher {
             $0.relative.utf8.lexicographicallyPrecedes($1.relative.utf8)
         }
 
-        for dirty in records {
-            var entry = CanonicalDigestEncoder()
-            entry.append(tag: 1, string: dirty.relative)
+        try encoder.appendSequence(records) { entry, dirty in
+            entry.append(dirty.relative)
             do {
                 let metadata = try dirty.absolute.stat(followTargetSymlink: false)
-                entry.append(
-                    tag: 2,
-                    integer: metadata.permissions.contains(.ownerExecute) ? 1 : 0)
+                entry.append(metadata.permissions.contains(.ownerExecute) ? 1 : 0)
                 switch metadata.type {
                 case .regular:
-                    entry.append(tag: 3, string: "file")
-                    entry.append(
-                        tag: 4,
-                        bytes: try digestFile(dirty.absolute, metadata).bytes)
+                    entry.append("file")
+                    entry.append(bytes: try digestFile(dirty.absolute, metadata).bytes)
                 case .symbolicLink:
-                    entry.append(tag: 3, string: "symlink")
+                    entry.append("symlink")
                     entry.append(
-                        tag: 4,
-                        string: try FileManager.default.destinationOfSymbolicLink(
+                        try FileManager.default.destinationOfSymbolicLink(
                             atPath: dirty.absolute.string))
                 case .directory:
                     if (try? dirty.absolute.appending(".git").stat(
                         followTargetSymlink: false)) != nil
                     {
-                        entry.append(tag: 3, string: "nested-checkout")
-                        entry.append(
-                            tag: 4,
-                            bytes: try digestNestedCheckout(dirty.absolute).bytes)
+                        entry.append("nested-checkout")
+                        entry.append(bytes: try digestNestedCheckout(dirty.absolute).bytes)
                     } else {
-                        entry.append(tag: 3, string: "directory")
+                        entry.append("directory")
                     }
                 default:
-                    entry.append(
-                        tag: 3,
-                        string: "other:\(metadata.type.rawValue)")
+                    entry.append("other:\(metadata.type.rawValue)")
                 }
             } catch let error as Errno where error == .noSuchFileOrDirectory {
-                entry.append(tag: 3, string: "deleted")
+                entry.append("deleted")
             }
-            encoder.append(tag: 4, bytes: entry.bytes)
         }
         return ArtifactHasher.digest(bytes: encoder.bytes)
     }
+}
+
+private func canonicalFileSystemPath(_ path: FilePath) -> FilePath {
+    FilePath(
+        URL(fileURLWithPath: path.string)
+            .resolvingSymlinksInPath()
+            .path
+    ).normalizedForComparison()
 }
 
 private func contains(_ candidate: String, in parent: String) -> Bool {

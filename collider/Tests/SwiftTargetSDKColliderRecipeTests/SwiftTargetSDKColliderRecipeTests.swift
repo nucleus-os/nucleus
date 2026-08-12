@@ -22,7 +22,7 @@ import Testing
     var nativeBuilder = TaskBuilder(
         id: TaskID(rawValue: "fixture.native-builder"),
         component: ComponentID(rawValue: "native"))
-    let nativeBuilderImage: ArtifactReference<FileArtifact> = try nativeBuilder.output(
+    let nativeBuilderImage: ArtifactReference = try nativeBuilder.output(
         "image-id",
         path: temporary.appending("native-builder-image-id"),
         validation: .regularFile)

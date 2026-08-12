@@ -122,7 +122,7 @@ import Testing
         var builder = TaskBuilder(
             id: TaskID(rawValue: "fixture.relocatable"),
             component: ComponentID(rawValue: "fixture"))
-        let _: ArtifactReference<JSONArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "result",
             path: output,
             validation: .json)
@@ -131,14 +131,14 @@ import Testing
                 .file(input),
                 .environment(
                     name: "FIXTURE_PATH",
-                    value: workspace.appending("configuration").string),
+                    value: "release"),
             ],
             action: try AnyColliderAction(
                 RelocatableIdentityAction(
                     input: input,
                     output: output,
                     environment: [
-                        "FIXTURE_CACHE": cache.appending("objects").string
+                        "FIXTURE_MODE": "release"
                     ])))
         let services = deterministicHashingServices(
             identityPathMap: IdentityPathMap(roots: [
@@ -198,8 +198,8 @@ import Testing
 
 private struct PlacementIdentityAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: "stable-action")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append("stable-action")
         }
     }
 
@@ -224,9 +224,9 @@ private struct RelocatableIdentityAction: ColliderAction {
         let input: FilePath
         let output: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: input.string)
-            encoder.append(tag: 2, string: "--output=\(output)")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: input)
+            encoder.append(path: output)
         }
     }
 

@@ -16,100 +16,62 @@ public struct OutputSlotID: RawRepresentable, Hashable, Codable, Sendable,
     public var description: String { rawValue }
 }
 
-public enum ArtifactValueKind: String, Hashable, Codable, Sendable {
-    case file
-    case directory
-    case executable
-    case json
-    case path
-
-    public func accepts(_ validation: PathValidation) -> Bool {
-        switch self {
-        case .file: validation == .regularFile
-        case .directory: validation == .nonEmptyDirectory
-        case .executable: validation == .executableFile
-        case .json: validation == .json
-        case .path: true
-        }
-    }
-}
-
-public protocol TaskArtifactValue: Sendable {
-    static var artifactKind: ArtifactValueKind { get }
-}
-
-public enum FileArtifact: TaskArtifactValue {
-    public static let artifactKind = ArtifactValueKind.file
-}
-
-public enum DirectoryArtifact: TaskArtifactValue {
-    public static let artifactKind = ArtifactValueKind.directory
-}
-
-public enum ExecutableArtifact: TaskArtifactValue {
-    public static let artifactKind = ArtifactValueKind.executable
-}
-
-public enum JSONArtifact: TaskArtifactValue {
-    public static let artifactKind = ArtifactValueKind.json
-}
-
-public enum PathArtifact: TaskArtifactValue {
-    public static let artifactKind = ArtifactValueKind.path
-}
-
-public struct ArtifactReference<Value: TaskArtifactValue>: Hashable, Sendable {
+public struct ArtifactReference: Hashable, Sendable {
     public let path: FilePath
-    let producer: TaskID
-    let slot: OutputSlotID
+    package let producer: TaskID
+    package let slot: OutputSlotID
+    package let validation: PathValidation
 
-    fileprivate init(producer: TaskID, slot: OutputSlotID, path: FilePath) {
+    fileprivate init(
+        producer: TaskID,
+        slot: OutputSlotID,
+        path: FilePath,
+        validation: PathValidation
+    ) {
         self.producer = producer
         self.slot = slot
         self.path = path
+        self.validation = validation
     }
 }
 
-extension ArtifactReference where Value == ExecutableArtifact {
+public struct ExecutableReference: Hashable, Sendable {
+    public let artifact: ArtifactReference
+
+    public var path: FilePath { artifact.path }
+
     public var executable: CommandSpec.Executable {
-        .artifact(AnyArtifactReference(self))
+        .artifact(artifact)
     }
-}
 
-public struct AnyArtifactReference: Hashable, Sendable {
-    package let producer: TaskID
-    package let slot: OutputSlotID
-    public let path: FilePath
-    package let kind: ArtifactValueKind
-
-    package init<Value>(_ reference: ArtifactReference<Value>) {
-        producer = reference.producer
-        slot = reference.slot
-        path = reference.path
-        kind = Value.artifactKind
+    fileprivate init(_ artifact: ArtifactReference) {
+        self.artifact = artifact
     }
 }
 
 public struct ArtifactReferenceSet: Hashable, Sendable {
-    fileprivate var references: [AnyArtifactReference]
+    fileprivate var references: [ArtifactReference]
 
     public init() {
         references = []
     }
 
-    public init<Value>(_ reference: ArtifactReference<Value>) {
-        references = [AnyArtifactReference(reference)]
+    public init(_ reference: ArtifactReference) {
+        references = [reference]
     }
 
-    public init<Value>(_ references: [ArtifactReference<Value>]) {
-        self.references = references.map(AnyArtifactReference.init)
+    public init(_ references: [ArtifactReference]) {
+        self.references = references
     }
 
-    public mutating func append<Value>(_ reference: ArtifactReference<Value>) {
-        let reference = AnyArtifactReference(reference)
+    public mutating func append(_ reference: ArtifactReference) {
         if !references.contains(reference) {
             references.append(reference)
         }
+    }
+
+    public mutating func append(_ reference: ExecutableReference) {
+        append(reference.artifact)
     }
 
     public mutating func append(contentsOf other: ArtifactReferenceSet) {
@@ -119,22 +81,19 @@ public struct ArtifactReferenceSet: Hashable, Sendable {
     }
 }
 
-public struct AnyTaskOutputSlot: Hashable, Sendable {
+public struct TaskOutputSlot: Hashable, Sendable {
     public let id: OutputSlotID
     public let path: FilePath
     public let validation: PathValidation
-    public let kind: ArtifactValueKind
 
     fileprivate init(
         id: OutputSlotID,
         path: FilePath,
-        validation: PathValidation,
-        kind: ArtifactValueKind
+        validation: PathValidation
     ) {
         self.id = id
         self.path = path
         self.validation = validation
-        self.kind = kind
     }
 }
 
@@ -146,57 +105,13 @@ public struct TaskOrderingReference: Hashable, Sendable {
     }
 }
 
-public protocol TaskResultValue: Sendable {}
-
-public struct TaskResultReference<Value: TaskResultValue>: Hashable, Sendable {
-    let producer: TaskID
-    let slot: OutputSlotID
-
-    fileprivate init(producer: TaskID, slot: OutputSlotID) {
-        self.producer = producer
-        self.slot = slot
-    }
-}
-
-public struct AnyTaskResultReference: Hashable, Sendable {
-    package let producer: TaskID
-    package let slot: OutputSlotID
-    package let valueType: String
-
-    fileprivate init<Value>(_ reference: TaskResultReference<Value>) {
-        producer = reference.producer
-        slot = reference.slot
-        valueType = String(reflecting: Value.self)
-    }
-}
-
-public struct AnyTaskResultSlot: Hashable, Sendable {
-    public let id: OutputSlotID
-    public let valueType: String
-
-    fileprivate init(id: OutputSlotID, valueType: String) {
-        self.id = id
-        self.valueType = valueType
-    }
-}
-
 public enum TaskBuilderFailure: Error, CustomStringConvertible, Sendable {
     case duplicateOutputSlot(OutputSlotID)
-    case duplicateResultSlot(OutputSlotID)
-    case invalidOutputType(
-        slot: OutputSlotID,
-        kind: ArtifactValueKind,
-        validation: PathValidation)
 
     public var description: String {
         switch self {
         case .duplicateOutputSlot(let slot):
             "duplicate output slot '\(slot)'"
-        case .duplicateResultSlot(let slot):
-            "duplicate result slot '\(slot)'"
-        case .invalidOutputType(let slot, let kind, let validation):
-            "output slot '\(slot)' of type '\(kind.rawValue)' cannot use "
-                + "'\(validation.rawValue)' validation"
         }
     }
 }
@@ -205,11 +120,9 @@ public struct TaskBuilder: Sendable {
     public let id: TaskID
     public let component: ComponentID
 
-    private var artifactReferences: [AnyArtifactReference] = []
-    private var resultReferences: [AnyTaskResultReference] = []
+    private var artifactReferences: [ArtifactReference] = []
     private var orderingReferences: [TaskOrderingReference] = []
-    private var outputSlots: [AnyTaskOutputSlot] = []
-    private var resultSlots: [AnyTaskResultSlot] = []
+    private var outputSlots: [TaskOutputSlot] = []
 
     public init(id: TaskID, component: ComponentID) {
         self.id = id
@@ -220,73 +133,47 @@ public struct TaskBuilder: Sendable {
         TaskOrderingReference(producer: id)
     }
 
-    public mutating func output<Value: TaskArtifactValue>(
+    public mutating func output(
         _ slot: OutputSlotID,
         path: FilePath,
-        validation: PathValidation,
-        as _: Value.Type = Value.self
-    ) throws -> ArtifactReference<Value> {
+        validation: PathValidation
+    ) throws -> ArtifactReference {
         guard !outputSlots.contains(where: { $0.id == slot }) else {
             throw TaskBuilderFailure.duplicateOutputSlot(slot)
         }
-        guard Value.artifactKind.accepts(validation) else {
-            throw TaskBuilderFailure.invalidOutputType(
-                slot: slot,
-                kind: Value.artifactKind,
-                validation: validation)
-        }
         outputSlots.append(
-            AnyTaskOutputSlot(
+            TaskOutputSlot(
                 id: slot,
                 path: path,
-                validation: validation,
-                kind: Value.artifactKind))
-        return ArtifactReference(producer: id, slot: slot, path: path)
+                validation: validation))
+        return ArtifactReference(
+            producer: id,
+            slot: slot,
+            path: path,
+            validation: validation)
     }
 
-    public mutating func result<Value: TaskResultValue>(
+    public mutating func executableOutput(
         _ slot: OutputSlotID,
-        as _: Value.Type = Value.self
-    ) throws -> TaskResultReference<Value> {
-        guard !resultSlots.contains(where: { $0.id == slot }) else {
-            throw TaskBuilderFailure.duplicateResultSlot(slot)
-        }
-        resultSlots.append(
-            AnyTaskResultSlot(
-                id: slot,
-                valueType: String(reflecting: Value.self)))
-        return TaskResultReference(producer: id, slot: slot)
+        path: FilePath
+    ) throws -> ExecutableReference {
+        let artifact = try output(slot, path: path, validation: .executableFile)
+        return ExecutableReference(artifact)
     }
 
-    public mutating func consume<Value>(_ reference: ArtifactReference<Value>) {
-        let reference = AnyArtifactReference(reference)
+    public mutating func consume(_ reference: ArtifactReference) {
         if !artifactReferences.contains(reference) {
             artifactReferences.append(reference)
         }
     }
 
-    public mutating func consume(_ reference: AnyArtifactReference) {
-        if !artifactReferences.contains(reference) {
-            artifactReferences.append(reference)
-        }
+    public mutating func consume(_ reference: ExecutableReference) {
+        consume(reference.artifact)
     }
 
     public mutating func consume(_ references: ArtifactReferenceSet) {
         for reference in references.references where !artifactReferences.contains(reference) {
             artifactReferences.append(reference)
-        }
-    }
-
-    public mutating func consume<Value>(_ reference: TaskResultReference<Value>) {
-        let reference = AnyTaskResultReference(reference)
-        if !resultReferences.contains(reference) {
-            resultReferences.append(reference)
-        }
-    }
-
-    public mutating func consume(_ reference: AnyTaskResultReference) {
-        if !resultReferences.contains(reference) {
-            resultReferences.append(reference)
         }
     }
 
@@ -312,9 +199,7 @@ public struct TaskBuilder: Sendable {
             dependencies: [],
             orderingDependencies: orderingReferences,
             artifactReferences: artifactReferences,
-            resultReferences: resultReferences,
             outputSlots: outputSlots,
-            resultSlots: resultSlots,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,

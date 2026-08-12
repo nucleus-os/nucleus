@@ -11,9 +11,9 @@ struct PublishAOSPProductAction: ColliderAction {
         let buildRoot: FilePath
         let product: String
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: buildRoot.string)
-            encoder.append(tag: 2, string: product)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: buildRoot)
+            encoder.append(product)
         }
     }
 

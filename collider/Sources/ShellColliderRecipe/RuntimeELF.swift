@@ -34,10 +34,10 @@ public struct StageRuntimeELFAction: ColliderAction {
         public let prefix: FilePath
         public let productSet: RuntimeELFProductSet
 
-        public func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: products.string)
-            encoder.append(tag: 2, string: prefix.string)
-            encoder.append(tag: 3, string: productSet.rawValue)
+        public func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: products)
+            encoder.append(path: prefix)
+            encoder.append(productSet.rawValue)
         }
     }
 
@@ -227,10 +227,10 @@ public struct ValidateRuntimeELFAction: ColliderAction {
         public let report: FilePath
         public let productSet: RuntimeELFProductSet
 
-        public func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: root.string)
-            encoder.append(tag: 2, string: report.string)
-            encoder.append(tag: 3, string: productSet.rawValue)
+        public func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: root)
+            encoder.append(path: report)
+            encoder.append(productSet.rawValue)
         }
     }
 

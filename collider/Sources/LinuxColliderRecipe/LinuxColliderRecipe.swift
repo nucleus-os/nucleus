@@ -197,11 +197,11 @@ public enum LinuxColliderRecipe: ColliderComponent {
             throw LinuxRuntimeArtifactFailure.requiresOCI
         }
         builder.consume(runtimeOCI.image)
-        let _: ArtifactReference<PathArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "runtime",
             path: configuration.artifactRoot.appending("current"),
             validation: .symlinkTarget)
-        let _: ArtifactReference<PathArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "package-manifests",
             path: packageManifests.appending("current"),
             validation: .symlinkTarget)

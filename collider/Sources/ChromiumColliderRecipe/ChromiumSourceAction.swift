@@ -6,43 +6,31 @@ package struct PrepareChromiumSourceAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let preparation: ChromiumSourcePreparation
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: preparation.sourceID)
-            encoder.append(tag: 2, string: preparation.sourceRoot.string)
-            encoder.append(tag: 3, string: preparation.sourceGenerations.string)
-            encoder.append(tag: 4, string: preparation.current.string)
-            encoder.append(tag: 5, string: preparation.depotTools.string)
-            encoder.append(tag: 6, string: preparation.sourceLockFile.string)
-            encoder.append(tag: 7, string: preparation.sourceLock.cefBranch)
-            encoder.append(tag: 8, string: preparation.sourceLock.chromiumVersion)
-            encoder.append(
-                tag: 12,
-                string: preparation.sourceLock.buildHostPlatform)
-            encoder.append(
-                tag: 13,
-                string: preparation.linuxHostCIPDAdapter.string)
-            encoder.append(
-                tag: 14,
-                string: preparation.sourceLock.devtoolsRollupPlatform)
-            encoder.append(
-                tag: 9,
-                string: preparation.sourceLock.depotTools.remote)
-            encoder.append(
-                tag: 10,
-                string: preparation.sourceLock.depotTools.commit)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(preparation.sourceID)
+            encoder.append(path: preparation.sourceRoot)
+            encoder.append(path: preparation.sourceGenerations)
+            encoder.append(path: preparation.current)
+            encoder.append(path: preparation.depotTools)
+            encoder.append(path: preparation.sourceLockFile)
+            encoder.append(preparation.sourceLock.cefBranch)
+            encoder.append(preparation.sourceLock.chromiumVersion)
+            encoder.append(preparation.sourceLock.buildHostPlatform)
+            encoder.append(path: preparation.linuxHostCIPDAdapter)
+            encoder.append(preparation.sourceLock.devtoolsRollupPlatform)
+            encoder.append(preparation.sourceLock.depotTools.remote)
+            encoder.append(preparation.sourceLock.depotTools.commit)
 
-            var repositories = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for repository in preparation.sourceLock.repositories {
-                repositories.append(tag: 1, string: repository.name)
-                repositories.append(tag: 2, string: repository.checkoutPath)
-                repositories.append(tag: 3, string: repository.remote)
-                repositories.append(tag: 4, string: repository.upstreamRemote)
-                repositories.append(tag: 5, string: repository.upstreamCommit)
-                repositories.append(tag: 6, string: repository.commit)
-                repositories.append(tag: 7, string: repository.tree)
+            encoder.appendSequence(preparation.sourceLock.repositories) {
+                repositoryEncoder, repository in
+                repositoryEncoder.append(repository.name)
+                repositoryEncoder.append(repository.checkoutPath)
+                repositoryEncoder.append(repository.remote)
+                repositoryEncoder.append(repository.upstreamRemote)
+                repositoryEncoder.append(repository.upstreamCommit)
+                repositoryEncoder.append(repository.commit)
+                repositoryEncoder.append(repository.tree)
             }
-            encoder.append(tag: 11, bytes: repositories.bytes)
         }
     }
 

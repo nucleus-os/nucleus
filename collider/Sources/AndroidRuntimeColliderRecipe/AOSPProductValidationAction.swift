@@ -22,30 +22,29 @@ struct ValidateAOSPProductAction: ColliderAction {
         let sourceOverlays: [AOSPProductSourceOverlay]
         let sourceWorkspace: PersistentWorkspaceDeclaration
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: productSource.string)
-            encoder.append(tag: 2, string: sourceProvenance.string)
-            encoder.append(tag: 3, string: buildRoot.string)
-            encoder.append(tag: 4, string: signingIdentity.string)
-            encoder.append(tag: 5, string: product)
-            encoder.append(tag: 6, string: release)
-            encoder.append(tag: 7, string: variant)
-            encoder.append(tag: 8, string: buildNumber)
-            encoder.append(tag: 9, integer: buildTimestamp)
-            encoder.append(tag: 10, integer: UInt64(expectedPlatformSDK))
-            encoder.append(tag: 11, integer: UInt64(expectedVendorAPILevel))
-            var overlays = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for overlay in sourceOverlays.sorted(by: {
-                $0.relativeDestination < $1.relativeDestination
-            }) {
-                overlays.append(tag: 1, string: overlay.source.string)
-                overlays.append(tag: 2, string: overlay.relativeDestination)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: productSource)
+            encoder.append(path: sourceProvenance)
+            encoder.append(path: buildRoot)
+            encoder.append(path: signingIdentity)
+            encoder.append(product)
+            encoder.append(release)
+            encoder.append(variant)
+            encoder.append(buildNumber)
+            encoder.append(buildTimestamp)
+            encoder.append(UInt64(expectedPlatformSDK))
+            encoder.append(UInt64(expectedVendorAPILevel))
+            encoder.appendSequence(
+                sourceOverlays.sorted(by: {
+                    $0.relativeDestination < $1.relativeDestination
+                })
+            ) { overlayEncoder, overlay in
+                overlayEncoder.append(path: overlay.source)
+                overlayEncoder.append(overlay.relativeDestination)
             }
-            encoder.append(tag: 12, bytes: overlays.bytes)
-            encoder.append(tag: 13, string: aospPackageValidationProgram)
-            encoder.append(tag: 14, string: sourceWorkspace.identity.key)
-            encoder.append(tag: 15, integer: sourceWorkspace.capacityBytes)
+            encoder.append(aospPackageValidationProgram)
+            encoder.append(sourceWorkspace.identity.key)
+            encoder.append(sourceWorkspace.capacityBytes)
         }
     }
 

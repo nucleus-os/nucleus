@@ -237,7 +237,7 @@ private let fixturePackageRoot = FilePath("/workspace")
     var producer = TaskBuilder(
         id: TaskID(rawValue: "native.builder"),
         component: ComponentID(rawValue: "native"))
-    let image: ArtifactReference<FileArtifact> = try producer.output(
+    let image: ArtifactReference = try producer.output(
         "image-id",
         path: imageID,
         validation: .regularFile)

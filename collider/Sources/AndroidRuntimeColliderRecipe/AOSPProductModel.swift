@@ -2,8 +2,6 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
-enum AOSPCompileResult: TaskResultValue {}
-
 func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(

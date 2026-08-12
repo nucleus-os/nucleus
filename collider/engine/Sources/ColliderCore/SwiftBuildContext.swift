@@ -32,7 +32,7 @@ public enum SwiftPMInvocationExecutionFailure: Error, CustomStringConvertible, S
 public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget
-    public let image: ArtifactReference<FileArtifact>
+    public let image: ArtifactReference
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
@@ -49,7 +49,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public init(
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget,
-        image: ArtifactReference<FileArtifact>,
+        image: ArtifactReference,
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
@@ -172,72 +172,54 @@ public struct SwiftBuildContext: Hashable, Sendable {
     }
 
     public func identityBytes(identityPathMap: IdentityPathMap) -> [UInt8] {
-        var encoder = CanonicalDigestEncoder(identityPathMap: identityPathMap)
-        encoder.append(tag: 13, string: packageRoot.string)
-        encoder.append(tag: 1, string: configuration.rawValue)
+        var encoder = IdentityEncoder(identityPathMap: identityPathMap)
+        encoder.append(path: packageRoot)
+        encoder.append(configuration.rawValue)
         switch target {
         case .host(let identity):
-            encoder.append(tag: 2, string: "host")
-            encoder.append(tag: 3, string: identity)
+            encoder.append("host")
+            encoder.append(identity)
         case .triple(let triple):
-            encoder.append(tag: 2, string: "triple")
-            encoder.append(tag: 3, string: triple)
+            encoder.append("triple")
+            encoder.append(triple)
         case .swiftSDK(let name, let targetTriple):
-            encoder.append(tag: 2, string: "swift-sdk")
-            encoder.append(tag: 3, string: name)
-            encoder.append(tag: 10, string: targetTriple)
+            encoder.append("swift-sdk")
+            encoder.append(name)
+            encoder.append(targetTriple)
         }
-        encoder.append(tag: 4, string: toolchainIdentity)
-        encoder.append(tag: 5, string: sanitizer ?? "<none>")
-        append(traits, tag: 6, into: &encoder)
-        append(swiftFlags, tag: 7, into: &encoder)
-        append(cFlags, tag: 8, into: &encoder)
-        append(cxxFlags, tag: 9, into: &encoder)
-        append(linkerFlags, tag: 11, into: &encoder)
-        for toolset in toolsets {
-            encoder.append(tag: 26, string: toolset.string)
-        }
-        encoder.append(
-            tag: 12,
-            integer: staticSwiftStandardLibrary ? 1 : 0)
+        encoder.append(toolchainIdentity)
+        encoder.appendOptional(sanitizer) { $0.append($1) }
+        append(traits, into: &encoder)
+        append(swiftFlags, into: &encoder)
+        append(cFlags, into: &encoder)
+        append(cxxFlags, into: &encoder)
+        append(linkerFlags, into: &encoder)
+        encoder.appendSequence(toolsets) { $0.append(path: $1) }
+        encoder.append(staticSwiftStandardLibrary)
         switch execution {
         case .host:
-            encoder.append(tag: 14, string: "host")
+            encoder.append("host")
         case .oci(let configuration):
-            encoder.append(tag: 14, string: "oci")
-            encoder.append(
-                tag: 15,
-                string: configuration.executionPlatform.operatingSystem.rawValue)
-            encoder.append(
-                tag: 16,
-                string: configuration.executionPlatform.architecture.rawValue)
-            encoder.append(
-                tag: 17,
-                string: configuration.artifactTarget.operatingSystem.rawValue)
-            encoder.append(
-                tag: 18,
-                string: configuration.artifactTarget.architecture.rawValue)
-            encoder.append(tag: 19, string: configuration.imageID.string)
-            encoder.append(
-                tag: 20,
-                string: configuration.intelBinaryTranslationPolicy.rawValue)
-            for mount in configuration.mounts {
-                encoder.append(tag: 21, string: mount.source.string)
-                encoder.append(tag: 22, string: mount.target)
-                encoder.append(tag: 23, string: mount.purpose.rawValue)
+            encoder.append("oci")
+            encoder.append(configuration.executionPlatform.operatingSystem.rawValue)
+            encoder.append(configuration.executionPlatform.architecture.rawValue)
+            encoder.append(configuration.artifactTarget.operatingSystem.rawValue)
+            encoder.append(configuration.artifactTarget.architecture.rawValue)
+            encoder.append(path: configuration.imageID)
+            encoder.append(configuration.intelBinaryTranslationPolicy.rawValue)
+            encoder.appendSequence(configuration.mounts) { mountEncoder, mount in
+                mountEncoder.append(path: mount.source)
+                mountEncoder.append(mount.target)
+                mountEncoder.appendEnum(mount.purpose)
             }
-            if let workspace = configuration.buildWorkspace {
-                append(workspace, tag: 28, into: &encoder)
+            encoder.appendOptional(configuration.buildWorkspace) {
+                append($1, into: &$0)
             }
-            if let workspace = configuration.compilerCacheWorkspace {
-                append(workspace, tag: 29, into: &encoder)
+            encoder.appendOptional(configuration.compilerCacheWorkspace) {
+                append($1, into: &$0)
             }
-            for argument in configuration.commandPrefix {
-                encoder.append(tag: 24, string: argument)
-            }
-            encoder.append(
-                tag: 27,
-                string: configuration.hostDependencyCache.string)
+            encoder.appendSequence(configuration.commandPrefix) { $0.append($1) }
+            encoder.append(path: configuration.hostDependencyCache)
         }
         return encoder.bytes
     }
@@ -270,13 +252,13 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     /// Typed artifacts required to execute this invocation. Logical SwiftPM
     /// requirements retain these producer edges so selection includes every
     /// prerequisite before the requirements are lowered into physical tasks.
-    public var artifactReferences: [AnyArtifactReference] {
-        var references: [AnyArtifactReference] = []
+    public var artifactReferences: [ArtifactReference] {
+        var references: [ArtifactReference] = []
         if case .artifact(let compiler) = swiftExecutable {
             references.append(compiler)
         }
         if case .oci(let configuration) = context.execution {
-            references.append(AnyArtifactReference(configuration.image))
+            references.append(configuration.image)
         }
         return references
     }
@@ -670,37 +652,25 @@ public struct SwiftTestRequirement: Hashable, Sendable {
 
 private func append(
     _ values: [String],
-    tag: UInt8,
-    into encoder: inout CanonicalDigestEncoder
+    into encoder: inout IdentityEncoder
 ) {
-    for value in values {
-        encoder.append(tag: tag, string: value)
-    }
+    encoder.appendSequence(values) { $0.append($1) }
 }
 
 private func append(
     _ workspace: PersistentWorkspaceDeclaration,
-    tag: UInt8,
-    into encoder: inout CanonicalDigestEncoder
+    into encoder: inout IdentityEncoder
 ) {
-    var workspaceEncoder = CanonicalDigestEncoder()
-    workspaceEncoder.append(tag: 1, string: workspace.identity.key)
-    workspaceEncoder.append(
-        tag: 2,
-        string: workspace.identity.artifactTarget.operatingSystem.rawValue)
-    workspaceEncoder.append(
-        tag: 3,
-        string: workspace.identity.artifactTarget.architecture.rawValue)
-    workspaceEncoder.append(
-        tag: 4,
-        string: workspace.identity.artifactTarget.abi ?? "")
-    workspaceEncoder.append(
-        tag: 5,
-        string: workspace.identity.artifactTarget.androidAPILevel.map(String.init) ?? "")
-    workspaceEncoder.append(tag: 6, string: workspace.identity.role)
-    workspaceEncoder.append(tag: 7, integer: workspace.capacityBytes)
-    workspaceEncoder.append(tag: 8, string: workspace.filesystem.rawValue)
-    workspaceEncoder.append(tag: 9, string: workspace.journal.mode.rawValue)
-    workspaceEncoder.append(tag: 10, integer: workspace.journal.sizeBytes)
-    encoder.append(tag: tag, bytes: workspaceEncoder.bytes)
+    encoder.append(workspace.identity.key)
+    encoder.appendEnum(workspace.identity.artifactTarget.operatingSystem)
+    encoder.appendEnum(workspace.identity.artifactTarget.architecture)
+    encoder.appendOptional(workspace.identity.artifactTarget.abi) { $0.append($1) }
+    encoder.appendOptional(workspace.identity.artifactTarget.androidAPILevel) {
+        $0.append(UInt64($1))
+    }
+    encoder.append(workspace.identity.role)
+    encoder.append(workspace.capacityBytes)
+    encoder.appendEnum(workspace.filesystem)
+    encoder.appendEnum(workspace.journal.mode)
+    encoder.append(workspace.journal.sizeBytes)
 }

@@ -16,16 +16,16 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         let trustKey: FilePath?
         let buildMetadata: String
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: products.string)
-            encoder.append(tag: 2, string: prefix.string)
-            encoder.append(tag: 3, string: generationsRoot.string)
-            encoder.append(tag: 4, string: packageManifestsRoot.string)
-            encoder.append(tag: 5, integer: UInt64(rollbackGenerationCount))
-            encoder.append(tag: 6, string: sessionPackage.string)
-            encoder.append(tag: 7, string: kernelContract.string)
-            encoder.append(tag: 8, string: trustKey?.string ?? "")
-            encoder.append(tag: 9, string: buildMetadata)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: products)
+            encoder.append(path: prefix)
+            encoder.append(path: generationsRoot)
+            encoder.append(path: packageManifestsRoot)
+            encoder.append(UInt64(rollbackGenerationCount))
+            encoder.append(path: sessionPackage)
+            encoder.append(path: kernelContract)
+            encoder.append(trustKey?.string ?? "")
+            encoder.append(buildMetadata)
         }
     }
 

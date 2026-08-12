@@ -70,10 +70,10 @@ struct VerifyAOSPSourceLockAction: ColliderAction {
         let launcher: FilePath
         let report: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
+        func encode(into encoder: inout IdentityEncoder) {
             encodeAOSPSourceSpecification(specification, into: &encoder)
-            encoder.append(tag: 20, string: launcher.string)
-            encoder.append(tag: 21, string: report.string)
+            encoder.append(path: launcher)
+            encoder.append(path: report)
         }
     }
 
@@ -129,13 +129,13 @@ struct PrepareAOSPSourceInputsAction: ColliderAction {
         let resolvedManifest: FilePath
         let provenance: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
+        func encode(into encoder: inout IdentityEncoder) {
             encodeAOSPSourceSpecification(specification, into: &encoder)
-            encoder.append(tag: 20, string: launcher.string)
-            encoder.append(tag: 21, string: sourceInputs.string)
-            encoder.append(tag: 22, string: hydrationScript.string)
-            encoder.append(tag: 23, string: resolvedManifest.string)
-            encoder.append(tag: 24, string: provenance.string)
+            encoder.append(path: launcher)
+            encoder.append(path: sourceInputs)
+            encoder.append(path: hydrationScript)
+            encoder.append(path: resolvedManifest)
+            encoder.append(path: provenance)
         }
     }
 
@@ -196,22 +196,18 @@ struct MaterializeAOSPSourceAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let materialization: AOSPSourceMaterialization
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
+        func encode(into encoder: inout IdentityEncoder) {
             encodeAOSPSourceSpecification(
                 materialization.specification,
                 into: &encoder)
-            encoder.append(tag: 20, string: materialization.launcher.string)
-            encoder.append(tag: 21, string: materialization.sourceInputs.string)
-            encoder.append(tag: 22, string: materialization.resolvedManifest.string)
-            encoder.append(tag: 23, string: materialization.provenance.string)
-            encoder.append(tag: 24, string: materialization.script.string)
-            encoder.append(tag: 25, string: materialization.imageID.string)
-            encoder.append(
-                tag: 26,
-                string: materialization.sourceWorkspace.identity.key)
-            encoder.append(
-                tag: 27,
-                integer: materialization.sourceWorkspace.capacityBytes)
+            encoder.append(path: materialization.launcher)
+            encoder.append(path: materialization.sourceInputs)
+            encoder.append(path: materialization.resolvedManifest)
+            encoder.append(path: materialization.provenance)
+            encoder.append(path: materialization.script)
+            encoder.append(path: materialization.imageID)
+            encoder.append(materialization.sourceWorkspace.identity.key)
+            encoder.append(materialization.sourceWorkspace.capacityBytes)
         }
     }
 
@@ -331,25 +327,25 @@ struct MaterializeAOSPSourceAction: ColliderAction {
 
 private func encodeAOSPSourceSpecification(
     _ specification: AOSPSourceSpecification,
-    into encoder: inout ActionIdentityEncoder
+    into encoder: inout IdentityEncoder
 ) {
     let platform = specification.platform
-    encoder.append(tag: 1, string: platform.release)
-    encoder.append(tag: 2, string: platform.revision)
-    encoder.append(tag: 3, string: platform.manifestURL)
-    encoder.append(tag: 4, string: platform.manifestRevision)
-    encoder.append(tag: 5, string: platform.manifestCommit)
-    encoder.append(tag: 6, bytes: platform.defaultManifestDigest.bytes)
-    encoder.append(tag: 7, string: platform.superprojectURL)
-    encoder.append(tag: 8, string: platform.superprojectRevision)
-    encoder.append(tag: 9, string: platform.superprojectCommit)
+    encoder.append(platform.release)
+    encoder.append(platform.revision)
+    encoder.append(platform.manifestURL)
+    encoder.append(platform.manifestRevision)
+    encoder.append(platform.manifestCommit)
+    encoder.append(bytes: platform.defaultManifestDigest.bytes)
+    encoder.append(platform.superprojectURL)
+    encoder.append(platform.superprojectRevision)
+    encoder.append(platform.superprojectCommit)
     let repo = specification.repo
-    encoder.append(tag: 10, string: repo.launcherVersion)
-    encoder.append(tag: 11, bytes: repo.launcherDigest.bytes)
-    encoder.append(tag: 12, string: repo.repositoryURL)
-    encoder.append(tag: 13, string: repo.revision)
-    encoder.append(tag: 14, string: repo.tagObject)
-    encoder.append(tag: 15, string: repo.commit)
+    encoder.append(repo.launcherVersion)
+    encoder.append(bytes: repo.launcherDigest.bytes)
+    encoder.append(repo.repositoryURL)
+    encoder.append(repo.revision)
+    encoder.append(repo.tagObject)
+    encoder.append(repo.commit)
 }
 
 private struct AOSPSourceWorkflow {

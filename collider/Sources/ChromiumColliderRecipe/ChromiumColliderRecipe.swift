@@ -358,15 +358,14 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         var depotToolsBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.depot-tools"),
             component: ComponentID(rawValue: "browser"))
-        let _: ArtifactReference<FileArtifact> = try depotToolsBuilder.output(
+        let _: ArtifactReference = try depotToolsBuilder.output(
             "head",
             path: depotTools.appending(".git/HEAD"),
             validation: .regularFile)
-        let depotBootstrapExecutable: ArtifactReference<ExecutableArtifact> =
-            try depotToolsBuilder.output(
+        let depotBootstrapExecutable: ExecutableReference =
+            try depotToolsBuilder.executableOutput(
                 "bootstrap-executable",
-                path: depotTools.appending("ensure_bootstrap"),
-                validation: .executableFile)
+                path: depotTools.appending("ensure_bootstrap"))
         let depotToolsTask = depotToolsBuilder.build(
             inputs: [
                 .string(
@@ -387,7 +386,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),
             component: ComponentID(rawValue: "browser"))
         bootstrapBuilder.consume(depotBootstrapExecutable)
-        let bootstrapMarker: ArtifactReference<FileArtifact> = try bootstrapBuilder.output(
+        let bootstrapMarker: ArtifactReference = try bootstrapBuilder.output(
             "python-relative-directory",
             path: depotTools.appending("python3_bin_reldir.txt"),
             validation: .regularFile)
@@ -413,7 +412,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             id: ChromiumTaskIDs.source,
             component: ComponentID(rawValue: "browser"))
         sourceBuilder.consume(bootstrapMarker)
-        let sourceProvenance: ArtifactReference<JSONArtifact> = try sourceBuilder.output(
+        let sourceProvenance: ArtifactReference = try sourceBuilder.output(
             "provenance",
             path: source.appending("source-provenance.json"),
             validation: .json)
@@ -429,7 +428,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         var dependencyImageBuilder = TaskBuilder(
             id: ChromiumTaskIDs.builderDependencies,
             component: ComponentID(rawValue: "browser"))
-        let dependencyImage: ArtifactReference<FileArtifact> =
+        let dependencyImage: ArtifactReference =
             try dependencyImageBuilder.output(
                 "image-id",
                 path: builderDependencyImageID,
@@ -470,7 +469,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             id: ChromiumTaskIDs.buildTools,
             component: ComponentID(rawValue: "browser"))
         buildImageBuilder.consume(dependencyImage)
-        let buildImage: ArtifactReference<FileArtifact> =
+        let buildImage: ArtifactReference =
             try buildImageBuilder.output(
                 "image-id",
                 path: buildImageID,
@@ -501,7 +500,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             id: ChromiumTaskIDs.artifactTools,
             component: ComponentID(rawValue: "browser"))
         artifactImageBuilder.consume(dependencyImage)
-        let artifactImage: ArtifactReference<FileArtifact> =
+        let artifactImage: ArtifactReference =
             try artifactImageBuilder.output(
                 "image-id",
                 path: artifactImageID,
@@ -530,9 +529,9 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             environment: childEnvironment))))
         var buildTasks: [TaskDeclaration] = []
         var artifactTasks: [TaskDeclaration] = []
-        var publications: [ArtifactReference<PathArtifact>] = []
-        var browserPublications: [ChromiumLinuxTarget: ArtifactReference<PathArtifact>] = [:]
-        var browserManifests: [ChromiumLinuxTarget: ArtifactReference<JSONArtifact>] = [:]
+        var publications: [ArtifactReference] = []
+        var browserPublications: [ChromiumLinuxTarget: ArtifactReference] = [:]
+        var browserManifests: [ChromiumLinuxTarget: ArtifactReference] = [:]
         var browserWorkspaces: [ChromiumLinuxTarget: PersistentWorkspaceDeclaration] = [:]
 
         for product in ChromiumProduct.allCases {
@@ -576,7 +575,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     component: ComponentID(rawValue: "browser"))
                 buildBuilder.consume(sourceProvenance)
                 buildBuilder.consume(buildImage)
-                let buildArtifact: ArtifactReference<JSONArtifact> =
+                let buildArtifact: ArtifactReference =
                     try buildBuilder.output(
                         "build-manifest",
                         path: manifest,
@@ -605,7 +604,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 artifactBuilder.consume(sourceProvenance)
                 artifactBuilder.consume(buildArtifact)
                 artifactBuilder.consume(artifactImage)
-                let publication: ArtifactReference<PathArtifact> =
+                let publication: ArtifactReference =
                     try artifactBuilder.output(
                         "publication",
                         path: distributionRoot.appending("current"),
@@ -896,19 +895,15 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
         let resolverPreparation: OCIImagePreparation
         let dependencyPreparation: OCIImagePreparation
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: sourceContext.string)
-            encoder.append(tag: 2, string: inputRoot.string)
-            encoder.append(tag: 3, string: generatedContext.string)
-            encoder.append(tag: 4, string: resolverOutput.string)
-            encoder.append(tag: 7, string: ubuntuSnapshot)
-            encoder.append(tag: 8, string: ubuntuSuites.joined(separator: "\n"))
-            encoder.append(
-                tag: 5,
-                nested: OCIImagePreparationActionIdentity(resolverPreparation))
-            encoder.append(
-                tag: 6,
-                nested: OCIImagePreparationActionIdentity(dependencyPreparation))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: sourceContext)
+            encoder.append(path: inputRoot)
+            encoder.append(path: generatedContext)
+            encoder.append(path: resolverOutput)
+            encoder.append(ubuntuSnapshot)
+            encoder.append(ubuntuSuites.joined(separator: "\n"))
+            encoder.append(nested: OCIImagePreparationActionIdentity(resolverPreparation))
+            encoder.append(nested: OCIImagePreparationActionIdentity(dependencyPreparation))
         }
     }
 
@@ -1102,8 +1097,8 @@ private struct RunChromiumTestsAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let pipeline: OCIExecutionPipelineIdentity
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, nested: pipeline)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(nested: pipeline)
         }
     }
 
@@ -1134,10 +1129,10 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
         let remote: String
         let commit: String
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: repository.string)
-            encoder.append(tag: 2, string: remote)
-            encoder.append(tag: 3, string: commit)
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: repository)
+            encoder.append(remote)
+            encoder.append(commit)
         }
     }
 
@@ -1186,7 +1181,7 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
             guard try context.files.metadata(for: repository) == nil else {
                 throw ChromiumDepotToolsFailure.nonGitCheckout(repository)
             }
-            try context.files.createDirectory(repository.removingLastComponent())
+            try context.files.createDirectory(repository)
             try await requireSuccess(
                 ["init", repository.string],
                 workingDirectory: repository.removingLastComponent(),
@@ -1283,23 +1278,16 @@ private struct PruneChromiumCacheAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let plans: [DirectoryRetentionPlan]
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            var encodedPlans = CanonicalDigestEncoder(
-                identityPathMap: encoder.identityPathMap)
-            for plan in plans {
-                encodedPlans.append(tag: 1, string: plan.safetyRoot.string)
-                encodedPlans.append(
-                    tag: 2,
-                    string: plan.rules.map {
-                        [
-                            $0.root.string,
-                            $0.current?.string ?? "",
-                            String($0.retain),
-                            $0.naming.rawValue,
-                        ].joined(separator: "\u{0}")
-                    }.joined(separator: "\u{1}"))
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.appendSequence(plans) { planEncoder, plan in
+                planEncoder.append(path: plan.safetyRoot)
+                planEncoder.appendSequence(plan.rules) { ruleEncoder, rule in
+                    ruleEncoder.append(path: rule.root)
+                    ruleEncoder.appendOptional(rule.current) { $0.append(path: $1) }
+                    ruleEncoder.append(UInt64(rule.retain))
+                    ruleEncoder.appendEnum(rule.naming)
+                }
             }
-            encoder.append(tag: 1, bytes: encodedPlans.bytes)
         }
     }
 
@@ -1338,9 +1326,9 @@ private struct BootstrapChromiumDepotToolsAction: ColliderAction {
         let executable: FilePath
         let repository: FilePath
 
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: executable.string)
-            encoder.append(tag: 2, string: repository.string)
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: executable)
+            encoder.append(path: repository)
         }
     }
 

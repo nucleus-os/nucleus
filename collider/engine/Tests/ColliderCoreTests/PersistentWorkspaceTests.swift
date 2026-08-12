@@ -4,8 +4,8 @@ import Testing
 
 private struct PersistentWorkspaceFixtureAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: "fixture")
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append("fixture")
         }
     }
 
@@ -182,9 +182,9 @@ func persistentWorkspaceRejectsInvalidLogicalKeys(_ key: String) {
             command: ["true"],
             environment: [:],
             output: .logged)
-        var encoder = ActionIdentityEncoder()
+        var encoder = IdentityEncoder()
         OCIExecutionActionIdentity(execution).encode(into: &encoder)
-        return try encoder.encodedBytes()
+        return encoder.bytes
     }
 
     #expect(

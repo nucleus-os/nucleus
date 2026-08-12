@@ -6,8 +6,6 @@ import Testing
 
 @testable import ColliderRuntime
 
-private enum FixtureResult: TaskResultValue {}
-
 private func inertActionFileSystem() -> ActionFileSystem {
     ActionFileSystem(
         metadata: { _ in nil },
@@ -22,34 +20,69 @@ private func inertActionFileSystem() -> ActionFileSystem {
         write: { _, _ in })
 }
 
-@Test func actionIdentityEncoderRejectsZeroAndDuplicateTags() {
-    var zero = ActionIdentityEncoder()
-    zero.append(tag: 0, string: "invalid")
-    #expect(throws: ActionIdentityEncodingFailure.self) {
-        try zero.encodedBytes()
-    }
+@Test func identityEncodingIsSequentialAndTypeSensitive() {
+    var forward = IdentityEncoder()
+    forward.append("one")
+    forward.append(2)
+    var reverse = IdentityEncoder()
+    reverse.append(2)
+    reverse.append("one")
+    var differentType = IdentityEncoder()
+    differentType.append(bytes: Array("one".utf8))
+    differentType.append(2)
 
-    var duplicate = ActionIdentityEncoder()
-    duplicate.append(tag: 1, string: "first")
-    duplicate.append(tag: 1, string: "second")
-    #expect(throws: ActionIdentityEncodingFailure.self) {
-        try duplicate.encodedBytes()
-    }
+    #expect(forward.bytes != reverse.bytes)
+    #expect(forward.bytes != differentType.bytes)
 }
 
-@Test func actionIdentityEncodingIsCanonicalAndTypeSensitive() throws {
-    var forward = ActionIdentityEncoder()
-    forward.append(tag: 1, string: "one")
-    forward.append(tag: 2, integer: 2)
-    var reverse = ActionIdentityEncoder()
-    reverse.append(tag: 2, integer: 2)
-    reverse.append(tag: 1, string: "one")
-    var differentType = ActionIdentityEncoder()
-    differentType.append(tag: 1, bytes: Array("one".utf8))
-    differentType.append(tag: 2, integer: 2)
+@Test func identityEncodingFramesOptionalRecordsAndSequences() {
+    var first = IdentityEncoder()
+    first.appendOptional(nil as String?) { $0.append($1) }
+    first.appendRecord { $0.append("ab") }
+    first.appendSequence(["c", "d"]) { $0.append($1) }
 
-    #expect(try forward.encodedBytes() == reverse.encodedBytes())
-    #expect(try forward.encodedBytes() != differentType.encodedBytes())
+    var second = IdentityEncoder()
+    second.appendOptional("" as String?) { $0.append($1) }
+    second.appendRecord {
+        $0.append("a")
+        $0.append("b")
+    }
+    second.appendSequence(["cd"]) { $0.append($1) }
+
+    #expect(first.bytes != second.bytes)
+}
+
+@Test func identityPathRelocationAppliesOnlyToPathValues() {
+    let firstRoot = FilePath("/first/workspace")
+    let secondRoot = FilePath("/second/workspace")
+    var first = IdentityEncoder(
+        identityPathMap: IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: firstRoot)
+        ]))
+    first.append(path: firstRoot.appending("Sources/input.swift"))
+    first.append(firstRoot.appending("literal").string)
+
+    var second = IdentityEncoder(
+        identityPathMap: IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: secondRoot)
+        ]))
+    second.append(path: secondRoot.appending("Sources/input.swift"))
+    second.append(secondRoot.appending("literal").string)
+
+    #expect(first.bytes != second.bytes)
+
+    var relocatedPath = IdentityEncoder(
+        identityPathMap: IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: secondRoot)
+        ]))
+    relocatedPath.append(path: secondRoot.appending("Sources/input.swift"))
+
+    var originalPath = IdentityEncoder(
+        identityPathMap: IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: firstRoot)
+        ]))
+    originalPath.append(path: firstRoot.appending("Sources/input.swift"))
+    #expect(originalPath.bytes == relocatedPath.bytes)
 }
 
 @Test func ociResourceLimitsDoNotInvalidateActionResults() throws {
@@ -71,9 +104,9 @@ private func inertActionFileSystem() -> ActionFileSystem {
             command: ["build"],
             environment: [:],
             output: .logged)
-        var encoder = ActionIdentityEncoder()
+        var encoder = IdentityEncoder()
         OCIExecutionActionIdentity(execution).encode(into: &encoder)
-        return try encoder.encodedBytes()
+        return encoder.bytes
     }
 
     #expect(try identity(resourceLimits: .build) == identity(resourceLimits: .parallelBuild))
@@ -212,16 +245,16 @@ private func inertActionFileSystem() -> ActionFileSystem {
     }
 }
 
-@Test func taskBuilderCreatesOpaqueTypedArtifactAndResultEdges() throws {
+@Test func taskBuilderCreatesArtifactAndOrderingEdges() throws {
     let producerID = TaskID(rawValue: "fixture.producer")
     var producer = TaskBuilder(
         id: producerID,
         component: ComponentID(rawValue: "fixture"))
-    let artifact: ArtifactReference<JSONArtifact> = try producer.output(
+    let artifact: ArtifactReference = try producer.output(
         "report",
         path: FilePath("/tmp/fixture/report.json"),
         validation: .json)
-    let result: TaskResultReference<FixtureResult> = try producer.result("result")
+    let ordering = producer.ordering
     let producerTask = producer.build(
         action: try fixtureWriteAction(
             artifact.path,
@@ -231,7 +264,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         id: TaskID(rawValue: "fixture.consumer"),
         component: ComponentID(rawValue: "fixture"))
     consumer.consume(artifact)
-    consumer.consume(result)
+    consumer.after(ordering)
     let consumerTask = consumer.build(
         action: try fixtureCreateDirectoryAction(FilePath("/tmp/fixture/consumer")))
 
@@ -246,7 +279,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
     var declaredProducer = TaskBuilder(
         id: TaskID(rawValue: "fixture.producer"),
         component: ComponentID(rawValue: "fixture"))
-    let reference: ArtifactReference<FileArtifact> = try declaredProducer.output(
+    let reference: ArtifactReference = try declaredProducer.output(
         "artifact",
         path: FilePath("/tmp/fixture/artifact"),
         validation: .regularFile)
@@ -267,16 +300,21 @@ private func inertActionFileSystem() -> ActionFileSystem {
     }
 }
 
-@Test func taskBuilderRejectsOutputTypeMismatch() {
+@Test func taskBuilderReservesExecutableCapabilityForExecutableOutputs() throws {
     var builder = TaskBuilder(
         id: TaskID(rawValue: "fixture.producer"),
         component: ComponentID(rawValue: "fixture"))
-    #expect(throws: TaskBuilderFailure.self) {
-        let _: ArtifactReference<FileArtifact> = try builder.output(
-            "directory",
-            path: FilePath("/tmp/fixture/directory"),
-            validation: .nonEmptyDirectory)
-    }
+    let directory = try builder.output(
+        "directory",
+        path: FilePath("/tmp/fixture/directory"),
+        validation: .nonEmptyDirectory)
+    let executable = try builder.executableOutput(
+        "executable",
+        path: FilePath("/tmp/fixture/tool"))
+
+    #expect(directory.validation == .nonEmptyDirectory)
+    #expect(executable.artifact.validation == .executableFile)
+    #expect(executable.executable == .artifact(executable.artifact))
 }
 
 @Test func orderingAndAssessmentPolicyDoNotAffectIdentity() async throws {
@@ -299,7 +337,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
     ) throws -> TaskDeclaration {
         var builder = TaskBuilder(id: consumerID, component: component)
         if let ordering { builder.after(ordering) }
-        let _: ArtifactReference<PathArtifact> = try builder.output(
+        let _: ArtifactReference = try builder.output(
             "directory",
             path: root.appending("consumer"),
             validation: .exists)

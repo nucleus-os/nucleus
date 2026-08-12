@@ -24,8 +24,8 @@ private final class StorageConsoleCapture: @unchecked Sendable {
 private struct WorkspaceFixtureIdentity: ColliderActionIdentity {
     let value: String
 
-    func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: value)
+    func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(value)
     }
 }
 
@@ -55,9 +55,9 @@ private struct ReconstructFixtureIdentity: ColliderActionIdentity {
     let input: FilePath
     let output: FilePath
 
-    func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: input.string)
-        encoder.append(tag: 2, string: output.string)
+    func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(path: input)
+        encoder.append(path: output)
     }
 }
 

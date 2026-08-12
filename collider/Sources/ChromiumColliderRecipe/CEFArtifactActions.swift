@@ -6,7 +6,7 @@ package struct AssembleCEFArtifactAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let assembly: CEFArtifactAssembly
 
-        package func encode(into encoder: inout ActionIdentityEncoder) {
+        package func encode(into encoder: inout IdentityEncoder) {
             encodeCEFArtifactIdentity(assembly, into: &encoder)
         }
     }
@@ -152,16 +152,16 @@ package struct AssembleCEFArtifactAction: ColliderAction {
 
 private func encodeCEFArtifactIdentity(
     _ assembly: CEFArtifactAssembly,
-    into encoder: inout ActionIdentityEncoder
+    into encoder: inout IdentityEncoder
 ) {
-    encoder.append(tag: 1, string: assembly.chromiumSource.string)
-    encoder.append(tag: 2, string: assembly.buildManifest.string)
-    encoder.append(tag: 3, string: assembly.distributionRoot.string)
-    encoder.append(tag: 4, string: assembly.cefCheckout)
-    encoder.append(tag: 5, string: assembly.chromiumVersion)
-    encoder.append(tag: 6, string: assembly.target.architecture.rawValue)
-    encoder.append(tag: 7, string: assembly.outputWorkspace.identity.key)
-    encoder.append(tag: 8, string: assembly.sourceWorkspace.identity.key)
+    encoder.append(path: assembly.chromiumSource)
+    encoder.append(path: assembly.buildManifest)
+    encoder.append(path: assembly.distributionRoot)
+    encoder.append(assembly.cefCheckout)
+    encoder.append(assembly.chromiumVersion)
+    encoder.append(assembly.target.architecture.rawValue)
+    encoder.append(assembly.outputWorkspace.identity.key)
+    encoder.append(assembly.sourceWorkspace.identity.key)
 }
 
 private func cefArtifactRequirements(

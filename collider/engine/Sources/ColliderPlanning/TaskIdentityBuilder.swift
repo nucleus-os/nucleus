@@ -21,151 +21,101 @@ struct TaskIdentityBuilder {
         services: TaskPlanningServices,
         resolutions: inout TaskIdentityResolutions
     ) throws -> ArtifactDigest {
-        var encoder = CanonicalDigestEncoder(
+        var encoder = IdentityEncoder(
             identityPathMap: services.identityPathMap)
-        encoder.append(tag: 1, string: task.id.rawValue)
-        encoder.append(tag: 2, string: task.component.rawValue)
-        for dependency in dependencies.sorted(by: {
-            $0.task.rawValue < $1.task.rawValue
-        }) {
-            var dependencyEncoder = ActionIdentityEncoder(
-                identityPathMap: services.identityPathMap)
-            dependencyEncoder.append(tag: 1, string: dependency.task.rawValue)
-            dependencyEncoder.append(tag: 2, bytes: dependency.identity.bytes)
-            encoder.append(
-                tag: 3,
-                bytes: try dependencyEncoder.encodedBytes())
+        encoder.append(task.id.rawValue)
+        encoder.append(task.component.rawValue)
+        encoder.appendSequence(dependencies.sorted { $0.task.rawValue < $1.task.rawValue }) {
+            dependencyEncoder, dependency in
+            dependencyEncoder.append(dependency.task.rawValue)
+            dependencyEncoder.append(bytes: dependency.identity.bytes)
         }
-        var artifactReferenceBytes: [UInt8] = []
-        for reference in task.artifactReferences.sorted(by: {
+        let artifactReferences = task.artifactReferences.sorted {
             ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
                 < ($1.producer.rawValue, $1.slot.rawValue, $1.path.string)
-        }) {
-            var referenceEncoder = ActionIdentityEncoder(
-                identityPathMap: services.identityPathMap)
-            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
-            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
-            referenceEncoder.append(tag: 3, string: reference.path.string)
-            referenceEncoder.append(tag: 4, string: reference.kind.rawValue)
-            let bytes = try referenceEncoder.encodedBytes()
-            artifactReferenceBytes += lengthPrefix(bytes.count) + bytes
         }
-        encoder.append(tag: 245, bytes: artifactReferenceBytes)
-
-        var resultReferenceBytes: [UInt8] = []
-        for reference in task.resultReferences.sorted(by: {
-            ($0.producer.rawValue, $0.slot.rawValue)
-                < ($1.producer.rawValue, $1.slot.rawValue)
-        }) {
-            var referenceEncoder = ActionIdentityEncoder(
-                identityPathMap: services.identityPathMap)
-            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
-            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
-            referenceEncoder.append(tag: 3, string: reference.valueType)
-            let bytes = try referenceEncoder.encodedBytes()
-            resultReferenceBytes += lengthPrefix(bytes.count) + bytes
+        encoder.appendSequence(artifactReferences) { referenceEncoder, reference in
+            referenceEncoder.append(reference.producer.rawValue)
+            referenceEncoder.append(reference.slot.rawValue)
+            referenceEncoder.append(path: reference.path)
+            referenceEncoder.append(reference.validation.rawValue)
         }
-        encoder.append(tag: 246, bytes: resultReferenceBytes)
-
-        var outputSlotBytes: [UInt8] = []
-        for slot in task.outputSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder(
-                identityPathMap: services.identityPathMap)
-            slotEncoder.append(tag: 1, string: slot.id.rawValue)
-            slotEncoder.append(tag: 2, string: slot.path.string)
-            slotEncoder.append(tag: 3, string: slot.validation.rawValue)
-            slotEncoder.append(tag: 4, string: slot.kind.rawValue)
-            let bytes = try slotEncoder.encodedBytes()
-            outputSlotBytes += lengthPrefix(bytes.count) + bytes
+        encoder.appendSequence(task.outputSlots.sorted { $0.id.rawValue < $1.id.rawValue }) {
+            slotEncoder, slot in
+            slotEncoder.append(slot.id.rawValue)
+            slotEncoder.append(path: slot.path)
+            slotEncoder.append(slot.validation.rawValue)
         }
-        encoder.append(tag: 247, bytes: outputSlotBytes)
 
-        var resultSlotBytes: [UInt8] = []
-        for slot in task.resultSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder(
-                identityPathMap: services.identityPathMap)
-            slotEncoder.append(tag: 1, string: slot.id.rawValue)
-            slotEncoder.append(tag: 2, string: slot.valueType)
-            let bytes = try slotEncoder.encodedBytes()
-            resultSlotBytes += lengthPrefix(bytes.count) + bytes
-        }
-        encoder.append(tag: 248, bytes: resultSlotBytes)
-
-        for requirement in task.swiftProducts.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            encoder.append(tag: 221, string: requirement.qualifiedProduct)
-            encoder.append(
-                tag: 222,
+        encoder.appendSequence(
+            task.swiftProducts.sorted(by: {
+                $0.qualifiedProduct < $1.qualifiedProduct
+            })
+        ) { requirementEncoder, requirement in
+            requirementEncoder.append(requirement.qualifiedProduct)
+            requirementEncoder.append(
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))
-            for target in requirement.prebuildTargets {
-                encoder.append(tag: 109, string: target)
-            }
-            for output in requirement.expectedOutputs {
-                encoder.append(tag: 223, string: output.path.string)
-                encoder.append(tag: 224, string: output.validation.rawValue)
+            requirementEncoder.appendSequence(requirement.prebuildTargets) { $0.append($1) }
+            requirementEncoder.appendSequence(requirement.expectedOutputs) {
+                outputEncoder, output in
+                outputEncoder.append(path: output.path)
+                outputEncoder.append(output.validation.rawValue)
             }
         }
-        for requirement in task.swiftTests.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            encoder.append(tag: 225, string: requirement.qualifiedProduct)
-            encoder.append(
-                tag: 226,
+        encoder.appendSequence(
+            task.swiftTests.sorted(by: {
+                $0.qualifiedProduct < $1.qualifiedProduct
+            })
+        ) { requirementEncoder, requirement in
+            requirementEncoder.append(requirement.qualifiedProduct)
+            requirementEncoder.append(
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))
-            for argument in requirement.arguments {
-                encoder.append(tag: 227, string: argument)
-            }
-            for output in requirement.expectedBuildOutputs {
-                encoder.append(tag: 107, string: output.path.string)
-                encoder.append(tag: 108, string: output.validation.rawValue)
+            requirementEncoder.appendSequence(requirement.arguments) { $0.append($1) }
+            requirementEncoder.appendSequence(requirement.expectedBuildOutputs) {
+                outputEncoder, output in
+                outputEncoder.append(path: output.path)
+                outputEncoder.append(output.validation.rawValue)
             }
         }
 
-        for input in identityInputs(of: task) {
+        try encoder.appendSequence(identityInputs(of: task)) { inputEncoder, input in
             switch input {
             case .value(let name, let bytes):
-                encoder.append(tag: 10, string: name)
-                encoder.append(tag: 11, bytes: bytes)
+                inputEncoder.append(name)
+                inputEncoder.append(bytes: bytes)
             case .string(let name, let value):
-                encoder.append(tag: 77, string: name)
-                encoder.append(tag: 78, string: value)
+                inputEncoder.append(name)
+                inputEncoder.append(value)
             case .environment(let name, let value):
-                encoder.append(tag: 12, string: name)
-                encoder.append(tag: 13, string: value ?? "<unset>")
+                inputEncoder.append(name)
+                inputEncoder.appendOptional(value) { $0.append($1) }
             case .swiftBuildContext(let context):
-                encoder.append(tag: 75, string: "swift-build-context")
-                encoder.append(
-                    tag: 76,
+                inputEncoder.append("swift-build-context")
+                inputEncoder.append(
                     bytes: context.identityBytes(
                         identityPathMap: services.identityPathMap))
             case .file(let path):
-                encoder.append(tag: 14, string: path.string)
-                encoder.append(
-                    tag: 15,
+                inputEncoder.append(path: path)
+                inputEncoder.append(
                     bytes: try resolutions.fileDigest(path, services: services).bytes)
             case .tree(let path):
-                encoder.append(tag: 16, string: path.string)
-                encoder.append(
-                    tag: 17,
+                inputEncoder.append(path: path)
+                inputEncoder.append(
                     bytes: try resolutions.treeDigest(path, services: services).bytes)
             case .sourceCheckout(let path):
-                encoder.append(tag: 20, string: path.string)
-                encoder.append(
-                    tag: 21,
+                inputEncoder.append(path: path)
+                inputEncoder.append(
                     bytes: try resolutions.sourceCheckoutDigest(
                         path,
                         services: services
                     ).bytes)
             case .sourceCheckoutClosure(let paths):
-                encoder.append(
-                    tag: 249,
-                    bytes: paths.sorted(by: { $0.string < $1.string })
-                        .flatMap { Array($0.string.utf8) + [0] })
-                encoder.append(
-                    tag: 250,
+                inputEncoder.appendSequence(paths.sorted { $0.string < $1.string }) {
+                    $0.append(path: $1)
+                }
+                inputEncoder.append(
                     bytes: try resolutions.sourceCheckoutClosureDigest(
                         paths,
                         services: services
@@ -178,17 +128,17 @@ struct TaskIdentityBuilder {
                     executable,
                     environment: environment,
                     services: services)
-                encoder.append(tag: 18, string: tool.path.string)
-                encoder.append(tag: 19, bytes: tool.digest.bytes)
+                inputEncoder.append(path: tool.path)
+                inputEncoder.append(bytes: tool.digest.bytes)
             }
         }
-        for output in task.outputs {
-            encoder.append(tag: 40, string: output.path.string)
-            encoder.append(tag: 41, string: output.validation.rawValue)
+        encoder.appendSequence(task.outputs) { outputEncoder, output in
+            outputEncoder.append(path: output.path)
+            outputEncoder.append(output.validation.rawValue)
         }
-        for postcondition in task.postconditions {
-            encoder.append(tag: 218, string: postcondition.path.string)
-            encoder.append(tag: 219, string: postcondition.validation.rawValue)
+        encoder.appendSequence(task.postconditions) { postconditionEncoder, postcondition in
+            postconditionEncoder.append(path: postcondition.path)
+            postconditionEncoder.append(postcondition.validation.rawValue)
         }
         try encode(
             action: task.action,
@@ -219,49 +169,46 @@ struct TaskIdentityBuilder {
 
     private func encode(
         action: AnyColliderAction?,
-        into encoder: inout CanonicalDigestEncoder,
+        into encoder: inout IdentityEncoder,
         services: TaskPlanningServices,
         resolutions: inout TaskIdentityResolutions
     ) throws {
         guard let action else {
-            encoder.append(tag: 235, string: "no-action")
+            encoder.append("no-action")
             return
         }
-        encoder.append(tag: 235, string: action.kind.rawValue)
-        encoder.append(
-            tag: 236,
-            bytes: try action.identity(using: services.identityPathMap))
+        encoder.append(action.kind.rawValue)
+        encoder.append(bytes: action.identity(using: services.identityPathMap))
         let execution = action.requirements.executionPlatform
-        encoder.append(tag: 249, string: execution.environment.rawValue)
-        encoder.append(tag: 250, string: execution.operatingSystem.rawValue)
-        encoder.append(tag: 251, string: execution.architecture.rawValue)
+        encoder.append(execution.environment.rawValue)
+        encoder.append(execution.operatingSystem.rawValue)
+        encoder.append(execution.architecture.rawValue)
         if let artifact = action.requirements.artifactTarget {
-            encoder.append(tag: 252, string: artifact.operatingSystem.rawValue)
-            encoder.append(tag: 253, string: artifact.architecture.rawValue)
-            encoder.append(tag: 254, string: artifact.abi ?? "")
-            encoder.append(
-                tag: 255,
-                integer: UInt64(artifact.androidAPILevel ?? 0))
+            encoder.append(artifact.operatingSystem.rawValue)
+            encoder.append(artifact.architecture.rawValue)
+            encoder.append(artifact.abi ?? "")
+            encoder.append(UInt64(artifact.androidAPILevel ?? 0))
         } else {
-            encoder.append(tag: 252, string: "no-artifact-target")
+            encoder.append("no-artifact-target")
         }
-        for tool in action.requirements.tools.filter({
+        let semanticTools = action.requirements.tools.filter({
             $0.role == .semantic
-        }).sorted(by: { $0.name < $1.name }) {
+        }).sorted(by: { $0.name < $1.name })
+        try encoder.appendSequence(semanticTools) { toolEncoder, tool in
             switch tool.executable {
             case .artifact(let reference):
-                encoder.append(tag: 239, string: tool.name)
-                encoder.append(tag: 240, string: reference.producer.rawValue)
-                encoder.append(tag: 241, string: reference.slot.rawValue)
-                encoder.append(tag: 238, string: reference.kind.rawValue)
+                toolEncoder.append(tool.name)
+                toolEncoder.append(reference.producer.rawValue)
+                toolEncoder.append(reference.slot.rawValue)
+                toolEncoder.append(reference.validation.rawValue)
             case .named, .operationalNamed, .path, .taskOutput:
                 let identity = try resolutions.semanticToolIdentity(
                     tool.executable,
                     environment: action.environment,
                     services: services)
-                encoder.append(tag: 239, string: tool.name)
-                encoder.append(tag: 240, string: identity.path.string)
-                encoder.append(tag: 241, bytes: identity.digest.bytes)
+                toolEncoder.append(tool.name)
+                toolEncoder.append(path: identity.path)
+                toolEncoder.append(bytes: identity.digest.bytes)
             }
         }
         let effects = action.requirements.effects.sorted {
@@ -269,8 +216,8 @@ struct TaskIdentityBuilder {
             let right = $1.scope.root.string + "\u{0}" + $1.access.rawValue
             return left.utf8.lexicographicallyPrecedes(right.utf8)
         }
-        for effect in effects {
-            encoder.append(tag: 242, string: effect.access.rawValue)
+        encoder.appendSequence(effects) { effectEncoder, effect in
+            effectEncoder.append(effect.access.rawValue)
             let scope: String
             switch effect.scope {
             case .input: scope = "input"
@@ -280,12 +227,12 @@ struct TaskIdentityBuilder {
             case .publication: scope = "publication"
             case .unrestricted: scope = "unrestricted"
             }
-            encoder.append(tag: 243, string: scope)
-            encoder.append(tag: 244, string: effect.scope.root.string)
+            effectEncoder.append(scope)
+            effectEncoder.append(path: effect.scope.root)
         }
-        for (name, value) in artifactEnvironment(action.environment) {
-            encoder.append(tag: 237, string: name)
-            encoder.append(tag: 238, string: value)
+        encoder.appendSequence(artifactEnvironment(action.environment)) { entry, pair in
+            entry.append(pair.key)
+            entry.append(pair.value)
         }
     }
 }
@@ -373,11 +320,4 @@ private func artifactEnvironment(
         environment
         .filter { !volatile.contains($0.key) }
         .sorted { $0.key < $1.key }
-}
-
-private func lengthPrefix(_ count: Int) -> [UInt8] {
-    let value = UInt64(count)
-    return (0..<8).reversed().map { shift in
-        UInt8(truncatingIfNeeded: value >> UInt64(shift * 8))
-    }
 }

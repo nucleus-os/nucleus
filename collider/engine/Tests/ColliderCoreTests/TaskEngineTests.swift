@@ -10,8 +10,8 @@ import Testing
 private struct ParallelismProbeIdentity: ColliderActionIdentity {
     let name: String
 
-    func encode(into encoder: inout ActionIdentityEncoder) {
-        encoder.append(tag: 1, string: name)
+    func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(name)
     }
 }
 
@@ -98,7 +98,7 @@ private func schedulerWorkspace(
 
 private struct FailAfterWriteAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        func encode(into _: inout ActionIdentityEncoder) {}
+        func encode(into _: inout IdentityEncoder) {}
     }
 
     static let kind: ActionKind = "fixture.fail-after-write"
@@ -793,7 +793,7 @@ private struct FailAfterWriteAction: ColliderAction {
 
     #expect(
         report.plan[0].identity.description
-            == "sha256:80a72ce622885715ba8ed03fa72a03adec90127c8793f94614484fb5086652af")
+            == "sha256:20b12175124861249330e08e4503b183a5804e57fb4f8f55fb9823271d3d05e6")
 }
 
 @Test func taskEngineExplainsInvalidationAndThenSkipsCleanWork() async throws {

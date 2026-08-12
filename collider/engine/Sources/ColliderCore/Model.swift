@@ -109,7 +109,7 @@ public struct CommandSpec: Hashable, Sendable {
         case path(FilePath)
         /// A semantic executable produced by a typed task output. Its producer
         /// identity and slot contract replace a planning-time binary digest.
-        case artifact(AnyArtifactReference)
+        case artifact(ArtifactReference)
         /// An executable built earlier in the same task action.
         ///
         /// Its producing command and sources define the task identity, so the

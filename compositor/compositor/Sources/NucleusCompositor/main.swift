@@ -1,6 +1,6 @@
 import Glibc
 import NucleusDiagnostics
-internal import NucleusRenderServer
+internal import NucleusRenderServerRuntime
 import NucleusSessionProtocol
 
 // Keep process policy here: decode launch state, enter the framework, map exit.
@@ -25,21 +25,20 @@ do {
     let shellPolicyAttachments =
         try ShellPolicyAttachmentChannel.inherited()
     let readiness = try SessionReadinessReporter.inherited(role: .compositor)
-    try await runRenderServer(
-        configuration: RenderServerLaunchConfiguration(
-            session: session,
-            liveConfiguration: liveConfiguration,
-            configurationEpoch: publication.epoch,
-            configurationGeneration: publication.generation,
-            configurationChannel: configurationChannel,
-            controlChannel: controlChannel,
-            shellPolicyAttachments: shellPolicyAttachments,
-            readinessReporter: readiness))
-    exit(0)
-} catch let termination as RenderServerTermination {
-    NucleusLogger(subsystem: "compositor").error(
-        "render server terminated with status \(termination.status)")
-    exit(termination.status)
+    let status = await runNucleusCompositor(
+        configuration: session,
+        liveConfiguration: liveConfiguration,
+        configurationEpoch: publication.epoch,
+        configurationGeneration: publication.generation,
+        configurationChannel: configurationChannel,
+        controlChannel: controlChannel,
+        shellPolicyAttachments: shellPolicyAttachments,
+        readinessReporter: readiness)
+    if status != 0 {
+        NucleusLogger(subsystem: "compositor").error(
+            "render server terminated with status \(status)")
+    }
+    exit(status)
 } catch {
     NucleusLogger(subsystem: "compositor").error(
         "invalid session launch contract: \(error)")
