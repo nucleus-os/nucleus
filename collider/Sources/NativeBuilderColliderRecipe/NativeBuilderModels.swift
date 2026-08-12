@@ -46,6 +46,14 @@ package struct NativeLinuxTarget: Hashable, Sendable {
             + targetTriple + "/" + NucleusLinuxABI.sdkDirectoryName
     }
 
+    package var containerLibCXXIncludeRoot: String {
+        containerSwiftSDKRoot + "/usr/include/c++/v1"
+    }
+
+    package var containerLibCXXLibraryRoot: String {
+        containerSwiftSDKRoot + "/usr/lib/" + gnuArchitecture
+    }
+
 }
 
 /// The rootless native builder image and its host-owned mutable caches. This

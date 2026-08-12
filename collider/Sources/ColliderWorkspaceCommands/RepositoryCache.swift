@@ -15,14 +15,19 @@ struct StorageStatusRecord: Codable, Equatable {
     let state: String
     let retention: String
     let rollbackGenerationCount: UInt32?
-    let quotaBytes: UInt64?
-    let reserveBytes: UInt64?
 }
 
 private struct StorageStatusReport: Codable {
+    let hostFilesystem: HostFilesystemStatusRecord?
     let storage: [StorageStatusRecord]
     let appleContainer: OCIRuntimeDiskUsage?
     let persistentWorkspaces: [PersistentWorkspaceStatusRecord]
+}
+
+private struct HostFilesystemStatusRecord: Codable {
+    let path: String
+    let totalBytes: UInt64
+    let availableBytes: UInt64
 }
 
 private struct PersistentWorkspaceStatusRecord: Codable {
@@ -30,6 +35,7 @@ private struct PersistentWorkspaceStatusRecord: Codable {
     let identity: PersistentWorkspaceIdentity
     let capacityBytes: UInt64
     let allocatedBytes: UInt64
+    let cleanupPolicy: PersistentWorkspaceCleanupPolicy?
     let state: String
 }
 
@@ -98,7 +104,8 @@ struct RepositoryCache {
             .sorted { $0.id < $1.id }
         let workspaceUsage = try persistentWorkspaceUsage()
         let workspaceDeclarations = component.persistentWorkspaces.filter {
-            workspaceUsage[$0.identity]?.consumers == Set([component.descriptor.id])
+            $0.cleanupPolicy == .explicitClean
+                && workspaceUsage[$0.identity]?.consumers == Set([component.descriptor.id])
         }
         guard !declarations.isEmpty || !workspaceDeclarations.isEmpty else {
             throw WorkspaceFailure.message(
@@ -118,7 +125,7 @@ struct RepositoryCache {
             locks.insert(
                 .persistentWorkspace(
                     workspace.identity,
-                    stateRoot: context.layout.tasks))
+                    stateRoot: context.taskStateRoot))
         }
         let targets = try declarations.map { declaration in
             StorageRemovalTarget(
@@ -140,7 +147,7 @@ struct RepositoryCache {
         }
         let workspaces = try await context.runtime.withTaskLocks(
             locks,
-            stateRoot: context.layout.tasks,
+            stateRoot: context.taskStateRoot,
             purpose: "clean \(component.descriptor.canonicalName) storage"
         ) {
             let workspaces = try await persistentWorkspaceTargets(
@@ -169,8 +176,10 @@ struct RepositoryCache {
     func status(measureAllocations: Bool = false) async throws {
         try validateStorageDeclarations()
         let declarations = storageDeclarations
-        let reclaimableRuns = await RunRegistry(root: context.layout.state)
-            .reclaimableRuns(keeping: RunRegistry.defaultRetainedRunCount)
+        let reclaimableRuns = await RunRegistry(
+            root: context.logRoot.appending("runs")
+        )
+        .reclaimableRuns(keeping: RunRegistry.defaultRetainedRunCount)
         var reclaimableTargets: [String: [URL]] = [:]
         for declaration in declarations {
             if declaration.storageClass == .runRecord {
@@ -190,18 +199,20 @@ struct RepositoryCache {
                 [:]
             }
         let ociUsage = try await containerDiskUsage()
-        let declaredWorkspaceIdentities = Set(
-            catalog.components.flatMap(\.persistentWorkspaces).map(\.identity))
+        let declaredWorkspaces = try persistentWorkspaceUsage().mapValues(\.declaration)
         let persistentWorkspaces = await containerPersistentWorkspaces().map { workspace in
-            PersistentWorkspaceStatusRecord(
+            let declaration = declaredWorkspaces[workspace.identity]
+            return PersistentWorkspaceStatusRecord(
                 name: workspace.name,
                 identity: workspace.identity,
                 capacityBytes: workspace.capacityBytes,
                 allocatedBytes: workspace.allocatedBytes,
+                cleanupPolicy: declaration?.cleanupPolicy,
                 state: workspace.active
                     ? "active"
-                    : declaredWorkspaceIdentities.contains(workspace.identity)
-                        ? "retained" : "reclaimable")
+                    : declaration?.cleanupPolicy == .protected
+                        ? "protected"
+                        : declaration != nil ? "retained" : "reclaimable")
         }
         var records = declarations.map { declaration in
             let exists = FileManager.default.fileExists(atPath: declaration.root.string)
@@ -222,12 +233,11 @@ struct RepositoryCache {
                     exists: exists,
                     hasReclaimableStorage: !targets.isEmpty),
                 retention: declaration.retention,
-                rollbackGenerationCount: declaration.rollbackGenerationCount,
-                quotaBytes: nil,
-                reserveBytes: nil)
+                rollbackGenerationCount: declaration.rollbackGenerationCount)
         }
         records.sort { $0.id < $1.id }
         let report = StorageStatusReport(
+            hostFilesystem: hostFilesystemStatus(),
             storage: records,
             appleContainer: ociUsage,
             persistentWorkspaces: persistentWorkspaces)
@@ -244,13 +254,14 @@ struct RepositoryCache {
                 nil
             } else {
                 try ColliderFileLock(
-                    path: context.layout.locks.appending(
+                    path: context.lockRoot.appending(
                         "cache-prune.lock"),
                     purpose: "Collider-owned storage pruning",
                     waitForExistingOwner: false)
             }
         defer { withExtendedLifetime(pruneLock) {} }
-        let registry = RunRegistry(root: context.layout.state)
+        let registry = RunRegistry(
+            root: context.logRoot.appending("runs"))
         let reclaimableRuns = await registry.reclaimableRuns(keeping: keepCount)
         let runBytes = try reclaimableRuns.reduce(into: UInt64(0)) { total, run in
             total &+= try allocatedSize(URL(fileURLWithPath: run.directory.string))
@@ -284,11 +295,11 @@ struct RepositoryCache {
                 locks.insert(
                     .persistentWorkspace(
                         identity,
-                        stateRoot: context.layout.tasks))
+                        stateRoot: context.taskStateRoot))
             }
             (targetRecords, workspaceRecords) = try await context.runtime.withTaskLocks(
                 locks,
-                stateRoot: context.layout.tasks,
+                stateRoot: context.taskStateRoot,
                 purpose: "declared storage pruning"
             ) {
                 let resolved = try resolvedPruneTargets(pruneDeclarations)
@@ -347,7 +358,8 @@ struct RepositoryCache {
             storageDeclarations,
             forbiddenRemovalRoots: [
                 FilePath("/"), context.root,
-                context.cacheRoot.appending("nucleus"),
+                context.cacheRoot, context.hostBuildRoot,
+                context.artifactRoot, context.logRoot,
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
         try StorageCatalog.validateProducers(storageDeclarations, tasks: catalog.tasks)
@@ -567,13 +579,33 @@ struct RepositoryCache {
         return exists ? "reusable" : "missing"
     }
 
+    private func hostFilesystemStatus() -> HostFilesystemStatusRecord? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        guard
+            let values = try? home.resourceValues(forKeys: [
+                .volumeTotalCapacityKey,
+                .volumeAvailableCapacityForImportantUsageKey,
+            ]),
+            let total = values.volumeTotalCapacity,
+            let available = values.volumeAvailableCapacityForImportantUsage,
+            total >= 0,
+            available >= 0
+        else { return nil }
+        return HostFilesystemStatusRecord(
+            path: home.path,
+            totalBytes: UInt64(total),
+            availableBytes: UInt64(available))
+    }
+
     private func emit(_ report: StorageStatusReport) throws {
         var lines: [String] = []
+        if let filesystem = report.hostFilesystem {
+            lines.append(
+                "host-filesystem: \(formatted(filesystem.availableBytes)) available / "
+                    + "\(formatted(filesystem.totalBytes)) total")
+            lines.append("  \(filesystem.path)")
+        }
         for entry in report.storage {
-            let capacity =
-                entry.quotaBytes.map {
-                    " / \(formatted($0)) quota"
-                } ?? ""
             let allocation =
                 entry.allocatedBytes.map(formatted)
                 ?? "allocation not measured"
@@ -590,7 +622,7 @@ struct RepositoryCache {
                 reclaimable = ""
             }
             lines.append(
-                "\(entry.id): \(entry.state), \(allocation)\(capacity)\(reclaimable)"
+                "\(entry.id): \(entry.state), \(allocation)\(reclaimable)"
             )
             lines.append(
                 "  \(entry.storageClass.rawValue) · \(entry.owner) · \(entry.cleanupPolicy.rawValue)"
@@ -617,7 +649,8 @@ struct RepositoryCache {
             lines.append(
                 "  \(workspace.identity.artifactTarget.operatingSystem.rawValue)/"
                     + "\(workspace.identity.artifactTarget.architecture.rawValue) · "
-                    + workspace.identity.role)
+                    + workspace.identity.role
+                    + (workspace.cleanupPolicy.map { " · \($0.rawValue)" } ?? ""))
             lines.append("  \(workspace.name)")
         }
         try context.console.report(report, text: lines.joined(separator: "\n"))

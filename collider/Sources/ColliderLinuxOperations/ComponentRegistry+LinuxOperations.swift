@@ -32,7 +32,7 @@ extension ComponentRegistry {
         let configuration = AndroidAddonPackageConfiguration(
             swiftPM: try context.swiftPMInvocation(configuration: .release),
             runtimeRoot: runtimeRoot,
-            runtimeScratch: context.layout.work.appending(
+            runtimeScratch: context.workRoot.appending(
                 "android-addon-runtime"),
             aospGeneration: aospGeneration,
             usesManagedAOSPGeneration: usesManagedAOSPGeneration,

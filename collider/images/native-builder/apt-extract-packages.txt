@@ -1,3 +1,3 @@
-libc++1-18:amd64
-libc++abi1-18:amd64
+libc++1:amd64
+libc++abi1:amd64
 libunwind-18:amd64

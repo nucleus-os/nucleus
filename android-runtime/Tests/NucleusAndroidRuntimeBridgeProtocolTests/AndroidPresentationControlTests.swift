@@ -1,6 +1,6 @@
 import Testing
 
-@testable import NucleusAndroidRuntimeBridgeProtocol
+@testable internal import NucleusAndroidRuntimeBridgeProtocol
 
 @Test
 func presentationControlRequestsCarryOneExactOperationShape() throws {

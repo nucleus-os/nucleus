@@ -38,19 +38,11 @@ struct MacOSBuilderContract: Codable, Sendable {
         let memoryBytes: UInt64
     }
 
-    struct Environment: Codable, Sendable {
-        let buildRoot: String
-        let xdgCacheHome: String
-        let nativeSDKRoot: String
-        let androidSDKRoot: String
-    }
-
     let operatingSystem: OperatingSystem
     let xcode: Xcode
     let appleContainer: AppleContainer
     let launchd: Launchd
     let resources: Resources
-    let environment: Environment
 
     static let relativePath = "tools/macos-builder/contract.json"
 
@@ -67,17 +59,6 @@ struct MacOSBuilderContract: Codable, Sendable {
         guard launchd.maximumOpenFileCount > 0 else {
             throw MacOSBuilderContractFailure.invalid(
                 "launchd maximum open-file count must be positive")
-        }
-        guard
-            environment.buildRoot.hasPrefix("/"),
-            environment.xdgCacheHome.hasPrefix("/"),
-            isDescendant(environment.nativeSDKRoot, of: environment.xdgCacheHome),
-            URL(fileURLWithPath: environment.nativeSDKRoot).lastPathComponent
-                == "linux-arm64",
-            isDescendant(environment.androidSDKRoot, of: environment.xdgCacheHome)
-        else {
-            throw MacOSBuilderContractFailure.invalid(
-                "legacy build and SDK paths must be absolute and internally consistent")
         }
     }
 }
@@ -133,7 +114,7 @@ struct MacOSBuilderDoctor {
             persistentService(contract, storageLayout: storageLayout, scope: scope),
             containerSystem(contract, storageLayout: storageLayout, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
-            storageEnvironment(contract, scope: scope),
+            storageEnvironment(storageLayout, scope: scope),
         ]
     }
 
@@ -314,7 +295,7 @@ struct MacOSBuilderDoctor {
             description:
                 "host-only Apple container network \(contract.appleContainer.network)",
             remediation:
-                "run container network create --internal \(contract.appleContainer.network)"
+                "run any Collider build or bootstrap action; Collider creates and validates this network through the Apple container Swift API"
         ) {
             guard
                 let network = try? await context.runtime.ociRuntimeNetwork(
@@ -327,29 +308,31 @@ struct MacOSBuilderDoctor {
     }
 
     private func storageEnvironment(
-        _ contract: MacOSBuilderContract,
+        _ storageLayout: MacOSHostStorageLayout,
         scope: String
     ) -> HostPrerequisite {
         HostPrerequisite(
             id: "macos-builder:storage-environment",
             scope: scope,
-            description: "declared Collider cache and SDK roots",
+            description: "standard Collider cache and SDK roots",
             remediation:
-                "run the installed 'collider' command; its launcher resolves macOS storage from \(MacOSBuilderContract.relativePath)"
+                "run the installed 'collider' command; its launcher resolves conventional per-user macOS storage"
         ) {
             guard
-                normalizedPath(context.environment["XDG_CACHE_HOME"] ?? "")
-                    == normalizedPath(contract.environment.xdgCacheHome),
+                context.environment["XDG_CACHE_HOME"] == nil,
                 normalizedPath(
                     context.environment["NUCLEUS_NATIVE_SDK_ROOT"] ?? "")
-                    == normalizedPath(contract.environment.nativeSDKRoot),
+                    == normalizedPath(
+                        storageLayout.nativeSDKs.appending("linux-arm64").string),
                 normalizedPath(context.environment["NUCLEUS_BUILD_ROOT"] ?? "")
-                    == normalizedPath(contract.environment.buildRoot),
+                    == normalizedPath(storageLayout.hostBuildState.string),
                 normalizedPath(context.environment["ANDROID_SDK_ROOT"] ?? "")
-                    == normalizedPath(contract.environment.androidSDKRoot)
+                    == normalizedPath(storageLayout.androidSDKs.string),
+                normalizedPath(context.environment["ANDROID_HOME"] ?? "")
+                    == normalizedPath(storageLayout.androidSDKs.string)
             else { return nil }
             return
-                "build root \(contract.environment.buildRoot), XDG cache \(contract.environment.xdgCacheHome), native SDK \(contract.environment.nativeSDKRoot)"
+                "build root \(storageLayout.hostBuildState), cache root \(storageLayout.cacheRoot), native SDK \(storageLayout.nativeSDKs.appending("linux-arm64"))"
         }
     }
 
@@ -447,9 +430,4 @@ private struct PersistentServicePlist: Decodable {
 
 private func normalizedPath(_ path: String) -> String {
     URL(fileURLWithPath: path).standardizedFileURL.path
-}
-
-private func isDescendant(_ path: String, of root: String) -> Bool {
-    FilePath(path).lexicallyNormalized().isContained(
-        in: FilePath(root).lexicallyNormalized())
 }

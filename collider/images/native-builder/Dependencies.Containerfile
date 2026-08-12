@@ -7,8 +7,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Install the architecture-neutral libinput headers from the native package,
 # then expose the amd64 runtime SONAME through the normal linker development
 # name without pulling in the conflicting amd64 development package.
-# LLVM's libc++ runtime packages also share /usr/lib/llvm-18 across
-# architectures and cannot be co-installed. Extract only their amd64 runtime
+# LLVM's libc++ runtime packages also install architecture-colliding versioned
+# paths and cannot be co-installed. Extract only the current amd64 runtime
 # objects into the multiarch directory used by translated SwiftPM host tools.
 # Collider resolves and downloads this exact package closure on the host. The
 # image build never contacts an Ubuntu mirror.
@@ -31,15 +31,15 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         /tmp/nucleus-apt/extract/*.deb; do \
         dpkg-deb --extract "$package" /tmp/nucleus-amd64-libcxx; \
     done \
-    && install --mode=0644 \
-        /tmp/nucleus-amd64-libcxx/usr/lib/llvm-18/lib/libc++.so.1.0 \
-        /usr/lib/x86_64-linux-gnu/libc++.so.1.0 \
-    && install --mode=0644 \
-        /tmp/nucleus-amd64-libcxx/usr/lib/llvm-18/lib/libc++abi.so.1.0 \
-        /usr/lib/x86_64-linux-gnu/libc++abi.so.1.0 \
-    && install --mode=0644 \
-        /tmp/nucleus-amd64-libcxx/usr/lib/llvm-18/lib/libunwind.so.1.0 \
-        /usr/lib/x86_64-linux-gnu/libunwind.so.1.0 \
+    && libcxx=$(find /tmp/nucleus-amd64-libcxx -type f -name libc++.so.1.0 -print -quit) \
+    && libcxxabi=$(find /tmp/nucleus-amd64-libcxx -type f -name libc++abi.so.1.0 -print -quit) \
+    && libunwind=$(find /tmp/nucleus-amd64-libcxx -type f -name libunwind.so.1.0 -print -quit) \
+    && test -n "$libcxx" \
+    && test -n "$libcxxabi" \
+    && test -n "$libunwind" \
+    && install --mode=0644 "$libcxx" /usr/lib/x86_64-linux-gnu/libc++.so.1.0 \
+    && install --mode=0644 "$libcxxabi" /usr/lib/x86_64-linux-gnu/libc++abi.so.1.0 \
+    && install --mode=0644 "$libunwind" /usr/lib/x86_64-linux-gnu/libunwind.so.1.0 \
     && ln -s libc++.so.1.0 /usr/lib/x86_64-linux-gnu/libc++.so.1 \
     && ln -s libc++abi.so.1.0 /usr/lib/x86_64-linux-gnu/libc++abi.so.1 \
     && ln -s libunwind.so.1.0 /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
@@ -58,8 +58,47 @@ RUN sed -i 's/if delta > 0\.001:/if delta > 1.0:/' \
     && grep -Fq 'if delta > 1.0:' \
         /usr/lib/python3/dist-packages/mesonbuild/backend/backends.py
 
+# Swift.org's Ubuntu 24.04 compiler requires the libxml2.so.2 ABI, while the
+# Ubuntu 26.04 build environment intentionally provides libxml2.so.16. Keep the
+# exact older runtime closure isolated from the system multiarch directories so
+# it cannot replace the target SDK or the builder's native libraries.
+COPY inputs/archives/swift-libxml2-arm64.deb /tmp/swift-libxml2-arm64.deb
+COPY inputs/archives/swift-libxml2-amd64.deb /tmp/swift-libxml2-amd64.deb
+COPY inputs/archives/swift-libicu74-arm64.deb /tmp/swift-libicu74-arm64.deb
+COPY inputs/archives/swift-libicu74-amd64.deb /tmp/swift-libicu74-amd64.deb
+RUN echo 'f833e07c5dffb9f7a26084522ef58854c4297982439a2affc94e20dbb495c696  /tmp/swift-libxml2-arm64.deb' \
+        | sha256sum --check --strict \
+    && echo 'bfd07c01d6e5ab3e327f3ca5819409b1914bbfb3f1a016d53e4dabd5f96143bb  /tmp/swift-libxml2-amd64.deb' \
+        | sha256sum --check --strict \
+    && echo '041df33ab32c57287a62ba141890a82512bf092854be455259c8034ab7ae9fbc  /tmp/swift-libicu74-arm64.deb' \
+        | sha256sum --check --strict \
+    && echo 'd29c97a21a3e3254731cfac186e4d4e611e5e67d2c9a0430f6acfbd9acaefa2e  /tmp/swift-libicu74-amd64.deb' \
+        | sha256sum --check --strict \
+    && mkdir -p \
+        /tmp/swift-compat-arm64 \
+        /tmp/swift-compat-amd64 \
+        /opt/swift-compat/arm64 \
+        /opt/swift-compat/amd64 \
+    && dpkg-deb --extract /tmp/swift-libxml2-arm64.deb /tmp/swift-compat-arm64 \
+    && dpkg-deb --extract /tmp/swift-libicu74-arm64.deb /tmp/swift-compat-arm64 \
+    && dpkg-deb --extract /tmp/swift-libxml2-amd64.deb /tmp/swift-compat-amd64 \
+    && dpkg-deb --extract /tmp/swift-libicu74-amd64.deb /tmp/swift-compat-amd64 \
+    && cp -a /tmp/swift-compat-arm64/usr/lib/aarch64-linux-gnu/libxml2.so.2* \
+        /tmp/swift-compat-arm64/usr/lib/aarch64-linux-gnu/libicu*.so.74* \
+        /opt/swift-compat/arm64/ \
+    && cp -a /tmp/swift-compat-amd64/usr/lib/x86_64-linux-gnu/libxml2.so.2* \
+        /tmp/swift-compat-amd64/usr/lib/x86_64-linux-gnu/libicu*.so.74* \
+        /opt/swift-compat/amd64/ \
+    && rm -rf \
+        /tmp/swift-compat-arm64 \
+        /tmp/swift-compat-amd64 \
+        /tmp/swift-libxml2-arm64.deb \
+        /tmp/swift-libxml2-amd64.deb \
+        /tmp/swift-libicu74-arm64.deb \
+        /tmp/swift-libicu74-amd64.deb
+
 COPY inputs/archives/swift-arm64.tar.gz /tmp/swift.tar.gz
-RUN echo 'faa0928cc0298c985c5cfcd457be5939bc8b52ec8499c79a3f611cfcb1f3d463  /tmp/swift.tar.gz' \
+RUN echo 'd0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de  /tmp/swift.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift \
     && tar --extract --gzip \
@@ -67,8 +106,11 @@ RUN echo 'faa0928cc0298c985c5cfcd457be5939bc8b52ec8499c79a3f611cfcb1f3d463  /tmp
         --directory /opt/swift \
         --strip-components=1 \
     && rm -f /tmp/swift.tar.gz \
-    && /opt/swift/usr/bin/swift --version \
-        | grep --fixed-strings 'Swift version 6.5-dev' \
+    && LD_LIBRARY_PATH=/opt/swift-compat/arm64 \
+        /opt/swift/usr/bin/swift --version \
+        | grep --fixed-strings 'Swift version 6.4-dev' \
+    && LD_LIBRARY_PATH=/opt/swift-compat/arm64 \
+        /opt/swift/usr/bin/swift-build --version \
     && /opt/swift/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'aarch64-unknown-linux-gnu'
 
@@ -76,7 +118,7 @@ RUN echo 'faa0928cc0298c985c5cfcd457be5939bc8b52ec8499c79a3f611cfcb1f3d463  /tmp
 # architecture. Give the translated amd64 lane a matching official compiler
 # so its host tools and target SDK share one architecture.
 COPY inputs/archives/swift-amd64.tar.gz /tmp/swift-x86_64.tar.gz
-RUN echo '9dd4b8ff559d46f9dbd6e9daa89455cd7c0a5aa96b223b75e30a19e41601261b  /tmp/swift-x86_64.tar.gz' \
+RUN echo 'fa3f1d9517068ead03518d6c9936814c2e1b588cb6e89c4c0284283d274f5d73  /tmp/swift-x86_64.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-x86_64 \
     && tar --extract --gzip \
@@ -84,8 +126,14 @@ RUN echo '9dd4b8ff559d46f9dbd6e9daa89455cd7c0a5aa96b223b75e30a19e41601261b  /tmp
         --directory /opt/swift-x86_64 \
         --strip-components=1 \
     && rm -f /tmp/swift-x86_64.tar.gz \
-    && /opt/swift-x86_64/usr/bin/swift --version \
-        | grep --fixed-strings 'Swift version 6.5-dev' \
+    && test ! -e /opt/swift-x86_64/usr/bin/ld \
+    && ln -s lld /opt/swift-x86_64/usr/bin/ld \
+    && LD_LIBRARY_PATH=/opt/swift-compat/amd64 \
+        /opt/swift-x86_64/usr/bin/swift --version \
+        | grep --fixed-strings 'Swift version 6.4-dev' \
+    && LD_LIBRARY_PATH=/opt/swift-compat/amd64 \
+        /opt/swift-x86_64/usr/bin/swift-build --version \
+    && test "$(readlink /opt/swift-x86_64/usr/bin/ld)" = lld \
     && /opt/swift-x86_64/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'x86_64-unknown-linux-gnu'
 

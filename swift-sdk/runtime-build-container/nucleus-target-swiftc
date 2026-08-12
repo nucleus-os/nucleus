@@ -54,4 +54,4 @@ if test "$is_link" = true && test -n "$resource_dir"; then
     arguments+=("-nostartfiles" "$runtime_object")
 fi
 
-exec /opt/swift-bootstrap/usr/bin/swiftc -use-ld=lld "${arguments[@]}"
+exec /opt/swift/usr/bin/swiftc -use-ld=lld "${arguments[@]}"

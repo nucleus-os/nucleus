@@ -62,8 +62,8 @@ apt-get $apt_options --yes --no-install-recommends --print-uris \
     > /output/install-uris.txt
 
 # These packages intentionally remain uninstalled because Ubuntu's arm64 and
-# amd64 libc++ packages contain colliding /usr/lib/llvm-18 paths. The final
-# image extracts only their amd64 runtime objects.
+# amd64 libc++ packages contain colliding versioned LLVM paths. The final image
+# extracts only their amd64 runtime objects.
 # shellcheck disable=SC2086
 apt-get $apt_options --yes --print-uris \
     download $(grep -Ev '^[[:space:]]*(#|$)' /input/apt-extract-packages.txt) \

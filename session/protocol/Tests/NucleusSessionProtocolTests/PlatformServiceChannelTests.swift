@@ -43,13 +43,7 @@ struct PlatformServiceChannelTests {
     }
 
     @Test func serverReplaysClipboardAndReceivesCommands() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "nucleus-platform-service-\(UUID().uuidString)",
-                isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: root,
-            withIntermediateDirectories: true)
+        let root = try makeTestRuntimeDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let server = try PlatformServicePublicationServer(
@@ -92,13 +86,7 @@ struct PlatformServiceChannelTests {
     }
 
     @Test func notificationStateReplaysAndCommandsRoundTrip() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "nucleus-platform-notifications-\(UUID().uuidString)",
-                isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: root,
-            withIntermediateDirectories: true)
+        let root = try makeTestRuntimeDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let server = try PlatformServicePublicationServer(
@@ -144,13 +132,7 @@ struct PlatformServiceChannelTests {
     }
 
     @Test func notificationReplayStateCannotExceedOnePacket() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "nucleus-platform-notification-bounds-\(UUID().uuidString)",
-                isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: root,
-            withIntermediateDirectories: true)
+        let root = try makeTestRuntimeDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let server = try PlatformServicePublicationServer(

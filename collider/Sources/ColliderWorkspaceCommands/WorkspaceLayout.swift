@@ -14,26 +14,21 @@ package struct WorkspaceLayout: Sendable {
     }
 
     package var state: FilePath { root.appending(".nucleus") }
-    var runs: FilePath { state.appending("runs") }
-    var tasks: FilePath { state.appending("tasks") }
     package var runtimeState: FilePath { state.appending("runtime") }
     package var androidAddonStore: FilePath { runtimeState.appending("android-addon") }
     package var androidPersistentState: FilePath { runtimeState.appending("android-state") }
-    var locks: FilePath { state.appending("locks") }
-    package var work: FilePath { state.appending("work") }
     func swiftScratch(
         for context: SwiftBuildContext,
-        under scratchRoot: FilePath? = nil
+        under scratchRoot: FilePath
     ) -> FilePath {
         let identity = ArtifactHasher.digest(bytes: context.identityBytes)
             .description
             .replacingOccurrences(of: ":", with: "-")
-        return (scratchRoot ?? state.appending("swiftpm"))
+        return
+            scratchRoot
             .appending(context.sanitizer ?? "unsanitized")
             .appending(identity)
     }
-    var benchmarkBuilds: FilePath { state.appending("benchmarks") }
-    var nativeSanitizerBuilds: FilePath { state.appending("native-sanitizers") }
     package var developmentRuntimeCurrent: FilePath {
         runtimeState.appending("development-runtime/current")
     }

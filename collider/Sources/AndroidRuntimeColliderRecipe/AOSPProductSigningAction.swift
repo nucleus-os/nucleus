@@ -4,7 +4,7 @@ import SystemPackage
 
 struct SignAOSPProductAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let source: FilePath
+        let sourceWorkspace: PersistentWorkspaceDeclaration
         let buildRoot: FilePath
         let containerImageID: FilePath
         let signingIdentity: FilePath
@@ -13,7 +13,8 @@ struct SignAOSPProductAction: ColliderAction {
         let expectedPlatformSDK: UInt32
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: source.string)
+            encoder.append(tag: 1, string: sourceWorkspace.identity.key)
+            encoder.append(tag: 8, integer: sourceWorkspace.capacityBytes)
             encoder.append(tag: 2, string: buildRoot.string)
             encoder.append(tag: 3, string: containerImageID.string)
             encoder.append(tag: 4, string: signingIdentity.string)
@@ -29,7 +30,7 @@ struct SignAOSPProductAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            source: build.source,
+            sourceWorkspace: build.sourceWorkspace,
             buildRoot: build.artifactRoot,
             containerImageID: build.artifactImageID,
             signingIdentity: build.signingIdentity,
@@ -41,16 +42,19 @@ struct SignAOSPProductAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(build.source)),
                 ActionEffect(.read, scope: .input(build.artifactImageID)),
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
+                    workspace: build.sourceWorkspace,
+                    target: "/src",
+                    access: .readOnly),
+                ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/src/out",
-                    access: .readOnly)
+                    target: "/out",
+                    access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
@@ -109,13 +113,12 @@ struct SignAOSPProductAction: ColliderAction {
                 build: build,
                 writableMounts: [(staged, "/staged")],
                 readOnlyMounts: [
-                    (build.source, "/src"),
                     (unsigned, "/unsigned"),
                     (build.signingIdentity, "/keys"),
                 ],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
-                    "/src/out/host/linux-x86/bin/sign_target_files_apks"
+                    "/out/host/linux-x86/bin/sign_target_files_apks"
                 ] + arguments))
         guard try context.files.metadata(for: candidate)?.type == .regular else {
             throw AOSPProductSigningFailure.missingOutput(candidate)

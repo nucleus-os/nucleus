@@ -27,29 +27,44 @@ package let nucleusSwiftPMEnvironmentProjection = EnvironmentProjection(
     prefixes: ["NUCLEUS_", "SWIFTPM_", "CCACHE_"],
     excludedNames: ["NUCLEUS_NATIVE_SDK_ROOT"])
 
+package func nucleusLogRoot(workspaceRoot: FilePath) -> FilePath {
+    #if os(macOS)
+    return (try? MacOSHostStorageLayout.current().logsRoot)
+        ?? workspaceRoot.appending(".nucleus")
+    #else
+    return workspaceRoot.appending(".nucleus")
+    #endif
+}
+
+package func nucleusRunRegistryRoot(workspaceRoot: FilePath) -> FilePath {
+    nucleusLogRoot(workspaceRoot: workspaceRoot).appending("runs")
+}
+
 package func nucleusCacheLayout(
     environment: [String: String]
 ) -> ColliderCacheLayout {
     #if os(macOS)
-    let macOSCacheRoot: FilePath? = try? MacOSHostStorageLayout.current().cacheRoot
+    let root =
+        (try? MacOSHostStorageLayout.current().cacheRoot)
+        ?? FilePath(
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Caches/Nucleus/Collider").path)
     #else
-    let macOSCacheRoot: FilePath? = nil
-    #endif
-    let root: FilePath
+    let base: FilePath
     if let value = environment["XDG_CACHE_HOME"], !value.isEmpty {
-        root = FilePath(value)
-    } else if let macOSCacheRoot {
-        root = macOSCacheRoot
+        base = FilePath(value)
     } else if let home = environment["HOME"], !home.isEmpty {
-        root = FilePath(home).appending(".cache")
+        base = FilePath(home).appending(".cache")
     } else {
-        root = FilePath(
+        base = FilePath(
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".cache", isDirectory: true).path)
     }
+    let root = base.appending("nucleus")
+    #endif
     return ColliderCacheLayout(
         root: root,
-        downloadNamespace: FilePath("nucleus/downloads"))
+        downloadNamespace: FilePath("downloads"))
 }
 
 package struct WorkspaceContext: Sendable {
@@ -57,6 +72,9 @@ package struct WorkspaceContext: Sendable {
     package let environment: [String: String]
     package let cacheRoot: FilePath
     package let nativeSDKRoot: FilePath
+    package let hostBuildRoot: FilePath
+    package let artifactRoot: FilePath
+    package let logRoot: FilePath
     package let runtime: ColliderRuntime
     package let console: CommandConsole
     package let ociConfiguration: OCIRuntimeConfiguration
@@ -67,19 +85,46 @@ package struct WorkspaceContext: Sendable {
         environment: [String: String],
         runtime: ColliderRuntime,
         console: CommandConsole = .processDefault,
-        ociConfiguration: OCIRuntimeConfiguration? = nil
+        ociConfiguration: OCIRuntimeConfiguration? = nil,
+        cacheRoot: FilePath? = nil,
+        hostBuildRoot requestedHostBuildRoot: FilePath? = nil,
+        artifactRoot requestedArtifactRoot: FilePath? = nil,
+        logRoot requestedLogRoot: FilePath? = nil
     ) {
         self.root = root
         var normalizedEnvironment = environment
         let cacheLayout = nucleusCacheLayout(environment: normalizedEnvironment)
-        let resolvedCacheRoot = cacheLayout.root
+        let resolvedCacheRoot = cacheRoot ?? cacheLayout.root
+        #if os(macOS)
+        let hostLayout = try? MacOSHostStorageLayout.current()
+        let defaultNativeSDKRoot =
+            hostLayout?.nativeSDKs
+            .appending("linux-\(RunnerPlatform.current.architecture.rawValue)")
+            ?? resolvedCacheRoot.appending(
+                "native-sdks/linux-\(RunnerPlatform.current.architecture.rawValue)")
+        #else
+        let defaultNativeSDKRoot = resolvedCacheRoot.appending(
+            "nucleus-native-sdk/linux-\(RunnerPlatform.current.architecture.rawValue)")
+        #endif
         let resolvedNativeSDKRoot =
             normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]
             .flatMap { $0.isEmpty ? nil : FilePath($0) }
-            ?? resolvedCacheRoot.appending(
-                "nucleus/nucleus-native-sdk/linux-\(RunnerPlatform.current.architecture.rawValue)")
+            ?? defaultNativeSDKRoot
         normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] =
             resolvedNativeSDKRoot.string
+        #if os(macOS)
+        hostBuildRoot =
+            requestedHostBuildRoot ?? hostLayout?.hostBuildState
+            ?? resolvedCacheRoot.appending("build")
+        artifactRoot =
+            requestedArtifactRoot ?? hostLayout?.artifacts
+            ?? resolvedCacheRoot.appending("artifacts")
+        logRoot = requestedLogRoot ?? nucleusLogRoot(workspaceRoot: root)
+        #else
+        hostBuildRoot = requestedHostBuildRoot ?? resolvedCacheRoot.appending("build")
+        artifactRoot = requestedArtifactRoot ?? resolvedCacheRoot.appending("artifacts")
+        logRoot = requestedLogRoot ?? nucleusLogRoot(workspaceRoot: root)
+        #endif
         self.environment = normalizedEnvironment
         self.cacheRoot = resolvedCacheRoot
         self.nativeSDKRoot = resolvedNativeSDKRoot
@@ -88,11 +133,16 @@ package struct WorkspaceContext: Sendable {
         self.ociConfiguration =
             ociConfiguration ?? nucleusOCIRuntimeConfiguration(workspaceRoot: root)
         swiftPackageGraphs = SwiftPackageGraphResolver(
-            cacheRoot: root.appending(".nucleus/swift-package-graphs"),
+            cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
             environment: normalizedEnvironment)
     }
 
     func repository(_ name: String) -> FilePath { root.appending(name) }
+
+    package var stateRoot: FilePath { hostBuildRoot.appending("state") }
+    package var taskStateRoot: FilePath { stateRoot.appending("tasks") }
+    package var lockRoot: FilePath { stateRoot.appending("locks") }
+    package var workRoot: FilePath { hostBuildRoot.appending("work") }
 
     package var taskEnvironment: [String: String] {
         var environment = sanitizedEnvironment(self.environment)
@@ -100,7 +150,7 @@ package struct WorkspaceContext: Sendable {
         environment.removeValue(forKey: "NUCLEUS_RUN_LOG")
         environment["CCACHE_BASEDIR"] = root.string
         environment["CCACHE_COMPILERCHECK"] = "content"
-        environment["CCACHE_DIR"] = cacheRoot.appending("nucleus/host-ccache").string
+        environment["CCACHE_DIR"] = cacheRoot.appending("host-ccache").string
         environment["CCACHE_MAXSIZE"] = "50G"
         environment["CCACHE_SLOPPINESS"] =
             "include_file_ctime,include_file_mtime,locale"
@@ -117,22 +167,14 @@ package func nucleusWorkspaceEnvironment(
     var resolved = environment
     resolved["NUCLEUS_WORKSPACE_ROOT"] = root.string
     #if os(macOS)
-    if let contract = try? MacOSBuilderContract.load(root: root) {
-        if resolved["NUCLEUS_BUILD_ROOT"]?.isEmpty != false {
-            resolved["NUCLEUS_BUILD_ROOT"] = contract.environment.buildRoot
-        }
-        if resolved["XDG_CACHE_HOME"]?.isEmpty != false {
-            resolved["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
-        }
-        if resolved["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
-            resolved["NUCLEUS_NATIVE_SDK_ROOT"] = contract.environment.nativeSDKRoot
-        }
-        if resolved["ANDROID_SDK_ROOT"]?.isEmpty != false {
-            resolved["ANDROID_SDK_ROOT"] = contract.environment.androidSDKRoot
-        }
-        if resolved["ANDROID_HOME"]?.isEmpty != false {
-            resolved["ANDROID_HOME"] = contract.environment.androidSDKRoot
-        }
+    if let layout = try? MacOSHostStorageLayout.current() {
+        resolved.removeValue(forKey: "XDG_CACHE_HOME")
+        resolved["NUCLEUS_BUILD_ROOT"] = layout.hostBuildState.string
+        resolved["NUCLEUS_NATIVE_SDK_ROOT"] =
+            layout.nativeSDKs
+            .appending("linux-arm64").string
+        resolved["ANDROID_SDK_ROOT"] = layout.androidSDKs.string
+        resolved["ANDROID_HOME"] = layout.androidSDKs.string
     }
     #endif
     return resolved

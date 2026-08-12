@@ -3,9 +3,8 @@ import SystemPackage
 
 /// The conventional per-user macOS storage owned by Collider.
 ///
-/// This layout contains no checkout identity and no custom-volume policy. The
-/// active storage migration decides when each existing consumer cuts over to
-/// these locations.
+/// This layout contains no checkout identity, custom-volume policy, or legacy
+/// path fallback. Every macOS Collider consumer resolves through these roots.
 package struct MacOSHostStorageLayout: Equatable, Sendable {
     package let applicationSupportRoot: FilePath
     package let developerRoot: FilePath

@@ -207,7 +207,8 @@ struct WorkspaceDoctor {
                     "swift-sdk/validate-target-sdk-artifacts.sh",
                     "swift-sdk/prepare-linux-sysroot.sh",
                     "swift-sdk/nucleus-target-runtime-presets.ini",
-                    "swift-sdk/runtime-build-container/Containerfile",
+                    "swift-sdk/runtime-build-container/entrypoint.sh",
+                    "swift-sdk/runtime-build-container/nucleus-target-swiftc",
                 ],
                 under: context.root,
                 scope: "swift-sdk")
@@ -348,6 +349,6 @@ struct WorkspaceDoctor {
 
     private func runtimeSwiftSDKRoot() -> FilePath {
         context.cacheRoot.appending(
-            "nucleus/swift-target-sdks/current/swift-sdks")
+            "swift-target-sdks/current/swift-sdks")
     }
 }

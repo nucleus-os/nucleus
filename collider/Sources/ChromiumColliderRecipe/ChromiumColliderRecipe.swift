@@ -53,17 +53,23 @@ enum ChromiumRetention {
 public struct ChromiumRecipeLayout: Hashable, Sendable {
     public let sourceID: String
     public let cacheRoot: FilePath
+    public let artifactRoot: FilePath
+    public let logRoot: FilePath
     public let installPrefix: FilePath
     public let jobs: Int
 
     public init(
         sourceID: String,
         cacheRoot: FilePath,
+        artifactRoot: FilePath,
+        logRoot: FilePath,
         installPrefix: FilePath,
         jobs: Int
     ) {
         self.sourceID = sourceID
         self.cacheRoot = cacheRoot
+        self.artifactRoot = artifactRoot
+        self.logRoot = logRoot
         self.installPrefix = installPrefix
         self.jobs = jobs
     }
@@ -94,13 +100,15 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             context.environment["PREFIX"]
             ?? context.environment["HOME"].map { FilePath($0).appending(".local").string }
             ?? "/tmp/nucleus-browser"
-        let cacheRoot = context.cacheRoot.appending("nucleus/cef")
+        let cacheRoot = context.cacheRoot.appending("cef")
         let tasks = try tasks(
             workspaceRoot: context.repositoryRoot,
             environment: context.environment,
             layout: ChromiumRecipeLayout(
                 sourceID: sourceID,
                 cacheRoot: cacheRoot,
+                artifactRoot: context.artifactRoot.appending("browser"),
+                logRoot: context.logRoot.appending("browser"),
                 installPrefix: FilePath(prefix),
                 jobs: Int(context.environment["NUCLEUS_CHROMIUM_JOBS"] ?? "")
                     ?? 12))
@@ -166,8 +174,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 owner: descriptor.id,
                 producers: Set(buildTaskIDs.map(StorageProducer.task)),
                 storageClass: .diagnostic,
-                root: cacheRoot.appending("logs"),
-                safetyRoot: cacheRoot,
+                root: context.logRoot.appending("browser"),
+                safetyRoot: context.logRoot,
                 cleanupPolicy: .explicitClean,
                 retention: "browser build diagnostics remain until explicit clean"),
             StorageDeclaration(
@@ -194,8 +202,9 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         ]
         for target in chromiumLinuxTargets {
             let identifier = target.identifier
-            let cefRoot = cacheRoot.appending("dist/\(identifier)")
-            let browserRoot = cacheRoot.appending("browser-dist/\(identifier)")
+            let cefRoot = context.artifactRoot.appending("browser/cef/\(identifier)")
+            let browserRoot = context.artifactRoot.appending(
+                "browser/product/\(identifier)")
             storage.append(
                 StorageDeclaration(
                     id: "browser-cef-\(target.architecture.rawValue)-generations",
@@ -279,6 +288,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             throw ChromiumRecipeFailure.invalidSourceLock
         }
         let cache = layout.cacheRoot
+        let artifacts = layout.artifactRoot
+        let logs = layout.logRoot
         let sources = cache.appending("source-generations")
         let source = sources.appending(layout.sourceID)
         let chromiumSource = source.appending("chromium/src")
@@ -317,7 +328,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             ).string,
             "NUCLEUS_CEF_SRC_ROOT": source.string,
             "NUCLEUS_CHROMIUM_SRC_ROOT": chromiumSource.string,
-            "NUCLEUS_CEF_LOG_DIR": cache.appending("logs").string,
+            "NUCLEUS_CEF_LOG_DIR": logs.string,
             "NUCLEUS_CHROMIUM_JOBS": String(layout.jobs),
             "PREFIX": layout.installPrefix.string,
         ]) { _, required in required }
@@ -570,10 +581,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 BuildChromiumProductAction(
                                     build: productBuild))))
 
-                let distributionRoot = cache.appending(
+                let distributionRoot = artifacts.appending(
                     product == .cef
-                        ? "dist/\(target.identifier)"
-                        : "browser-dist/\(target.identifier)")
+                        ? "cef/\(target.identifier)"
+                        : "product/\(target.identifier)")
                 var artifactBuilder = TaskBuilder(
                     id: ChromiumTaskIDs.artifact(product, target),
                     component: ComponentID(rawValue: "browser"))
@@ -648,7 +659,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         for publication in publications {
             retentionBuilder.consume(publication)
         }
-        var retentionRules = [
+        let sourceRetentionRules = [
             DirectoryRetentionRule(
                 root: sources,
                 current: sources.appending("current"),
@@ -659,11 +670,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 retain: 0,
                 naming: .contentIdentityCandidate),
         ]
+        var artifactRetentionRules: [DirectoryRetentionRule] = []
         for target in chromiumLinuxTargets {
-            let cefDistribution = cache.appending("dist/\(target.identifier)")
-            let browserDistribution = cache.appending(
-                "browser-dist/\(target.identifier)")
-            retentionRules += [
+            let cefDistribution = artifacts.appending("cef/\(target.identifier)")
+            let browserDistribution = artifacts.appending(
+                "product/\(target.identifier)")
+            artifactRetentionRules += [
                 DirectoryRetentionRule(
                     root: cefDistribution.appending("releases"),
                     current: cefDistribution.appending("current-release"),
@@ -693,9 +705,14 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             action:
                 try AnyColliderAction(
                     PruneChromiumCacheAction(
-                        plan: DirectoryRetentionPlan(
-                            safetyRoot: cache,
-                            rules: retentionRules))))
+                        plans: [
+                            DirectoryRetentionPlan(
+                                safetyRoot: cache,
+                                rules: sourceRetentionRules),
+                            DirectoryRetentionPlan(
+                                safetyRoot: artifacts,
+                                rules: artifactRetentionRules),
+                        ])))
         var testTasks: [TaskDeclaration] = []
         for target in chromiumLinuxTargets {
             let publication = try required(browserPublications[target])
@@ -741,8 +758,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let installTarget = ChromiumLinuxTarget(architecture: .x86_64)
         let browserPublication = try required(
             browserPublications[installTarget])
-        let browserDistribution = cache.appending(
-            "browser-dist/\(installTarget.identifier)")
+        let browserDistribution = artifacts.appending(
+            "product/\(installTarget.identifier)")
         var installBuilder = TaskBuilder(
             id: ChromiumTaskIDs.install,
             component: ComponentID(rawValue: "browser"))
@@ -1247,32 +1264,37 @@ private enum ChromiumDepotToolsFailure: Error {
 
 private struct PruneChromiumCacheAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let plan: DirectoryRetentionPlan
+        let plans: [DirectoryRetentionPlan]
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: plan.safetyRoot.string)
-            encoder.append(
-                tag: 2,
-                string: plan.rules.map {
-                    [
-                        $0.root.string,
-                        $0.current?.string ?? "",
-                        String($0.retain),
-                        $0.naming.rawValue,
-                    ].joined(separator: "\u{0}")
-                }.joined(separator: "\u{1}"))
+            var encodedPlans = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
+            for plan in plans {
+                encodedPlans.append(tag: 1, string: plan.safetyRoot.string)
+                encodedPlans.append(
+                    tag: 2,
+                    string: plan.rules.map {
+                        [
+                            $0.root.string,
+                            $0.current?.string ?? "",
+                            String($0.retain),
+                            $0.naming.rawValue,
+                        ].joined(separator: "\u{0}")
+                    }.joined(separator: "\u{1}"))
+            }
+            encoder.append(tag: 1, bytes: encodedPlans.bytes)
         }
     }
 
     static let kind: ActionKind = "browser.prune-cache"
 
-    let plan: DirectoryRetentionPlan
+    let plans: [DirectoryRetentionPlan]
 
-    var identity: Identity { Identity(plan: plan) }
+    var identity: Identity { Identity(plans: plans) }
 
     var requirements: ActionRequirements {
         var effects: [ActionEffect] = []
-        for rule in plan.rules {
+        for rule in plans.flatMap(\.rules) {
             let effect = ActionEffect(.readWrite, scope: .scratch(rule.root))
             if !effects.contains(effect) { effects.append(effect) }
             if let current = rule.current {
@@ -1288,7 +1310,9 @@ private struct PruneChromiumCacheAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        try context.files.pruneDirectories(plan)
+        for plan in plans {
+            try context.files.pruneDirectories(plan)
+        }
     }
 }
 

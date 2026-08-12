@@ -10,29 +10,29 @@ enum ColliderStorageComponent {
     static func makeComponent(in context: WorkspaceContext) throws -> ComponentDefinition {
         let owner = descriptor.id
         let root = context.root
-        let state = context.layout.state
-        let cache = context.cacheRoot.appending("nucleus")
+        let state = context.stateRoot
+        let cache = context.cacheRoot
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: [],
             entrypoints: [],
             storage: [
                 StorageDeclaration(
-                    id: "checkout-state",
+                    id: "collider-state",
                     owner: owner,
                     producers: [.runtime("task-state")],
                     storageClass: .incremental,
                     root: state,
-                    safetyRoot: root,
+                    safetyRoot: context.hostBuildRoot,
                     cleanupPolicy: .protected,
-                    retention: "task state and workflow locks remain with the checkout"),
+                    retention: "task state and workflow locks remain with host build state"),
                 StorageDeclaration(
-                    id: "checkout-swiftpm-builds",
+                    id: "host-swiftpm-builds",
                     owner: owner,
                     producers: [.runtime("swiftpm")],
                     storageClass: .incremental,
-                    root: state.appending("swiftpm"),
-                    safetyRoot: state,
+                    root: context.hostBuildRoot.appending("swiftpm"),
+                    safetyRoot: context.hostBuildRoot,
                     cleanupPolicy: .explicitClean,
                     retention: "host SwiftPM build contexts remain reusable until explicit clean"),
                 StorageDeclaration(
@@ -40,8 +40,8 @@ enum ColliderStorageComponent {
                     owner: owner,
                     producers: [.runtime("swiftpm-graph")],
                     storageClass: .cache,
-                    root: state.appending("swift-package-graphs"),
-                    safetyRoot: state,
+                    root: context.hostBuildRoot.appending("swift-package-graphs"),
+                    safetyRoot: context.hostBuildRoot,
                     cleanupPolicy: .explicitClean,
                     retention: "resolved package graphs remain reusable until explicit clean"),
                 StorageDeclaration(
@@ -58,8 +58,8 @@ enum ColliderStorageComponent {
                     owner: owner,
                     producers: [.runtime("run-registry")],
                     storageClass: .runRecord,
-                    root: context.layout.runs,
-                    safetyRoot: state,
+                    root: context.logRoot.appending("runs"),
+                    safetyRoot: context.logRoot,
                     cleanupPolicy: .automaticRetention,
                     retention:
                         "running records, the 20 newest terminal records, and the newest failed record are retained"
@@ -122,10 +122,10 @@ enum ColliderStorageComponent {
                     storageClass: .published,
                     root: FilePath(
                         context.environment["ANDROID_SDK_ROOT"]
-                            ?? context.cacheRoot.appending("android-sdk").string),
+                            ?? context.cacheRoot.appending("android-sdks").string),
                     safetyRoot: FilePath(
                         context.environment["ANDROID_SDK_ROOT"]
-                            ?? context.cacheRoot.appending("android-sdk").string),
+                            ?? context.cacheRoot.appending("android-sdks").string),
                     cleanupPolicy: .protected,
                     retention: "the pinned Android SDK remains provisioned"),
             ])

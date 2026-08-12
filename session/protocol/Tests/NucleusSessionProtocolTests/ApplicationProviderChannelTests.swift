@@ -12,13 +12,7 @@ import Darwin
 struct ApplicationProviderChannelTests {
     @Test("server publishes its current snapshot and incremental changes")
     func publicationLifecycle() async throws {
-        let runtime = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "nucleus-application-provider-\(UUID().uuidString)",
-                isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: runtime,
-            withIntermediateDirectories: true)
+        let runtime = try makeTestRuntimeDirectory()
         defer { try? FileManager.default.removeItem(at: runtime) }
 
         let initial = try record(id: "android:0:org.example/.Main", name: "Example")
@@ -58,13 +52,7 @@ struct ApplicationProviderChannelTests {
 
     @Test("provider launch uses an independent request-reply channel")
     func launchTransaction() async throws {
-        let runtime = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "nucleus-application-provider-launch-\(UUID().uuidString)",
-                isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: runtime,
-            withIntermediateDirectories: true)
+        let runtime = try makeTestRuntimeDirectory()
         defer { try? FileManager.default.removeItem(at: runtime) }
 
         let server = try ApplicationProviderPublicationServer(

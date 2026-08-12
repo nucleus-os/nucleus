@@ -20,6 +20,7 @@ struct ValidateAOSPProductAction: ColliderAction {
         let expectedPlatformSDK: UInt32
         let expectedVendorAPILevel: UInt32
         let sourceOverlays: [AOSPProductSourceOverlay]
+        let sourceWorkspace: PersistentWorkspaceDeclaration
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: productSource.string)
@@ -43,6 +44,8 @@ struct ValidateAOSPProductAction: ColliderAction {
             }
             encoder.append(tag: 12, bytes: overlays.bytes)
             encoder.append(tag: 13, string: aospPackageValidationProgram)
+            encoder.append(tag: 14, string: sourceWorkspace.identity.key)
+            encoder.append(tag: 15, integer: sourceWorkspace.capacityBytes)
         }
     }
 
@@ -63,7 +66,8 @@ struct ValidateAOSPProductAction: ColliderAction {
             buildTimestamp: build.buildTimestamp,
             expectedPlatformSDK: build.expectedPlatformSDK,
             expectedVendorAPILevel: build.expectedVendorAPILevel,
-            sourceOverlays: build.sourceOverlays)
+            sourceOverlays: build.sourceOverlays,
+            sourceWorkspace: build.sourceWorkspace)
     }
 
     var requirements: ActionRequirements {
@@ -82,9 +86,13 @@ struct ValidateAOSPProductAction: ColliderAction {
             effects: effects,
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
+                    workspace: build.sourceWorkspace,
+                    target: "/src",
+                    access: .readOnly),
+                ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/src/out",
-                    access: .readOnly)
+                    target: "/out",
+                    access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
@@ -118,7 +126,7 @@ private struct AOSPProductValidationWorkflow {
             sourceOverlays: build.sourceOverlays,
             files: context.files)
         let staged = build.artifactRoot.appending("staged")
-        let hostTools = FilePath("/src/out/host/linux-x86/bin")
+        let hostTools = FilePath("/out/host/linux-x86/bin")
         let targetFiles = staged.appending("\(build.product)-target_files.zip")
         let imageArchive = staged.appending("\(build.product)-images.zip")
         let imagesRoot = staged.appending("images")
@@ -289,7 +297,6 @@ private struct AOSPProductValidationWorkflow {
                 build: build,
                 writableMounts: [(validationRoot, "/validation")],
                 readOnlyMounts: [
-                    (build.source, "/src"),
                     (build.signingIdentity, "/keys"),
                     (build.artifactRoot, "/export"),
                 ],
@@ -306,7 +313,7 @@ private struct AOSPProductValidationWorkflow {
         environment["TARGET_PRODUCT"] = build.product
         environment["TARGET_BUILD_VARIANT"] = build.variant
         environment["TARGET_RELEASE"] = build.release
-        environment["OUT_DIR"] = "out"
+        environment["OUT_DIR"] = "/out"
         environment["DIST_DIR"] = "/export/dist"
         environment["BUILD_NUMBER"] = build.buildNumber
         environment["BUILD_DATETIME"] = String(build.buildTimestamp)
@@ -316,7 +323,7 @@ private struct AOSPProductValidationWorkflow {
         environment["LANG"] = "C.UTF-8"
         environment["LC_ALL"] = "C.UTF-8"
         environment["PATH"] =
-            "/src/out/host/linux-x86/bin:"
+            "/out/host/linux-x86/bin:"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         return environment
     }
@@ -335,9 +342,6 @@ private struct AOSPProductValidationWorkflow {
                 of: build.artifactRoot.string,
                 with: "/export"
             )
-            .replacingOccurrences(
-                of: build.source.string,
-                with: "/src")
     }
 
     private var validationRoot: FilePath {

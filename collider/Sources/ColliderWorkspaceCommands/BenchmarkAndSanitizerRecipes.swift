@@ -67,8 +67,8 @@ enum BenchmarkColliderRecipe: ColliderComponent {
         ]
         let tasks = try suites.map { package, product, outputDirectory in
             let executable = swiftPM.executable(product)
-            let output = context.repositoryRoot.appending(
-                ".nucleus/benchmarks/\(outputDirectory)")
+            let output = context.logRoot.appending(
+                "benchmarks/\(outputDirectory)")
             var builder = TaskBuilder(
                 id: TaskID(rawValue: "benchmark.\(outputDirectory)"),
                 component: descriptor.id)
@@ -119,8 +119,8 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                     owner: descriptor.id,
                     producers: Set(tasks.map { .task($0.id) }),
                     storageClass: .diagnostic,
-                    root: context.repositoryRoot.appending(".nucleus/benchmarks"),
-                    safetyRoot: context.repositoryRoot.appending(".nucleus"),
+                    root: context.logRoot.appending("benchmarks"),
+                    safetyRoot: context.logRoot,
                     cleanupPolicy: .explicitClean,
                     retention: "benchmark result sets remain until explicit clean")
             ])

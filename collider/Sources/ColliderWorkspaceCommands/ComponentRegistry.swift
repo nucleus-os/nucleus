@@ -38,7 +38,7 @@ package struct ComponentRegistry {
             try explicitHostAugmentation
             ?? defaultHostCatalogAugmentation()
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
-        let nativeBuilderCache = context.cacheRoot.appending("nucleus")
+        let nativeBuilderCache = context.cacheRoot
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             context: context.root.appending("collider/images/native-builder"),
             cacheRoot: nativeBuilderCache.appending("build-containers/native"),
@@ -53,7 +53,8 @@ package struct ComponentRegistry {
         let swiftSDKConfiguration = try swiftTargetSDKGenerationConfiguration(
             environment: recipeEnvironment,
             android: androidToolchain,
-            inputs: targetSDKInputs)
+            inputs: targetSDKInputs,
+            runtimeBuilderBaseImage: nativeBuilder.configuration.image)
         let swiftTargetSDK = try SwiftTargetSDKColliderRecipe.prepare(
             swiftSDKConfiguration,
             reuseActiveGeneration: !forceSwiftSDKGeneration)
@@ -98,8 +99,8 @@ package struct ComponentRegistry {
                 LinuxRuntimeArtifactConfiguration(
                     runtimeSwiftPM: linuxARM64Release,
                     assemblerSwiftPM: runtimeAssembler,
-                    artifactRoot: nativeBuilderCache.appending(
-                        "runtime-artifacts/linux-arm64"),
+                    artifactRoot: context.artifactRoot.appending(
+                        "runtime/linux-arm64"),
                     sessionPackage: context.layout.compositorSessionPackage,
                     kernelContract: context.layout.androidRuntime.appending(
                         "Sources/NucleusAndroidRuntimeCore/"
@@ -116,6 +117,9 @@ package struct ComponentRegistry {
         let baseRecipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
+            buildRoot: context.hostBuildRoot,
+            artifactRoot: context.artifactRoot,
+            logRoot: context.logRoot,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
@@ -157,6 +161,9 @@ package struct ComponentRegistry {
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
+            buildRoot: context.hostBuildRoot,
+            artifactRoot: context.artifactRoot,
+            logRoot: context.logRoot,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
@@ -376,7 +383,7 @@ package struct ComponentRegistry {
             catalog.storage,
             forbiddenRemovalRoots: [
                 FilePath("/"), context.root,
-                context.cacheRoot.appending("nucleus"),
+                context.cacheRoot,
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
         try StorageCatalog.validateProducers(catalog.storage, tasks: catalog.tasks)
@@ -629,13 +636,13 @@ package struct ComponentRegistry {
     }
 
     private func runtimeGenerationsRoot(for prefix: FilePath) -> FilePath {
-        context.layout.runtimeState
+        context.stateRoot.appending("runtime")
             .appending(runtimeGenerationKey(for: prefix))
             .appending("generations")
     }
 
     private func runtimePackageManifestsRoot(for prefix: FilePath) -> FilePath {
-        context.layout.runtimeState
+        context.stateRoot.appending("runtime")
             .appending(runtimeGenerationKey(for: prefix))
             .appending("package-manifests")
     }
@@ -691,15 +698,27 @@ package struct ComponentRegistry {
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
         let swiftPMRoot = context.cacheRoot.appending(
-            "nucleus/swiftpm/\(target.identifier)")
+            "swiftpm/\(target.identifier)")
         let swiftPMDependencyCache = context.cacheRoot.appending(
-            "nucleus/swiftpm-user/cache")
+            "swiftpm-user/cache")
         let guestTargetSDK =
             guestSDKRoot
             + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
             + resolvedTriple + "/" + NucleusLinuxABI.sdkDirectoryName
         let targetRuntimeLibraryDirectory =
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
+        let hostSwiftRuntimeLibraryDirectory =
+            architecture == .arm64
+            ? "/opt/swift/usr/lib/swift/linux"
+            : "/opt/swift-x86_64/usr/lib/swift/linux"
+        let hostSwiftCompatibilityLibraryDirectory =
+            architecture == .arm64
+            ? "/opt/swift-compat/arm64"
+            : "/opt/swift-compat/amd64"
+        let hostSwiftBinaryDirectory =
+            architecture == .arm64
+            ? "/opt/swift/usr/bin"
+            : "/opt/swift-x86_64/usr/bin"
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
             gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
@@ -747,8 +766,12 @@ package struct ComponentRegistry {
                         ).string,
                     "LD_LIBRARY_PATH": [
                         guestTargetSDK + "/usr/lib/swift/linux",
+                        hostSwiftRuntimeLibraryDirectory,
+                        hostSwiftCompatibilityLibraryDirectory,
                         waylandSDK.appending("lib").string,
                     ].joined(separator: ":"),
+                    "PATH": hostSwiftBinaryDirectory
+                        + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     "PKG_CONFIG_PATH":
                         guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
                         + ":" + guestTargetSDK + "/usr/share/pkgconfig",
@@ -789,9 +812,9 @@ package struct ComponentRegistry {
         let root = context.layout.root
         let packageRoot = root.appending("collider")
         let scratchRoot = context.cacheRoot.appending(
-            "nucleus/swiftpm-tools/runtime-assembler")
+            "swiftpm-tools/runtime-assembler")
         let swiftPMDependencyCache = context.cacheRoot.appending(
-            "nucleus/swiftpm-user/cache")
+            "swiftpm-user/cache")
         let execution = SwiftPMExecution.oci(
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
@@ -814,7 +837,8 @@ package struct ComponentRegistry {
                 resourceLimits: .build,
                 containerEnvironment: [
                     "HOME": "/home/nucleus-build",
-                    "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux",
+                    "LD_LIBRARY_PATH":
+                        "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
                     "PATH":
                         "/opt/swift/usr/bin:/usr/local/sbin:/usr/local/bin:"
                         + "/usr/sbin:/usr/bin:/sbin:/bin",
@@ -939,7 +963,8 @@ package struct ComponentRegistry {
     private func swiftTargetSDKGenerationConfiguration(
         environment: [String: String],
         android: AndroidToolchainVersions,
-        inputs: SwiftTargetSDKInputs
+        inputs: SwiftTargetSDKInputs,
+        runtimeBuilderBaseImage: ArtifactReference<FileArtifact>
     ) throws -> SwiftTargetSDKGenerationConfiguration {
         let recipeRoot = context.layout.swiftSDK
         let inputsFile = recipeRoot.appending("target-sdk-inputs.json")
@@ -955,8 +980,10 @@ package struct ComponentRegistry {
         let ndkRoot = try android.ndkRoot(
             environment: environment,
             validate: false,
-            fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
-        let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
+            fallbackHome: context.cacheRoot.appending("unconfigured-home"))
+        let paths = SwiftTargetSDKStoragePaths(
+            cacheRoot: context.cacheRoot,
+            hostBuildRoot: context.hostBuildRoot)
         let fixture = context.root.appending(
             "swift-sdk/validation/AndroidSDKConsumer")
         let validator = recipeRoot.appending("validate-target-sdk-artifacts.sh")
@@ -964,6 +991,8 @@ package struct ComponentRegistry {
         let runtimePreset = recipeRoot.appending(
             "nucleus-target-runtime-presets.ini")
         let sysrootPreparer = recipeRoot.appending("prepare-linux-sysroot.sh")
+        let sdkPackageSanitizer = recipeRoot.appending(
+            "sanitize-linux-sdk-package.sh")
         let pkgConfigDirectory = recipeRoot.appending("pkgconfig")
         let swiftExecutable = FilePath(
             environment["SWIFT"] ?? "/usr/bin/swift")
@@ -977,6 +1006,7 @@ package struct ComponentRegistry {
             runtimeBuilderContext: runtimeBuilderContext,
             runtimePreset: runtimePreset,
             sysrootPreparer: sysrootPreparer,
+            sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             generatorSourceID: generatorSourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
@@ -1026,9 +1056,10 @@ package struct ComponentRegistry {
             sourceWorkspace: recipeRoot.appending("source"),
             sourceID: sourceID,
             runtimeBuilderContext: runtimeBuilderContext,
-            runtimeBuilderImageID: paths.runtimeBuilderImageID,
+            runtimeBuilderBaseImage: runtimeBuilderBaseImage,
             linuxTargets: linuxTargets,
             sysrootPreparer: sysrootPreparer,
+            sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             candidate: paths.artifactRoot.appending(
                 "generations/.candidate-\(artifactID)"),

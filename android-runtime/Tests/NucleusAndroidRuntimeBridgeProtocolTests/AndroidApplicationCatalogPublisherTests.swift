@@ -1,9 +1,9 @@
 import Foundation
 import Glibc
-internal import NucleusAndroidRuntimeBridgeProtocol
 import NucleusSessionProtocol
 import Testing
 
+@testable internal import NucleusAndroidRuntimeBridgeProtocol
 @testable import NucleusAndroidRuntimeBrokerCore
 
 @Suite("Android application catalog publisher")

@@ -32,6 +32,8 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         layout: ChromiumRecipeLayout(
             sourceID: "source-identity",
             cacheRoot: FilePath("/cache/cef"),
+            artifactRoot: FilePath("/artifacts/browser"),
+            logRoot: FilePath("/logs/browser"),
             installPrefix: FilePath("/home/user/.local"),
             jobs: 16))
     let graph = try TaskGraph(tasks)
@@ -163,8 +165,8 @@ func chromiumGNConfigurationsAreTargetSpecificAndUsePersistentCompilerCaches() {
     }
 
     let arm64 = ChromiumLinuxTarget(architecture: .arm64)
-    let x86_64 = ChromiumLinuxTarget(architecture: .x86_64)
+    let x86 = ChromiumLinuxTarget(architecture: .x86_64)
     #expect(
         chromiumCompilerCacheWorkspace(target: arm64).identity
-            != chromiumCompilerCacheWorkspace(target: x86_64).identity)
+            != chromiumCompilerCacheWorkspace(target: x86).identity)
 }

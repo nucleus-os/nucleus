@@ -52,6 +52,7 @@ libxml2-utils
 libzstd-dev
 lz4
 lld
+llvm-dev
 mesa-vulkan-drivers
 meson
 ninja-build

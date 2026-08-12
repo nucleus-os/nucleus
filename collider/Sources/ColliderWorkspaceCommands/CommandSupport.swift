@@ -15,10 +15,10 @@ extension DirectoryNamePattern {
 
 extension WorkspaceContext {
     func pruneSanitizerBuildContexts() throws {
-        let swiftPM = layout.state.appending("swiftpm")
+        let swiftPM = hostBuildRoot.appending("swiftpm")
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
-                safetyRoot: layout.state,
+                safetyRoot: hostBuildRoot,
                 rules: SanitizerKind.allCases.map {
                     DirectoryRetentionRule(
                         root: swiftPM.appending($0.rawValue),
@@ -32,14 +32,14 @@ extension WorkspaceContext {
     /// Reclaim them with the rebuild that superseded them rather than leaving a
     /// multi-gigabyte build directory behind per retired toolchain.
     func reclaimSwiftBuildContexts() throws {
-        let swiftPM = layout.state.appending("swiftpm")
+        let swiftPM = hostBuildRoot.appending("swiftpm")
         let contents =
             (try? FileManager.default.contentsOfDirectory(
                 at: URL(fileURLWithPath: swiftPM.string, isDirectory: true),
                 includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
-                safetyRoot: layout.state,
+                safetyRoot: hostBuildRoot,
                 rules:
                     contents
                     .filter {
@@ -125,7 +125,9 @@ extension WorkspaceContext {
             execution: execution)
         let invocation = SwiftPMInvocation(
             context: context,
-            scratchPath: layout.swiftScratch(for: context, under: scratchRoot),
+            scratchPath: layout.swiftScratch(
+                for: context,
+                under: scratchRoot ?? hostBuildRoot.appending("swiftpm")),
             swiftExecutable: swiftExecutable,
             dependencyLock: {
                 let lock = packageRoot.appending("Package.resolved")
@@ -166,9 +168,12 @@ extension WorkspaceContext {
         requests: [ComponentEntrypointRequest],
         controls: TaskControls
     ) async throws -> TaskExecutionReport {
-        let stateRoot = layout.tasks
+        let stateRoot = taskStateRoot
         let sdkRebuildLock = TaskLock.shared(
-            SwiftTargetSDKStoragePaths(cacheRoot: cacheRoot).rebuildLock)
+            SwiftTargetSDKStoragePaths(
+                cacheRoot: cacheRoot,
+                hostBuildRoot: hostBuildRoot
+            ).rebuildLock)
         let report = try await ColliderEngine(runtime: runtime).execute(
             catalog: catalog,
             requests: requests,

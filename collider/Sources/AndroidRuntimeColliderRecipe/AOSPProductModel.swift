@@ -12,7 +12,8 @@ func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
             role: "build"),
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        cleanupPolicy: .protected)
 }
 
 func aospCompilerCacheWorkspace(
@@ -28,6 +29,18 @@ func aospCompilerCacheWorkspace(
         journal: .writeback64MiB)
 }
 
+func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "aosp-source",
+            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            role: "source"),
+        capacityBytes: 300 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB,
+        cleanupPolicy: .protected)
+}
+
 struct AOSPProductSourceOverlay: Hashable, Sendable {
     let source: FilePath
     let relativeDestination: String
@@ -35,9 +48,9 @@ struct AOSPProductSourceOverlay: Hashable, Sendable {
 
 struct AOSPProductBuild: Hashable, Sendable {
     let productSource: FilePath
-    let source: FilePath
     let sourceProvenance: FilePath
     let artifactRoot: FilePath
+    let sourceWorkspace: PersistentWorkspaceDeclaration
     let outputWorkspace: PersistentWorkspaceDeclaration
     let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     let buildImageID: FilePath
@@ -56,9 +69,9 @@ struct AOSPProductBuild: Hashable, Sendable {
 
     init(
         productSource: FilePath,
-        source: FilePath,
         sourceProvenance: FilePath,
         artifactRoot: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         buildImageID: FilePath,
@@ -76,9 +89,9 @@ struct AOSPProductBuild: Hashable, Sendable {
         sourceOverlays: [AOSPProductSourceOverlay] = []
     ) {
         self.productSource = productSource
-        self.source = source
         self.sourceProvenance = sourceProvenance
         self.artifactRoot = artifactRoot
+        self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
         self.buildImageID = buildImageID
@@ -99,14 +112,21 @@ struct AOSPProductBuild: Hashable, Sendable {
     var outputMount: OCIPersistentWorkspaceMount {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
-            target: "/src/out",
+            target: "/out",
             access: .readWrite)
+    }
+
+    var sourceMount: OCIPersistentWorkspaceMount {
+        OCIPersistentWorkspaceMount(
+            workspace: sourceWorkspace,
+            target: "/src",
+            access: .readOnly)
     }
 
     var readOnlyOutputMount: OCIPersistentWorkspaceMount {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
-            target: "/src/out",
+            target: "/out",
             access: .readOnly)
     }
 

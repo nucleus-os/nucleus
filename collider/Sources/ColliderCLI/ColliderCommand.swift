@@ -51,8 +51,8 @@ public struct ColliderCommand: AsyncParsableCommand {
         environment = nucleusWorkspaceEnvironment(
             root: workspace,
             environment: environment)
-        let layout = WorkspaceLayout(root: workspace)
-        let registry = RunRegistry(root: layout.state)
+        let registry = RunRegistry(
+            root: nucleusRunRegistryRoot(workspaceRoot: workspace))
         try await registry.reconcileAbandonedRuns()
         let requestedRunID = requestedRunID(for: command)
         let run: RunHandle?
@@ -108,7 +108,8 @@ public struct ColliderCommand: AsyncParsableCommand {
         do {
             if workspaceCommand.requiresExecutionAdmission {
                 executionAdmission = try await acquireColliderFileLock(
-                    path: hostExecutionAdmissionLockPath(cacheRoot: cacheLayout.root),
+                    path: hostExecutionAdmissionLockPath(
+                        hostBuildRoot: application.workspace.hostBuildRoot),
                     purpose: "Collider host execution admission",
                     resource: "host execution admission",
                     run: run,
@@ -192,8 +193,8 @@ public struct ColliderCommand: AsyncParsableCommand {
     }
 }
 
-func hostExecutionAdmissionLockPath(cacheRoot: FilePath) -> FilePath {
-    cacheRoot.appending("nucleus/locks/host-execution.lock")
+func hostExecutionAdmissionLockPath(hostBuildRoot: FilePath) -> FilePath {
+    hostBuildRoot.appending("state/locks/host-execution.lock")
 }
 
 private func reportTerminalSummary(

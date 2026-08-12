@@ -739,21 +739,28 @@ private actor AndroidPlatformServiceCoordinator {
     private func mapNotification(
         _ notification: AndroidNotification
     ) async -> PlatformNotification? {
-        try? PlatformNotification(
+        let iconDigest: String?
+        if let notificationIconDigest = notification.iconDigest {
+            iconDigest = notificationIconDigest
+        } else {
+            iconDigest = await catalog.iconDigest(
+                forPackage: notification.packageName)
+        }
+        let urgency: PlatformNotificationUrgency
+        switch notification.urgency {
+        case .low: urgency = .low
+        case .normal: urgency = .normal
+        case .critical: urgency = .critical
+        }
+        return try? PlatformNotification(
             sourceID: "android",
             id: notification.id,
             applicationID: notification.packageName,
             applicationName: notification.applicationName,
             title: notification.title,
             body: notification.body,
-            iconDigest: notification.iconDigest
-                ?? (await catalog.iconDigest(
-                    forPackage: notification.packageName)),
-            urgency: switch notification.urgency {
-            case .low: .low
-            case .normal: .normal
-            case .critical: .critical
-            },
+            iconDigest: iconDigest,
+            urgency: urgency,
             progress: notification.progress.flatMap {
                 try? PlatformNotificationProgress(
                     value: $0.value,

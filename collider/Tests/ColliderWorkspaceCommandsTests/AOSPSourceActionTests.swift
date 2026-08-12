@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderEngine
 import ColliderPersistence
 import Foundation
+import FoundationXML
 import Synchronization
 import SystemPackage
 import Testing
@@ -111,23 +112,45 @@ import Testing
         #"""
         #!/bin/sh
         set -eu
-        if test "$1" = --git-dir; then
-          test "$3" = ls-tree
-          printf '%s\n' \
-            '160000 commit 0123456789abcdef	platform/frameworks/base'
-          exit 0
-        fi
-        test "$1" = -C
-        case "$2" in
-          */.repo/manifests)
-            printf '%s\n' '\#(fixture.manifestCommit)'
+        case "$1" in
+          init)
+            destination=
+            for argument in "$@"; do destination="$argument"; done
+            mkdir -p "$destination"
             ;;
-          */.repo/repo)
-            printf '%s\n' '\#(fixture.repoCommit)'
+          --git-dir)
+            case "$3" in
+              config)
+                printf 'true\n'
+                ;;
+              fetch)
+                ;;
+              ls-tree)
+                printf '%s\n' \
+                  '160000 commit 0123456789abcdef	platform/frameworks/base' \
+                  '160000 commit abcdef0123456789	prebuilts/host/darwin'
+                ;;
+              *)
+                exit 2
+                ;;
+            esac
             ;;
-          */.repo/exp-superproject/*-superproject.git)
-            test "$4" = '\#(fixture.superprojectCommit)'
-            printf '%s\n' '\#(fixture.superprojectCommit)'
+          -C)
+            case "$2" in
+              */.repo/manifests)
+                printf '%s\n' '\#(fixture.manifestCommit)'
+                ;;
+              */.repo/repo)
+                printf '%s\n' '\#(fixture.repoCommit)'
+                ;;
+              */.nucleus/superproject.git)
+                test "$4" = FETCH_HEAD
+                printf '%s\n' '\#(fixture.superprojectCommit)'
+                ;;
+              *)
+                exit 2
+                ;;
+            esac
             ;;
           *)
             exit 2
@@ -152,14 +175,9 @@ import Testing
           init)
             mkdir -p \
               .repo/manifests \
-              .repo/repo \
-              .repo/exp-superproject/platform-superproject.git \
-              .nucleus
+              .repo/repo
             cp "$FIXTURE_MANIFEST" .repo/manifests/default.xml
             cp "$FIXTURE_MANIFEST" .repo/manifest.xml
-            touch \
-              .nucleus/base-resolved-manifest.xml \
-              .nucleus/patched-resolved-manifest.xml
             ;;
           forall)
             ;;
@@ -167,7 +185,7 @@ import Testing
             ;;
           manifest)
             printf '%s\\n' \
-              '<manifest><project name="platform/frameworks/base" revision="0123456789abcdef"/></manifest>'
+              '<manifest><project name="platform/frameworks/base" upstream="refs/heads/platform"/></manifest>'
             ;;
           *)
             exit 2
@@ -175,6 +193,15 @@ import Testing
         esac
         """,
         to: fixture.bin.appendingPathComponent("python3"))
+    let hydrationScript = fixture.root.appendingPathComponent(
+        "hydrate-aosp-source-inputs")
+    try fixture.writeExecutable(
+        """
+        #!/bin/sh
+        set -eu
+        printf 'hydrate %s %s %s\\n' "$1" "$2" "$3" >> "$FIXTURE_COMMAND_LOG"
+        """,
+        to: hydrationScript)
     let environment = fixture.environment.merging([
         "FIXTURE_COMMAND_LOG": commandLog.path
     ]) { _, value in value }
@@ -195,11 +222,14 @@ import Testing
         ],
         action:
             try AnyColliderAction(
-                PrepareAOSPSourceAction(
-                    preparation: AOSPSourcePreparation(
+                PrepareAOSPSourceInputsAction(
+                    preparation: AOSPSourceInputPreparation(
                         specification: fixture.specification,
                         launcher: FilePath(fixture.launcher.path),
-                        source: FilePath(source.path),
+                        sourceInputs: FilePath(source.path),
+                        hydrationScript: FilePath(hydrationScript.path),
+                        resolvedManifest: FilePath(resolvedManifest.path),
+                        provenance: FilePath(provenance.path),
                         syncJobs: 4,
                         retryFetches: 3,
                         environment: environment))))
@@ -215,43 +245,67 @@ import Testing
     #expect(
         commands.contains(
             "init --quiet --partial-clone --clone-filter=blob:limit=10M "
-                + "--use-superproject --no-clone-bundle "
+                + "--no-clone-bundle --use-superproject "
                 + "--repo-url=repo://fixture --repo-rev=refs/tags/v2.65 "
                 + "-u manifest://fixture -b refs/heads/platform"))
     #expect(
         commands.contains(
-            "sync --current-branch --detach --fail-fast --force-checkout "
-                + "--force-sync --no-clone-bundle --no-interleaved "
+            "sync --network-only --current-branch --fail-fast --force-sync "
+                + "--no-clone-bundle --no-interleaved "
                 + "--no-tags --optimized-fetch --prune --jobs-network=4 "
-                + "--jobs-checkout=1 --retry-fetches=3"))
-    #expect(
-        commands.components(
-            separatedBy:
-                "forall --ignore-missing --jobs=4 --verbose -c "
-        ).count == 2)
-    let syncRange = try #require(commands.range(of: "sync --current-branch"))
-    let cleanRange = try #require(commands.range(of: "forall --ignore-missing"))
-    #expect(syncRange.lowerBound < cleanRange.lowerBound)
-    #expect(commands.contains("if test ! -e .git; then exit 0; fi"))
-    #expect(commands.contains("manifest --revision-as-HEAD"))
+                + "--retry-fetches=3"))
+    #expect(commands.contains("hydrate "))
+    #expect(commands.contains("manifest --no-local-manifests"))
     let materialization = try JSONDecoder().decode(
         AOSPSourceProvenance.self,
         from: Data(contentsOf: provenance))
-    #expect(materialization.status == "materialized")
+    #expect(materialization.status == "hydrated")
     #expect(materialization.manifestCommit == fixture.manifestCommit)
     #expect(materialization.superprojectCommit == fixture.superprojectCommit)
     #expect(materialization.repoCommit == fixture.repoCommit)
     #expect(!materialization.resolvedManifestSHA256.isEmpty)
     #expect(
-        !FileManager.default.fileExists(
-            atPath: source.appendingPathComponent(
-                ".nucleus/base-resolved-manifest.xml"
-            ).path))
+        XMLParser(data: try Data(contentsOf: resolvedManifest)).parse())
+}
+
+@Test func aospSourceMaterializationDeclaresItsBoundedExportRoot() throws {
+    let fixture = try AOSPWorkflowFixture(name: "source-materialization-effects")
+    defer { fixture.remove() }
+    let export = FilePath(fixture.root.appendingPathComponent("export").path)
+    let workspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "android-runtime-aosp-source",
+            artifactTarget: .androidX86_64(apiLevel: 37),
+            role: "aosp-source"),
+        capacityBytes: 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB,
+        cleanupPolicy: .protected)
+    let action = MaterializeAOSPSourceAction(
+        materialization: AOSPSourceMaterialization(
+            specification: fixture.specification,
+            launcher: FilePath(fixture.launcher.path),
+            sourceInputs: FilePath(fixture.root.appendingPathComponent("inputs").path),
+            resolvedManifest: FilePath(
+                fixture.root.appendingPathComponent("resolved.xml").path),
+            provenance: FilePath(
+                fixture.root.appendingPathComponent("provenance.json").path),
+            exportedResolvedManifest: export.appending("resolved-manifest.xml"),
+            exportedProvenance: export.appending("source-provenance.json"),
+            script: FilePath(fixture.root.appendingPathComponent("materialize").path),
+            imageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
+            sourceWorkspace: workspace,
+            syncJobs: 4,
+            environment: [:]))
+
     #expect(
-        !FileManager.default.fileExists(
-            atPath: source.appendingPathComponent(
-                ".nucleus/patched-resolved-manifest.xml"
-            ).path))
+        action.requirements.effects.contains(
+            ActionEffect(.write, scope: .output(export))))
+    #expect(
+        action.requirements.effects.contains(
+            ActionEffect(
+                .read,
+                scope: .input(FilePath(fixture.root.path)))))
 }
 
 @Test func aospSigningIdentityCreatesAndValidatesEveryRequiredAlias() async throws {
@@ -340,9 +394,9 @@ import Testing
             CompileAOSPProductAction(
                 build: AOSPProductBuild(
                     productSource: root.appending("product"),
-                    source: root.appending("source"),
                     sourceProvenance: root.appending("source-provenance.json"),
                     artifactRoot: root.appending("build"),
+                    sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
                     outputWorkspace: aospOutputWorkspace(apiLevel: 37),
                     compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
                     buildImageID: root.appending("container-image-id"),
@@ -365,15 +419,12 @@ import Testing
     #expect(
         first.requirements.persistentWorkspaceEffects.map(\.workspace)
             == [
+                aospSourceWorkspace(apiLevel: 37),
                 aospOutputWorkspace(apiLevel: 37),
                 aospCompilerCacheWorkspace(apiLevel: 37),
             ])
     #expect(
-        first.requirements.effects.contains(
-            ActionEffect(.read, scope: .input(root.appending("source")))))
-    #expect(
-        !first.requirements.effects.contains(
-            ActionEffect(.readWrite, scope: .checkout(root.appending("source")))))
+        first.requirements.persistentWorkspaceEffects.first?.access == .readOnly)
 }
 
 @Test func aospCompileDelegatesIncrementalCleanupToSoong() async throws {
@@ -397,9 +448,9 @@ import Testing
     let product = "nucleus_x86_64"
     let build = AOSPProductBuild(
         productSource: FilePath(productSource.path),
-        source: FilePath(source.path),
         sourceProvenance: FilePath(provenance.path),
         artifactRoot: FilePath(artifactRoot.path),
+        sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         buildImageID: FilePath(imageID.path),
@@ -487,10 +538,10 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
-        source: FilePath(source.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
+        sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         buildImageID: FilePath(imageID.path),
@@ -524,7 +575,7 @@ import Testing
             downloads: ActionDownloader { _, _ in },
             containers: ActionContainerExecutor(run: { execution in
                 executions.withLock { $0.append(execution) }
-                if execution.command.dropFirst().first == "/usr/bin/unzip" {
+                if execution.command.first == "/usr/bin/unzip" {
                     for name in aospRequiredProductImages {
                         let bytes: [UInt8] =
                             name == "system.img"
@@ -533,7 +584,7 @@ import Testing
                         try Data(bytes).write(
                             to: imageCandidate.appendingPathComponent(name))
                     }
-                } else if execution.command.dropFirst().first?.hasSuffix("simg2img") == true {
+                } else if execution.command.first?.hasSuffix("simg2img") == true {
                     try Data("normalized-image".utf8).write(
                         to: imageCandidate.appendingPathComponent("system.img.raw"))
                 } else {
@@ -620,10 +671,10 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
-        source: FilePath(source.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
+        sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         buildImageID: FilePath(imageID.path),
@@ -700,9 +751,9 @@ import Testing
         to: stagedImages.appendingPathComponent("system.img"))
     let build = AOSPProductBuild(
         productSource: FilePath(fixture.root.path),
-        source: FilePath(fixture.root.path),
         sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
+        sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         buildImageID: FilePath(fixture.root.appendingPathComponent("image-id").path),

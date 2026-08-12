@@ -186,6 +186,9 @@ public struct RecipeBuildContextID: RawRepresentable, Hashable, Codable, Sendabl
 public struct RecipeContext: Sendable {
     public let repositoryRoot: FilePath
     public let cacheRoot: FilePath
+    public let buildRoot: FilePath
+    public let artifactRoot: FilePath
+    public let logRoot: FilePath
     public let environment: [String: String]
     public let buildContexts: [RecipeBuildContextID: SwiftPMInvocation]
     private let configurations: [ComponentID: any RecipeConfiguration]
@@ -193,12 +196,18 @@ public struct RecipeContext: Sendable {
     public init(
         repositoryRoot: FilePath,
         cacheRoot: FilePath,
+        buildRoot: FilePath? = nil,
+        artifactRoot: FilePath? = nil,
+        logRoot: FilePath? = nil,
         environment: [String: String],
         buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:],
         configurations: [ComponentID: any RecipeConfiguration] = [:]
     ) {
         self.repositoryRoot = repositoryRoot
         self.cacheRoot = cacheRoot
+        self.buildRoot = buildRoot ?? cacheRoot.appending("build")
+        self.artifactRoot = artifactRoot ?? cacheRoot.appending("artifacts")
+        self.logRoot = logRoot ?? cacheRoot.appending("logs")
         self.environment = environment
         self.buildContexts = buildContexts
         self.configurations = configurations

@@ -62,11 +62,11 @@ Persistent Linux build and compiler-cache state is separate from source and
 survives individual build-container lifetimes.
 
 Task-executing and state-mutating commands acquire one host-wide kernel lease
-below the shared Nucleus cache root. The lease coordinates local terminals,
-remote SSH sessions, alternate checkouts, and the future trusted runner while
-leaving inspection and dry-run commands lock-free. Contended runs publish wait
-events, and cancellation releases admission after normal runtime shutdown and
-run finalization.
+below the conventional Collider Developer state root. The lease coordinates
+local terminals, remote SSH sessions, alternate checkouts, and the future
+trusted runner while leaving inspection and dry-run commands lock-free.
+Contended runs publish wait events, and cancellation releases admission after
+normal runtime shutdown and run finalization.
 
 The authoritative checkout already lives at `~/Developer/nucleus`. The
 [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
@@ -82,9 +82,8 @@ remaining builder-storage migration belongs exclusively to the
 [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md).
 
 Gate evidence: the active checkout is `~/Developer/nucleus`; local editing and
-Collider workspace discovery use that checkout directly; `NucleusSnapshots` is
-absent; and no source move, backup service, snapshot service, or worker-owned
-source role remains.
+Collider workspace discovery use that checkout directly; and no source move,
+backup service, snapshot service, or worker-owned source role remains.
 
 ## Phase 2: Establish Private Host Access
 
@@ -147,12 +146,12 @@ Record lock ownership and wait state using the existing run and lock evidence.
 Cancellation releases the lock only after child processes and managed
 containers have completed their normal cleanup transaction.
 
-Collider now stores the lease at
-`${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/locks/host-execution.lock`, records the
-owning run beside it, and uses the existing cancellable file-lock acquisition
-path. Mutating commands and non-dry task commands acquire it. Doctor, status,
-run, log, task, graph, cache-status, and dry-run commands remain available
-without it.
+Collider stores the macOS lease at
+`~/Library/Developer/Nucleus/Collider/build/state/locks/host-execution.lock`,
+records the owning run beside it, and uses the existing cancellable file-lock
+acquisition path. Mutating commands and non-dry task commands acquire it.
+Doctor, status, run, log, task, graph, cache-status, and dry-run commands remain
+available without it.
 
 Gate: two checkouts cannot execute task graphs concurrently, inspection remains
 available while a build owns admission, internal architecture concurrency is

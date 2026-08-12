@@ -226,10 +226,9 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             environment: sourceEnvironment,
             context: context)
         for architecture in ["amd64", "arm64"] {
-            try await ensureSysroot(
+            try await ensureSysrootArchive(
                 architecture: architecture,
                 chromium: chromium,
-                environment: sourceEnvironment,
                 context: context)
         }
         try await ensureProfiles(
@@ -682,33 +681,47 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             sha256: try files.digest(file: stamp).description)
     }
 
-    private func ensureSysroot(
+    private func ensureSysrootArchive(
         architecture: String,
         chromium: FilePath,
-        environment: [String: String],
         context: ActionContext
     ) async throws {
-        if let stamp = try? sysrootStamp(
-            architecture: architecture,
-            chromium: chromium,
-            files: context.files),
-            try isNonEmptyFile(stamp, files: context.files)
-        {
-            return
-        }
-        try await requireSuccess(
-            .named("python3"),
-            [
-                "build/linux/sysroot_scripts/install-sysroot.py",
-                "--arch=\(architecture)",
-            ],
-            in: chromium,
-            environment: environment,
-            context: context)
-        _ = try sysrootStamp(
+        let descriptor = try sysrootDescriptor(
             architecture: architecture,
             chromium: chromium,
             files: context.files)
+        guard
+            let url = URL(
+                string: descriptor.url + "/" + descriptor.sha256),
+            let digest = ArtifactDigest(sha256Hex: descriptor.sha256)
+        else {
+            throw failure("invalid Chromium Linux sysroot descriptor")
+        }
+        let archiveRoot = chromium.removingLastComponent()
+            .removingLastComponent().appending("linux-sysroot-archives")
+        try context.files.createDirectory(archiveRoot)
+        let archive = archiveRoot.appending(descriptor.directory + ".tar.xz")
+        try await context.downloads.download(
+            try DownloadSpec(
+                url: url,
+                permittedRedirectOrigins: [
+                    "https://commondatastorage.googleapis.com"
+                ],
+                expectedDigest: digest,
+                maximumResponseSize: 2 * 1_024 * 1_024 * 1_024,
+                acceptedMediaTypes: [
+                    "application/octet-stream",
+                    "application/x-tar",
+                    "application/x-xz",
+                ],
+                requestTimeoutSeconds: 600,
+                inactivityTimeoutSeconds: 60,
+                maximumRetries: 2,
+                resumption: .validatorRequired),
+            to: archive)
+        try context.files.write(
+            Array((url.absoluteString + "\n").utf8),
+            to: archiveRoot.appending(descriptor.directory + ".stamp"))
     }
 
     private func sysrootStamp(
@@ -716,23 +729,33 @@ package struct PrepareChromiumSourceAction: ColliderAction {
         chromium: FilePath,
         files: ActionFileSystem
     ) throws -> FilePath {
+        let descriptor = try sysrootDescriptor(
+            architecture: architecture,
+            chromium: chromium,
+            files: files)
+        return chromium.removingLastComponent().removingLastComponent()
+            .appending(
+                "linux-sysroot-archives/"
+                    + descriptor.directory + ".tar.xz")
+    }
+
+    private func sysrootDescriptor(
+        architecture: String,
+        chromium: FilePath,
+        files: ActionFileSystem
+    ) throws -> ChromiumSysrootDescriptor {
         let linux = chromium.appending("build/linux")
         let configuration = linux.appending("sysroot_scripts/sysroots.json")
         let descriptors = try JSONDecoder().decode(
             [String: ChromiumSysrootDescriptor].self,
             from: Data(files.read(configuration)))
         let suffix = "_\(architecture)-sysroot"
-        let matches: [FilePath] = try descriptors.values.compactMap { descriptor in
-            guard descriptor.directory.hasSuffix(suffix) else { return nil }
-            let stamp = linux.appending(descriptor.directory).appending(".stamp")
-            guard try files.metadata(for: stamp)?.type == .regular else {
-                return nil
-            }
-            return stamp
+        let matches = descriptors.values.filter {
+            $0.directory.hasSuffix(suffix)
         }
         guard matches.count == 1, let match = matches.first else {
             throw failure(
-                "expected one Chromium Linux \(architecture) sysroot stamp")
+                "expected one Chromium Linux \(architecture) sysroot descriptor")
         }
         return match
     }
@@ -875,9 +898,13 @@ private struct ChromiumSourceProvenance: Codable, Equatable {
 
 private struct ChromiumSysrootDescriptor: Decodable {
     let directory: String
+    let sha256: String
+    let url: String
 
     private enum CodingKeys: String, CodingKey {
         case directory = "SysrootDir"
+        case sha256 = "Sha256Sum"
+        case url = "URL"
     }
 }
 

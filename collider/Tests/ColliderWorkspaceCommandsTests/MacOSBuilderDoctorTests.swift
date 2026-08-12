@@ -25,14 +25,6 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
     #expect(contract.launchd.maximumOpenFileCount == 245_760)
-    #expect(contract.environment.buildRoot == "/Volumes/NucleusBuild")
-    #expect(contract.environment.xdgCacheHome == "/Volumes/NucleusCache")
-    #expect(
-        contract.environment.nativeSDKRoot
-            == "/Volumes/NucleusCache/nucleus/nucleus-native-sdk/linux-arm64")
-    #expect(
-        contract.environment.androidSDKRoot
-            == "/Volumes/NucleusCache/android-sdk")
 }
 
 @Test

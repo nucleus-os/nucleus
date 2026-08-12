@@ -886,8 +886,9 @@ uses the same stopped-VM transaction. Existing machines retain their pinned
 data-base digest; a newer data base applies only to newly created machines.
 
 DiskImageKit does not replace host filesystem ownership. Immutable bases,
-machine records, and overlays remain in an app-owned persistent APFS directory;
-APFS continues to own encryption, backup, free-space accounting, and quotas.
+machine records, and overlays remain in an app-owned persistent directory on
+the default macOS Data filesystem; APFS continues to own encryption, backup,
+and free-space accounting.
 Collider owns installation and atomic replacement of immutable base artifacts.
 `NucleusMacHostRuntime` owns only machine records and overlays. No cleanup can
 remove a base referenced by a machine record, a layer referenced by a retained

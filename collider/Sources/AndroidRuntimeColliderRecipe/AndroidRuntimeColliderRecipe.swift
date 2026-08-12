@@ -24,6 +24,8 @@ package enum AndroidRuntimeTaskIDs {
     package static let aospSourceLock = TaskID(
         rawValue: "android-runtime.aosp-source-lock")
     package static let aospSource = TaskID(rawValue: "android-runtime.aosp-source")
+    package static let aospSourceInputs = TaskID(
+        rawValue: "android-runtime.aosp-source-inputs")
     package static let aospImage = TaskID(rawValue: "android-runtime.aosp-image")
     package static let aospBuildTools = TaskID(
         rawValue: "android-runtime.aosp-build-tools")
@@ -73,14 +75,23 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let executable: ArtifactReference<FileArtifact>
     }
 
+    private struct SourceInputArtifacts {
+        let task: TaskDeclaration
+        let sourceInputs: FilePath
+        let resolvedManifest: ArtifactReference<FileArtifact>
+        let provenance: ArtifactReference<JSONArtifact>
+    }
+
     private struct SourceArtifacts {
         let tasks: [TaskDeclaration]
         let provenance: ArtifactReference<JSONArtifact>
+        let workspace: PersistentWorkspaceDeclaration
     }
 
     private struct SourceTaskArtifacts {
         let task: TaskDeclaration
         let provenance: ArtifactReference<JSONArtifact>
+        let workspace: PersistentWorkspaceDeclaration
     }
 
     private struct SigningArtifacts {
@@ -133,28 +144,25 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             NativeBuilderGraphConfiguration.self,
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
-        let aospSourceRoot = try aospSourceRoot(
-            root: root,
-            environment: context.environment)
-        let aospBuildRoot = aospBuildRoot(
-            root: root,
-            environment: context.environment)
+        let aospBuildRoot = context.artifactRoot.appending("android-runtime/aosp")
         let aospContainers = try aospContainerTasks(
             root: root,
             cacheRoot: context.cacheRoot.appending(
-                "nucleus/android-runtime/build-container"),
+                "android-runtime/build-container"),
             dependencyImage: native.builder.dependencyImage,
             environment: context.environment)
         let aosp = try aospImageTasks(
             root: root,
-            sourceRoot: aospSourceRoot,
+            sourceInputRoot: context.cacheRoot.appending(
+                "android-runtime/aosp-source-inputs"),
+            artifactRoot: aospBuildRoot,
             buildImage: aospContainers.buildImage,
             artifactImage: aospContainers.artifactImage,
             environment: context.environment)
         let gfxstreamContainer = try gfxstreamContainerTask(
             root: root,
             cacheRoot: context.cacheRoot.appending(
-                "nucleus/android-runtime/gfxstream-build-container"),
+                "android-runtime/gfxstream-build-container"),
             dependencyImage: native.builder.dependencyImage,
             environment: context.environment)
         var tasks = aospContainers.tasks + aosp.tasks + [gfxstreamContainer.task]
@@ -233,14 +241,17 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ].map { StorageProducer.task(TaskID(rawValue: $0)) })
         var storage = [
             StorageDeclaration(
-                id: "android-aosp-source",
+                id: "android-aosp-source-inputs",
                 owner: descriptor.id,
-                producers: [.task(AndroidRuntimeTaskIDs.aospSource)],
-                storageClass: .source,
-                root: aospSourceRoot,
-                safetyRoot: aospSourceRoot.removingLastComponent(),
-                cleanupPolicy: .protected,
-                retention: "the exact Repo-managed AOSP source checkout remains materialized"),
+                producers: [.task(AndroidRuntimeTaskIDs.aospSourceInputs)],
+                storageClass: .cache,
+                root: context.cacheRoot.appending(
+                    "android-runtime/aosp-source-inputs"),
+                safetyRoot: context.cacheRoot.appending("android-runtime"),
+                cleanupPolicy: .explicitClean,
+                retention:
+                    "the exact host-fetched Repo object cache remains reusable until explicit clean"
+            ),
             StorageDeclaration(
                 id: "android-aosp-signing-identity",
                 owner: descriptor.id,
@@ -393,16 +404,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         return SourceLockArtifacts(task: task, verification: verification)
     }
 
-    public static func aospSourceTasks(
-        root: FilePath,
-        environment: [String: String]
-    ) throws -> [TaskDeclaration] {
-        try aospSourceArtifacts(
-            root: root,
-            environment: environment
-        ).tasks
-    }
-
     private static func aospContainerTasks(
         root: FilePath,
         cacheRoot: FilePath,
@@ -528,7 +529,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospSourceArtifacts(
         root: FilePath,
-        sourceRoot: FilePath? = nil,
+        sourceInputRoot: FilePath,
+        sourceStateRoot: FilePath,
+        buildImage: ArtifactReference<FileArtifact>,
+        apiLevel: UInt32,
         environment: [String: String]
     ) throws -> SourceArtifacts {
         let launcher = try aospRepoLauncher(
@@ -538,35 +542,54 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             root: root,
             environment: environment,
             launcher: launcher.executable)
-        let source = try aospSource(
+        let inputs = try aospSourceInputs(
             root: root,
-            sourceRoot: sourceRoot ?? root.appending(".aosp-source"),
+            sourceInputRoot: sourceInputRoot,
             environment: environment,
             launcher: launcher.executable,
             verification: verification.verification)
+        let source = try aospSource(
+            root: root,
+            sourceStateRoot: sourceStateRoot,
+            sourceWorkspace: aospSourceWorkspace(apiLevel: apiLevel),
+            sourceInputs: inputs,
+            buildImage: buildImage,
+            environment: environment,
+            launcher: launcher.executable)
         return SourceArtifacts(
-            tasks: [launcher.task, verification.task, source.task],
-            provenance: source.provenance)
+            tasks: [launcher.task, verification.task, inputs.task, source.task],
+            provenance: source.provenance,
+            workspace: source.workspace)
     }
 
     package static func aospImageTasks(
         root: FilePath,
-        sourceRoot: FilePath? = nil,
+        sourceInputRoot: FilePath,
+        artifactRoot: FilePath,
         buildImage: ArtifactReference<FileArtifact>,
         artifactImage: ArtifactReference<FileArtifact>,
         environment: [String: String]
     ) throws -> AOSPImageArtifacts {
-        let resolvedSourceRoot = sourceRoot ?? root.appending(".aosp-source")
+        let productLock = try JSONDecoder().decode(
+            AOSPProductLock.self,
+            from: Data(
+                contentsOf: URL(
+                    fileURLWithPath: root.appending("aosp-product.lock.json").string)))
+        try productLock.validate()
         let source = try aospSourceArtifacts(
             root: root,
-            sourceRoot: resolvedSourceRoot,
+            sourceInputRoot: sourceInputRoot,
+            sourceStateRoot: artifactRoot.appending("source-state"),
+            buildImage: buildImage,
+            apiLevel: productLock.platformSDK,
             environment: environment)
         let signing = try aospSigningIdentity(
             root: root,
             environment: environment)
         let product = try aospProductImageTasks(
             root: root,
-            sourceRoot: resolvedSourceRoot,
+            sourceWorkspace: source.workspace,
+            aospBuildRoot: artifactRoot,
             environment: environment,
             sourceProvenance: source.provenance,
             signing: signing,
@@ -619,49 +642,117 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         return RepoLauncherArtifacts(task: task, executable: executable)
     }
 
-    private static func aospSource(
+    private static func aospSourceInputs(
         root: FilePath,
-        sourceRoot: FilePath,
+        sourceInputRoot: FilePath,
         environment: [String: String],
         launcher: ArtifactReference<FileArtifact>,
         verification: ArtifactReference<JSONArtifact>
-    ) throws -> SourceTaskArtifacts {
+    ) throws -> SourceInputArtifacts {
         let lock = try loadAOSPSourceLock(root: root)
         let specification = try lock.specification()
         let lockPath = root.appending("aosp.lock.json")
-        let source = sourceRoot
+        let sourceInputs = sourceInputRoot.appending("repository")
+        let hydrationScript = root.appending(
+            "build-support/hydrate-aosp-source-inputs.sh")
+        let state = sourceInputRoot.appending(
+            "locks/\(specification.platform.manifestCommit)")
         var builder = TaskBuilder(
-            id: AndroidRuntimeTaskIDs.aospSource,
+            id: AndroidRuntimeTaskIDs.aospSourceInputs,
             component: component)
         builder.consume(verification)
         builder.consume(launcher)
-        let _: ArtifactReference<FileArtifact> = try builder.output(
+        let resolvedManifest: ArtifactReference<FileArtifact> = try builder.output(
             "resolved-manifest",
-            path: source.appending(".nucleus/resolved-manifest.xml"),
+            path: state.appending("resolved-manifest.xml"),
             validation: .regularFile)
         let provenance: ArtifactReference<JSONArtifact> = try builder.output(
             "provenance",
-            path: source.appending(".nucleus/source-provenance.json"),
+            path: state.appending("source-provenance.json"),
             validation: .json)
         let task = builder.build(
             inputs: [
                 .file(lockPath),
+                .file(hydrationScript),
+                .tool(.named("bash")),
                 .tool(.named("git")),
                 .tool(.named("python3")),
             ],
-            locks: [.checkout("android-runtime-aosp-source")],
+            locks: [.checkout("android-runtime-aosp-source-inputs")],
             action:
                 try AnyColliderAction(
-                    PrepareAOSPSourceAction(
-                        preparation: AOSPSourcePreparation(
+                    PrepareAOSPSourceInputsAction(
+                        preparation: AOSPSourceInputPreparation(
                             specification: specification,
                             launcher: launcher.path,
-                            source: source,
+                            sourceInputs: sourceInputs,
+                            hydrationScript: hydrationScript,
+                            resolvedManifest: resolvedManifest.path,
+                            provenance: provenance.path,
                             syncJobs: 4,
                             retryFetches: 3,
                             environment: environment)))
         )
-        return SourceTaskArtifacts(task: task, provenance: provenance)
+        return SourceInputArtifacts(
+            task: task,
+            sourceInputs: sourceInputs,
+            resolvedManifest: resolvedManifest,
+            provenance: provenance)
+    }
+
+    private static func aospSource(
+        root: FilePath,
+        sourceStateRoot: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceInputs: SourceInputArtifacts,
+        buildImage: ArtifactReference<FileArtifact>,
+        environment: [String: String],
+        launcher: ArtifactReference<FileArtifact>
+    ) throws -> SourceTaskArtifacts {
+        let specification = try loadAOSPSourceLock(root: root).specification()
+        let state = sourceStateRoot.appending(specification.platform.manifestCommit)
+        var builder = TaskBuilder(
+            id: AndroidRuntimeTaskIDs.aospSource,
+            component: component)
+        builder.consume(sourceInputs.resolvedManifest)
+        builder.consume(sourceInputs.provenance)
+        builder.consume(launcher)
+        builder.consume(buildImage)
+        let _: ArtifactReference<FileArtifact> = try builder.output(
+            "resolved-manifest",
+            path: state.appending("resolved-manifest.xml"),
+            validation: .regularFile)
+        let provenance: ArtifactReference<JSONArtifact> = try builder.output(
+            "provenance",
+            path: state.appending("source-provenance.json"),
+            validation: .json)
+        let task = builder.build(
+            inputs: [
+                .file(root.appending("aosp.lock.json")),
+                .file(root.appending("build-container/materialize-source.sh")),
+            ],
+            locks: [.checkout("android-runtime-aosp-source")],
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                MaterializeAOSPSourceAction(
+                    materialization: AOSPSourceMaterialization(
+                        specification: specification,
+                        launcher: launcher.path,
+                        sourceInputs: sourceInputs.sourceInputs,
+                        resolvedManifest: sourceInputs.resolvedManifest.path,
+                        provenance: sourceInputs.provenance.path,
+                        exportedResolvedManifest: state.appending(
+                            "resolved-manifest.xml"),
+                        exportedProvenance: provenance.path,
+                        script: root.appending("build-container/materialize-source.sh"),
+                        imageID: buildImage.path,
+                        sourceWorkspace: sourceWorkspace,
+                        syncJobs: 24,
+                        environment: environment))))
+        return SourceTaskArtifacts(
+            task: task,
+            provenance: provenance,
+            workspace: sourceWorkspace)
     }
 
     private static func aospSigningIdentity(
@@ -709,7 +800,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospProductImageTasks(
         root: FilePath,
-        sourceRoot: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
+        aospBuildRoot: FilePath,
         environment: [String: String],
         sourceProvenance: ArtifactReference<JSONArtifact>,
         signing: SigningArtifacts,
@@ -721,12 +813,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             AOSPProductLock.self,
             from: Data(contentsOf: URL(fileURLWithPath: lockPath.string)))
         try lock.validate()
-        let source = sourceRoot
         let signingIdentity = root.appending(
             ".aosp-signing/local-development")
-        let aospBuildRoot = aospBuildRoot(
-            root: root,
-            environment: environment)
         let productIdentity = Array(
             [
                 lock.product,
@@ -768,9 +856,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let build = AOSPProductBuild(
             productSource: root.appending(
                 "aosp/device/nucleus/nucleus_x86_64"),
-            source: source,
             sourceProvenance: sourceProvenance.path,
             artifactRoot: buildRoot,
+            sourceWorkspace: sourceWorkspace,
             outputWorkspace: aospOutputWorkspace(apiLevel: lock.platformSDK),
             compilerCacheWorkspace: aospCompilerCacheWorkspace(
                 apiLevel: lock.platformSDK),
@@ -987,32 +1075,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     fileURLWithPath: root.appending("aosp.lock.json").string)))
     }
 
-    private static func aospSourceRoot(
-        root: FilePath,
-        environment: [String: String]
-    ) throws -> FilePath {
-        guard let buildRoot = environment["NUCLEUS_BUILD_ROOT"], !buildRoot.isEmpty
-        else {
-            return root.appending(".aosp-source")
-        }
-        let lock = try loadAOSPSourceLock(root: root)
-        try lock.validate()
-        return FilePath(buildRoot)
-            .appending("nucleus/aosp-source")
-            .appending(lock.source.manifestCommit)
-    }
-
-    private static func aospBuildRoot(
-        root: FilePath,
-        environment: [String: String]
-    ) -> FilePath {
-        guard let buildRoot = environment["NUCLEUS_BUILD_ROOT"], !buildRoot.isEmpty
-        else {
-            return root.appending(".aosp-build")
-        }
-        return FilePath(buildRoot).appending("nucleus/aosp-build")
-    }
-
     private static func aospRepoLauncherPath(
         root: FilePath
     ) throws -> FilePath {
@@ -1038,6 +1100,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let crossOption =
             target.architecture == .x86_64
             ? " --cross-file=/build-support/linux-x86_64.ini" : ""
+        let targetCXXOptions =
+            " -Dcpp_args=\"['-stdlib=libc++','-nostdinc++','-isystem"
+            + target.containerLibCXXIncludeRoot
+            + "']\" -Dc_link_args=\"['-fuse-ld=lld','-L"
+            + target.containerLibCXXLibraryRoot
+            + "']\" -Dcpp_link_args=\"['-stdlib=libc++','-fuse-ld=lld','-L"
+            + target.containerLibCXXLibraryRoot
+            + "']\""
         let hostBuild = "/build/host"
         let guestBuild = "/build/guest"
         let buildWorkspace = PersistentWorkspaceDeclaration(
@@ -1096,10 +1166,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 environment: environment,
                                 command: [
                                     "bash", "-lc",
-                                    "meson setup \(hostBuild) /gfxstream"
+                                    "meson_mode=; test ! -f"
+                                        + " \(hostBuild)/meson-private/coredata.dat"
+                                        + " || meson_mode=--reconfigure;"
+                                        + " meson setup $meson_mode \(hostBuild) /gfxstream"
                                         + " -Dbuildtype=release -Ddefault_library=static"
                                         + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
                                         + crossOption
+                                        + targetCXXOptions
                                         + " && meson compile -C \(hostBuild) gfxstream_backend"
                                         + " && mkdir -p /export/lib"
                                         + " && install -m 0644"
@@ -1119,7 +1193,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 environment: environment,
                                 command: [
                                     "bash", "-lc",
-                                    "meson setup \(guestBuild) /mesa"
+                                    "meson_mode=; test ! -f"
+                                        + " \(guestBuild)/meson-private/coredata.dat"
+                                        + " || meson_mode=--reconfigure;"
+                                        + " meson setup $meson_mode \(guestBuild) /mesa"
                                         + " -Dbuildtype=release -Dvulkan-drivers=gfxstream"
                                         + " -Dgallium-drivers=[] -Dplatforms=[] -Dglx=disabled"
                                         + " -Degl=disabled -Dgbm=disabled -Dgles1=disabled"
@@ -1128,6 +1205,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                         + " -Dlibunwind=disabled -Dbuild-tests=false"
                                         + " -Dvideo-codecs=[]"
                                         + crossOption
+                                        + targetCXXOptions
                                         + " && meson compile -C \(guestBuild) vulkan_gfxstream"
                                         + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
                                         + " && mkdir -p /export/lib"
@@ -1228,8 +1306,10 @@ private func gfxstreamExecution(
             "CC": "/usr/bin/clang",
             "CCACHE_DIR": "/ccache",
             "CXX": "/usr/bin/clang++",
-            "CXXFLAGS": "-stdlib=libc++",
-            "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld",
+            "CXXFLAGS":
+                "-stdlib=libc++ -nostdinc++ -isystem\(target.containerLibCXXIncludeRoot)",
+            "LDFLAGS":
+                "-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
             "PKG_CONFIG_LIBDIR":
                 "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
         ],

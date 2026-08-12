@@ -102,38 +102,43 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
                 selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName))
 }
 
-@Test func storageOwnershipRelocatesBetweenDefaultAndAPFSCacheRoots() throws {
+@Test func macOSCacheOwnershipIgnoresProcessWideXDGOverrides() throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-storage-relocation-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
     let home = temporary.appendingPathComponent("home", isDirectory: true)
-    let apfsCache = temporary.appendingPathComponent(
-        "Volumes/NucleusCache", isDirectory: true)
+    let overriddenCache = temporary.appendingPathComponent(
+        "overridden-cache", isDirectory: true)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: apfsCache, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: overriddenCache,
+        withIntermediateDirectories: true)
     let defaultContext = WorkspaceContext(
         root: fixtureRepositoryRoot,
         environment: ["HOME": home.path],
         runtime: ColliderRuntime())
-    let apfsContext = WorkspaceContext(
+    let overriddenContext = WorkspaceContext(
         root: fixtureRepositoryRoot,
         environment: [
             "HOME": home.path,
-            "XDG_CACHE_HOME": apfsCache.path,
+            "XDG_CACHE_HOME": overriddenCache.path,
         ],
         runtime: ColliderRuntime())
     let defaultCatalog = try ComponentRegistry(context: defaultContext).componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
-    let apfsCatalog = try ComponentRegistry(context: apfsContext).componentCatalog(
+    let overriddenCatalog = try ComponentRegistry(
+        context: overriddenContext
+    ).componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
+    let hostStorage = try MacOSHostStorageLayout.current()
 
     #expect(
         storageSignatures(defaultCatalog.storage, context: defaultContext)
-            == storageSignatures(apfsCatalog.storage, context: apfsContext))
-    #expect(
-        defaultContext.cacheRoot
-            == MacOSHostStorageLayout.current().cacheRoot)
-    #expect(apfsContext.cacheRoot == FilePath(apfsCache.path))
+            == storageSignatures(
+                overriddenCatalog.storage,
+                context: overriddenContext))
+    #expect(defaultContext.cacheRoot == hostStorage.cacheRoot)
+    #expect(overriddenContext.cacheRoot == defaultContext.cacheRoot)
 }
 
 private func storageSignatures(
@@ -198,7 +203,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(
         Set(withoutLinuxOperations.storage.map(\.id)) == [
             "android-aosp-build", "android-aosp-container-tools",
-            "android-aosp-signing-identity", "android-aosp-source", "android-aosp-tools",
+            "android-aosp-signing-identity", "android-aosp-source-inputs",
+            "android-aosp-tools",
             "android-gfxstream-container-tools", "android-gfxstream-sdk-linux-arm64",
             "android-gfxstream-sdk-linux-x86_64",
             "android-sdk", "benchmark-results", "browser-builder-metadata",
@@ -206,8 +212,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             "browser-cef-x86_64-generations", "browser-depot-tools",
             "browser-installations", "browser-locks", "browser-logs",
             "browser-product-arm64-generations", "browser-product-x86_64-generations",
-            "browser-source-generations", "checkout-state",
-            "checkout-swiftpm-builds",
+            "browser-source-generations", "collider-state",
+            "host-swiftpm-builds",
             "core-render-sdk-android-arm64",
             "core-render-sdk-linux-arm64", "core-render-sdk-linux-x86_64", "core-skia-inputs",
             "downloads", "host-compiler-cache", "language-server-configuration",
@@ -224,7 +230,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(withoutLinuxOperations.storage.allSatisfy { !$0.producers.isEmpty })
     let storageOwners = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.owner.rawValue) })
-    #expect(storageOwners["checkout-state"] == ColliderStorageComponent.descriptor.id.rawValue)
+    #expect(storageOwners["collider-state"] == ColliderStorageComponent.descriptor.id.rawValue)
     #expect(storageOwners["native-builder-metadata"] == "native")
     #expect(storageOwners["swift-target-sdk-generations"] == "swift-sdk")
     #expect(storageOwners["core-skia-inputs"] == "core")
@@ -235,7 +241,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(storageOwners["browser-product-x86_64-generations"] == "browser")
     let storageClasses = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
-    #expect(storageClasses["android-aosp-source"] == .source)
+    #expect(storageClasses["android-aosp-source-inputs"] == .cache)
     #expect(storageClasses["android-aosp-signing-identity"] == .identity)
     let aospBuildTools = try #require(
         withoutLinuxOperations.tasks.first {
@@ -423,10 +429,26 @@ private func fixtureReactNativeNodeModules(
     #expect(
         x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.contains(
             "/usr/lib/x86_64-linux-gnu") == false)
+    #expect(
+        armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
+            NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
+                + "/usr/lib/swift/linux:/opt/swift/usr/lib/swift/linux:"
+                + "/opt/swift-compat/arm64:") == true)
+    #expect(
+        x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
+            NativeLinuxTarget(architecture: .x86_64).containerSwiftSDKRoot
+                + "/usr/lib/swift/linux:/opt/swift-x86_64/usr/lib/swift/linux:"
+                + "/opt/swift-compat/amd64:") == true)
+    #expect(
+        armExecution.containerEnvironment["PATH"]?.hasPrefix(
+            "/opt/swift/usr/bin:") == true)
+    #expect(
+        x86Execution.containerEnvironment["PATH"]?.hasPrefix(
+            "/opt/swift-x86_64/usr/bin:") == true)
     #expect(armExecution.hostDependencyCache == x86Execution.hostDependencyCache)
     #expect(
         armExecution.hostDependencyCache.string.hasSuffix(
-            "/nucleus/swiftpm-user/cache"))
+            "/swiftpm-user/cache"))
     let armBuildWorkspace = try #require(armExecution.buildWorkspace)
     let x86BuildWorkspace = try #require(x86Execution.buildWorkspace)
     let armCacheWorkspace = try #require(armExecution.compilerCacheWorkspace)
@@ -761,6 +783,7 @@ private func fixtureReactNativeNodeModules(
 
 @Test func incompatibleSwiftBuildContextsUseDifferentScratchPaths() {
     let layout = WorkspaceLayout(root: FilePath("/workspace"))
+    let scratchRoot = FilePath("/host/build/swiftpm")
     let debug = SwiftBuildContext(
         packageRoot: fixtureSwiftPackageRoot,
         configuration: .debug,
@@ -783,14 +806,18 @@ private func fixtureReactNativeNodeModules(
         toolchainIdentity: "swiftc@first",
         maximumParallelism: 4)
 
-    #expect(layout.swiftScratch(for: debug) != layout.swiftScratch(for: release))
     #expect(
-        layout.swiftScratch(for: debug)
-            != layout.swiftScratch(for: otherToolchain))
+        layout.swiftScratch(for: debug, under: scratchRoot)
+            != layout.swiftScratch(for: release, under: scratchRoot))
     #expect(
-        layout.swiftScratch(for: debug)
-            == layout.swiftScratch(for: otherJobCount))
-    #expect(layout.swiftScratch(for: debug) == layout.swiftScratch(for: debug))
+        layout.swiftScratch(for: debug, under: scratchRoot)
+            != layout.swiftScratch(for: otherToolchain, under: scratchRoot))
+    #expect(
+        layout.swiftScratch(for: debug, under: scratchRoot)
+            == layout.swiftScratch(for: otherJobCount, under: scratchRoot))
+    #expect(
+        layout.swiftScratch(for: debug, under: scratchRoot)
+            == layout.swiftScratch(for: debug, under: scratchRoot))
 }
 
 @Test func hostScratchIdentityFollowsCompilerInsteadOfTargetSDKSource() throws {
@@ -843,12 +870,13 @@ private func fixtureReactNativeNodeModules(
             "HOME": "/home/fixture",
             "XDG_CACHE_HOME": "/cache",
         ],
-        runtime: ColliderRuntime())
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
 
     #expect(context.taskEnvironment["CCACHE_BASEDIR"] == "/workspace")
     #expect(
         context.taskEnvironment["CCACHE_DIR"]
-            == "/cache/nucleus/host-ccache")
+            == "/cache/host-ccache")
     #expect(context.taskEnvironment["CCACHE_COMPILERCHECK"] == "content")
     #expect(context.taskEnvironment["CCACHE_MAXSIZE"] == "50G")
     #expect(
@@ -865,12 +893,16 @@ private func fixtureReactNativeNodeModules(
             "NUCLEUS_RUN_DIR": "/runs/current",
             "NUCLEUS_RUN_LOG": "/runs/current/run.log",
         ],
-        runtime: ColliderRuntime())
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
 
     #expect(context.cacheRoot == FilePath("/cache"))
     #expect(
-        nucleusCacheLayout(environment: context.environment).downloads
-            == FilePath("/cache/nucleus/downloads"))
+        ColliderCacheLayout(
+            root: context.cacheRoot,
+            downloadNamespace: FilePath("downloads")
+        ).downloads
+            == FilePath("/cache/downloads"))
     #expect(context.taskEnvironment["NUCLEUS_RUN_DIR"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_RUN_LOG"] == nil)
     #expect(context.environment["NUCLEUS_RUN_DIR"] == "/runs/current")
@@ -954,8 +986,7 @@ private func fixtureReactNativeNodeModules(
         "collider-contexts-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: workspace) }
     let manager = FileManager.default
-    let swiftPM = workspace.appendingPathComponent(
-        ".nucleus/swiftpm", isDirectory: true)
+    let swiftPM = workspace.appendingPathComponent("swiftpm", isDirectory: true)
     let contexts = ["unsanitized", "thread"].map {
         swiftPM.appendingPathComponent(
             "\($0)/sha256-\(String(repeating: "a", count: 64))",
@@ -974,7 +1005,8 @@ private func fixtureReactNativeNodeModules(
     let context = WorkspaceContext(
         root: FilePath(workspace.path),
         environment: ["HOME": "/home/fixture"],
-        runtime: ColliderRuntime())
+        runtime: ColliderRuntime(),
+        hostBuildRoot: FilePath(workspace.path))
     try context.reclaimSwiftBuildContexts()
 
     for stale in contexts {
@@ -1906,6 +1938,7 @@ private func fixtureReactNativeNodeModules(
 
     #expect(
         Set(native.dependencies) == [
+            TaskID(rawValue: "rn.boost"),
             TaskID(rawValue: "rn.cxx.linux-x86_64"),
             TaskID(rawValue: "rn.hermes.linux-x86_64"),
             TaskID(rawValue: "rn.javascript-dependencies"),
@@ -1943,6 +1976,8 @@ private func fixtureReactNativeNodeModules(
             workspace.appendingPathComponent(
                 "android-runtime"
             ).path),
+        sourceInputRoot: FilePath("/cache/aosp/source-inputs"),
+        artifactRoot: FilePath("/artifacts/aosp"),
         buildImage: buildImage,
         artifactImage: artifactImage,
         environment: [
@@ -1989,10 +2024,10 @@ private func fixtureReactNativeNodeModules(
     let publicationPaths = publication.outputs.map(\.path)
     #expect(
         publicationPaths.contains(
-            FilePath("/build-root/nucleus/aosp-build/current")))
+            FilePath("/artifacts/aosp/current")))
     #expect(
         publicationPaths.contains {
-            $0.string.contains("/build-root/nucleus/aosp-build/generations/")
+            $0.string.contains("/artifacts/aosp/generations/")
                 && $0.string.hasSuffix("/images/system.img")
         })
     #expect(

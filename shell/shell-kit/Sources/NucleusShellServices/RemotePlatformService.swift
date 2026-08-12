@@ -1,5 +1,5 @@
-import Foundation
-package import NucleusSessionProtocol
+package import Foundation
+internal import NucleusSessionProtocol
 package import NucleusUI
 
 #if os(Linux)
@@ -264,7 +264,13 @@ package final class RemotePlatformService {
     private func mapNotification(
         _ notification: PlatformNotification
     ) -> ShellNotification {
-        ShellNotification(
+        let urgency: ShellNotificationUrgency
+        switch notification.urgency {
+        case .low: urgency = .low
+        case .normal: urgency = .normal
+        case .critical: urgency = .critical
+        }
+        return ShellNotification(
             id: ShellNotificationID(
                 sourceID: providerID,
                 notificationID: notification.id),
@@ -273,11 +279,7 @@ package final class RemotePlatformService {
             summary: notification.title,
             body: notification.body,
             iconDigest: notification.iconDigest,
-            urgency: switch notification.urgency {
-            case .low: .low
-            case .normal: .normal
-            case .critical: .critical
-            },
+            urgency: urgency,
             progress: notification.progress.map {
                 ShellNotificationProgress(
                     value: $0.value,

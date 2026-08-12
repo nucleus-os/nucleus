@@ -105,11 +105,23 @@ do
   fi
 done
 
+# Persistent container disks and incremental build workspaces are deliberately
+# reconstructible. Keep this large developer-data root out of Time Machine
+# without requiring a privileged fixed-path or volume exclusion.
+/usr/bin/tmutil addexclusion "$developer_root"
+
+# The starter exits after Apple Container launches its detached user services.
+# Booting out the LaunchAgent alone therefore does not restart the API server or
+# reload its persisted image and volume metadata.
 /bin/launchctl bootout "gui/$service_uid/$service_label" >/dev/null 2>&1 || true
+if /usr/local/bin/container system status --format json >/dev/null 2>&1; then
+  /usr/local/bin/container system stop
+fi
 /usr/bin/install -m 0755 "$starter_source" "$starter_target"
 /usr/bin/install -m 0644 "$plist_template" "$agent_target"
-/usr/bin/plutil -replace ProgramArguments.0 -string "$starter_target" \
-  "$agent_target"
+/usr/bin/plutil -remove ProgramArguments "$agent_target"
+/usr/bin/plutil -insert ProgramArguments -array "$agent_target"
+/usr/bin/plutil -insert ProgramArguments.0 -string "$starter_target" "$agent_target"
 /usr/bin/plutil -replace StandardOutPath -string "$standard_output_path" \
   "$agent_target"
 /usr/bin/plutil -replace StandardErrorPath -string "$standard_error_path" \

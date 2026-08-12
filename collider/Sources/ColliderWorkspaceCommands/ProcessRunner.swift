@@ -153,7 +153,7 @@ extension WorkspaceContext {
         _ body: () async throws -> Result
     ) async throws -> Result {
         let directory =
-            layout.locks
+            lockRoot
         try FileManager.default.createDirectory(
             at: URL(fileURLWithPath: directory.string, isDirectory: true),
             withIntermediateDirectories: true)

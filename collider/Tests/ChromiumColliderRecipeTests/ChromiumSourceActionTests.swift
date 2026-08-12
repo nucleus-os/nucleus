@@ -115,10 +115,10 @@ import Testing
     let linuxRollup = chromium.appendingPathComponent(
         "third_party/devtools-frontend/src/node_modules/@rollup/"
             + "rollup-linux-x64-gnu/rollup-linux-x64-gnu.node")
-    let amd64Sysroot = chromium.appendingPathComponent(
-        "build/linux/debian_bullseye_amd64-sysroot/.stamp")
-    let arm64Sysroot = chromium.appendingPathComponent(
-        "build/linux/debian_bullseye_arm64-sysroot/.stamp")
+    let amd64Sysroot = source.appendingPathComponent(
+        "linux-sysroot-archives/debian_bullseye_amd64-sysroot.tar.xz")
+    let arm64Sysroot = source.appendingPathComponent(
+        "linux-sysroot-archives/debian_bullseye_arm64-sysroot.tar.xz")
     let sysrootsConfiguration = chromium.appendingPathComponent(
         "build/linux/sysroot_scripts/sysroots.json")
     for file in [
@@ -142,8 +142,18 @@ import Testing
     try Data(
         """
         {
-          "bullseye_amd64": {"SysrootDir": "debian_bullseye_amd64-sysroot"},
-          "bullseye_arm64": {"SysrootDir": "debian_bullseye_arm64-sysroot"}
+          "bullseye_amd64": {
+            "Sha256Sum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "SysrootDir": "debian_bullseye_amd64-sysroot",
+            "Tarball": "debian_bullseye_amd64_sysroot.tar.xz",
+            "URL": "https://example.invalid/sysroots"
+          },
+          "bullseye_arm64": {
+            "Sha256Sum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "SysrootDir": "debian_bullseye_arm64-sysroot",
+            "Tarball": "debian_bullseye_arm64_sysroot.tar.xz",
+            "URL": "https://example.invalid/sysroots"
+          }
         }
         """.utf8
     ).write(to: sysrootsConfiguration)

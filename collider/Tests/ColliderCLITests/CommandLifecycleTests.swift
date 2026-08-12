@@ -188,8 +188,8 @@ func mutatingCommandsAcquireHostExecutionAdmission() throws {
 
 @Test
 func hostExecutionAdmissionLivesOutsideTheCheckout() {
-    let cacheRoot = FilePath("/host/cache")
+    let hostBuildRoot = FilePath("/host/build")
     #expect(
-        hostExecutionAdmissionLockPath(cacheRoot: cacheRoot)
-            == FilePath("/host/cache/nucleus/locks/host-execution.lock"))
+        hostExecutionAdmissionLockPath(hostBuildRoot: hostBuildRoot)
+            == FilePath("/host/build/state/locks/host-execution.lock"))
 }

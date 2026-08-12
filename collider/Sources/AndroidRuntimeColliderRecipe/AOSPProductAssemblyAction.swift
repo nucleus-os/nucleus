@@ -3,14 +3,15 @@ import SystemPackage
 
 struct AssembleAOSPProductImagesAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let source: FilePath
+        let sourceWorkspace: PersistentWorkspaceDeclaration
         let buildRoot: FilePath
         let containerImageID: FilePath
         let product: String
         let expectedPlatformSDK: UInt32
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: source.string)
+            encoder.append(tag: 1, string: sourceWorkspace.identity.key)
+            encoder.append(tag: 6, integer: sourceWorkspace.capacityBytes)
             encoder.append(tag: 2, string: buildRoot.string)
             encoder.append(tag: 3, string: containerImageID.string)
             encoder.append(tag: 4, string: product)
@@ -24,7 +25,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            source: build.source,
+            sourceWorkspace: build.sourceWorkspace,
             buildRoot: build.artifactRoot,
             containerImageID: build.artifactImageID,
             product: build.product,
@@ -34,15 +35,18 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(build.source)),
                 ActionEffect(.read, scope: .input(build.artifactImageID)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
+                    workspace: build.sourceWorkspace,
+                    target: "/src",
+                    access: .readOnly),
+                ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/src/out",
-                    access: .readOnly)
+                    target: "/out",
+                    access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
@@ -67,10 +71,10 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(staged, "/staged")],
-                readOnlyMounts: [(build.source, "/src")],
+                readOnlyMounts: [],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
-                    "/src/out/host/linux-x86/bin/img_from_target_files",
+                    "/out/host/linux-x86/bin/img_from_target_files",
                     "/staged/\(signedTarget.lastComponent?.string ?? "")",
                     "/staged/\(imageArchiveCandidate.lastComponent?.string ?? "")",
                 ]))
@@ -84,7 +88,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(build.artifactRoot, "/export")],
-                readOnlyMounts: [(build.source, "/src")],
+                readOnlyMounts: [],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
                     "/usr/bin/unzip", "-q",
@@ -111,10 +115,10 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 aospProductOCIExecution(
                     build: build,
                     writableMounts: [(imageCandidate, "/images")],
-                    readOnlyMounts: [(build.source, "/src")],
+                    readOnlyMounts: [],
                     persistentWorkspaceMounts: [build.readOnlyOutputMount],
                     command: [
-                        "/src/out/host/linux-x86/bin/simg2img",
+                        "/out/host/linux-x86/bin/simg2img",
                         "/images/\(name)",
                         "/images/\(name).raw",
                     ]))
@@ -185,14 +189,14 @@ func aospProductOCIExecution(
         imageID: phase == .build ? build.buildImageID : build.artifactImageID,
         hostname: "android-build",
         workingDirectory: workingDirectory,
-        hostWorkingDirectory: build.source,
+        hostWorkingDirectory: build.productSource,
         mounts: readOnlyMounts.map {
             OCIMount(source: $0.0, target: $0.1, access: .readOnly)
         }
             + writableMounts.map {
                 OCIMount(boundedExport: $0.0, target: $0.1)
             },
-        persistentWorkspaceMounts: persistentWorkspaceMounts,
+        persistentWorkspaceMounts: [build.sourceMount] + persistentWorkspaceMounts,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
@@ -209,7 +213,7 @@ func aospProductSourceMounts(
     build: AOSPProductBuild
 ) -> [(FilePath, String)] {
     let productRoot = "/src/device/nucleus/nucleus_x86_64"
-    return [(build.source, "/src"), (build.assembledProductSource, productRoot)]
+    return [(build.assembledProductSource, productRoot)]
 }
 
 func aospProductContainerToolEnvironment() -> [String: String] {
@@ -221,7 +225,7 @@ func aospProductContainerToolEnvironment() -> [String: String] {
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "PATH": "\(javaHome)/bin:"
-            + "/src/out/host/linux-x86/bin:"
+            + "/out/host/linux-x86/bin:"
             + "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "REPO_TRACE": "0",
         "SOONG_BOOTSTRAP_PREBUILT_TAG": "linux-x86",

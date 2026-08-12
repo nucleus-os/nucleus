@@ -48,7 +48,7 @@ struct RepositoryState {
     let context: WorkspaceContext
 
     private var registry: RunRegistry {
-        RunRegistry(root: context.layout.state)
+        RunRegistry(root: context.logRoot.appending("runs"))
     }
 
     func status() async throws {

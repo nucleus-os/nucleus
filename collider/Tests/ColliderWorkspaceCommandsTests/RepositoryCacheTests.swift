@@ -73,7 +73,8 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
 }
 
 private func fixtureWorkspace(
-    key: String = "fixture-build"
+    key: String = "fixture-build",
+    cleanupPolicy: PersistentWorkspaceCleanupPolicy = .explicitClean
 ) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
@@ -82,7 +83,8 @@ private func fixtureWorkspace(
             role: "build"),
         capacityBytes: 128 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        cleanupPolicy: cleanupPolicy)
 }
 
 private func workspaceRuntime(
@@ -93,6 +95,22 @@ private func workspaceRuntime(
         downloadCacheRoot: FilePath(root.appendingPathComponent("downloads").path),
         ociConfiguration: .engineDefault,
         ociBackend: backend)
+}
+
+private func repositoryContext(
+    root: URL,
+    runtime: ColliderRuntime,
+    cacheRoot: URL? = nil
+) -> WorkspaceContext {
+    let cache = cacheRoot ?? root.appendingPathComponent("cache", isDirectory: true)
+    return WorkspaceContext(
+        root: FilePath(root.path),
+        environment: ["HOME": root.path],
+        runtime: runtime,
+        cacheRoot: FilePath(cache.path),
+        hostBuildRoot: FilePath(root.appendingPathComponent("host-build").path),
+        artifactRoot: FilePath(root.appendingPathComponent("host-artifacts").path),
+        logRoot: FilePath(root.appendingPathComponent("host-logs").path))
 }
 
 @Test func cacheStatusMakesRecursiveAllocationMeasurementExplicit() throws {
@@ -160,10 +178,7 @@ private func workspaceRuntime(
             entrypoints: [])
     }
     let repository = RepositoryCache(
-        context: WorkspaceContext(
-            root: FilePath(root.path),
-            environment: ["HOME": root.path],
-            runtime: runtime),
+        context: repositoryContext(root: root, runtime: runtime),
         catalog: ComponentCatalog(
             components: [
                 try component(
@@ -208,14 +223,56 @@ private func workspaceRuntime(
         ])
     let runtime = workspaceRuntime(root: root, backend: backend)
     let repository = RepositoryCache(
-        context: WorkspaceContext(
-            root: FilePath(root.path),
-            environment: ["HOME": root.path],
-            runtime: runtime),
+        context: repositoryContext(root: root, runtime: runtime),
         catalog: ComponentCatalog(components: [], publicEntrypoints: []))
 
     try await repository.prune(keepingRuns: 0, dryRun: false)
     #expect(await backend.deletions() == ["orphaned-volume"])
+}
+
+@Test func repositoryCleanProtectsDeclaredSourceWorkspace() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-protected-workspace-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let workspace = fixtureWorkspace(
+        key: "fixture-source",
+        cleanupPolicy: .protected)
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "source-volume",
+                identity: workspace.identity,
+                capacityBytes: workspace.capacityBytes,
+                allocatedBytes: 4_096,
+                active: false)
+        ])
+    let componentID = ComponentID(rawValue: "selected")
+    let component = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: componentID,
+            canonicalName: componentID.rawValue,
+            directoryName: componentID.rawValue),
+        tasks: [
+            TaskDeclaration(
+                id: TaskID(rawValue: "selected.source"),
+                component: componentID,
+                action: try AnyColliderAction(
+                    WorkspaceFixtureAction(workspace: workspace)))
+        ],
+        entrypoints: [])
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: ComponentCatalog(
+            components: [component],
+            publicEntrypoints: []))
+
+    await #expect(throws: WorkspaceFailure.self) {
+        try await repository.clean(component: "selected", dryRun: false)
+    }
+    #expect(await backend.deletions().isEmpty)
 }
 
 @Test func repositoryCleanRefusesAnActiveDeclaredWorkspace() async throws {
@@ -248,9 +305,8 @@ private func workspaceRuntime(
         ],
         entrypoints: [])
     let repository = RepositoryCache(
-        context: WorkspaceContext(
-            root: FilePath(root.path),
-            environment: ["HOME": root.path],
+        context: repositoryContext(
+            root: root,
             runtime: workspaceRuntime(root: root, backend: backend)),
         catalog: ComponentCatalog(
             components: [component],
@@ -274,7 +330,7 @@ private func workspaceRuntime(
     try FileManager.default.createDirectory(
         at: workspace, withIntermediateDirectories: true)
     let generations = cache.appendingPathComponent(
-        "nucleus/swift-target-sdks/generations", isDirectory: true)
+        "swift-target-sdks/generations", isDirectory: true)
     try FileManager.default.createDirectory(
         at: generations, withIntermediateDirectories: true)
     let candidate = generations.appendingPathComponent(
@@ -290,20 +346,13 @@ private func workspaceRuntime(
     }
     try FileManager.default.createSymbolicLink(
         atPath: cache.appendingPathComponent(
-            "nucleus/swift-target-sdks/current"
+            "swift-target-sdks/current"
         ).path,
         withDestinationPath: "generations/\(active.lastPathComponent)")
-    let context = WorkspaceContext(
-        root: FilePath(workspace.path),
-        environment: [
-            "HOME": workspace.path,
-            "XDG_CACHE_HOME": cache.path,
-            "NUCLEUS_NATIVE_SDK_ROOT": cache.appendingPathComponent(
-                "nucleus/nucleus-native-sdk/linux-arm64"
-            ).path,
-            "ANDROID_SDK_ROOT": cache.appendingPathComponent("android-sdk").path,
-        ],
-        runtime: ColliderRuntime())
+    let context = repositoryContext(
+        root: workspace,
+        runtime: ColliderRuntime(),
+        cacheRoot: cache)
 
     let storage = [
         StorageDeclaration(
@@ -315,7 +364,7 @@ private func workspaceRuntime(
             safetyRoot: FilePath(generations.deletingLastPathComponent().path),
             cleanupPolicy: .explicitPrune,
             activeGenerationLink: FilePath(
-                cache.appendingPathComponent("nucleus/swift-target-sdks/current").path),
+                cache.appendingPathComponent("swift-target-sdks/current").path),
             rollbackGenerationCount: 0,
             interruptedCandidateNaming: DirectoryNamePattern(
                 rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#),
@@ -417,7 +466,11 @@ private func workspaceRuntime(
     let context = WorkspaceContext(
         root: FilePath(workspace.path),
         environment: ["HOME": workspace.path],
-        runtime: ColliderRuntime())
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath(workspace.appendingPathComponent("cache").path),
+        hostBuildRoot: FilePath(workspace.appendingPathComponent("host-build").path),
+        artifactRoot: FilePath(workspace.appendingPathComponent("artifacts").path),
+        logRoot: FilePath(workspace.appendingPathComponent("logs").path))
     let cache = RepositoryCache(
         context: context,
         catalog: ComponentCatalog(
@@ -485,13 +538,10 @@ private func workspaceRuntime(
                 storage: [declaration])
         ],
         publicEntrypoints: [])
-    let context = WorkspaceContext(
-        root: FilePath(workspace.path),
-        environment: [
-            "HOME": workspace.path,
-            "XDG_CACHE_HOME": cacheRoot.path,
-        ],
-        runtime: ColliderRuntime())
+    let context = repositoryContext(
+        root: workspace,
+        runtime: ColliderRuntime(),
+        cacheRoot: cacheRoot)
     let repository = RepositoryCache(context: context, catalog: catalog)
 
     async let status: Void = repository.status(measureAllocations: true)

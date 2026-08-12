@@ -1,6 +1,6 @@
 # macOS Host Storage Consolidation Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -80,8 +80,9 @@ that queries APFS containers or validates named mounts.
 Make the login-session service installer create the standard user directories
 with the current user as owner. Point the Apple-container API server at the new
 application root and its in-tree `volumes` directory. Point launch-agent output
-to the standard Logs directory. Remove the cross-volume `volumes` symlink and
-the migration script that exists only to maintain it.
+to the standard Logs directory. Apply a user-owned sticky Time Machine
+exclusion to the reconstructible Developer root. Remove the cross-volume
+`volumes` symlink and the migration script that exists only to maintain it.
 
 The installer remains a user-domain operation. It does not use sudo, mutate
 disks, or depend on a particular synthesized disk identifier.
@@ -92,6 +93,13 @@ service script names a custom volume. Phase 6 activates the generated service;
 Phase 7 owns restart persistence and live health verification.
 
 ## Phase 3: Move case-sensitive workspaces behind container volumes
+
+Status: implementation complete. AOSP declares independent protected source,
+output, and compiler-cache volumes. Host-native preparation owns every network
+operation. The host keeps a metadata-only partial-clone Repo cache, hydrates
+every blob reachable from the exact locked revisions, and an offline container
+copies that object store into the source volume before local-only checkout. The
+migrated live workspace is qualified in Phases 6 and 7.
 
 Declare persistent Apple-container source, output, and compiler-cache volumes
 for every Linux workload that currently places a case-sensitive tree directly
@@ -119,6 +127,11 @@ AOSP build reuses both its source and output volumes.
 
 ## Phase 4: Convert build, cache, artifact, and log consumers
 
+Status: implementation complete. The task graph uses the typed conventional
+layout for build state, caches and SDKs, staged artifacts, and logs. macOS no
+longer exports `XDG_CACHE_HOME`, and no production graph contains a custom
+volume path. Phase 6 migrates the retained live state into these locations.
+
 Move host-side build metadata and non-case-sensitive scratch state to the
 Developer root. Move native SDK, Android SDK, downloaded archives, repository
 inputs, and other reconstructible data to the Caches root. Move staged build
@@ -137,6 +150,12 @@ Gate: runtime, SDK, browser, and Android task graphs contain no
 does not change solely because the host-storage implementation moved.
 
 ## Phase 5: Simplify observation and cleanup
+
+Status: implementation complete. Status reports default-filesystem capacity,
+declared storage ownership, Apple-container disk usage, and sparse workspace
+allocation without recursively measuring host trees unless requested. Source
+workspaces are protected, while dry-run prune selects only declared
+reconstructible storage and orphaned inactive volumes.
 
 Replace APFS quota reporting with useful storage ownership:
 
@@ -157,6 +176,13 @@ identifies exact targets, and prune cannot cross from cache ownership into
 source or artifact ownership.
 
 ## Phase 6: Perform the one-time data cutover
+
+Status: complete. Apple-container state, persistent workspaces, host caches,
+SDKs, staged artifacts, and logs operate from the conventional per-user roots.
+The locked AOSP checkout is materialized into its protected persistent source
+volume from host-provided offline inputs, and the former loose checkout is
+retired. Each obsolete custom APFS volume contains only filesystem metadata;
+none contains authoritative or uniquely expensive state.
 
 Stop the Apple-container login agent and confirm that no Collider run or
 container VM is active. Remove the incomplete `NucleusBuildNext` copy; it is not
@@ -185,6 +211,16 @@ state, and the complete retained working set operates from the standard layout.
 
 ## Phase 7: Verify the consolidated host
 
+Status: complete. The Linux runtime suite passes against the generated Swift
+6.4 target SDK, and a subsequent run reuses all native prerequisites and the
+persistent SwiftPM workspace. The active Swift SDK generation is clean. The
+browser source generation, dual-architecture Browser/CEF output and compiler
+caches, protected AOSP source and output, and AOSP compiler cache are retained
+at their conventional locations. Cache status and dry-run pruning complete
+without touching retained state. Restarting the login-session Apple-container
+service preserves its conventional application root and host-only network, and
+the complete macOS builder doctor passes after restart.
+
 Run the complete macOS builder doctor against the standard layout. Restart the
 login-session Apple-container service and verify its application root, volume
 inventory, network, logs, and restart persistence.
@@ -202,6 +238,14 @@ Gate: each workflow reuses its migrated state, performs no container networking,
 and emits no reference to a custom APFS mount.
 
 ## Phase 8: Remove the custom volumes and obsolete implementation
+
+Status: complete. Collider contains no managed `/Volumes/Nucleus*` path, APFS
+administration, quota model, mount repair path, or legacy storage fallback. The
+obsolete internal volumes were resolved by live UUID, confirmed empty and
+unused, and deleted. The internal APFS container now contains only the standard
+macOS System, Data, Preboot, Recovery, and VM volumes. The explicitly
+user-selected external `NucleusStorage` archive volume remains outside Collider
+storage ownership.
 
 Resolve every custom volume by live name and UUID immediately before deletion.
 Delete `NucleusBuildNext`, `NucleusBuild`, `NucleusCache`, `NucleusOCI`,

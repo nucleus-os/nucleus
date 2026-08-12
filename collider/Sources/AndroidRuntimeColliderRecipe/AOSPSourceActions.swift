@@ -35,12 +35,32 @@ struct AOSPSourceLockVerification: Hashable, Sendable {
     let environment: [String: String]
 }
 
-struct AOSPSourcePreparation: Hashable, Sendable {
+struct AOSPSourceInputPreparation: Hashable, Sendable {
     let specification: AOSPSourceSpecification
     let launcher: FilePath
-    let source: FilePath
+    let sourceInputs: FilePath
+    let hydrationScript: FilePath
+    let resolvedManifest: FilePath
+    let provenance: FilePath
     let syncJobs: UInt32
     let retryFetches: UInt32
+    let environment: [String: String]
+
+    var source: FilePath { sourceInputs }
+}
+
+struct AOSPSourceMaterialization: Hashable, Sendable {
+    let specification: AOSPSourceSpecification
+    let launcher: FilePath
+    let sourceInputs: FilePath
+    let resolvedManifest: FilePath
+    let provenance: FilePath
+    let exportedResolvedManifest: FilePath
+    let exportedProvenance: FilePath
+    let script: FilePath
+    let imageID: FilePath
+    let sourceWorkspace: PersistentWorkspaceDeclaration
+    let syncJobs: UInt32
     let environment: [String: String]
 }
 
@@ -81,6 +101,7 @@ struct VerifyAOSPSourceLockAction: ColliderAction {
                 ActionEffect(.readWrite, scope: .scratch(scratch)),
                 ActionEffect(.write, scope: .output(verification.report)),
             ],
+            networkAccess: .contentAddressed,
             executionPlatform: .macOSARM64Native)
     }
 
@@ -99,33 +120,46 @@ struct VerifyAOSPSourceLockAction: ColliderAction {
     }
 }
 
-struct PrepareAOSPSourceAction: ColliderAction {
+struct PrepareAOSPSourceInputsAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let specification: AOSPSourceSpecification
         let launcher: FilePath
-        let source: FilePath
+        let sourceInputs: FilePath
+        let hydrationScript: FilePath
+        let resolvedManifest: FilePath
+        let provenance: FilePath
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encodeAOSPSourceSpecification(specification, into: &encoder)
             encoder.append(tag: 20, string: launcher.string)
-            encoder.append(tag: 21, string: source.string)
+            encoder.append(tag: 21, string: sourceInputs.string)
+            encoder.append(tag: 22, string: hydrationScript.string)
+            encoder.append(tag: 23, string: resolvedManifest.string)
+            encoder.append(tag: 24, string: provenance.string)
         }
     }
 
-    static let kind: ActionKind = "android-runtime.prepare-aosp-source"
+    static let kind: ActionKind = "android-runtime.prepare-aosp-source-inputs"
 
-    let preparation: AOSPSourcePreparation
+    let preparation: AOSPSourceInputPreparation
 
     var identity: Identity {
         Identity(
             specification: preparation.specification,
             launcher: preparation.launcher,
-            source: preparation.source)
+            sourceInputs: preparation.sourceInputs,
+            hydrationScript: preparation.hydrationScript,
+            resolvedManifest: preparation.resolvedManifest,
+            provenance: preparation.provenance)
     }
 
     var requirements: ActionRequirements {
         ActionRequirements(
             tools: [
+                ActionToolRequirement(
+                    "bash",
+                    executable: .named("bash"),
+                    role: .operational),
                 ActionToolRequirement(
                     "git",
                     executable: .named("git"),
@@ -137,17 +171,161 @@ struct PrepareAOSPSourceAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.read, scope: .input(preparation.launcher)),
-                ActionEffect(.readWrite, scope: .checkout(preparation.source)),
+                ActionEffect(.read, scope: .input(preparation.hydrationScript)),
+                ActionEffect(.readWrite, scope: .scratch(preparation.sourceInputs)),
+                ActionEffect(
+                    .readWrite,
+                    scope: .output(preparation.resolvedManifest)),
+                ActionEffect(.readWrite, scope: .output(preparation.provenance)),
             ],
+            lane: .hostExclusive,
+            networkAccess: .contentAddressed,
             executionPlatform: .macOSARM64Native)
     }
 
     var environment: [String: String] { preparation.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await AOSPSourceWorkflow(context: context).prepareAOSPSource(
+        try await AOSPSourceWorkflow(context: context).prepareAOSPSourceInputs(
             preparation,
-            stage: TaskID(rawValue: "android-runtime.prepare-aosp-source"))
+            stage: TaskID(rawValue: "android-runtime.prepare-aosp-source-inputs"))
+    }
+}
+
+struct MaterializeAOSPSourceAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let materialization: AOSPSourceMaterialization
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encodeAOSPSourceSpecification(
+                materialization.specification,
+                into: &encoder)
+            encoder.append(tag: 20, string: materialization.launcher.string)
+            encoder.append(tag: 21, string: materialization.sourceInputs.string)
+            encoder.append(tag: 22, string: materialization.resolvedManifest.string)
+            encoder.append(tag: 23, string: materialization.provenance.string)
+            encoder.append(tag: 24, string: materialization.script.string)
+            encoder.append(tag: 25, string: materialization.imageID.string)
+            encoder.append(
+                tag: 26,
+                string: materialization.sourceWorkspace.identity.key)
+            encoder.append(
+                tag: 27,
+                integer: materialization.sourceWorkspace.capacityBytes)
+        }
+    }
+
+    static let kind: ActionKind = "android-runtime.materialize-aosp-source"
+
+    let materialization: AOSPSourceMaterialization
+
+    var identity: Identity { Identity(materialization: materialization) }
+
+    private var export: FilePath {
+        materialization.exportedProvenance.removingLastComponent()
+    }
+
+    private var launcherDirectory: FilePath {
+        materialization.launcher.removingLastComponent()
+    }
+
+    private var sourceLockDirectory: FilePath {
+        materialization.provenance.removingLastComponent()
+    }
+
+    private var toolingDirectory: FilePath {
+        materialization.script.removingLastComponent()
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(.read, scope: .input(launcherDirectory)),
+                ActionEffect(.read, scope: .input(materialization.sourceInputs)),
+                ActionEffect(.read, scope: .input(sourceLockDirectory)),
+                ActionEffect(.read, scope: .input(toolingDirectory)),
+                ActionEffect(.read, scope: .input(materialization.imageID)),
+                ActionEffect(.write, scope: .output(export)),
+            ],
+            persistentWorkspaceEffects: [
+                ActionPersistentWorkspaceEffect(
+                    workspace: materialization.sourceWorkspace,
+                    target: "/src",
+                    access: .readWrite)
+            ],
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: materialization.sourceWorkspace.identity.artifactTarget)
+    }
+
+    var environment: [String: String] { materialization.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.createDirectory(export)
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: materialization.sourceWorkspace.identity.artifactTarget,
+            imageID: materialization.imageID,
+            hostname: "aosp-source",
+            workingDirectory: "/src",
+            hostWorkingDirectory: export,
+            mounts: [
+                OCIMount(
+                    source: launcherDirectory,
+                    target: "/inputs/repo-launcher",
+                    access: .readOnly),
+                OCIMount(
+                    source: materialization.sourceInputs,
+                    target: "/inputs/source-inputs",
+                    access: .readOnly),
+                OCIMount(
+                    source: sourceLockDirectory,
+                    target: "/inputs/source-lock",
+                    access: .readOnly),
+                OCIMount(
+                    source: toolingDirectory,
+                    target: "/inputs/tooling",
+                    access: .readOnly),
+                OCIMount(boundedExport: export, target: "/export"),
+            ],
+            persistentWorkspaceMounts: [
+                OCIPersistentWorkspaceMount(
+                    workspace: materialization.sourceWorkspace,
+                    target: "/src",
+                    access: .readWrite)
+            ],
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: .required,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: [
+                "AOSP_SYNC_JOBS": String(materialization.syncJobs),
+                "AOSP_REPO_LAUNCHER":
+                    "/inputs/repo-launcher/"
+                    + (materialization.launcher.lastComponent?.string ?? "repo"),
+                "AOSP_RESOLVED_MANIFEST":
+                    "/inputs/source-lock/"
+                    + (materialization.resolvedManifest.lastComponent?.string
+                        ?? "resolved-manifest.xml"),
+                "AOSP_SOURCE_PROVENANCE":
+                    "/inputs/source-lock/"
+                    + (materialization.provenance.lastComponent?.string
+                        ?? "source-provenance.json"),
+                "HOME": "/home/nucleus-build",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "TZ": "UTC",
+            ],
+            command: [
+                "source",
+                "/inputs/tooling/"
+                    + (materialization.script.lastComponent?.string
+                        ?? "materialize-source.sh"),
+            ],
+            environment: materialization.environment,
+            output: .logged)
+        try await context.containers.run(execution)
     }
 }
 
@@ -332,8 +510,8 @@ private struct AOSPSourceWorkflow {
             to: verification.report)
     }
 
-    func prepareAOSPSource(
-        _ preparation: AOSPSourcePreparation,
+    func prepareAOSPSourceInputs(
+        _ preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws {
         guard preparation.syncJobs > 0,
@@ -372,32 +550,28 @@ private struct AOSPSourceWorkflow {
             existing.superprojectCommit == platform.superprojectCommit,
             existing.repoCommit == repo.commit
         {
-            try await requireCleanAOSPSource(preparation, stage: stage)
             return
         }
-        let superprojectRoot = source.appending(".repo/exp-superproject")
-        if try context.files.metadataWithoutFollowingSymlinks(for: superprojectRoot) != nil {
-            try context.files.remove(superprojectRoot)
-        }
-
+        let initArguments = [
+            "init",
+            "--quiet",
+            "--partial-clone",
+            "--clone-filter=blob:limit=10M",
+            "--no-clone-bundle",
+            "--use-superproject",
+            "--repo-url=\(repo.repositoryURL)",
+            "--repo-rev=\(repo.revision)",
+            "-u",
+            platform.manifestURL,
+            "-b",
+            platform.manifestRevision,
+        ]
         _ = try await aospRepo(
             preparation,
-            arguments: [
-                "init",
-                "--quiet",
-                "--partial-clone",
-                "--clone-filter=blob:limit=10M",
-                "--use-superproject",
-                "--no-clone-bundle",
-                "--repo-url=\(repo.repositoryURL)",
-                "--repo-rev=\(repo.revision)",
-                "-u",
-                platform.manifestURL,
-                "-b",
-                platform.manifestRevision,
-            ],
+            arguments: initArguments,
             output: .logged,
             stage: stage)
+        try await requireAOSPHostSourceInputs(preparation, stage: stage)
         let initialized = try await validateInitializedAOSPSource(
             preparation,
             stage: stage)
@@ -406,10 +580,9 @@ private struct AOSPSourceWorkflow {
             preparation,
             arguments: [
                 "sync",
+                "--network-only",
                 "--current-branch",
-                "--detach",
                 "--fail-fast",
-                "--force-checkout",
                 "--force-sync",
                 "--no-clone-bundle",
                 "--no-interleaved",
@@ -417,13 +590,11 @@ private struct AOSPSourceWorkflow {
                 "--optimized-fetch",
                 "--prune",
                 "--jobs-network=\(preparation.syncJobs)",
-                "--jobs-checkout=1",
                 "--retry-fetches=\(preparation.retryFetches)",
             ],
             output: .logged,
             stage: stage)
-        try await requireCleanAOSPSource(preparation, stage: stage)
-        let superprojectCommit = try await validateAOSPSuperproject(
+        let superprojectCommit = try await prepareAOSPSuperproject(
             preparation,
             stage: stage)
         let resolvedData = try await aospResolvedManifest(
@@ -434,24 +605,18 @@ private struct AOSPSourceWorkflow {
             againstSuperproject: superprojectCommit,
             preparation: preparation,
             stage: stage)
-        let metadata = source.appending(".nucleus")
-        for obsolete in [
-            "base-resolved-manifest.xml",
-            "patched-resolved-manifest.xml",
-        ] {
-            let path = metadata.appending(obsolete)
-            if try context.files.metadataWithoutFollowingSymlinks(for: path) != nil {
-                try context.files.remove(path)
-            }
-        }
+        try await hydrateAOSPSourceInputs(
+            preparation,
+            resolvedManifest: resolvedData,
+            stage: stage)
         try context.cancellation.check()
-        let resolvedManifest = metadata.appending("resolved-manifest.xml")
         try context.files.write(
             Array(resolvedData),
-            to: resolvedManifest)
-        let resolvedDigest = try context.files.digest(file: resolvedManifest)
+            to: preparation.resolvedManifest)
+        let resolvedDigest = try context.files.digest(
+            file: preparation.resolvedManifest)
         let provenance = AOSPSourceProvenance(
-            status: "materialized",
+            status: "hydrated",
             release: platform.release,
             revision: platform.revision,
             manifestCommit: initialized.manifestCommit,
@@ -460,19 +625,18 @@ private struct AOSPSourceWorkflow {
             resolvedManifestSHA256: resolvedDigest.sha256Hex)
         try context.files.write(
             Array(try JSONEncoder().encode(provenance)),
-            to: metadata.appending("source-provenance.json"))
+            to: preparation.provenance)
     }
 
     private func validateExistingAOSPSourceIdentity(
-        _ preparation: AOSPSourcePreparation,
+        _ preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws -> AOSPSourceProvenance? {
         let manifest = preparation.source.appending(".repo/manifest.xml")
         guard try context.files.metadata(for: manifest) != nil else {
             return nil
         }
-        let provenancePath = preparation.source.appending(
-            ".nucleus/source-provenance.json")
+        let provenancePath = preparation.provenance
         guard try context.files.metadata(for: provenancePath) != nil
         else {
             return nil
@@ -480,9 +644,9 @@ private struct AOSPSourceWorkflow {
         let provenance = try JSONDecoder().decode(
             AOSPSourceProvenance.self,
             from: Data(try context.files.read(provenancePath)))
-        guard provenance.status == "materialized" else {
+        guard provenance.status == "hydrated" else {
             throw AOSPSourceWorkflowFailure.invalidOutput(
-                "existing AOSP source provenance is not materialized")
+                "existing AOSP source-input provenance is not hydrated")
         }
         let platform = preparation.specification.platform
         let repo = preparation.specification.repo
@@ -497,8 +661,7 @@ private struct AOSPSourceWorkflow {
         let current = try await aospResolvedManifest(
             preparation,
             stage: stage)
-        let resolvedManifest = preparation.source.appending(
-            ".nucleus/resolved-manifest.xml")
+        let resolvedManifest = preparation.resolvedManifest
         guard Data(try context.files.read(resolvedManifest)) == current else {
             throw AOSPSourceWorkflowFailure.invalidOutput(
                 "existing AOSP project revisions do not match their "
@@ -514,56 +677,36 @@ private struct AOSPSourceWorkflow {
     }
 
     private func aospResolvedManifest(
-        _ preparation: AOSPSourcePreparation,
+        _ preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws -> Data {
-        let resolvedManifest =
+        let declaredManifest =
             try await aospRepo(
                 preparation,
-                arguments: ["manifest", "--revision-as-HEAD"],
+                arguments: ["manifest", "--no-local-manifests"],
                 output: .captured(limit: 32 * 1_024 * 1_024),
                 stage: stage
             )
             .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-        return Data(resolvedManifest.utf8)
+        let revisions = try await aospSuperprojectRevisions(
+            preparation.specification.platform.superprojectCommit,
+            preparation: preparation,
+            stage: stage)
+        return try resolveAOSPManifest(
+            Data(declaredManifest.utf8),
+            revisions: revisions)
     }
 
     private func verifyAOSPResolvedManifest(
         _ manifest: Data,
         againstSuperproject superprojectCommit: String,
-        preparation: AOSPSourcePreparation,
+        preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws {
-        let superprojectRoot = preparation.source.appending(
-            ".repo/exp-superproject")
-        let superprojects = try directoryNames(
-            in: superprojectRoot,
-            suffix: "-superproject.git")
-        guard superprojects.count == 1 else {
-            throw AOSPSourceWorkflowFailure.invalidOutput(
-                "Repo must materialize exactly one pinned superproject")
-        }
-        let tree = try await aospCaptured(
-            .named("git"),
-            [
-                "--git-dir",
-                superprojectRoot.appending(superprojects[0]).string,
-                "ls-tree", "-r", "--full-tree", superprojectCommit,
-            ],
-            in: preparation.source,
-            environment: preparation.environment,
+        let expected = try await aospSuperprojectRevisions(
+            superprojectCommit,
+            preparation: preparation,
             stage: stage)
-        var expected: [String: String] = [:]
-        for line in tree.split(whereSeparator: \.isNewline) {
-            let fields = line.split(separator: "\t", maxSplits: 1)
-            let identity = fields[0].split(separator: " ")
-            guard fields.count == 2, identity.count == 3,
-                identity[0] == "160000", identity[1] == "commit"
-            else {
-                continue
-            }
-            expected[String(fields[1])] = String(identity[2])
-        }
 
         var resolved: [String: String] = [:]
         for line in String(decoding: manifest, as: UTF8.self)
@@ -587,6 +730,38 @@ private struct AOSPSourceWorkflow {
             throw AOSPSourceWorkflowFailure.invalidOutput(
                 "resolved manifest does not match superproject at \(mismatch)")
         }
+    }
+
+    private func aospSuperprojectRevisions(
+        _ commit: String,
+        preparation: AOSPSourceInputPreparation,
+        stage: TaskID
+    ) async throws -> [String: String] {
+        let tree = try await aospCaptured(
+            .named("git"),
+            [
+                "--git-dir",
+                aospSuperprojectRepository(preparation).string,
+                "ls-tree", "-r", "--full-tree", commit,
+            ],
+            in: preparation.source,
+            environment: preparation.environment,
+            stage: stage)
+        var revisions: [String: String] = [:]
+        for line in tree.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: "\t", maxSplits: 1)
+            guard fields.count == 2 else { continue }
+            let identity = fields[0].split(separator: " ")
+            guard identity.count == 3,
+                identity[0] == "160000", identity[1] == "commit",
+                revisions.updateValue(
+                    String(identity[2]),
+                    forKey: String(fields[1])) == nil
+            else {
+                continue
+            }
+        }
+        return revisions
     }
 
     private func aospRemoteRefs(
@@ -631,7 +806,7 @@ private struct AOSPSourceWorkflow {
     }
 
     private func aospRepo(
-        _ preparation: AOSPSourcePreparation,
+        _ preparation: AOSPSourceInputPreparation,
         arguments: [String],
         output: CommandSpec.Output,
         stage: TaskID
@@ -653,35 +828,36 @@ private struct AOSPSourceWorkflow {
         return result.standardOutput
     }
 
-    private func requireCleanAOSPSource(
-        _ preparation: AOSPSourcePreparation,
+    private func hydrateAOSPSourceInputs(
+        _ preparation: AOSPSourceInputPreparation,
+        resolvedManifest: Data,
         stage: TaskID
     ) async throws {
-        let manifest = preparation.source.appending(".repo/manifest.xml")
-        guard try context.files.metadata(for: manifest) != nil else {
-            return
+        let manifest = preparation.source.appending(
+            ".nucleus/hydration-manifest.xml")
+        try context.files.createDirectory(manifest.removingLastComponent())
+        try context.files.write(Array(resolvedManifest), to: manifest)
+        defer { try? context.files.remove(manifest) }
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("bash"),
+                arguments: [
+                    preparation.hydrationScript.string,
+                    preparation.source.string,
+                    manifest.string,
+                    String(preparation.syncJobs),
+                ],
+                workingDirectory: preparation.source,
+                environment: preparation.environment,
+                output: .logged))
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "locked AOSP source-input hydration failed")
         }
-        let command =
-            #"if test ! -e .git; then exit 0; fi; "#
-            + #"dirty="$(git status --porcelain=v1 --untracked-files=normal)"; "#
-            + #"if test -n "$dirty"; then "#
-            + #"printf "%s\n%s\n" "$REPO_PATH" "$dirty" >&2; exit 1; fi"#
-        _ = try await aospRepo(
-            preparation,
-            arguments: [
-                "forall",
-                "--ignore-missing",
-                "--jobs=\(preparation.syncJobs)",
-                "--verbose",
-                "-c",
-                command,
-            ],
-            output: .captured(limit: 16 * 1_024 * 1_024),
-            stage: stage)
     }
 
     private func validateInitializedAOSPSource(
-        _ preparation: AOSPSourcePreparation,
+        _ preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws -> AOSPInitializedSource {
         let platform = preparation.specification.platform
@@ -719,24 +895,55 @@ private struct AOSPSourceWorkflow {
             repoCommit: repoCommit)
     }
 
-    private func validateAOSPSuperproject(
-        _ preparation: AOSPSourcePreparation,
+    private func requireAOSPHostSourceInputs(
+        _ preparation: AOSPSourceInputPreparation,
+        stage: TaskID
+    ) async throws {
+        let partialClone = try await aospCaptured(
+            .named("git"),
+            [
+                "--git-dir",
+                preparation.source.appending(".repo/manifests.git").string,
+                "config", "--bool", "--get", "repo.partialclone",
+            ],
+            in: preparation.source,
+            environment: preparation.environment,
+            stage: stage
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard partialClone == "true" else {
+            throw AOSPSourceWorkflowFailure.invalidOutput(
+                "AOSP host source input is not a partial-clone Repo cache; remove the "
+                    + "reconstructible source-input cache before retrying")
+        }
+    }
+
+    private func prepareAOSPSuperproject(
+        _ preparation: AOSPSourceInputPreparation,
         stage: TaskID
     ) async throws -> String {
         let platform = preparation.specification.platform
-        let superprojectRoot = preparation.source.appending(
-            ".repo/exp-superproject")
-        let superprojects = try directoryNames(
-            in: superprojectRoot,
-            suffix: "-superproject.git")
-        guard superprojects.count == 1 else {
-            throw AOSPSourceWorkflowFailure.invalidOutput(
-                "Repo must materialize exactly one pinned experimental "
-                    + "superproject checkout")
-        }
+        let superproject = aospSuperprojectRepository(preparation)
+        try context.files.createDirectory(superproject.removingLastComponent())
+        try await aospChecked(
+            .named("git"),
+            ["init", "--quiet", "--bare", superproject.string],
+            in: preparation.source,
+            environment: preparation.environment,
+            stage: stage)
+        try await aospChecked(
+            .named("git"),
+            [
+                "--git-dir", superproject.string,
+                "fetch", "--quiet", "--force", "--no-tags",
+                platform.superprojectURL,
+                platform.superprojectRevision,
+            ],
+            in: preparation.source,
+            environment: preparation.environment,
+            stage: stage)
         let superprojectCommit = try await aospGitRevision(
-            repository: superprojectRoot.appending(superprojects[0]),
-            revision: platform.superprojectCommit,
+            repository: superproject,
+            revision: "FETCH_HEAD",
             environment: preparation.environment,
             stage: stage)
         guard superprojectCommit == platform.superprojectCommit else {
@@ -746,6 +953,12 @@ private struct AOSPSourceWorkflow {
                     + platform.superprojectCommit)
         }
         return superprojectCommit
+    }
+
+    private func aospSuperprojectRepository(
+        _ preparation: AOSPSourceInputPreparation
+    ) -> FilePath {
+        preparation.source.appending(".nucleus/superproject.git")
     }
 
     private func aospCaptured(
@@ -786,19 +999,6 @@ private struct AOSPSourceWorkflow {
             stage: stage)
     }
 
-    private func directoryNames(
-        in directory: FilePath,
-        suffix: String
-    ) throws -> [String] {
-        try context.files.listRecursively(directory)
-            .filter {
-                !$0.relativePath.contains("/")
-                    && $0.metadata.type == .directory
-                    && $0.relativePath.hasSuffix(suffix)
-            }
-            .map(\.relativePath)
-            .sorted()
-    }
 }
 
 private func aospManifestAttribute(
@@ -814,6 +1014,48 @@ private func aospManifestAttribute(
         return nil
     }
     return String(element[valueStart..<end])
+}
+
+private func resolveAOSPManifest(
+    _ manifest: Data,
+    revisions: [String: String]
+) throws -> Data {
+    var remaining = revisions
+    var lines = String(decoding: manifest, as: UTF8.self)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+    for index in lines.indices where lines[index].contains("<project ") {
+        let path =
+            aospManifestAttribute("path", in: lines[index])
+            ?? aospManifestAttribute("name", in: lines[index])
+        guard let path, let revision = remaining.removeValue(forKey: path) else {
+            throw AOSPSourceWorkflowFailure.invalidOutput(
+                "declared manifest contains a project absent from the superproject")
+        }
+        let prefix = "revision=\""
+        if let start = lines[index].range(of: prefix) {
+            let valueStart = start.upperBound
+            guard let end = lines[index][valueStart...].firstIndex(of: "\"") else {
+                throw AOSPSourceWorkflowFailure.invalidOutput(
+                    "declared manifest contains a malformed project revision")
+            }
+            lines[index].replaceSubrange(valueStart..<end, with: revision)
+        } else {
+            guard let end = lines[index].firstIndex(of: ">") else {
+                throw AOSPSourceWorkflowFailure.invalidOutput(
+                    "declared manifest contains a malformed project record")
+            }
+            let insertion =
+                end > lines[index].startIndex
+                    && lines[index][lines[index].index(before: end)] == "/"
+                ? lines[index].index(before: end)
+                : end
+            lines[index].insert(
+                contentsOf: " revision=\"\(revision)\"",
+                at: insertion)
+        }
+    }
+    return Data(lines.joined(separator: "\n").utf8)
 }
 
 private func requireAOSPRemoteRef(

@@ -70,8 +70,24 @@ case "${1:-}" in
       exit 0
     fi
     find /source -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    tar -C /host-source -cf - chromium source-provenance.json \
+    tar -C /host-source -cf - \
+      chromium linux-sysroot-archives source-provenance.json \
       | tar -C /source --no-same-owner -xf -
+    archive_root=/source/linux-sysroot-archives
+    for archive in "$archive_root"/*.tar.xz; do
+      [[ -f "$archive" ]] || continue
+      sysroot="${archive%.tar.xz}"
+      sysroot="/source/chromium/src/build/linux/${sysroot##*/}"
+      stamp="$archive_root/${sysroot##*/}.stamp"
+      [[ -f "$stamp" ]] || {
+        echo "error: Chromium sysroot archive has no stamp: $archive" >&2
+        exit 1
+      }
+      rm -rf "$sysroot"
+      mkdir -p "$sysroot"
+      tar mxf "$archive" -C "$sysroot"
+      cp "$stamp" "$sysroot/.stamp"
+    done
     printf '%s\n' "$source_id" > /source/.nucleus-source-id.preparing
     mv /source/.nucleus-source-id.preparing "$marker"
     exit 0

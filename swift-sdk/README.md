@@ -83,7 +83,8 @@ collider status swift-sdk
 The active generation lives under
 `$XDG_CACHE_HOME/nucleus/swift-target-sdks/current`. Collider publishes the
 two artifact-bundle links through `~/.swiftpm/swift-sdks`. Unchanged external
-inputs, Xcode identity, source graph, runtime-builder image, NDK, validation
+inputs, Xcode identity, source graph, canonical native-builder image, runtime-build
+scripts, NDK, validation
 fixture, and validator reuse the active immutable generation without rebuilding,
 downloading, assembling, validating, or publishing it again.
 Runtime build products and ccache live outside the source submodules and remain

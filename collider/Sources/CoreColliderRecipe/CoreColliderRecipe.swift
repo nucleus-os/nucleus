@@ -86,7 +86,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             NativeBuilderGraphConfiguration.self,
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
-        let skiaInputRoot = context.cacheRoot.appending("nucleus/inputs/skia")
+        let skiaInputRoot = context.cacheRoot.appending("inputs/skia")
         let sources = try prepareSkiaDependencies(
             root: root,
             downloadRoot: skiaInputRoot,
@@ -121,7 +121,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         let ndk = try androidToolchain.ndkRoot(
             environment: context.environment,
             validate: false,
-            fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
+            fallbackHome: context.cacheRoot.appending("unconfigured-home"))
         let androidSDKRoot = native.nativeSDKRoot.appending("android-arm64")
         let androidSkia = try buildSkiaAndroid(
             root: root,
@@ -1190,9 +1190,9 @@ private func linuxGNArguments(_ target: NativeLinuxTarget) -> [String] {
         "skia_use_partition_alloc=false",
         "skia_use_fontconfig=true",
         #"extra_cflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
-        #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
+        #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-nostdinc++","-isystem\#(target.containerLibCXXIncludeRoot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
         #"extra_asmflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)"]"#,
-        #"extra_ldflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-fuse-ld=lld","-L/usr/lib/\#(target.gnuArchitecture)"]"#,
+        #"extra_ldflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-fuse-ld=lld","-L\#(target.containerLibCXXLibraryRoot)"]"#,
         #"cc="/usr/bin/clang""#,
         #"cxx="/usr/bin/clang++""#,
     ] + commonGNArguments

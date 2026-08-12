@@ -8,17 +8,15 @@ public struct SwiftTargetSDKStoragePaths: Equatable, Sendable {
     public let artifactRoot: FilePath
     public let downloadRoot: FilePath
     public let generatorScratch: FilePath
-    public let runtimeBuilderImageID: FilePath
     public let rebuildLock: FilePath
 
-    public init(cacheRoot: FilePath) {
+    public init(cacheRoot: FilePath, hostBuildRoot: FilePath) {
         self.cacheRoot = cacheRoot
-        artifactRoot = cacheRoot.appending("nucleus/swift-target-sdks")
-        downloadRoot = cacheRoot.appending("nucleus/downloads/swift-target-sdks")
-        generatorScratch = cacheRoot.appending("nucleus/build/swift-sdk-generator")
-        runtimeBuilderImageID = cacheRoot.appending(
-            "nucleus/build-containers/swift-runtime/image-id")
-        rebuildLock = artifactRoot.appending("rebuild.lock")
+        artifactRoot = cacheRoot.appending("swift-target-sdks")
+        downloadRoot = cacheRoot.appending("downloads/swift-target-sdks")
+        generatorScratch = hostBuildRoot.appending("work/swift-sdk-generator")
+        rebuildLock = hostBuildRoot.appending(
+            "state/locks/swift-target-sdk-rebuild.lock")
     }
 }
 
@@ -153,9 +151,10 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let sourceWorkspace: FilePath
     public let sourceID: String
     public let runtimeBuilderContext: FilePath
-    public let runtimeBuilderImageID: FilePath
+    public let runtimeBuilderBaseImage: ArtifactReference<FileArtifact>
     public let linuxTargets: [SwiftLinuxTargetBuildConfiguration]
     public let sysrootPreparer: FilePath
+    public let sdkPackageSanitizer: FilePath
     public let pkgConfigDirectory: FilePath
     public let candidate: FilePath
     public let generation: FilePath
@@ -178,9 +177,10 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         sourceWorkspace: FilePath,
         sourceID: String,
         runtimeBuilderContext: FilePath,
-        runtimeBuilderImageID: FilePath,
+        runtimeBuilderBaseImage: ArtifactReference<FileArtifact>,
         linuxTargets: [SwiftLinuxTargetBuildConfiguration],
         sysrootPreparer: FilePath,
+        sdkPackageSanitizer: FilePath,
         pkgConfigDirectory: FilePath,
         candidate: FilePath,
         generation: FilePath,
@@ -202,9 +202,10 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.sourceWorkspace = sourceWorkspace
         self.sourceID = sourceID
         self.runtimeBuilderContext = runtimeBuilderContext
-        self.runtimeBuilderImageID = runtimeBuilderImageID
+        self.runtimeBuilderBaseImage = runtimeBuilderBaseImage
         self.linuxTargets = linuxTargets
         self.sysrootPreparer = sysrootPreparer
+        self.sdkPackageSanitizer = sdkPackageSanitizer
         self.pkgConfigDirectory = pkgConfigDirectory
         self.candidate = candidate
         self.generation = generation
@@ -376,18 +377,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 safetyRoot: configuration.generatorScratch.removingLastComponent(),
                 cleanupPolicy: .explicitClean,
                 retention: "the generator build remains reusable until explicit clean"),
-            StorageDeclaration(
-                id: "swift-runtime-builder-metadata",
-                owner: descriptor.id,
-                producers: producers(
-                    { $0 == "swift-sdk.prepare-linux-runtime-builder" },
-                    runtime: "swift-sdk-rebuild"),
-                storageClass: .cache,
-                root: configuration.runtimeBuilderImageID.removingLastComponent(),
-                safetyRoot: configuration.runtimeBuilderImageID.removingLastComponent()
-                    .removingLastComponent(),
-                cleanupPolicy: .explicitClean,
-                retention: "the target-runtime builder image remains reusable"),
         ]
     }
 
@@ -407,7 +396,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         }
 
         let downloads = try downloadTasks(configuration)
-        let runtimeBuilder = try runtimeBuilderTask(configuration)
+        let sanitizedPackages = try downloads.linux.map {
+            try sanitizeLinuxPackagesTask(configuration, downloads: $0)
+        }
         let sysroots = try configuration.linuxTargets.map { target in
             try linuxSysrootTask(
                 configuration,
@@ -420,13 +411,14 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             try linuxRuntimeTask(
                 configuration,
                 target: target,
-                builder: runtimeBuilder,
+                builderImage: configuration.runtimeBuilderBaseImage,
                 sysroot: sysroot.artifact)
         }
         let generator = try generatorTask(configuration)
         let assembly = try assemblyTask(
             configuration,
             downloads: downloads,
+            sanitizedPackages: sanitizedPackages,
             generator: generator,
             runtimes: runtimes)
         let validation = try validationTasks(configuration, assembly: assembly)
@@ -435,7 +427,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
 
         let tasks =
             downloads.tasks
-            + [runtimeBuilder.task] + sysroots.map(\.task) + runtimes.map(\.task)
+            + sanitizedPackages.map(\.task)
+            + sysroots.map(\.task) + runtimes.map(\.task)
             + [generator.task, assembly.task] + validation.tasks + [activation.task]
             + discoveries.map(\.task)
         return SwiftTargetSDKTaskSet(
@@ -472,11 +465,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private struct RuntimeArtifact {
         let task: TaskDeclaration
         let install: ArtifactReference<DirectoryArtifact>
-    }
-
-    private struct RuntimeBuilderArtifact {
-        let task: TaskDeclaration
-        let image: ArtifactReference<FileArtifact>
     }
 
     private struct GeneratorArtifact {
@@ -520,6 +508,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var allPackages: [ArtifactReference<FileArtifact>] {
             (runtimePackages + sdkPackages).map(\.artifact)
         }
+    }
+
+    private struct SanitizedLinuxPackages {
+        let architecture: SwiftTargetSDKInputs.LinuxArchitecture
+        let task: TaskDeclaration
+        let packages: [ArtifactReference<FileArtifact>]
     }
 
     private static func validate(_ inputs: SwiftTargetSDKInputs) throws {
@@ -633,32 +627,42 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         return DownloadArtifact(task: task, artifact: artifact)
     }
 
-    private static func runtimeBuilderTask(
-        _ configuration: SwiftTargetSDKGenerationConfiguration
-    ) throws -> RuntimeBuilderArtifact {
+    private static func sanitizeLinuxPackagesTask(
+        _ configuration: SwiftTargetSDKGenerationConfiguration,
+        downloads: LinuxDownloads
+    ) throws -> SanitizedLinuxPackages {
+        let inputs = downloads.allPackages
+        let outputRoot = configuration.downloadRoot.appending(
+            "sanitized/\(downloads.architecture.rawValue)")
         var builder = TaskBuilder(
-            id: TaskID(rawValue: "swift-sdk.prepare-linux-runtime-builder"),
+            id: TaskID(
+                rawValue:
+                    "swift-sdk.sanitize-ubuntu-\(downloads.architecture.rawValue)-packages"),
             component: component)
-        let image: ArtifactReference<FileArtifact> = try builder.output(
-            "image-id",
-            path: configuration.runtimeBuilderImageID,
-            validation: .regularFile)
+        for input in inputs {
+            builder.consume(input)
+        }
+        let outputs: [ArtifactReference<FileArtifact>] = try inputs.enumerated().map {
+            index, _ in
+            try builder.output(
+                OutputSlotID(rawValue: "package-\(index)"),
+                path: outputRoot.appending("package-\(index).deb"),
+                validation: .regularFile)
+        }
         let task = builder.build(
-            inputs: [.sourceCheckout(configuration.runtimeBuilderContext)],
-            locks: [.checkout("swift-linux-runtime-builder-image")],
+            inputs: [.file(configuration.sdkPackageSanitizer)],
             assessmentPolicy: .incremental,
-            action:
-                try AnyColliderAction(
-                    PrepareSwiftRuntimeBuilderImageAction(
-                        preparation: OCIImagePreparation(
-                            executionPlatform: .linuxARM64OCI,
-                            context: configuration.runtimeBuilderContext,
-                            containerFile: configuration.runtimeBuilderContext.appending(
-                                "Containerfile"),
-                            imageID: configuration.runtimeBuilderImageID,
-                            imageName: "localhost/nucleus-swift-runtime-build",
-                            environment: configuration.environment))))
-        return RuntimeBuilderArtifact(task: task, image: image)
+            action: try AnyColliderAction(
+                SanitizeLinuxSDKPackagesAction(
+                    sanitizer: configuration.sdkPackageSanitizer,
+                    inputs: inputs.map(\.path),
+                    outputRoot: outputRoot,
+                    outputs: outputs.map(\.path),
+                    environment: configuration.environment)))
+        return SanitizedLinuxPackages(
+            architecture: downloads.architecture,
+            task: task,
+            packages: outputs)
     }
 
     private static func linuxSysrootTask(
@@ -696,7 +700,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func linuxRuntimeTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         target: SwiftLinuxTargetBuildConfiguration,
-        builder: RuntimeBuilderArtifact,
+        builderImage: ArtifactReference<FileArtifact>,
         sysroot: ArtifactReference<DirectoryArtifact>
     ) throws -> RuntimeArtifact {
         let architecture = target.target.architecture
@@ -716,6 +720,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 target: "/recipe",
                 access: .readOnly),
             OCIMount(
+                source: configuration.runtimeBuilderContext,
+                target: "/runtime-builder",
+                access: .readOnly),
+            OCIMount(
                 source: target.sysroot,
                 target: "/target-sysroot",
                 access: .readOnly),
@@ -726,6 +734,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var containerEnvironment = [
             "CCACHE_BASEDIR": "/",
             "CCACHE_DIR": "/ccache",
+            "LD_LIBRARY_PATH":
+                "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
             "NUCLEUS_TARGET_ARCHITECTURE": architecture.swiftBuildArchitecture,
             "NUCLEUS_TARGET_GNU_ARCHITECTURE": architecture.gnuArchitecture,
             "NUCLEUS_TARGET_TRIPLE": architecture.triple,
@@ -740,7 +750,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 rawValue: "swift-sdk.build-linux-\(architecture.rawValue)-runtime"),
             component: component)
         taskBuilder.consume(sysroot)
-        taskBuilder.consume(builder.image)
+        taskBuilder.consume(builderImage)
         let install: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
             "runtime-install",
             path: target.runtimeInstall,
@@ -762,6 +772,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 .file(
                     configuration.inputsFile.removingLastComponent().appending(
                         "nucleus-target-runtime-presets.ini")),
+                .file(
+                    configuration.runtimeBuilderContext.appending(
+                        "entrypoint.sh")),
+                .file(
+                    configuration.runtimeBuilderContext.appending(
+                        "nucleus-target-swiftc")),
                 .string(name: "swift-source-gitlinks", value: configuration.sourceID),
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
@@ -773,7 +789,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         execution: OCIExecution(
                             executionPlatform: .linuxARM64OCI,
                             artifactTarget: architecture.artifactTarget,
-                            imageID: builder.image.path,
+                            imageID: builderImage.path,
                             hostname: "swift-linux-\(architecture.rawValue)-runtime",
                             workingDirectory: "/src",
                             hostWorkingDirectory: configuration.sourceWorkspace,
@@ -794,6 +810,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             processFilesystemPolicy: .standard,
                             resourceLimits: .parallelBuild,
                             containerEnvironment: containerEnvironment,
+                            imageEntrypointOverride: "/runtime-builder/entrypoint.sh",
                             command: ["--reconfigure"],
                             environment: configuration.environment,
                             output: .logged)))
@@ -836,6 +853,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func assemblyTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         downloads: Downloads,
+        sanitizedPackages: [SanitizedLinuxPackages],
         generator: GeneratorArtifact,
         runtimes: [RuntimeArtifact]
     ) throws -> AssemblyArtifacts {
@@ -855,16 +873,21 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var assemblyTargets: [SwiftSDKAssemblyTarget] = []
         for target in configuration.linuxTargets {
             let architecture = target.target.architecture
-            let targetDownloads = try linuxDownloads(
-                for: architecture,
-                in: downloads)
+            guard
+                let targetPackages = sanitizedPackages.first(where: {
+                    $0.architecture == architecture
+                })
+            else {
+                throw SwiftTargetSDKRecipeFailure.invalidInput(
+                    "missing sanitized Linux packages for \(architecture.rawValue)")
+            }
             assemblyTargets.append(
                 SwiftSDKAssemblyTarget(
                     architecture: architecture.rawValue,
                     gnuArchitecture: architecture.gnuArchitecture,
                     triple: architecture.triple,
                     runtimeInstall: target.runtimeInstall,
-                    packages: targetDownloads.allPackages.map(\.path)))
+                    packages: targetPackages.packages.map(\.path)))
         }
         let manifest = try linuxArtifactBundleManifest(configuration.inputs)
         let metadata = try linuxSwiftSDKMetadata(configuration.inputs)
@@ -874,6 +897,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             component: component)
         for artifact in downloads.artifacts {
             builder.consume(artifact)
+        }
+        for packages in sanitizedPackages {
+            for artifact in packages.packages {
+                builder.consume(artifact)
+            }
         }
         builder.consume(generator.executable)
         for runtime in runtimes {
@@ -1182,26 +1210,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     }
 }
 
-private struct PrepareSwiftRuntimeBuilderImageAction: ColliderAction {
-    static let kind: ActionKind = "swift-sdk.prepare-runtime-builder-image"
-
-    let identity: OCIImagePreparationActionIdentity
-
-    init(preparation: OCIImagePreparation) {
-        identity = OCIImagePreparationActionIdentity(preparation)
-    }
-
-    var requirements: ActionRequirements {
-        ociImagePreparationActionRequirements(preparation: identity.preparation)
-    }
-
-    var environment: [String: String] { identity.preparation.environment }
-
-    func execute(in context: ActionContext) async throws {
-        try await context.containers.prepareImage(identity.preparation)
-    }
-}
-
 private struct BuildSwiftLinuxRuntimeAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let install: FilePath
@@ -1420,6 +1428,78 @@ private func linuxTripleSwiftSDKMetadata(
         options: [.prettyPrinted, .sortedKeys])
     data.append(0x0A)
     return Array(data)
+}
+
+private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let sanitizer: FilePath
+        let inputs: [FilePath]
+        let outputRoot: FilePath
+        let outputs: [FilePath]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: sanitizer.string)
+            encoder.append(
+                tag: 2,
+                string: inputs.map(\.string).joined(separator: "\0"))
+            encoder.append(tag: 3, string: outputRoot.string)
+            encoder.append(
+                tag: 4,
+                string: outputs.map(\.string).joined(separator: "\0"))
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.sanitize-linux-packages"
+
+    let sanitizer: FilePath
+    let inputs: [FilePath]
+    let outputRoot: FilePath
+    let outputs: [FilePath]
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            sanitizer: sanitizer,
+            inputs: inputs,
+            outputRoot: outputRoot,
+            outputs: outputs)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "SDK package sanitizer",
+                    executable: .path(sanitizer),
+                    role: .operational)
+            ],
+            effects: inputs.map { ActionEffect(.read, scope: .input($0)) }
+                + [ActionEffect(.readWrite, scope: .output(outputRoot))],
+            executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in context: ActionContext) async throws {
+        guard inputs.count == outputs.count else {
+            throw SwiftTargetSDKRecipeFailure.invalidInput(
+                "Linux SDK sanitizer input/output count differs")
+        }
+        if let output = outputs.first {
+            try context.files.createDirectory(output.removingLastComponent())
+        }
+        for (input, output) in zip(inputs, outputs) {
+            let result = try await context.commands.execute(
+                CommandSpec(
+                    executable: .path(sanitizer),
+                    arguments: [input.string, output.string],
+                    workingDirectory: output.removingLastComponent(),
+                    environment: environment,
+                    output: .logged))
+            guard result.succeeded else {
+                throw result.executionFailure(
+                    reason: "Linux SDK package sanitation failed")
+            }
+        }
+    }
 }
 
 private struct AssembleSwiftTargetSDKsAction: ColliderAction {
@@ -1964,6 +2044,7 @@ private struct ValidateSwiftTargetSDKArtifactsAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
+        try validateCaseInsensitiveRepresentability()
         let result = try await context.commands.execute(
             CommandSpec(
                 executable: .path(validator),
@@ -1979,6 +2060,31 @@ private struct ValidateSwiftTargetSDKArtifactsAction: ColliderAction {
             throw result.executionFailure(reason: "Swift SDK validation failed")
         }
         try context.files.write(Array("validated\n".utf8), to: marker)
+    }
+
+    private func validateCaseInsensitiveRepresentability() throws {
+        let root = URL(fileURLWithPath: linuxSDK.string, isDirectory: true)
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: nil,
+                options: [],
+                errorHandler: { _, _ in false })
+        else {
+            throw SwiftTargetSDKRecipeFailure.invalidInput(
+                "cannot enumerate Linux Swift SDK at \(linuxSDK)")
+        }
+        var paths: [String: String] = [:]
+        for case let url as URL in enumerator {
+            let relative = String(url.path.dropFirst(root.path.count + 1))
+            let folded = relative.lowercased()
+            if let existing = paths[folded], existing != relative {
+                throw SwiftTargetSDKRecipeFailure.invalidInput(
+                    "Linux Swift SDK has case-distinct paths '\(existing)' and "
+                        + "'\(relative)'")
+            }
+            paths[folded] = relative
+        }
     }
 }
 

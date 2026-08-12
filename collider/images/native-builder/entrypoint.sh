@@ -33,7 +33,11 @@ case "${1:-}" in
       if [[ "$export_products" == 1 ]]; then
         bin_path=$("$@")
         find "$products" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        cp -a "$bin_path"/. "$products"/
+        # The export root is a macOS bind mount. Copy the product tree and its
+        # symlinks, but do not ask Linux to restore source timestamps or
+        # ownership on the mount point; those metadata operations are not part
+        # of the artifact and are rejected by the host filesystem boundary.
+        cp -R "$bin_path"/. "$products"/
         printf '%s\n' "$host_products"
         exit 0
       fi

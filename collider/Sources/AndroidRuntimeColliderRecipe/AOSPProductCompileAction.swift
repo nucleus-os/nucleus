@@ -9,7 +9,6 @@ struct CompileAOSPProductAction: ColliderAction {
         func encode(into encoder: inout ActionIdentityEncoder) {
             for (tag, path) in [
                 (1, build.productSource),
-                (2, build.source),
                 (4, build.sourceProvenance),
                 (5, build.artifactRoot),
                 (7, build.buildImageID),
@@ -44,6 +43,12 @@ struct CompileAOSPProductAction: ColliderAction {
             encoder.append(
                 tag: 19,
                 integer: build.compilerCacheWorkspace.capacityBytes)
+            encoder.append(
+                tag: 20,
+                string: build.sourceWorkspace.identity.key)
+            encoder.append(
+                tag: 21,
+                integer: build.sourceWorkspace.capacityBytes)
         }
     }
 
@@ -56,7 +61,6 @@ struct CompileAOSPProductAction: ColliderAction {
     var requirements: ActionRequirements {
         var effects = [
             ActionEffect(.read, scope: .input(build.productSource)),
-            ActionEffect(.read, scope: .input(build.source)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
             ActionEffect(.read, scope: .input(build.buildImageID)),
             ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
@@ -69,8 +73,12 @@ struct CompileAOSPProductAction: ColliderAction {
             effects: effects,
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
+                    workspace: build.sourceWorkspace,
+                    target: "/src",
+                    access: .readOnly),
+                ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/src/out",
+                    target: "/out",
                     access: .readWrite),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.compilerCacheWorkspace,
@@ -171,11 +179,11 @@ private struct AOSPProductCompileWorkflow {
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(unsigned, "/export")],
-                readOnlyMounts: [(build.source, "/src")],
+                readOnlyMounts: [],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
                     "/bin/cp", "--preserve=timestamps",
-                    "/src/out/target/product/\(build.product)/obj/PACKAGING/target_files_intermediates/\(build.product)-target_files.zip",
+                    "/out/target/product/\(build.product)/obj/PACKAGING/target_files_intermediates/\(build.product)-target_files.zip",
                     "/export/\(build.product)-target_files.zip",
                 ],
                 output: .combined(limit: 4 * 1_024 * 1_024)))
@@ -193,7 +201,7 @@ private struct AOSPProductCompileWorkflow {
                 "TARGET_PRODUCT": build.product,
                 "TARGET_BUILD_VARIANT": build.variant,
                 "TARGET_RELEASE": build.release,
-                "OUT_DIR": "out",
+                "OUT_DIR": "/out",
                 "DIST_DIR": "/export/dist",
                 "BUILD_NUMBER": build.buildNumber,
                 "BUILD_DATETIME": String(build.buildTimestamp),

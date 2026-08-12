@@ -2,15 +2,17 @@
 
 ## Invariant
 
-The macOS host owns source, acquired inputs, credentials, provenance, and
-finished artifacts. Linux build intermediates and compiler caches live only in
+The macOS host owns authoritative source, acquired inputs, credentials,
+provenance, and finished artifacts. Materialized Linux source trees that require
+case-sensitive semantics, build intermediates, and compiler caches live only in
 Collider-owned persistent workspaces. Container-local temporary state lives on
 tmpfs. Every writable host mount is a bounded export declared as an action
 output; an ordinary host input mount is always read-only.
 
 Deleting every persistent workspace leaves the checkout capable of rebuilding
-every product from its declared host inputs. A workspace is therefore cache
-state, never source, provenance, or a publication boundary.
+every product from its declared host inputs. A workspace is therefore
+reconstructible state, never authoritative source, provenance, or a publication
+boundary.
 
 A bounded export hands a declared artifact from a build workspace to host-owned
 artifact staging. Native package and repository assembly consume those staged
@@ -36,8 +38,8 @@ Collider exposes four disjoint storage classes to container actions:
   declared host-visible outputs. Collider models it as an output effect, not as
   scratch state.
 - A persistent workspace is a named Linux filesystem owned by one logical
-  component, artifact target, and role. Build trees and compiler caches use
-  separate workspaces.
+  component, artifact target, and role. Materialized source, build trees, and
+  compiler caches use separate workspaces.
 - Ephemeral state uses tmpfs. `/tmp` and the configured container home are never
   backed by writable host directories.
 
@@ -56,23 +58,21 @@ it only for the action lifetime, and reports or removes it through Collider's
 storage operations. A recipe declares capacity, filesystem, journal policy,
 guest target, and access; it does not manipulate the backing image.
 
-The Apple container service stores these volumes under
-`/Volumes/NucleusBuild/apple-container-volumes`. OCI images, VM snapshots, and
-the remaining service state stay under `NucleusOCI`. DiskImageKit is not part of
-the build-workspace path because Apple container already owns sparse image
-creation, EXT4 formatting, attachment, and exclusive-use enforcement.
-
-These are the current backing paths. Their hard cutover to conventional
-per-user storage on the default macOS Data filesystem is owned by the
-[macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md).
-This architecture adopts the new paths only when that implementation lands.
+The Apple container service stores its application state and natural `volumes`
+subdirectory under `~/Library/Developer/Nucleus/Collider/apple-container`.
+These sparse image files live on the default macOS Data filesystem; Apple
+container owns EXT4 creation, formatting, attachment, and exclusive-use
+enforcement. DiskImageKit is not part of the build-workspace path because it
+would duplicate that ownership.
 
 The component graph is the workspace lifecycle registry. A workspace used by
 exactly one component belongs to that component; a workspace intentionally used
 by multiple components, such as the root Linux SwiftPM build tree, belongs to
 the catalog rather than to any one consumer. `collider clean <component>`
 acquires the same workspace locks as build actions and removes only that
-component's inactive exclusive volumes alongside its declared host clean roots.
+component's inactive exclusive volumes whose declarations permit explicit
+cleaning, alongside its declared host clean roots. Durable source workspaces
+are protected from both component cleaning and cache pruning.
 `collider cache prune` removes only inactive Collider-owned volumes whose
 identities no longer exist in the current component graph. Dry-run reports the
 same targets without deleting them, and cache status classifies owned volumes

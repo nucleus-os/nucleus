@@ -21,6 +21,7 @@ func swiftTargetSDKArtifactID(
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
     sysrootPreparer: FilePath,
+    sdkPackageSanitizer: FilePath,
     pkgConfigDirectory: FilePath,
     generatorSourceID: String
 ) throws -> String {
@@ -40,6 +41,9 @@ func swiftTargetSDKArtifactID(
     encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     encoder.append(tag: 10, bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
     encoder.append(tag: 11, string: generatorSourceID)
+    encoder.append(
+        tag: 12,
+        bytes: try ArtifactHasher.digest(file: sdkPackageSanitizer).bytes)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 
@@ -92,7 +96,9 @@ struct SwiftSDKStatus {
     let context: WorkspaceContext
 
     func run() async throws {
-        let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
+        let paths = SwiftTargetSDKStoragePaths(
+            cacheRoot: context.cacheRoot,
+            hostBuildRoot: context.hostBuildRoot)
         let activeLink = paths.artifactRoot.appending("current")
         let active = resolvedSymlink(activeLink)
         let hostSwift = active?.appending("toolchain/usr/bin/swift")

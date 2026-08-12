@@ -210,22 +210,30 @@ public struct PersistentWorkspaceJournal: Codable, Hashable, Sendable {
         sizeBytes: 64 * 1_024 * 1_024)
 }
 
+public enum PersistentWorkspaceCleanupPolicy: String, Codable, Hashable, Sendable {
+    case protected
+    case explicitClean
+}
+
 public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     public let identity: PersistentWorkspaceIdentity
     public let capacityBytes: UInt64
     public let filesystem: PersistentWorkspaceFilesystem
     public let journal: PersistentWorkspaceJournal
+    public let cleanupPolicy: PersistentWorkspaceCleanupPolicy
 
     public init(
         identity: PersistentWorkspaceIdentity,
         capacityBytes: UInt64,
         filesystem: PersistentWorkspaceFilesystem,
-        journal: PersistentWorkspaceJournal
+        journal: PersistentWorkspaceJournal,
+        cleanupPolicy: PersistentWorkspaceCleanupPolicy = .explicitClean
     ) {
         self.identity = identity
         self.capacityBytes = capacityBytes
         self.filesystem = filesystem
         self.journal = journal
+        self.cleanupPolicy = cleanupPolicy
     }
 }
 

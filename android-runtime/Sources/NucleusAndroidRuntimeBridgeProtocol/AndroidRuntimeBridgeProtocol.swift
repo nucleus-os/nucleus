@@ -1342,12 +1342,12 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
 
     @discardableResult
     private func completeLaunch(_ result: AndroidActivityLaunchResult) -> Bool {
-        let continuation = state.withLock { state in
+        let continuation: PendingLaunch? = state.withLock { state in
             guard
                 state.pendingLaunches[result.requestID]?.presentationID
                     == result.requestedPresentationID
             else { return nil }
-            state.pendingLaunches.removeValue(forKey: result.requestID)
+            return state.pendingLaunches.removeValue(forKey: result.requestID)
         }
         continuation?.continuation.resume(returning: result)
         return continuation != nil
@@ -1417,7 +1417,7 @@ package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
         }
         state.withLock { $0.connection = connection }
         defer {
-            let pending = state.withLock { state in
+            let pending: [(key: String, value: PendingLaunch)] = state.withLock { state in
                 guard state.connection === connection else { return [] }
                 state.connection = nil
                 let pending = Array(state.pendingLaunches)

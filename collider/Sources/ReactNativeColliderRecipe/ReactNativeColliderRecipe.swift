@@ -132,8 +132,8 @@ public enum ReactNativeColliderRecipe {
                 owner: descriptor.id,
                 producers: boostProducers,
                 storageClass: .cache,
-                root: context.cacheRoot.appending("nucleus/inputs/react-native/boost"),
-                safetyRoot: context.cacheRoot.appending("nucleus/inputs/react-native"),
+                root: context.cacheRoot.appending("inputs/react-native/boost"),
+                safetyRoot: context.cacheRoot.appending("inputs/react-native"),
                 cleanupPolicy: .explicitClean,
                 retention: "the pinned Boost archive and extracted headers remain reusable"),
             StorageDeclaration(
@@ -150,8 +150,8 @@ public enum ReactNativeColliderRecipe {
                 owner: descriptor.id,
                 producers: javascriptProducers,
                 storageClass: .cache,
-                root: context.cacheRoot.appending("nucleus/bun/linux-multiarch"),
-                safetyRoot: context.cacheRoot.appending("nucleus/bun"),
+                root: context.cacheRoot.appending("bun/linux-multiarch"),
+                safetyRoot: context.cacheRoot.appending("bun"),
                 cleanupPolicy: .explicitClean,
                 retention: "Bun package archives remain reusable"),
         ]
@@ -201,7 +201,7 @@ public enum ReactNativeColliderRecipe {
             "node-modules",
             path: active,
             validation: .nonEmptyDirectory)
-        let cache = cacheRoot.appending("nucleus/bun/linux-multiarch")
+        let cache = cacheRoot.appending("bun/linux-multiarch")
         let declaration = task.build(
             inputs: [
                 .file(lockfile),
@@ -246,7 +246,7 @@ public enum ReactNativeColliderRecipe {
                 "application/octet-stream",
                 "application/x-gzip",
             ])
-        let boostRoot = cacheRoot.appending("nucleus/inputs/react-native/boost")
+        let boostRoot = cacheRoot.appending("inputs/react-native/boost")
         let archive = boostRoot.appending("downloads/\(boostArchiveName)")
         let generations = boostRoot.appending("generations")
         let candidate = generations.appending(
@@ -581,15 +581,18 @@ public enum ReactNativeColliderRecipe {
         }
         taskBuilder.consume(hermes.compiler)
         var outputArtifacts: [ArtifactReference<FileArtifact>] = []
-        for output in [
-            artifacts.appending("glog/libglog.a"),
-            artifacts.appending("glog/glog/logging.h"),
-        ]
+        let generatedGlogHeaders =
+            ["logging.h", "raw_logging.h", "stl_logging.h", "vlog_is_on.h"].map {
+                artifacts.appending("glog/glog/\($0)")
+            }
+        let runtimeOutputs =
+            [artifacts.appending("glog/libglog.a")]
+            + generatedGlogHeaders
             + [
                 "libfolly_runtime.a", "libjsi.a", "libreact_native.a",
                 "libreact_cxx_platform.a", "libyogacore.a",
             ].map({ artifacts.appending("reactnative/\($0)") })
-        {
+        for output in runtimeOutputs {
             let artifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
                 OutputSlotID(rawValue: output.lastComponent?.string ?? "output"),
                 path: output,
@@ -685,8 +688,11 @@ public enum ReactNativeColliderRecipe {
                                     "install -d /export/glog/glog /export/reactnative"
                                         + " && install -m 0644 /build/glog/libglog.a"
                                         + " /export/glog/libglog.a"
-                                        + " && install -m 0644 /build/glog/glog/logging.h"
-                                        + " /export/glog/glog/logging.h"
+                                        + " && for header in"
+                                        + " logging.h raw_logging.h stl_logging.h"
+                                        + " vlog_is_on.h; do"
+                                        + " install -m 0644 /build/glog/glog/$header"
+                                        + " /export/glog/glog/$header; done"
                                         + " && for library in"
                                         + " libfolly_runtime.a libjsi.a libreact_native.a"
                                         + " libreact_cxx_platform.a libyogacore.a; do"
@@ -717,13 +723,10 @@ public enum ReactNativeColliderRecipe {
         runtime: CxxRuntimeArtifacts
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("rn")
+        let boostHeaders = sdk.appending("include/boost")
         let links: [(String, FilePath)] = [
             ("include/hermes", root.appending("third-party/hermes")),
             ("include/folly", root.appending("third-party/folly")),
-            (
-                "include/boost",
-                boost.path
-            ),
             ("include/glog", root.appending("third-party/glog")),
             (
                 "include/glog-gen",
@@ -769,7 +772,13 @@ public enum ReactNativeColliderRecipe {
         }
         builder.consume(hermes.compiler)
         builder.consume(dependencies)
+        builder.consume(boost)
         var outputs = ArtifactReferenceSet()
+        let boostOutput: ArtifactReference<DirectoryArtifact> = try builder.output(
+            OutputSlotID(rawValue: "include/boost"),
+            path: boostHeaders,
+            validation: .nonEmptyDirectory)
+        outputs.append(boostOutput)
         for (name, _) in links {
             let output: ArtifactReference<PathArtifact> = try builder.output(
                 OutputSlotID(rawValue: name),
@@ -792,7 +801,11 @@ public enum ReactNativeColliderRecipe {
             ],
             action:
                 try AnyColliderAction(
-                    PublishReactNativeSDKAction(sdk: sdk, links: links))
+                    PublishReactNativeSDKAction(
+                        sdk: sdk,
+                        boostSource: boost.path,
+                        boostHeaders: boostHeaders,
+                        links: links))
         )
         return NativeSDKArtifacts(task: task, outputs: outputs)
     }
@@ -833,22 +846,30 @@ private struct DownloadBoostAction: ColliderAction {
 private struct PublishReactNativeSDKAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let sdk: FilePath
+        let boostSource: FilePath
+        let boostHeaders: FilePath
         let encodedLinks: String
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: sdk.string)
-            encoder.append(tag: 2, string: encodedLinks)
+            encoder.append(tag: 2, string: boostSource.string)
+            encoder.append(tag: 3, string: boostHeaders.string)
+            encoder.append(tag: 4, string: encodedLinks)
         }
     }
 
     static let kind: ActionKind = "rn.publish-native-sdk"
 
     let sdk: FilePath
+    let boostSource: FilePath
+    let boostHeaders: FilePath
     let links: [(name: String, target: FilePath)]
 
     var identity: Identity {
         Identity(
             sdk: sdk,
+            boostSource: boostSource,
+            boostHeaders: boostHeaders,
             encodedLinks: links.map { "\($0.name)\u{0}\($0.target.string)" }
                 .joined(separator: "\u{1}"))
     }
@@ -856,11 +877,14 @@ private struct PublishReactNativeSDKAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.write, scope: .publication(sdk))
+                ActionEffect(.read, scope: .input(boostSource)),
+                ActionEffect(.write, scope: .publication(sdk)),
             ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
+        try context.files.remove(boostHeaders)
+        try context.files.copyTree(from: boostSource, to: boostHeaders)
         for link in links {
             try context.files.replaceSymlink(
                 at: sdk.appending(link.name),
@@ -974,6 +998,9 @@ private func commonCMakeArguments(
     let cxxFlags =
         [
             "-stdlib=libc++",
+            "-nostdinc++",
+            "-isystem\(target.containerLibCXXIncludeRoot)",
+            "-fuse-ld=lld",
             "-idirafter/usr/include",
             "-idirafter/usr/include/\(target.gnuArchitecture)",
             definitions,
@@ -991,10 +1018,10 @@ private func commonCMakeArguments(
         "-DCMAKE_CXX_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_ASM_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_SYSROOT=\(sysroot)",
-        "-DCMAKE_C_FLAGS=-idirafter/usr/include -idirafter/usr/include/\(target.gnuArchitecture)",
+        "-DCMAKE_C_FLAGS=-fuse-ld=lld -idirafter/usr/include -idirafter/usr/include/\(target.gnuArchitecture)",
         "-DCMAKE_CXX_FLAGS=\(joinedCXXFlags)",
-        "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L/usr/lib/\(target.gnuArchitecture)",
-        "-DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L/usr/lib/\(target.gnuArchitecture)",
+        "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
+        "-DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
         "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
         "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
     ]

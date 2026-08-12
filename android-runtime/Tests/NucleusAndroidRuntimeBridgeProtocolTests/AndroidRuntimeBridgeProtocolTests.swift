@@ -1,9 +1,10 @@
 import Foundation
 import Glibc
-internal import NucleusAndroidRuntimeBridgeProtocol
 import NucleusAndroidRuntimeCore
 import NucleusIPCTransport
 import Testing
+
+@testable internal import NucleusAndroidRuntimeBridgeProtocol
 
 private actor BridgeEventRecorder {
     private(set) var events: [AndroidRuntimeBridgeEvent] = []

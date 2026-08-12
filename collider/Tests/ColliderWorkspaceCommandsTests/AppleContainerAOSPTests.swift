@@ -26,9 +26,9 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     }
     let build = AOSPProductBuild(
         productSource: path("product"),
-        source: path("source"),
         sourceProvenance: path("source-provenance.json"),
         artifactRoot: path("build"),
+        sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
         buildImageID: FilePath(imageID.path),
@@ -59,6 +59,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         name: appleContainerName(for: execution),
         configuration: runtimeConfiguration,
         persistentWorkspaceNames: [
+            build.sourceWorkspace.identity: "aosp-source-volume",
             build.outputWorkspace.identity: "aosp-output-volume",
             build.compilerCacheWorkspace.identity: "aosp-ccache-volume",
         ])
@@ -79,9 +80,6 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(flags.management.tmpFs.contains("/home/nucleus-build"))
     #expect(
         flags.management.mounts.contains(
-            "type=bind,source=\(path("source").string),target=/src,readonly"))
-    #expect(
-        flags.management.mounts.contains(
             "type=bind,source=\(build.assembledProductSource.string),target=/src/device/nucleus/nucleus_x86_64,readonly"
         ))
     #expect(
@@ -89,7 +87,10 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
             "type=bind,source=\(path("output").string),target=/output"))
     #expect(
         flags.management.volumes
-            == ["aosp-output-volume:/src/out", "aosp-ccache-volume:/ccache"])
+            == [
+                "aosp-source-volume:/src:ro", "aosp-output-volume:/out",
+                "aosp-ccache-volume:/ccache",
+            ])
     #expect(
         !flags.process.env.contains(where: {
             $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
@@ -98,7 +99,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     let toolsExecution = aospProductOCIExecution(
         build: build,
         writableMounts: [],
-        readOnlyMounts: [(build.source, "/src")],
+        readOnlyMounts: [],
         persistentWorkspaceMounts: [build.readOnlyOutputMount],
         command: ["/bin/true"])
     #expect(toolsExecution.command == ["/bin/true"])

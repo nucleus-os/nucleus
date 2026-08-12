@@ -141,11 +141,12 @@ cancellation or process death releases ownership without a stale lease or manual
 repair. Status is observational and tolerates entries disappearing during a
 concurrent prune.
 
-The default user cache and the dedicated APFS cache use identical declarations
-and lifecycle semantics; only their resolved storage root differs. The macOS
-builder contract relocates cache, OCI, and log storage onto their configured APFS
-volumes without creating a second ownership model. `collider cache status`
-reports the resolved inventory and volume state.
+On macOS, Collider resolves caches, Apple-container state, artifacts, and logs
+through the conventional per-user storage layout on the default Data
+filesystem. Linux trees that require case-sensitive semantics live inside
+Apple-container persistent volumes rather than loose host directories. This
+placement does not create a second ownership model: `collider cache status`
+reports the same catalog declarations and sparse-volume allocation metadata.
 
 Run terminalization retains the newest 20 terminal records and the newest failed
 record in addition, while never treating an active run as reclaimable. Explicit

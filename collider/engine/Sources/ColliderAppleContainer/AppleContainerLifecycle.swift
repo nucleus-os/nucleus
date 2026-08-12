@@ -17,6 +17,7 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
     case builderCleanupFailed(operation: String, cleanup: String)
     case cleanupFailed(name: String, reason: String)
     case invalidImageDigest
+    case invalidIsolatedNetwork(name: String, mode: String)
     case invalidPersistentWorkspaceOwner(String?)
     case persistentWorkspaceConfigurationMismatch(name: String, reason: String)
     case persistentWorkspaceResolutionMissing(PersistentWorkspaceIdentity)
@@ -32,6 +33,8 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
             "Apple container cleanup failed for \(name): \(reason)"
         case .invalidImageDigest:
             "Apple container image API did not return one OCI digest"
+        case .invalidIsolatedNetwork(let name, let mode):
+            "Apple container network \(name) uses \(mode) mode; hostOnly is required"
         case .invalidPersistentWorkspaceOwner(let owner):
             "Apple container persistent workspaces require a 64-character lowercase checkout digest; received \(owner ?? "none")"
         case .persistentWorkspaceConfigurationMismatch(let name, let reason):
@@ -65,6 +68,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         _ request: OCIRuntimeExecutionRequest
     ) async throws -> OCIRuntimeExecutionOutcome {
         try validateRunner()
+        try await ensureIsolatedNetwork(named: request.configuration.isolatedNetwork)
         let name = appleContainerName(for: request.execution)
         let workspaces = ApplePersistentWorkspaceManager(
             configuration: request.configuration)
@@ -122,6 +126,37 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         return OCIRuntimeNetworkState(
             name: network.configuration.name,
             mode: network.configuration.mode.rawValue)
+    }
+
+    private func ensureIsolatedNetwork(named name: String) async throws {
+        let client = NetworkClient()
+        if let network = try await client.list().first(where: { $0.id == name }) {
+            try requireHostOnly(network)
+            return
+        }
+        let configuration = try NetworkConfiguration(
+            name: name,
+            mode: .hostOnly,
+            plugin: "container-network-vmnet")
+        do {
+            try await requireHostOnly(
+                client.create(configuration: configuration))
+        } catch {
+            guard
+                let network = try? await client.list().first(where: { $0.id == name })
+            else {
+                throw error
+            }
+            try requireHostOnly(network)
+        }
+    }
+
+    private func requireHostOnly(_ network: NetworkResource) throws {
+        guard network.configuration.mode == .hostOnly else {
+            throw AppleContainerFailure.invalidIsolatedNetwork(
+                name: network.id,
+                mode: network.configuration.mode.rawValue)
+        }
     }
 
     public func diskUsage(

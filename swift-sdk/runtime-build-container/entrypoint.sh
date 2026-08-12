@@ -29,7 +29,8 @@ rm -rf -- "$libxml_install"
 
 cmake -S /src/libxml2 -B "$libxml_build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER=/opt/swift-bootstrap/usr/bin/clang \
+  -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+  -DCMAKE_C_COMPILER=/opt/swift/usr/bin/clang \
   -DCMAKE_C_COMPILER_TARGET="$NUCLEUS_TARGET_TRIPLE" \
   -DCMAKE_C_FLAGS="--target=$NUCLEUS_TARGET_TRIPLE --sysroot=/target-sysroot" \
   -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
@@ -59,7 +60,7 @@ python3 /src/swift/utils/build-script \
   --preset-file /recipe/nucleus-target-runtime-presets.ini \
   --preset=nucleus_linux_target_runtime \
   --jobs "${NUCLEUS_BUILD_JOBS:-16}" \
-  toolchain_path=/opt/swift-bootstrap/usr/bin \
+  toolchain_path=/opt/swift/usr/bin \
   install_destdir=/output \
   target_architecture="$NUCLEUS_TARGET_ARCHITECTURE" \
   target_gnu_architecture="$NUCLEUS_TARGET_GNU_ARCHITECTURE" \
@@ -70,9 +71,9 @@ swift_testing_build="/build/Ninja-Release/swifttesting-linux-$NUCLEUS_TARGET_ARC
 cmake -S /src/swift-testing -B "$swift_testing_build" -G Ninja \
   -DBUILD_SHARED_LIBS=YES \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER=/opt/swift-bootstrap/usr/bin/clang \
-  -DCMAKE_CXX_COMPILER=/opt/swift-bootstrap/usr/bin/clang++ \
-  -DCMAKE_Swift_COMPILER=/usr/local/bin/nucleus-target-swiftc \
+  -DCMAKE_C_COMPILER=/opt/swift/usr/bin/clang \
+  -DCMAKE_CXX_COMPILER=/opt/swift/usr/bin/clang++ \
+  -DCMAKE_Swift_COMPILER=/runtime-builder/nucleus-target-swiftc \
   -DCMAKE_C_COMPILER_TARGET="$NUCLEUS_TARGET_TRIPLE" \
   -DCMAKE_CXX_COMPILER_TARGET="$NUCLEUS_TARGET_TRIPLE" \
   -DCMAKE_Swift_COMPILER_TARGET="$NUCLEUS_TARGET_TRIPLE" \

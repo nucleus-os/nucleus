@@ -19,6 +19,13 @@ import Testing
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).path)
     defer { try? FileManager.default.removeItem(atPath: temporary.string) }
+    var nativeBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.native-builder"),
+        component: ComponentID(rawValue: "native"))
+    let nativeBuilderImage: ArtifactReference<FileArtifact> = try nativeBuilder.output(
+        "image-id",
+        path: temporary.appending("native-builder-image-id"),
+        validation: .regularFile)
     let linuxTargets = inputs.linuxTargets.map { target in
         SwiftLinuxTargetBuildConfiguration(
             target: target,
@@ -54,9 +61,11 @@ import Testing
         sourceID: "fixture-source-id",
         runtimeBuilderContext: root.appending(
             "swift-sdk/runtime-build-container"),
-        runtimeBuilderImageID: temporary.appending("runtime-builder-image-id"),
+        runtimeBuilderBaseImage: nativeBuilderImage,
         linuxTargets: linuxTargets,
         sysrootPreparer: root.appending("swift-sdk/prepare-linux-sysroot.sh"),
+        sdkPackageSanitizer: root.appending(
+            "swift-sdk/sanitize-linux-sdk-package.sh"),
         pkgConfigDirectory: root.appending("swift-sdk/pkgconfig"),
         candidate: temporary.appending("candidate"),
         generation: temporary.appending("generation"),
