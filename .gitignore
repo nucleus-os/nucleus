@@ -55,7 +55,6 @@ Desktop.ini
 /android-runtime/.gfxstream-build/
 /android-runtime/.aosp-build/
 /android-runtime/.aosp-signing/
-/android-runtime/.aosp-source/
 /android-runtime/.aosp-tools/
 /core/android/.gradle/
 /core/android/.cxx/

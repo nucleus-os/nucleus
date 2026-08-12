@@ -174,7 +174,8 @@ package func chromiumCompilerCacheWorkspace(
             role: "compiler-cache"),
         capacityBytes: 30 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        retentionPolicy: .toolManagedLimit(maximumBytes: 30 * 1_024 * 1_024 * 1_024))
 }
 
 package func chromiumSourceWorkspace(

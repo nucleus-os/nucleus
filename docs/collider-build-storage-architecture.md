@@ -51,6 +51,35 @@ directory.
 
 ## Ownership and Lifecycle
 
+Every host storage declaration names one owner, its producers, its storage
+class, a root, a narrower deletion boundary, and one typed retention policy.
+Source, identity, provenance, and publication state is `protected`.
+Reconstructible host materializations use `singleWorkingSet`; their producer
+replaces the current contents in place and component clean may remove the whole
+set. SwiftPM scratch directories use `taskIdentityContexts`; the current
+catalog supplies the retained `sha256-*` paths. Generation stores use
+`keepActiveAndRollback`, compiler caches use an owner-enforced
+`toolManagedLimit`, and run records use `boundedHistory`. A path that does not
+match a declaration and policy is unknown, not implicitly disposable.
+Diagnostic directories use the same bounded-history policy and retain their
+newest declared number of immediate, non-symlink entries. Active service logs
+declare the exact files the service owns. RunRegistry separately protects its
+lock root and `latest` index while applying active-run-aware history retention.
+
+Status classifies each observed object as `active`, `protected`, `retained`,
+`reclaimable`, or `unknown`. Only `reclaimable` objects are deletion candidates.
+Unknown objects remain visible and survive every clean and prune operation.
+
+Catalog construction validates all writable action effects against these
+declarations. One writable path must map to exactly one declaration owned by
+the action's component or to an explicitly shared runtime-owned declaration.
+Removable declarations require producer workflow locks, cannot overlap one
+another, and cannot overlap authoritative source or identity storage.
+An `unrestricted` effect is an explicit escape from Collider storage ownership
+for an external installation or operating-system integration boundary. It is
+still enforced by the action filesystem but is never reported or reclaimed as
+Collider cache state.
+
 Persistent workspace identity consists of its owner key, artifact target, and
 role. Collider derives a checkout-scoped Apple volume name from that identity,
 creates and validates the volume through Apple container's Swift API, attaches
@@ -77,6 +106,27 @@ are protected from both component cleaning and cache pruning.
 identities no longer exist in the current component graph. Dry-run reports the
 same targets without deleting them, and cache status classifies owned volumes
 as active, retained, or reclaimable.
+
+The same prune operation also removes expired run records, interrupted and
+superseded generations, SwiftPM task-identity contexts absent from the current
+catalog, and obsolete references in declared local OCI image families. It
+deletes no unknown path and no foreign image repository. Mutating prune runs
+under host execution admission, reacquires the affected workflow and workspace
+locks, recomputes candidates, and revalidates every deletion boundary.
+
+OCI retention belongs to the catalog rather than the runtime backend. Each
+Collider-owned local repository family retains its active digest and declared
+rollback generations. The backend lists parsed runtime state and removes only
+the exact inactive references selected by Collider; it never performs a global
+dangling-image sweep or infers ownership from tag spelling alone.
+
+Default `collider cache status` reads only bounded metadata and shallow owned
+roots. Apple Container usage, images, and persistent-workspace queries run
+independently with bounded timeouts; an unavailable owner does not hide other
+storage. `--measure-allocations` is the explicit recursive measurement mode.
+Prune reports selected allocated bytes separately from post-operation physical
+space recovered, because sparse files, hard links, and shared container layers
+make those values semantically different.
 
 ## Recipe Rules
 

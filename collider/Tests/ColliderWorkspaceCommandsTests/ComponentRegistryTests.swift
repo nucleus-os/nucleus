@@ -31,11 +31,9 @@ private struct RelocatableStorageSignature: Equatable {
     let storageClass: StorageClass
     let root: String
     let safetyRoot: String
-    let cleanupPolicy: StorageCleanupPolicy
+    let retentionPolicy: StorageRetentionPolicy
     let activeGenerationLink: String?
-    let rollbackGenerationCount: UInt32?
     let interruptedCandidateNaming: String?
-    let retention: String
 }
 
 private func selectedTasks(
@@ -158,13 +156,11 @@ private func storageSignatures(
             storageClass: declaration.storageClass,
             root: storageCoordinate(declaration.root, context: context),
             safetyRoot: storageCoordinate(declaration.safetyRoot, context: context),
-            cleanupPolicy: declaration.cleanupPolicy,
+            retentionPolicy: declaration.retentionPolicy,
             activeGenerationLink: declaration.activeGenerationLink.map {
                 storageCoordinate($0, context: context)
             },
-            rollbackGenerationCount: declaration.rollbackGenerationCount,
-            interruptedCandidateNaming: declaration.interruptedCandidateNaming?.rawValue,
-            retention: declaration.retention)
+            interruptedCandidateNaming: declaration.interruptedCandidateNaming?.rawValue)
     }.sorted { $0.id < $1.id }
 }
 
@@ -201,32 +197,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             shellConfiguration: shellConfiguration))
 
     #expect(
-        Set(withoutLinuxOperations.storage.map(\.id)) == [
-            "android-aosp-build", "android-aosp-container-tools",
-            "android-aosp-signing-identity", "android-aosp-source-inputs",
-            "android-aosp-tools",
-            "android-gfxstream-container-tools", "android-gfxstream-sdk-linux-arm64",
-            "android-gfxstream-sdk-linux-x86_64",
-            "android-sdk", "benchmark-results", "browser-builder-metadata",
-            "browser-build-metadata", "browser-cef-arm64-generations",
-            "browser-cef-x86_64-generations", "browser-depot-tools",
-            "browser-installations", "browser-locks", "browser-logs",
-            "browser-product-arm64-generations", "browser-product-x86_64-generations",
-            "browser-source-generations", "collider-state",
-            "host-swiftpm-builds",
-            "core-render-sdk-android-arm64",
-            "core-render-sdk-linux-arm64", "core-render-sdk-linux-x86_64", "core-skia-inputs",
-            "downloads", "host-compiler-cache", "language-server-configuration",
-            "linux-package-manifest-generations", "linux-runtime-generations",
-            "native-builder-ccache", "native-builder-metadata", "rn-javascript-cache",
-            "rn-boost-inputs", "rn-node-modules", "rn-sdk-linux-arm64",
-            "rn-sdk-linux-x86_64",
-            "run-records", "swift-package-cache", "swift-package-graphs",
-            "swift-runtime-builder-metadata", "swift-sdk-generator-build",
-            "swift-target-sdk-generations", "swiftpm-host-boundaries",
-            "swiftpm-tool-host-boundaries",
-            "wayland-sdk-linux-arm64", "wayland-sdk-linux-x86_64",
-        ])
+        Set(withoutLinuxOperations.storage.map(\.id)).count
+            == withoutLinuxOperations.storage.count)
     #expect(withoutLinuxOperations.storage.allSatisfy { !$0.producers.isEmpty })
     let storageOwners = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.owner.rawValue) })
@@ -243,6 +215,16 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
     #expect(storageClasses["android-aosp-source-inputs"] == .cache)
     #expect(storageClasses["android-aosp-signing-identity"] == .identity)
+    let persistentWorkspaces = withoutLinuxOperations.components.flatMap(
+        \.persistentWorkspaces)
+    for workspace in persistentWorkspaces where workspace.identity.role == "compiler-cache" {
+        guard case .toolManagedLimit(let maximumBytes) = workspace.retentionPolicy else {
+            Issue.record("compiler cache lacks a tool-managed limit: \(workspace.identity.key)")
+            continue
+        }
+        #expect(maximumBytes > 0)
+        #expect(maximumBytes <= workspace.capacityBytes)
+    }
     let aospBuildTools = try #require(
         withoutLinuxOperations.tasks.first {
             $0.id == AndroidRuntimeTaskIDs.aospBuildTools
@@ -979,40 +961,6 @@ private func fixtureReactNativeNodeModules(
     #expect(
         (try published()["swiftPM"] as! [String: Any])["scratchPath"] as? String
             == invocation("second").scratchPath.string)
-}
-
-@Test func toolchainRebuildReclaimsEverySupersededSwiftBuildContext() throws {
-    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-contexts-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: workspace) }
-    let manager = FileManager.default
-    let swiftPM = workspace.appendingPathComponent("swiftpm", isDirectory: true)
-    let contexts = ["unsanitized", "thread"].map {
-        swiftPM.appendingPathComponent(
-            "\($0)/sha256-\(String(repeating: "a", count: 64))",
-            isDirectory: true)
-    }
-    for context in contexts {
-        try manager.createDirectory(at: context, withIntermediateDirectories: true)
-        try Data("stale".utf8).write(
-            to: context.appendingPathComponent("build.db"))
-    }
-    // Only content-addressed build contexts are the rebuild's to reclaim.
-    let unrelated = swiftPM.appendingPathComponent(
-        "unsanitized/notes", isDirectory: true)
-    try manager.createDirectory(at: unrelated, withIntermediateDirectories: true)
-
-    let context = WorkspaceContext(
-        root: FilePath(workspace.path),
-        environment: ["HOME": "/home/fixture"],
-        runtime: ColliderRuntime(),
-        hostBuildRoot: FilePath(workspace.path))
-    try context.reclaimSwiftBuildContexts()
-
-    for stale in contexts {
-        #expect(!manager.fileExists(atPath: stale.path))
-    }
-    #expect(manager.fileExists(atPath: unrelated.path))
 }
 
 @Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {

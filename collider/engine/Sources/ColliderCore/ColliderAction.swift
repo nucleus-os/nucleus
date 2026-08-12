@@ -347,6 +347,9 @@ public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 7, string: preparation.imageName)
         encoder.append(tag: 8, string: preparation.baseImageSource.rawValue)
         encoder.append(tag: 9, string: preparation.localBaseImageID?.string ?? "")
+        encoder.append(
+            tag: 10,
+            integer: UInt64(preparation.rollbackGenerationCount))
     }
 }
 
@@ -661,10 +664,12 @@ public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
     case conflictingToolRole(CommandSpec.Executable)
     case duplicateEffect(ActionEffect)
     case relativeEffectRoot(FilePath)
+    case noncanonicalEffectRoot(FilePath)
     case invalidPersistentWorkspaceKey(String)
     case invalidPersistentWorkspaceRole(String)
     case invalidPersistentWorkspaceCapacity(PersistentWorkspaceIdentity)
     case invalidPersistentWorkspaceJournal(PersistentWorkspaceIdentity)
+    case invalidPersistentWorkspaceRetention(PersistentWorkspaceIdentity)
     case duplicatePersistentWorkspace(PersistentWorkspaceIdentity)
     case conflictingPersistentWorkspaceDeclaration(PersistentWorkspaceIdentity)
     case persistentWorkspaceTargetMismatch(
@@ -685,6 +690,8 @@ public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
             "action effect '\(effect)' is duplicated"
         case .relativeEffectRoot(let root):
             "action effect root must be absolute: \(root)"
+        case .noncanonicalEffectRoot(let root):
+            "action effect root must be lexically normalized: \(root)"
         case .invalidPersistentWorkspaceKey(let key):
             "persistent workspace key is invalid: \(key)"
         case .invalidPersistentWorkspaceRole(let role):
@@ -693,6 +700,8 @@ public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
             "persistent workspace capacity must be positive: \(identity.key)"
         case .invalidPersistentWorkspaceJournal(let identity):
             "persistent workspace journal must be nonempty and smaller than its capacity: \(identity.key)"
+        case .invalidPersistentWorkspaceRetention(let identity):
+            "persistent workspace retention must be protected, explicit-clean, or a positive tool limit no larger than its capacity: \(identity.key)"
         case .duplicatePersistentWorkspace(let identity):
             "persistent workspace is mounted more than once by one action: \(identity.key)"
         case .conflictingPersistentWorkspaceDeclaration(let identity):
@@ -715,6 +724,7 @@ public protocol ColliderAction: Sendable {
     var identity: Identity { get }
     var requirements: ActionRequirements { get }
     var environment: [String: String] { get }
+    var imagePreparations: [OCIImagePreparation] { get }
 
     func execute(in context: ActionContext) async throws
     func validateOutputs(using files: ActionFileSystem) throws
@@ -722,6 +732,7 @@ public protocol ColliderAction: Sendable {
 
 extension ColliderAction {
     public var environment: [String: String] { [:] }
+    public var imagePreparations: [OCIImagePreparation] { [] }
     public func validateOutputs(using _: ActionFileSystem) throws {}
 }
 
@@ -731,6 +742,7 @@ public struct AnyColliderAction: Hashable, Sendable {
     public let identity: [UInt8]
     public let requirements: ActionRequirements
     public let environment: [String: String]
+    public let imagePreparations: [OCIImagePreparation]
 
     private let body: @Sendable (ActionContext) async throws -> Void
     private let validationBody: @Sendable (ActionFileSystem) throws -> Void
@@ -750,6 +762,7 @@ public struct AnyColliderAction: Hashable, Sendable {
         }
         requirements = action.requirements
         environment = action.environment
+        imagePreparations = action.imagePreparations
         body = { context in
             try await action.execute(in: context)
         }
@@ -784,6 +797,9 @@ public struct AnyColliderAction: Hashable, Sendable {
             guard effect.scope.root.string.hasPrefix("/") else {
                 throw ActionDeclarationFailure.relativeEffectRoot(effect.scope.root)
             }
+            guard effect.scope.root.lexicallyNormalized() == effect.scope.root else {
+                throw ActionDeclarationFailure.noncanonicalEffectRoot(effect.scope.root)
+            }
         }
         var workspaces: [PersistentWorkspaceIdentity: PersistentWorkspaceDeclaration] = [:]
         var mountTargets: [FilePath] = []
@@ -802,6 +818,18 @@ public struct AnyColliderAction: Hashable, Sendable {
                 effect.workspace.journal.sizeBytes < effect.workspace.capacityBytes
             else {
                 throw ActionDeclarationFailure.invalidPersistentWorkspaceJournal(identity)
+            }
+            switch effect.workspace.retentionPolicy {
+            case .protected, .explicitClean:
+                break
+            case .toolManagedLimit(let maximumBytes):
+                guard maximumBytes > 0,
+                    maximumBytes <= effect.workspace.capacityBytes
+                else {
+                    throw ActionDeclarationFailure.invalidPersistentWorkspaceRetention(identity)
+                }
+            default:
+                throw ActionDeclarationFailure.invalidPersistentWorkspaceRetention(identity)
             }
             guard identity.artifactTarget == requirements.artifactTarget else {
                 throw ActionDeclarationFailure.persistentWorkspaceTargetMismatch(

@@ -161,6 +161,25 @@ public enum CoreColliderRecipe: ColliderComponent {
         }
         var storage: [StorageDeclaration] = [
             StorageDeclaration(
+                id: "core-skia-source-materialization",
+                owner: descriptor.id,
+                producers: producers {
+                    $0 == CoreTaskIDs.sources.rawValue
+                        || $0 == CoreTaskIDs.gnInstall.rawValue
+                },
+                storageClass: .source,
+                root: root.appending("third-party/skia"),
+                safetyRoot: root,
+                retentionPolicy: .protected),
+            StorageDeclaration(
+                id: "core-android-project",
+                owner: descriptor.id,
+                producers: producers { $0 == "core.android.build" },
+                storageClass: .source,
+                root: root.appending("android"),
+                safetyRoot: root,
+                retentionPolicy: .protected),
+            StorageDeclaration(
                 id: "core-skia-inputs",
                 owner: descriptor.id,
                 producers: producers {
@@ -169,8 +188,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: skiaInputRoot,
                 safetyRoot: skiaInputRoot.removingLastComponent(),
-                cleanupPolicy: .explicitClean,
-                retention: "the pinned Skia GN input remains reusable")
+                retentionPolicy: .singleWorkingSet),
         ]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -186,8 +204,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                     storageClass: .published,
                     root: sdkRoot.appending("render"),
                     safetyRoot: sdkRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "the validated render SDK remains published"))
+                    retentionPolicy: .singleWorkingSet))
         }
         storage.append(
             StorageDeclaration(
@@ -200,8 +217,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 storageClass: .published,
                 root: androidSDKRoot.appending("render"),
                 safetyRoot: androidSDKRoot,
-                cleanupPolicy: .explicitClean,
-                retention: "the validated render SDK remains published"))
+                retentionPolicy: .singleWorkingSet))
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
@@ -1259,7 +1275,8 @@ private func skiaTask(
             role: "compiler-cache"),
         capacityBytes: 50 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
     let mounts = [
         OCIMount(
             source: skia,

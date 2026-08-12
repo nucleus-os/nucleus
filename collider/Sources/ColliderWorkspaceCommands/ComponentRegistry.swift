@@ -387,6 +387,7 @@ package struct ComponentRegistry {
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
         try StorageCatalog.validateProducers(catalog.storage, tasks: catalog.tasks)
+        try StorageCatalog.validateWritableEffects(catalog.storage, tasks: catalog.tasks)
         return catalog
     }
 
@@ -752,7 +753,9 @@ package struct ComponentRegistry {
                         role: "compiler-cache"),
                     capacityBytes: 50 * 1_024 * 1_024 * 1_024,
                     filesystem: .ext4,
-                    journal: .writeback64MiB),
+                    journal: .writeback64MiB,
+                    retentionPolicy: .toolManagedLimit(
+                        maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 hostDependencyCache: swiftPMDependencyCache,
                 intelBinaryTranslationPolicy: resolvedTranslation,
                 resourceLimits: .parallelBuild,
@@ -1036,7 +1039,9 @@ package struct ComponentRegistry {
                         role: "compiler-cache"),
                     capacityBytes: 50 * 1_024 * 1_024 * 1_024,
                     filesystem: .ext4,
-                    journal: .writeback64MiB),
+                    journal: .writeback64MiB,
+                    retentionPolicy: .toolManagedLimit(
+                        maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 runtimeInstall: root.appending("install"),
                 sysroot: root.appending("sysroot"))
         }

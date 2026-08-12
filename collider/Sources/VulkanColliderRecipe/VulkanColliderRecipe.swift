@@ -19,6 +19,17 @@ public enum VulkanColliderRecipe: ColliderComponent {
             tasks: generation.tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .generate, roots: [generation.task.id])
+            ],
+            storage: [
+                StorageDeclaration(
+                    id: "vulkan-generated-sources",
+                    owner: descriptor.id,
+                    producers: [.task(generation.task.id)],
+                    storageClass: .source,
+                    root: context.componentRoot(descriptor).appending(
+                        "Sources/Vulkan/Vulkan.swift"),
+                    safetyRoot: context.componentRoot(descriptor),
+                    retentionPolicy: .protected)
             ])
     }
 

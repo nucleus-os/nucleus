@@ -14,11 +14,63 @@ public enum StorageClass: String, Codable, Hashable, Sendable {
     case runRecord
 }
 
-public enum StorageCleanupPolicy: String, Codable, Hashable, Sendable {
+public enum StorageRetentionPolicy: Codable, Hashable, Sendable {
     case protected
     case explicitClean
-    case explicitPrune
-    case automaticRetention
+    case singleWorkingSet
+    case keepActiveAndRollback(count: UInt32)
+    case taskIdentityContexts
+    case toolManagedLimit(maximumBytes: UInt64)
+    case boundedHistory(maximumEntries: UInt32)
+
+    public var name: String {
+        switch self {
+        case .protected: "protected"
+        case .explicitClean: "explicitClean"
+        case .singleWorkingSet: "singleWorkingSet"
+        case .keepActiveAndRollback: "keepActiveAndRollback"
+        case .taskIdentityContexts: "taskIdentityContexts"
+        case .toolManagedLimit: "toolManagedLimit"
+        case .boundedHistory: "boundedHistory"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .protected:
+            "authoritative state is never a cleanup candidate"
+        case .explicitClean:
+            "the finite working set remains reusable until explicit clean"
+        case .singleWorkingSet:
+            "the producer replaces one current reusable working set in place"
+        case .keepActiveAndRollback(let count):
+            "the active generation and \(count) rollback generation(s) remain"
+        case .taskIdentityContexts:
+            "contexts reachable from current task identities remain"
+        case .toolManagedLimit(let maximumBytes):
+            "the owning tool limits the cache to \(maximumBytes) bytes"
+        case .boundedHistory(let maximumEntries):
+            "the newest \(maximumEntries) history entries remain"
+        }
+    }
+
+    public var isProtected: Bool {
+        if case .protected = self { return true }
+        return false
+    }
+
+    public var allowsExplicitClean: Bool {
+        !isProtected
+    }
+
+    public var hasAutomaticPruneTargets: Bool {
+        switch self {
+        case .keepActiveAndRollback, .taskIdentityContexts, .boundedHistory:
+            true
+        default:
+            false
+        }
+    }
 }
 
 public enum StorageProducer: Hashable, Sendable {
@@ -33,11 +85,9 @@ public struct StorageDeclaration: Hashable, Sendable {
     public let storageClass: StorageClass
     public let root: FilePath
     public let safetyRoot: FilePath
-    public let cleanupPolicy: StorageCleanupPolicy
+    public let retentionPolicy: StorageRetentionPolicy
     public let activeGenerationLink: FilePath?
-    public let rollbackGenerationCount: UInt32?
     public let interruptedCandidateNaming: DirectoryNamePattern?
-    public let retention: String
 
     public init(
         id: String,
@@ -46,11 +96,9 @@ public struct StorageDeclaration: Hashable, Sendable {
         storageClass: StorageClass,
         root: FilePath,
         safetyRoot: FilePath,
-        cleanupPolicy: StorageCleanupPolicy,
+        retentionPolicy: StorageRetentionPolicy,
         activeGenerationLink: FilePath? = nil,
-        rollbackGenerationCount: UInt32? = nil,
-        interruptedCandidateNaming: DirectoryNamePattern? = nil,
-        retention: String
+        interruptedCandidateNaming: DirectoryNamePattern? = nil
     ) {
         self.id = id
         self.owner = owner
@@ -58,11 +106,9 @@ public struct StorageDeclaration: Hashable, Sendable {
         self.storageClass = storageClass
         self.root = root
         self.safetyRoot = safetyRoot
-        self.cleanupPolicy = cleanupPolicy
+        self.retentionPolicy = retentionPolicy
         self.activeGenerationLink = activeGenerationLink
-        self.rollbackGenerationCount = rollbackGenerationCount
         self.interruptedCandidateNaming = interruptedCandidateNaming
-        self.retention = retention
     }
 }
 
@@ -91,6 +137,10 @@ public enum StorageCatalog {
             }
             let root = declaration.root.normalizedForComparison()
             let safetyRoot = declaration.safetyRoot.normalizedForComparison()
+            guard declaration.root == root, declaration.safetyRoot == safetyRoot else {
+                throw StorageCatalogFailure.invalid(
+                    "storage roots must be lexically normalized: \(declaration.id)")
+            }
             guard root.isAbsolute, safetyRoot.isAbsolute, safetyRoot != FilePath("/") else {
                 throw StorageCatalogFailure.invalid(
                     "storage roots must be absolute and the safety root cannot be /: \(declaration.id)"
@@ -100,7 +150,7 @@ public enum StorageCatalog {
                 throw StorageCatalogFailure.invalid(
                     "storage root escapes its safety root: \(declaration.id)")
             }
-            if declaration.cleanupPolicy != .protected {
+            if !declaration.retentionPolicy.isProtected {
                 guard root != safetyRoot, !forbidden.contains(root) else {
                     throw StorageCatalogFailure.invalid(
                         "removable storage cannot name a safety or forbidden root: \(declaration.id)"
@@ -108,35 +158,65 @@ public enum StorageCatalog {
                 }
             }
             if declaration.storageClass == .source || declaration.storageClass == .identity {
-                guard declaration.cleanupPolicy == .protected else {
+                guard declaration.retentionPolicy.isProtected else {
                     throw StorageCatalogFailure.invalid(
                         "source and identity storage must be protected: \(declaration.id)")
                 }
             }
-            if declaration.cleanupPolicy == .automaticRetention,
-                declaration.storageClass != .generation
-                    && declaration.storageClass != .runRecord
-            {
+            switch declaration.retentionPolicy {
+            case .keepActiveAndRollback:
+                guard declaration.storageClass == .generation,
+                    declaration.activeGenerationLink != nil
+                else {
+                    throw StorageCatalogFailure.invalid(
+                        "generation retention requires generation storage with an active link: "
+                            + declaration.id)
+                }
+            case .boundedHistory:
+                guard
+                    declaration.storageClass == .runRecord
+                        || declaration.storageClass == .diagnostic
+                else {
+                    throw StorageCatalogFailure.invalid(
+                        "bounded history requires run-record or diagnostic storage: "
+                            + declaration.id)
+                }
+            case .taskIdentityContexts:
+                guard
+                    declaration.storageClass == .incremental
+                else {
+                    throw StorageCatalogFailure.invalid(
+                        "task identity retention requires incremental storage: "
+                            + declaration.id)
+                }
+            case .singleWorkingSet:
+                guard declaration.storageClass != .runRecord,
+                    declaration.storageClass != .diagnostic,
+                    declaration.storageClass != .generation
+                else {
+                    throw StorageCatalogFailure.invalid(
+                        "single-working-set retention is incompatible with history and generation storage: "
+                            + declaration.id)
+                }
+            case .toolManagedLimit(let maximumBytes):
+                guard declaration.storageClass == .cache, maximumBytes > 0 else {
+                    throw StorageCatalogFailure.invalid(
+                        "tool-managed retention requires cache storage with a positive limit: "
+                            + declaration.id)
+                }
+            case .explicitClean:
                 throw StorageCatalogFailure.invalid(
-                    "automatic retention requires generation or run-record storage: "
-                        + declaration.id)
-            }
-            if declaration.cleanupPolicy == .explicitPrune,
-                declaration.storageClass != .generation
-            {
-                throw StorageCatalogFailure.invalid(
-                    "explicit pruning requires generation storage: " + declaration.id)
-            }
-            if declaration.cleanupPolicy == .automaticRetention,
-                declaration.storageClass == .generation,
-                declaration.activeGenerationLink == nil
-            {
-                throw StorageCatalogFailure.invalid(
-                    "automatically retained generation storage requires an active link: "
-                        + declaration.id)
+                    "host storage requires an enforceable retention policy: " + declaration.id)
+            case .protected:
+                break
             }
             if let activeGenerationLink = declaration.activeGenerationLink {
                 let active = activeGenerationLink.normalizedForComparison()
+                guard activeGenerationLink == active else {
+                    throw StorageCatalogFailure.invalid(
+                        "active generation links must be lexically normalized: \(declaration.id)"
+                    )
+                }
                 guard active.isAbsolute, active.isContained(in: safetyRoot) else {
                     throw StorageCatalogFailure.invalid(
                         "active generation link escapes its safety root: \(declaration.id)")
@@ -148,20 +228,15 @@ public enum StorageCatalog {
                 throw StorageCatalogFailure.invalid(
                     "only generation storage may declare an active link: \(declaration.id)")
             }
-            if declaration.rollbackGenerationCount != nil,
-                declaration.storageClass != .generation
-                    || declaration.activeGenerationLink == nil
-            {
-                throw StorageCatalogFailure.invalid(
-                    "rollback retention requires generation storage with an active link: "
-                        + declaration.id)
-            }
             if declaration.storageClass == .generation,
                 declaration.activeGenerationLink != nil,
-                declaration.rollbackGenerationCount == nil
+                {
+                    if case .keepActiveAndRollback = declaration.retentionPolicy { return false }
+                    return true
+                }()
             {
                 throw StorageCatalogFailure.invalid(
-                    "active generation storage requires an explicit rollback count: "
+                    "active generation storage requires generation retention: "
                         + declaration.id)
             }
             if declaration.interruptedCandidateNaming != nil,
@@ -183,15 +258,15 @@ public enum StorageCatalog {
                     left.0.storageClass == .source || left.0.storageClass == .identity
                 let rightProtectsContent =
                     right.0.storageClass == .source || right.0.storageClass == .identity
-                if (leftProtectsContent && right.0.cleanupPolicy != .protected)
-                    || (rightProtectsContent && left.0.cleanupPolicy != .protected)
+                if (leftProtectsContent && !right.0.retentionPolicy.isProtected)
+                    || (rightProtectsContent && !left.0.retentionPolicy.isProtected)
                 {
                     throw StorageCatalogFailure.invalid(
                         "removable storage overlaps source or identity storage: "
                             + "\(left.0.id), \(right.0.id)")
                 }
-                if left.0.cleanupPolicy != .protected,
-                    right.0.cleanupPolicy != .protected
+                if !left.0.retentionPolicy.isProtected,
+                    !right.0.retentionPolicy.isProtected
                 {
                     throw StorageCatalogFailure.invalid(
                         "removable storage declarations overlap: \(left.0.id), \(right.0.id)")
@@ -218,12 +293,80 @@ public enum StorageCatalog {
                         "storage producer belongs to another component: \(declaration.id), \(taskID)"
                     )
                 }
-                if declaration.cleanupPolicy != .protected, task.locks.isEmpty {
+                if !declaration.retentionPolicy.isProtected, task.locks.isEmpty {
                     throw StorageCatalogFailure.invalid(
                         "removable storage producer has no workflow lock: "
                             + "\(declaration.id), \(taskID)")
                 }
             }
+        }
+    }
+
+    public static func validateWritableEffects(
+        _ declarations: [StorageDeclaration],
+        tasks: [TaskDeclaration]
+    ) throws {
+        struct IndexedDeclaration {
+            let declaration: StorageDeclaration
+            let root: String
+        }
+
+        let indexedDeclarations = declarations.map {
+            IndexedDeclaration(
+                declaration: $0,
+                root: $0.root.string)
+        }
+        var declarationsByProducerTask: [TaskID: [IndexedDeclaration]] = [:]
+        var sharedRuntimeDeclarationsByForeignOwner: [ComponentID: [IndexedDeclaration]] = [:]
+        for indexedDeclaration in indexedDeclarations {
+            for producer in indexedDeclaration.declaration.producers {
+                guard case .task(let taskID) = producer else { continue }
+                declarationsByProducerTask[taskID, default: []].append(indexedDeclaration)
+            }
+        }
+
+        var failures: [String] = []
+        for task in tasks {
+            guard let action = task.action else { continue }
+            let sharedRuntimeDeclarations = sharedRuntimeDeclarationsByForeignOwner[
+                task.component,
+                default: indexedDeclarations.filter {
+                    $0.declaration.owner != task.component
+                        && $0.declaration.producers.contains {
+                            if case .runtime = $0 { return true }
+                            return false
+                        }
+                }
+            ]
+            sharedRuntimeDeclarationsByForeignOwner[task.component] = sharedRuntimeDeclarations
+            let candidates =
+                declarationsByProducerTask[task.id, default: []]
+                + sharedRuntimeDeclarations
+            let writableRoots = action.requirements.effects.compactMap { effect -> FilePath? in
+                if case .unrestricted = effect.scope { return nil }
+                switch effect.access {
+                case .read:
+                    return nil
+                case .write, .readWrite:
+                    return effect.scope.root
+                }
+            }
+            for writableRoot in writableRoots {
+                let writableRootString = writableRoot.string
+                let matches = candidates.filter { candidate in
+                    writableRootString == candidate.root
+                        || writableRootString.hasPrefix(candidate.root + "/")
+                }
+                guard matches.count == 1 else {
+                    failures.append("\(task.id), \(writableRoot), matched \(matches.count)")
+                    continue
+                }
+            }
+        }
+        guard failures.isEmpty else {
+            throw StorageCatalogFailure.invalid(
+                "writable action effects must map to exactly one storage declaration:\n  "
+                    + failures.sorted().joined(separator: "\n  "))
         }
     }
 

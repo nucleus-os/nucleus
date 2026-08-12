@@ -60,7 +60,7 @@ package struct InstallBrowserAction: ColliderAction {
                     scope: .input(installation.distributionRoot)),
                 ActionEffect(
                     .readWrite,
-                    scope: .publication(normalizedPrefix)),
+                    scope: .unrestricted(normalizedPrefix)),
                 ActionEffect(
                     .readWrite,
                     scope: .unrestricted(

@@ -217,8 +217,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     storageClass: .incremental,
                     root: configuration.runtimeScratch,
                     safetyRoot: configuration.runtimeScratch.removingLastComponent(),
-                    cleanupPolicy: .explicitClean,
-                    retention: "Android add-on packaging scratch remains until explicit clean"),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "android-addon-publication",
                     owner: descriptor.id,
@@ -226,8 +225,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     storageClass: .published,
                     root: configuration.output,
                     safetyRoot: configuration.output,
-                    cleanupPolicy: .protected,
-                    retention: "the requested downloadable Android add-on remains published"),
+                    retentionPolicy: .protected),
             ]
         }
         #endif
@@ -248,10 +246,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 root: context.cacheRoot.appending(
                     "android-runtime/aosp-source-inputs"),
                 safetyRoot: context.cacheRoot.appending("android-runtime"),
-                cleanupPolicy: .explicitClean,
-                retention:
-                    "the exact host-fetched Repo object cache remains reusable until explicit clean"
-            ),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-signing-identity",
                 owner: descriptor.id,
@@ -261,8 +256,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 storageClass: .identity,
                 root: root.appending(".aosp-signing"),
                 safetyRoot: root,
-                cleanupPolicy: .protected,
-                retention: "AOSP private signing identity is never a cleanup candidate"),
+                retentionPolicy: .protected),
             StorageDeclaration(
                 id: "android-aosp-tools",
                 owner: descriptor.id,
@@ -273,8 +267,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: root.appending(".aosp-tools"),
                 safetyRoot: root,
-                cleanupPolicy: .explicitClean,
-                retention: "verified Repo tooling and source-lock reports remain reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-container-tools",
                 owner: descriptor.id,
@@ -283,9 +276,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: aospContainers.cacheRoot,
                 safetyRoot: aospContainers.cacheRoot.removingLastComponent(),
-                cleanupPolicy: .explicitClean,
-                retention:
-                    "the AOSP build and artifact entrypoint images remain reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-gfxstream-container-tools",
                 owner: descriptor.id,
@@ -293,8 +284,23 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: gfxstreamContainer.cacheRoot,
                 safetyRoot: gfxstreamContainer.cacheRoot.removingLastComponent(),
-                cleanupPolicy: .explicitClean,
-                retention: "the gfxstream entrypoint image remains reusable"),
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "android-aosp-artifact-root",
+                owner: descriptor.id,
+                producers: [.task(AndroidRuntimeTaskIDs.aospImage)],
+                storageClass: .published,
+                root: aospBuildRoot,
+                safetyRoot: aospBuildRoot.removingLastComponent(),
+                retentionPolicy: .protected),
+            StorageDeclaration(
+                id: "android-aosp-source-state",
+                owner: descriptor.id,
+                producers: [.task(AndroidRuntimeTaskIDs.aospSource)],
+                storageClass: .incremental,
+                root: aospBuildRoot.appending("source-state"),
+                safetyRoot: aospBuildRoot,
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-build",
                 owner: descriptor.id,
@@ -302,11 +308,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 storageClass: .generation,
                 root: aospBuildRoot.appending("generations"),
                 safetyRoot: aospBuildRoot,
-                cleanupPolicy: .automaticRetention,
+                retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                 activeGenerationLink: aospBuildRoot.appending("current"),
-                rollbackGenerationCount: rollbackGenerationCount,
-                retention:
-                    "the active signed AOSP artifact generation remains available"),
+                interruptedCandidateNaming: nil),
         ]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -321,8 +325,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     storageClass: .published,
                     root: sdkRoot.appending("android/gfxstream"),
                     safetyRoot: sdkRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "the architecture-specific gfxstream SDK remains published"))
+                    retentionPolicy: .singleWorkingSet))
         }
         storage += platformStorage
         let component = try ComponentDefinition(
@@ -1125,7 +1128,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 role: "compiler-cache"),
             capacityBytes: 50 * 1_024 * 1_024 * 1_024,
             filesystem: .ext4,
-            journal: .writeback64MiB)
+            journal: .writeback64MiB,
+            retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
         var task = TaskBuilder(
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component)

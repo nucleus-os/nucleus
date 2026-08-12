@@ -73,6 +73,7 @@ public struct PrepareOCIEntrypointImageAction<Kind: OCIEntrypointImageActionKind
     }
 
     public var environment: [String: String] { preparation.environment }
+    public var imagePreparations: [OCIImagePreparation] { [preparation] }
 
     public func execute(in context: ActionContext) async throws {
         guard preparation.baseImageSource == .local,

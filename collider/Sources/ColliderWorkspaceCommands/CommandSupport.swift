@@ -8,52 +8,7 @@ import NativeBuilderColliderRecipe
 import SwiftTargetSDKColliderRecipe
 import SystemPackage
 
-extension DirectoryNamePattern {
-    package static let swiftBuildContext = Self(
-        rawValue: #"^sha256-[0-9a-f]{64}$"#)
-}
-
 extension WorkspaceContext {
-    func pruneSanitizerBuildContexts() throws {
-        let swiftPM = hostBuildRoot.appending("swiftpm")
-        try DirectoryLifecycle.prune(
-            DirectoryRetentionPlan(
-                safetyRoot: hostBuildRoot,
-                rules: SanitizerKind.allCases.map {
-                    DirectoryRetentionRule(
-                        root: swiftPM.appending($0.rawValue),
-                        retain: 2,
-                        naming: .swiftBuildContext)
-                }))
-    }
-
-    /// Every SwiftPM build context is keyed to the compiler that produced it, so
-    /// publishing a Swift platform generation strands all of them at once.
-    /// Reclaim them with the rebuild that superseded them rather than leaving a
-    /// multi-gigabyte build directory behind per retired toolchain.
-    func reclaimSwiftBuildContexts() throws {
-        let swiftPM = hostBuildRoot.appending("swiftpm")
-        let contents =
-            (try? FileManager.default.contentsOfDirectory(
-                at: URL(fileURLWithPath: swiftPM.string, isDirectory: true),
-                includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-        try DirectoryLifecycle.prune(
-            DirectoryRetentionPlan(
-                safetyRoot: hostBuildRoot,
-                rules:
-                    contents
-                    .filter {
-                        (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?
-                            .isDirectory == true
-                    }
-                    .map {
-                        DirectoryRetentionRule(
-                            root: FilePath($0),
-                            retain: 0,
-                            naming: .swiftBuildContext)
-                    }))
-    }
-
     func nativeSDKRoot(for target: NativeLinuxTarget) -> FilePath {
         nativeSDKRoot(named: target.identifier)
     }

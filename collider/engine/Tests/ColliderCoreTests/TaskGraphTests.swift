@@ -52,8 +52,7 @@ import Testing
             storageClass: .incremental,
             root: state,
             safetyRoot: workspace,
-            cleanupPolicy: .protected,
-            retention: "checkout state"),
+            retentionPolicy: .protected),
         StorageDeclaration(
             id: "runs",
             owner: ComponentID(rawValue: "runtime"),
@@ -61,8 +60,7 @@ import Testing
             storageClass: .runRecord,
             root: state.appending("runs"),
             safetyRoot: state,
-            cleanupPolicy: .automaticRetention,
-            retention: "bounded history"),
+            retentionPolicy: .boundedHistory(maximumEntries: 20)),
     ]
 
     try StorageCatalog.validate(
@@ -82,8 +80,7 @@ import Testing
                     storageClass: .cache,
                     root: cache,
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitPrune,
-                    retention: "unsafe fixture")
+                    retentionPolicy: .singleWorkingSet)
             ],
             forbiddenRemovalRoots: [cache])
     }
@@ -97,8 +94,7 @@ import Testing
                     storageClass: .cache,
                     root: cache.appending("generated"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitClean,
-                    retention: "fixture"),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "child",
                     owner: ComponentID(rawValue: "second"),
@@ -106,8 +102,7 @@ import Testing
                     storageClass: .generation,
                     root: cache.appending("generated/candidates"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitPrune,
-                    retention: "fixture"),
+                    retentionPolicy: .keepActiveAndRollback(count: 0)),
             ],
             forbiddenRemovalRoots: [cache])
     }
@@ -124,8 +119,7 @@ import Testing
             storageClass: storageClass,
             root: workspace.appending(storageClass.rawValue),
             safetyRoot: workspace,
-            cleanupPolicy: .protected,
-            retention: "fixture")
+            retentionPolicy: .protected)
         try StorageCatalog.validate([protected], forbiddenRemovalRoots: [])
 
         let unprotected = StorageDeclaration(
@@ -135,8 +129,7 @@ import Testing
             storageClass: storageClass,
             root: workspace.appending("unprotected-\(storageClass.rawValue)"),
             safetyRoot: workspace,
-            cleanupPolicy: .explicitClean,
-            retention: "fixture")
+            retentionPolicy: .singleWorkingSet)
         #expect(throws: StorageCatalogFailure.self) {
             try StorageCatalog.validate([unprotected], forbiddenRemovalRoots: [])
         }
@@ -148,8 +141,7 @@ import Testing
             storageClass: .cache,
             root: workspace,
             safetyRoot: scope,
-            cleanupPolicy: .explicitClean,
-            retention: "fixture")
+            retentionPolicy: .singleWorkingSet)
         #expect(throws: StorageCatalogFailure.self) {
             try StorageCatalog.validate(
                 [protected, removable], forbiddenRemovalRoots: [])
@@ -165,16 +157,15 @@ import Testing
         storageClass: .generation,
         root: FilePath("/cache/generations"),
         safetyRoot: FilePath("/cache"),
-        cleanupPolicy: .explicitPrune,
+        retentionPolicy: .keepActiveAndRollback(count: 0),
         activeGenerationLink: FilePath("/outside/current"),
-        rollbackGenerationCount: 0,
-        retention: "fixture")
+        interruptedCandidateNaming: nil)
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate([declaration], forbiddenRemovalRoots: [])
     }
 }
 
-@Test func automaticRetentionOnlyAppliesToVersionedOrRunRecordStorage() {
+@Test func generationRetentionOnlyAppliesToVersionedStorage() {
     let declaration = StorageDeclaration(
         id: "incremental",
         owner: ComponentID(rawValue: "core"),
@@ -182,8 +173,7 @@ import Testing
         storageClass: .incremental,
         root: FilePath("/cache/incremental"),
         safetyRoot: FilePath("/cache"),
-        cleanupPolicy: .automaticRetention,
-        retention: "fixture")
+        retentionPolicy: .keepActiveAndRollback(count: 0))
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate([declaration], forbiddenRemovalRoots: [])
     }
@@ -195,8 +185,7 @@ import Testing
         storageClass: .generation,
         root: FilePath("/cache/generations"),
         safetyRoot: FilePath("/cache"),
-        cleanupPolicy: .automaticRetention,
-        retention: "fixture")
+        retentionPolicy: .keepActiveAndRollback(count: 0))
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate(
             [unversionedGeneration], forbiddenRemovalRoots: [])
@@ -212,9 +201,9 @@ import Testing
         storageClass: .generation,
         root: cache.appending("generations"),
         safetyRoot: cache,
-        cleanupPolicy: .explicitPrune,
+        retentionPolicy: .protected,
         activeGenerationLink: cache.appending("current"),
-        retention: "fixture")
+        interruptedCandidateNaming: nil)
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate([declaration], forbiddenRemovalRoots: [])
     }
@@ -226,10 +215,9 @@ import Testing
         storageClass: .generation,
         root: cache.appending("generations"),
         safetyRoot: cache,
-        cleanupPolicy: .explicitPrune,
+        retentionPolicy: .keepActiveAndRollback(count: 1),
         activeGenerationLink: cache.appending("current"),
-        rollbackGenerationCount: 1,
-        retention: "fixture")
+        interruptedCandidateNaming: nil)
     #expect(throws: Never.self) {
         try StorageCatalog.validate([valid], forbiddenRemovalRoots: [])
     }
@@ -243,8 +231,7 @@ import Testing
         storageClass: .incremental,
         root: FilePath("/cache/core"),
         safetyRoot: FilePath("/cache"),
-        cleanupPolicy: .protected,
-        retention: "fixture")
+        retentionPolicy: .protected)
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validateProducers([declaration], tasks: [])
     }
@@ -257,6 +244,63 @@ import Testing
                     component: ComponentID(rawValue: "other"))
             ])
     }
+}
+
+@Test func writableEffectsRequireExactlyOneOwnedStorageDeclaration() throws {
+    let owner = ComponentID(rawValue: "core")
+    let taskID = TaskID(rawValue: "core.write")
+    let output = FilePath("/cache/core/output/result")
+    let task = TaskDeclaration(
+        id: taskID,
+        component: owner,
+        action: try fixtureWriteAction(output, bytes: [1]))
+    let declaration = StorageDeclaration(
+        id: "core-output",
+        owner: owner,
+        producers: [.task(taskID)],
+        storageClass: .incremental,
+        root: FilePath("/cache/core/output"),
+        safetyRoot: FilePath("/cache/core"),
+        retentionPolicy: .protected)
+
+    try StorageCatalog.validateWritableEffects([declaration], tasks: [task])
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validateWritableEffects([], tasks: [task])
+    }
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validateWritableEffects(
+            [
+                declaration,
+                StorageDeclaration(
+                    id: "duplicate-output",
+                    owner: owner,
+                    producers: [.task(taskID)],
+                    storageClass: .incremental,
+                    root: FilePath("/cache/core/output/result"),
+                    safetyRoot: FilePath("/cache/core"),
+                    retentionPolicy: .protected),
+            ],
+            tasks: [task])
+    }
+}
+
+@Test func runtimeOwnedStorageMayReceiveWritesFromAnotherComponent() throws {
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "core.export"),
+        component: ComponentID(rawValue: "core"),
+        action: try fixtureWriteAction(
+            FilePath("/artifacts/core/result"),
+            bytes: [1]))
+    let declaration = StorageDeclaration(
+        id: "artifact-store",
+        owner: ComponentID(rawValue: "runtime"),
+        producers: [.runtime("bounded-export")],
+        storageClass: .published,
+        root: FilePath("/artifacts"),
+        safetyRoot: FilePath("/"),
+        retentionPolicy: .protected)
+
+    try StorageCatalog.validateWritableEffects([declaration], tasks: [task])
 }
 
 @Test func removableStorageDerivesEveryWorkflowLockFromItsProducerTasks() throws {
@@ -277,8 +321,7 @@ import Testing
         storageClass: .incremental,
         root: FilePath("/cache/core/build"),
         safetyRoot: FilePath("/cache/core"),
-        cleanupPolicy: .explicitClean,
-        retention: "fixture")
+        retentionPolicy: .singleWorkingSet)
 
     try StorageCatalog.validateProducers([declaration], tasks: [first, second])
     #expect(

@@ -1,13 +1,8 @@
-import Foundation
 import SystemPackage
 
 extension FilePath {
     public func normalizedForComparison() -> FilePath {
-        let path = lexicallyNormalized()
-        guard path.isAbsolute else { return path }
-        return FilePath(
-            URL(fileURLWithPath: path.string).standardizedFileURL.path
-        ).lexicallyNormalized()
+        lexicallyNormalized()
     }
 
     /// Returns whether this path is equal to or lexically contained by `root`.

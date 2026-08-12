@@ -300,7 +300,8 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         try await runtime.ociRuntimeNetwork(named: "fixture-network").name
             == "fixture-network")
     #expect(try await runtime.ociRuntimeDiskUsage().reclaimableBytes == 6)
-    try await runtime.pruneOCIImages()
+    #expect(try await runtime.ociImages().isEmpty)
+    #expect(try await runtime.deleteOCIImages(references: ["fixture"]) == 0)
     #expect(await backend.pruned)
 }
 
@@ -835,7 +836,13 @@ private actor RecordingOCIBackend: OCIRuntimeBackend {
             volumes: usage(3))
     }
 
-    func pruneImages() async throws {
+    func images() async throws -> [OCIImageState] {
+        []
+    }
+
+    func deleteImages(references: [String]) async throws -> UInt64 {
+        #expect(references == ["fixture"])
         pruned = true
+        return 0
     }
 }

@@ -40,8 +40,7 @@ private func component(
                     storageClass: .cache,
                     root: FilePath("/cache/core"),
                     safetyRoot: FilePath("/cache"),
-                    cleanupPolicy: .protected,
-                    retention: "fixture")
+                    retentionPolicy: .protected)
             ])
     }
 }

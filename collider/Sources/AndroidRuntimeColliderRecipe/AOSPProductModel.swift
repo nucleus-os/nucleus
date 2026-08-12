@@ -13,7 +13,7 @@ func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        cleanupPolicy: .protected)
+        retentionPolicy: .protected)
 }
 
 func aospCompilerCacheWorkspace(
@@ -26,7 +26,8 @@ func aospCompilerCacheWorkspace(
             role: "compiler-cache"),
         capacityBytes: 50 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
 }
 
 func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
@@ -38,7 +39,7 @@ func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        cleanupPolicy: .protected)
+        retentionPolicy: .protected)
 }
 
 struct AOSPProductSourceOverlay: Hashable, Sendable {

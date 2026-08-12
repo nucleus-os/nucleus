@@ -35,23 +35,15 @@ struct Cache: AsyncParsableCommand {
         @Flag(help: "Print removals without applying them.")
         var dryRun = false
         @OptionGroup var outputOptions: CommandOutputOptions
-        @Option(name: .customLong("keep-runs"), help: "Number of recent completed runs to retain.")
-        var keepRuns = 20
 
         var requiresExecutionAdmission: Bool { !dryRun }
-
-        mutating func validate() throws {
-            guard keepRuns >= 0 else { throw ValidationError("--keep-runs must be nonnegative") }
-        }
 
         mutating func run(in context: WorkspaceContext) async throws {
             let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog
-            ).prune(
-                keepingRuns: keepRuns,
-                dryRun: dryRun)
+            ).prune(dryRun: dryRun)
         }
     }
 }

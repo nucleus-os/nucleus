@@ -2,7 +2,6 @@ import ColliderCore
 import ColliderEngine
 import ColliderPersistence
 import Foundation
-import FoundationXML
 import Synchronization
 import SystemPackage
 import Testing
@@ -280,7 +279,7 @@ import Testing
         capacityBytes: 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        cleanupPolicy: .protected)
+        retentionPolicy: .protected)
     let action = MaterializeAOSPSourceAction(
         materialization: AOSPSourceMaterialization(
             specification: fixture.specification,

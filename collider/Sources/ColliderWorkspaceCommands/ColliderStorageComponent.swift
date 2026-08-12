@@ -24,8 +24,7 @@ enum ColliderStorageComponent {
                     storageClass: .incremental,
                     root: state,
                     safetyRoot: context.hostBuildRoot,
-                    cleanupPolicy: .protected,
-                    retention: "task state and workflow locks remain with host build state"),
+                    retentionPolicy: .protected),
                 StorageDeclaration(
                     id: "host-swiftpm-builds",
                     owner: owner,
@@ -33,8 +32,7 @@ enum ColliderStorageComponent {
                     storageClass: .incremental,
                     root: context.hostBuildRoot.appending("swiftpm"),
                     safetyRoot: context.hostBuildRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "host SwiftPM build contexts remain reusable until explicit clean"),
+                    retentionPolicy: .taskIdentityContexts),
                 StorageDeclaration(
                     id: "swift-package-graphs",
                     owner: owner,
@@ -42,8 +40,7 @@ enum ColliderStorageComponent {
                     storageClass: .cache,
                     root: context.hostBuildRoot.appending("swift-package-graphs"),
                     safetyRoot: context.hostBuildRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "resolved package graphs remain reusable until explicit clean"),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "language-server-configuration",
                     owner: owner,
@@ -51,8 +48,7 @@ enum ColliderStorageComponent {
                     storageClass: .published,
                     root: root.appending(".sourcekit-lsp"),
                     safetyRoot: root,
-                    cleanupPolicy: .protected,
-                    retention: "the generated editor build configuration remains published"),
+                    retentionPolicy: .protected),
                 StorageDeclaration(
                     id: "run-records",
                     owner: owner,
@@ -60,10 +56,31 @@ enum ColliderStorageComponent {
                     storageClass: .runRecord,
                     root: context.logRoot.appending("runs"),
                     safetyRoot: context.logRoot,
-                    cleanupPolicy: .automaticRetention,
-                    retention:
-                        "running records, the 20 newest terminal records, and the newest failed record are retained"
-                ),
+                    retentionPolicy: .boundedHistory(maximumEntries: 20)),
+                StorageDeclaration(
+                    id: "run-registry-locks",
+                    owner: owner,
+                    producers: [.runtime("run-registry")],
+                    storageClass: .identity,
+                    root: context.logRoot.appending("locks"),
+                    safetyRoot: context.logRoot,
+                    retentionPolicy: .protected),
+                StorageDeclaration(
+                    id: "run-registry-index",
+                    owner: owner,
+                    producers: [.runtime("run-registry")],
+                    storageClass: .identity,
+                    root: context.logRoot.appending("latest"),
+                    safetyRoot: context.logRoot,
+                    retentionPolicy: .protected),
+                StorageDeclaration(
+                    id: "apple-container-service-logs",
+                    owner: owner,
+                    producers: [.runtime("apple-container-service")],
+                    storageClass: .diagnostic,
+                    root: context.logRoot.appending("service"),
+                    safetyRoot: context.logRoot,
+                    retentionPolicy: .boundedHistory(maximumEntries: 2)),
                 StorageDeclaration(
                     id: "downloads",
                     owner: owner,
@@ -71,10 +88,7 @@ enum ColliderStorageComponent {
                     storageClass: .download,
                     root: cache.appending("downloads"),
                     safetyRoot: cache,
-                    cleanupPolicy: .protected,
-                    retention:
-                        "content-addressed downloads remain while referenced by the resolved graph"
-                ),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "host-compiler-cache",
                     owner: owner,
@@ -82,8 +96,8 @@ enum ColliderStorageComponent {
                     storageClass: .cache,
                     root: cache.appending("host-ccache"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitClean,
-                    retention: "host compiler results remain reusable until explicit clean"),
+                    retentionPolicy: .toolManagedLimit(
+                        maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 StorageDeclaration(
                     id: "swift-package-cache",
                     owner: owner,
@@ -91,8 +105,7 @@ enum ColliderStorageComponent {
                     storageClass: .cache,
                     root: cache.appending("swiftpm-user"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitClean,
-                    retention: "locked Swift package sources remain reusable until explicit clean"),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "swiftpm-host-boundaries",
                     owner: owner,
@@ -100,10 +113,7 @@ enum ColliderStorageComponent {
                     storageClass: .cache,
                     root: cache.appending("swiftpm"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitClean,
-                    retention:
-                        "host-resolved dependency inputs and bounded Linux product exports remain reusable until explicit clean"
-                ),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "swiftpm-tool-host-boundaries",
                     owner: owner,
@@ -111,10 +121,7 @@ enum ColliderStorageComponent {
                     storageClass: .cache,
                     root: cache.appending("swiftpm-tools"),
                     safetyRoot: cache,
-                    cleanupPolicy: .explicitClean,
-                    retention:
-                        "host-resolved tool dependency inputs and bounded Linux tool exports remain reusable until explicit clean"
-                ),
+                    retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
                     id: "android-sdk",
                     owner: owner,
@@ -125,9 +132,9 @@ enum ColliderStorageComponent {
                             ?? context.cacheRoot.appending("android-sdks").string),
                     safetyRoot: FilePath(
                         context.environment["ANDROID_SDK_ROOT"]
-                            ?? context.cacheRoot.appending("android-sdks").string),
-                    cleanupPolicy: .protected,
-                    retention: "the pinned Android SDK remains provisioned"),
+                            ?? context.cacheRoot.appending("android-sdks").string
+                    ).removingLastComponent(),
+                    retentionPolicy: .singleWorkingSet),
             ])
     }
 }

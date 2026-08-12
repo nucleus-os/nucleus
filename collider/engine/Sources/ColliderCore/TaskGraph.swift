@@ -60,6 +60,7 @@ public struct DirectoryNamePattern: RawRepresentable, Hashable, Sendable {
     public static let contentIdentity = Self(rawValue: #"^[0-9a-f]{24}$"#)
     public static let contentIdentityCandidate = Self(
         rawValue: #"^\.[0-9a-f]{24}\.(prepared|preparing)$"#)
+    public static let artifactDigestDirectory = Self(rawValue: #"^sha256-[0-9a-f]{64}$"#)
 }
 
 public struct DirectoryRetentionRule: Hashable, Sendable {
@@ -108,6 +109,7 @@ public struct OCIImagePreparation: Hashable, Sendable {
     public let imageName: String
     public let baseImageSource: OCIBaseImageSource
     public let localBaseImageID: FilePath?
+    public let rollbackGenerationCount: UInt32
     public let environment: [String: String]
 
     public init(
@@ -118,6 +120,7 @@ public struct OCIImagePreparation: Hashable, Sendable {
         imageName: String,
         baseImageSource: OCIBaseImageSource = .registry,
         localBaseImageID: FilePath? = nil,
+        rollbackGenerationCount: UInt32 = 1,
         environment: [String: String]
     ) {
         self.executionPlatform = executionPlatform
@@ -127,6 +130,7 @@ public struct OCIImagePreparation: Hashable, Sendable {
         self.imageName = imageName
         self.baseImageSource = baseImageSource
         self.localBaseImageID = localBaseImageID
+        self.rollbackGenerationCount = rollbackGenerationCount
         self.environment = environment
     }
 }
@@ -210,30 +214,25 @@ public struct PersistentWorkspaceJournal: Codable, Hashable, Sendable {
         sizeBytes: 64 * 1_024 * 1_024)
 }
 
-public enum PersistentWorkspaceCleanupPolicy: String, Codable, Hashable, Sendable {
-    case protected
-    case explicitClean
-}
-
 public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     public let identity: PersistentWorkspaceIdentity
     public let capacityBytes: UInt64
     public let filesystem: PersistentWorkspaceFilesystem
     public let journal: PersistentWorkspaceJournal
-    public let cleanupPolicy: PersistentWorkspaceCleanupPolicy
+    public let retentionPolicy: StorageRetentionPolicy
 
     public init(
         identity: PersistentWorkspaceIdentity,
         capacityBytes: UInt64,
         filesystem: PersistentWorkspaceFilesystem,
         journal: PersistentWorkspaceJournal,
-        cleanupPolicy: PersistentWorkspaceCleanupPolicy = .explicitClean
+        retentionPolicy: StorageRetentionPolicy = .explicitClean
     ) {
         self.identity = identity
         self.capacityBytes = capacityBytes
         self.filesystem = filesystem
         self.journal = journal
-        self.cleanupPolicy = cleanupPolicy
+        self.retentionPolicy = retentionPolicy
     }
 }
 

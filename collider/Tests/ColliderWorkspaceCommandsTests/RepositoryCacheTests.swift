@@ -1,11 +1,25 @@
 import ArgumentParser
 import ColliderCore
+import ColliderEngine
 import ColliderRuntime
 import Foundation
 import SystemPackage
 import Testing
 
 @testable import ColliderWorkspaceCommands
+
+private final class StorageConsoleCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = ""
+
+    var text: String {
+        lock.withLock { storage }
+    }
+
+    func write(_ value: Data) {
+        lock.withLock { storage += String(decoding: value, as: UTF8.self) }
+    }
+}
 
 private struct WorkspaceFixtureIdentity: ColliderActionIdentity {
     let value: String
@@ -37,12 +51,52 @@ private struct WorkspaceFixtureAction: ColliderAction {
     func execute(in _: ActionContext) async throws {}
 }
 
+private struct ReconstructFixtureIdentity: ColliderActionIdentity {
+    let input: FilePath
+    let output: FilePath
+
+    func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(tag: 1, string: input.string)
+        encoder.append(tag: 2, string: output.string)
+    }
+}
+
+private struct ReconstructFixtureAction: ColliderAction {
+    static let kind: ActionKind = "fixture.reconstruct"
+
+    let input: FilePath
+    let output: FilePath
+    var identity: ReconstructFixtureIdentity {
+        ReconstructFixtureIdentity(input: input, output: output)
+    }
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(.read, scope: .input(input)),
+                ActionEffect(.write, scope: .output(output.removingLastComponent())),
+            ],
+            executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let bytes = try context.files.read(input)
+        try context.files.createDirectory(output.removingLastComponent())
+        try context.files.write(bytes, to: output)
+    }
+}
+
 private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     private var workspaces: [OCIPersistentWorkspaceState]
+    private var imageStates: [OCIImageState]
     private var deletedNames: [String] = []
+    private var deletedImageReferences: [String] = []
 
-    init(workspaces: [OCIPersistentWorkspaceState]) {
+    init(
+        workspaces: [OCIPersistentWorkspaceState],
+        images: [OCIImageState] = []
+    ) {
         self.workspaces = workspaces
+        imageStates = images
     }
 
     func prepareImage(_: OCIImagePreparation) async throws -> String {
@@ -61,6 +115,30 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
         workspaces
     }
 
+    func diskUsage(
+        configuration _: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage {
+        let empty = OCIRuntimeResourceUsage(
+            active: 0,
+            reclaimable: 0,
+            sizeInBytes: 0,
+            total: 0)
+        return OCIRuntimeDiskUsage(
+            containers: empty,
+            images: empty,
+            volumes: empty)
+    }
+
+    func images() async throws -> [OCIImageState] {
+        imageStates
+    }
+
+    func deleteImages(references: [String]) async throws -> UInt64 {
+        deletedImageReferences.append(contentsOf: references)
+        imageStates.removeAll { references.contains($0.reference) }
+        return 4_096
+    }
+
     func deletePersistentWorkspace(
         named name: String,
         configuration _: OCIRuntimeConfiguration
@@ -70,11 +148,27 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     }
 
     func deletions() -> [String] { deletedNames }
+    func imageDeletions() -> [String] { deletedImageReferences }
+}
+
+private struct ImageFixtureAction: ColliderAction {
+    static let kind: ActionKind = "fixture.image"
+
+    let preparation: OCIImagePreparation
+    var identity: WorkspaceFixtureIdentity {
+        WorkspaceFixtureIdentity(value: preparation.imageName)
+    }
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: preparation)
+    }
+    var imagePreparations: [OCIImagePreparation] { [preparation] }
+
+    func execute(in _: ActionContext) async throws {}
 }
 
 private func fixtureWorkspace(
     key: String = "fixture-build",
-    cleanupPolicy: PersistentWorkspaceCleanupPolicy = .explicitClean
+    retentionPolicy: StorageRetentionPolicy = .explicitClean
 ) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
@@ -84,7 +178,7 @@ private func fixtureWorkspace(
         capacityBytes: 128 * 1_024 * 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        cleanupPolicy: cleanupPolicy)
+        retentionPolicy: retentionPolicy)
 }
 
 private func workspaceRuntime(
@@ -100,17 +194,50 @@ private func workspaceRuntime(
 private func repositoryContext(
     root: URL,
     runtime: ColliderRuntime,
-    cacheRoot: URL? = nil
+    cacheRoot: URL? = nil,
+    console: CommandConsole = .processDefault
 ) -> WorkspaceContext {
     let cache = cacheRoot ?? root.appendingPathComponent("cache", isDirectory: true)
     return WorkspaceContext(
         root: FilePath(root.path),
         environment: ["HOME": root.path],
         runtime: runtime,
+        console: console,
         cacheRoot: FilePath(cache.path),
         hostBuildRoot: FilePath(root.appendingPathComponent("host-build").path),
         artifactRoot: FilePath(root.appendingPathComponent("host-artifacts").path),
         logRoot: FilePath(root.appendingPathComponent("host-logs").path))
+}
+
+private actor SlowObservationBackend: OCIRuntimeBackend {
+    func prepareImage(_: OCIImagePreparation) async throws -> String {
+        throw WorkspaceFailure.message("unused fixture operation")
+    }
+
+    func execute(
+        _: OCIRuntimeExecutionRequest
+    ) async throws -> OCIRuntimeExecutionOutcome {
+        throw WorkspaceFailure.message("unused fixture operation")
+    }
+
+    func diskUsage(
+        configuration _: OCIRuntimeConfiguration
+    ) async throws -> OCIRuntimeDiskUsage {
+        try await Task.sleep(for: .seconds(60))
+        throw CancellationError()
+    }
+
+    func images() async throws -> [OCIImageState] {
+        try await Task.sleep(for: .seconds(60))
+        return []
+    }
+
+    func persistentWorkspaces(
+        configuration _: OCIRuntimeConfiguration
+    ) async throws -> [OCIPersistentWorkspaceState] {
+        try await Task.sleep(for: .seconds(60))
+        return []
+    }
 }
 
 @Test func cacheStatusMakesRecursiveAllocationMeasurementExplicit() throws {
@@ -119,6 +246,225 @@ private func repositoryContext(
 
     let measuredStatus = try Cache.Status.parse(["--measure-allocations"])
     #expect(measuredStatus.measureAllocations)
+}
+
+@Test func cacheStatusBoundsUnavailableRuntimeAndReportsUnknownOwnedPaths() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-status-bounds-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = root.appendingPathComponent("cache", isDirectory: true)
+    let unknown = cache.appendingPathComponent("undeclared", isDirectory: true)
+    try FileManager.default.createDirectory(at: unknown, withIntermediateDirectories: true)
+    let output = StorageConsoleCapture()
+    let console = CommandConsole(
+        format: .text,
+        progress: .never,
+        standardOutputIsTerminal: false,
+        standardErrorIsTerminal: false,
+        standardOutput: output.write,
+        standardError: output.write)
+    let runtime = ColliderRuntime(
+        downloadCacheRoot: FilePath(cache.appendingPathComponent("downloads").path),
+        ociConfiguration: .engineDefault,
+        ociBackend: SlowObservationBackend())
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: runtime,
+            cacheRoot: cache,
+            console: console),
+        catalog: ComponentCatalog(components: [], publicEntrypoints: []),
+        observationTimeout: .milliseconds(10))
+
+    try await repository.status()
+    #expect(output.text.contains("apple-container: unavailable"))
+    #expect(output.text.contains("apple-container-images: unavailable"))
+    #expect(output.text.contains("persistent-workspaces: unavailable"))
+    #expect(output.text.contains("/cache/undeclared"))
+
+    try await RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: ColliderRuntime(),
+            cacheRoot: cache),
+        catalog: ComponentCatalog(components: [], publicEntrypoints: [])
+    ).prune(dryRun: false)
+    #expect(FileManager.default.fileExists(atPath: unknown.path))
+}
+
+@Test func repositoryPruneEnforcesBoundedDiagnosticHistory() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-diagnostic-retention-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let context = repositoryContext(root: root, runtime: ColliderRuntime())
+    let history = URL(
+        fileURLWithPath: context.logRoot.appending("diagnostics").string,
+        isDirectory: true)
+    try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
+    let oldest = history.appendingPathComponent("oldest.log")
+    let middle = history.appendingPathComponent("middle.log")
+    let newest = history.appendingPathComponent("newest.log")
+    for entry in [oldest, middle, newest] {
+        try Data(entry.lastPathComponent.utf8).write(to: entry)
+    }
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 1)],
+        ofItemAtPath: oldest.path)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 2)],
+        ofItemAtPath: middle.path)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: 3)],
+        ofItemAtPath: newest.path)
+
+    let owner = ComponentID(rawValue: "fixture")
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: owner,
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [],
+                entrypoints: [],
+                storage: [
+                    StorageDeclaration(
+                        id: "fixture-diagnostics",
+                        owner: owner,
+                        producers: [.runtime("fixture")],
+                        storageClass: .diagnostic,
+                        root: FilePath(history.path),
+                        safetyRoot: context.logRoot,
+                        retentionPolicy: .boundedHistory(maximumEntries: 2))
+                ])
+        ],
+        publicEntrypoints: [])
+
+    try await RepositoryCache(context: context, catalog: catalog).prune(dryRun: false)
+
+    #expect(!FileManager.default.fileExists(atPath: oldest.path))
+    #expect(FileManager.default.fileExists(atPath: middle.path))
+    #expect(FileManager.default.fileExists(atPath: newest.path))
+}
+
+@Test func repositoryImageRetentionUsesDeclaredReachabilityAndRollback() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-image-retention-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let context = root.appendingPathComponent("context", isDirectory: true)
+    try FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
+    let activeDigest = "sha256:" + String(repeating: "a", count: 64)
+    let imageID = root.appendingPathComponent("image-id")
+    try Data("localhost/fixture\n\(activeDigest)\n".utf8).write(to: imageID)
+    let preparation = OCIImagePreparation(
+        executionPlatform: .linuxARM64OCI,
+        context: FilePath(context.path),
+        containerFile: FilePath(context.appendingPathComponent("Containerfile").path),
+        imageID: FilePath(imageID.path),
+        imageName: "localhost/fixture",
+        rollbackGenerationCount: 1,
+        environment: [:])
+    let componentID = ComponentID(rawValue: "fixture")
+    let component = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: componentID,
+            canonicalName: componentID.rawValue,
+            directoryName: componentID.rawValue),
+        tasks: [
+            TaskDeclaration(
+                id: TaskID(rawValue: "fixture.image"),
+                component: componentID,
+                action: try AnyColliderAction(
+                    ImageFixtureAction(preparation: preparation)))
+        ],
+        entrypoints: [])
+    let date = Date(timeIntervalSince1970: 1_000)
+    func image(
+        _ reference: String,
+        repository: String = "localhost/fixture",
+        tag: String?,
+        digestCharacter: Character,
+        age: TimeInterval,
+        active: Bool = false
+    ) -> OCIImageState {
+        OCIImageState(
+            reference: reference,
+            repository: repository,
+            tag: tag,
+            digest: "sha256:" + String(repeating: digestCharacter, count: 64),
+            creationDate: date.addingTimeInterval(age),
+            active: active)
+    }
+    let obsolete = "localhost/fixture:digest-" + String(repeating: "c", count: 64)
+    let dangling = "localhost/fixture@sha256:" + String(repeating: "d", count: 64)
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [],
+        images: [
+            image(
+                "localhost/fixture:latest",
+                tag: "latest",
+                digestCharacter: "a",
+                age: 5),
+            image(
+                "localhost/fixture:digest-" + String(repeating: "a", count: 64),
+                tag: "digest-" + String(repeating: "a", count: 64),
+                digestCharacter: "a",
+                age: 4),
+            image(
+                "localhost/fixture:digest-" + String(repeating: "b", count: 64),
+                tag: "digest-" + String(repeating: "b", count: 64),
+                digestCharacter: "b",
+                age: 3),
+            image(
+                obsolete,
+                tag: "digest-" + String(repeating: "c", count: 64),
+                digestCharacter: "c",
+                age: 2),
+            image(
+                dangling,
+                tag: nil,
+                digestCharacter: "d",
+                age: 1),
+            image(
+                "localhost/fixture:digest-" + String(repeating: "e", count: 64),
+                tag: "digest-" + String(repeating: "e", count: 64),
+                digestCharacter: "e",
+                age: 0,
+                active: true),
+            image(
+                "localhost/fixture:manual",
+                tag: "manual",
+                digestCharacter: "f",
+                age: 0),
+            image(
+                "localhost/foreign@sha256:" + String(repeating: "1", count: 64),
+                repository: "localhost/foreign",
+                tag: nil,
+                digestCharacter: "1",
+                age: 0),
+        ])
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: ComponentCatalog(
+            components: [component],
+            publicEntrypoints: []))
+
+    let retention = repository.containerImageRetention(images: try await backend.images())
+    #expect(
+        Set(retention.filter { $0.state == "reclaimable" }.map(\.reference)) == [
+            obsolete, dangling,
+        ])
+    #expect(
+        retention.first { $0.reference.contains("localhost/foreign") }?.state
+            == "unknown")
+
+    try await repository.prune(dryRun: true)
+    #expect(await backend.imageDeletions().isEmpty)
+    try await repository.prune(dryRun: false)
+    #expect(Set(await backend.imageDeletions()) == [obsolete, dangling])
 }
 
 @Test func repositoryCleanRemovesOnlyTheSelectedComponentsDeclaredWorkspaces() async throws {
@@ -226,7 +572,7 @@ private func repositoryContext(
         context: repositoryContext(root: root, runtime: runtime),
         catalog: ComponentCatalog(components: [], publicEntrypoints: []))
 
-    try await repository.prune(keepingRuns: 0, dryRun: false)
+    try await repository.prune(dryRun: false)
     #expect(await backend.deletions() == ["orphaned-volume"])
 }
 
@@ -237,7 +583,7 @@ private func repositoryContext(
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let workspace = fixtureWorkspace(
         key: "fixture-source",
-        cleanupPolicy: .protected)
+        retentionPolicy: .protected)
     let backend = RecordingPersistentWorkspaceBackend(
         workspaces: [
             OCIPersistentWorkspaceState(
@@ -362,13 +708,11 @@ private func repositoryContext(
             storageClass: .generation,
             root: FilePath(generations.path),
             safetyRoot: FilePath(generations.deletingLastPathComponent().path),
-            cleanupPolicy: .explicitPrune,
+            retentionPolicy: .keepActiveAndRollback(count: 0),
             activeGenerationLink: FilePath(
                 cache.appendingPathComponent("swift-target-sdks/current").path),
-            rollbackGenerationCount: 0,
             interruptedCandidateNaming: DirectoryNamePattern(
-                rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#),
-            retention: "fixture")
+                rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#))
     ]
     let catalog = ComponentCatalog(
         components: [
@@ -385,9 +729,7 @@ private func repositoryContext(
     try await RepositoryCache(
         context: context,
         catalog: catalog
-    ).prune(
-        keepingRuns: 0,
-        dryRun: false)
+    ).prune(dryRun: false)
 
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
     #expect(FileManager.default.fileExists(atPath: active.path))
@@ -419,8 +761,7 @@ private func repositoryContext(
             storageClass: .incremental,
             root: FilePath(cleanable.path),
             safetyRoot: FilePath(workspace.path),
-            cleanupPolicy: .explicitClean,
-            retention: "fixture"),
+            retentionPolicy: .singleWorkingSet),
         StorageDeclaration(
             id: "fixture-source",
             owner: owner,
@@ -428,8 +769,7 @@ private func repositoryContext(
             storageClass: .source,
             root: FilePath(protected.path),
             safetyRoot: FilePath(workspace.path),
-            cleanupPolicy: .protected,
-            retention: "fixture"),
+            retentionPolicy: .protected),
     ]
     let fixture = try ComponentDefinition(
         descriptor: ComponentDescriptor(
@@ -460,8 +800,7 @@ private func repositoryContext(
                 storageClass: .incremental,
                 root: FilePath(unrelated.path),
                 safetyRoot: FilePath(workspace.path),
-                cleanupPolicy: .explicitClean,
-                retention: "fixture")
+                retentionPolicy: .singleWorkingSet)
         ])
     let context = WorkspaceContext(
         root: FilePath(workspace.path),
@@ -484,6 +823,138 @@ private func repositoryContext(
     #expect(!FileManager.default.fileExists(atPath: cleanable.path))
     #expect(FileManager.default.fileExists(atPath: protected.path))
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
+}
+
+@Test func cleanedWorkingSetReconstructsFromDeclaredInput() async throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-cold-reconstruction-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+
+    let input = FilePath(workspace.appendingPathComponent("source/input.txt").path)
+    let outputRoot = FilePath(workspace.appendingPathComponent("build").path)
+    let output = outputRoot.appending("output.txt")
+    try FileManager.default.createDirectory(
+        atPath: input.removingLastComponent().string,
+        withIntermediateDirectories: true)
+    try Data("authoritative input\n".utf8).write(to: URL(fileURLWithPath: input.string))
+
+    let owner = ComponentID(rawValue: "fixture")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.reconstruct"),
+        component: owner,
+        inputs: [.file(input)],
+        outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+        locks: [.shared(FilePath(workspace.appendingPathComponent("fixture.lock").path))],
+        action: try AnyColliderAction(
+            ReconstructFixtureAction(input: input, output: output)))
+    let declaration = StorageDeclaration(
+        id: "fixture-working-set",
+        owner: owner,
+        producers: [.task(task.id)],
+        storageClass: .incremental,
+        root: outputRoot,
+        safetyRoot: FilePath(workspace.path),
+        retentionPolicy: .singleWorkingSet)
+    let component = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: owner,
+            canonicalName: "fixture",
+            directoryName: "fixture"),
+        tasks: [task],
+        entrypoints: [],
+        storage: [declaration])
+    let catalog = ComponentCatalog(components: [component], publicEntrypoints: [])
+    try StorageCatalog.validateWritableEffects(catalog.storage, tasks: catalog.tasks)
+
+    let context = repositoryContext(root: workspace, runtime: ColliderRuntime())
+    let engine = ColliderEngine(runtime: context.runtime)
+    let first = try await engine.execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: context.taskStateRoot)
+    #expect(first.executed == [task.id])
+    #expect(try String(contentsOfFile: output.string, encoding: .utf8) == "authoritative input\n")
+
+    try await RepositoryCache(context: context, catalog: catalog).clean(
+        component: "fixture",
+        dryRun: false)
+    #expect(!FileManager.default.fileExists(atPath: outputRoot.string))
+
+    let second = try await engine.execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: context.taskStateRoot)
+    #expect(second.executed == [task.id])
+    #expect(try String(contentsOfFile: output.string, encoding: .utf8) == "authoritative input\n")
+}
+
+@Test func repositoryPruneRetainsOnlyCurrentSwiftPMTaskIdentityContexts() async throws {
+    let workspace = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        .appendingPathComponent(
+            "collider-swiftpm-retention-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let context = repositoryContext(root: workspace, runtime: ColliderRuntime())
+    let swiftPMRoot = context.hostBuildRoot.appending("swiftpm")
+    let group = swiftPMRoot.appending("unsanitized")
+    let active = group.appending("sha256-" + String(repeating: "a", count: 64))
+    let obsolete = group.appending("sha256-" + String(repeating: "b", count: 64))
+    let unrelated = group.appending("manually-managed")
+    for path in [active, obsolete, unrelated] {
+        try FileManager.default.createDirectory(
+            atPath: path.string,
+            withIntermediateDirectories: true)
+        try Data("payload".utf8).write(
+            to: URL(fileURLWithPath: path.appending("payload").string))
+    }
+
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: FilePath(workspace.path),
+            configuration: .debug,
+            target: .host(identity: "fixture"),
+            toolchainIdentity: "fixture"),
+        scratchPath: active)
+    let owner = ComponentID(rawValue: "fixture")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.build"),
+        component: owner,
+        swiftProducts: [
+            SwiftProductRequirement(
+                package: "fixture",
+                product: "fixture",
+                packageRoot: FilePath(workspace.path),
+                invocation: invocation,
+                inputs: [],
+                environment: [:])
+        ])
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: owner,
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [task],
+                entrypoints: [],
+                storage: [
+                    StorageDeclaration(
+                        id: "fixture-swiftpm-contexts",
+                        owner: owner,
+                        producers: [.runtime("swiftpm")],
+                        storageClass: .incremental,
+                        root: swiftPMRoot,
+                        safetyRoot: context.hostBuildRoot,
+                        retentionPolicy: .taskIdentityContexts)
+                ])
+        ],
+        publicEntrypoints: [])
+
+    try await RepositoryCache(context: context, catalog: catalog).prune(dryRun: false)
+
+    #expect(FileManager.default.fileExists(atPath: active.string))
+    #expect(!FileManager.default.fileExists(atPath: obsolete.string))
+    #expect(FileManager.default.fileExists(atPath: unrelated.string))
 }
 
 @Test func repositoryStatusToleratesConcurrentGenerationPruning() async throws {
@@ -522,10 +993,9 @@ private func repositoryContext(
         storageClass: .generation,
         root: FilePath(generations.path),
         safetyRoot: FilePath(artifactRoot.path),
-        cleanupPolicy: .explicitPrune,
+        retentionPolicy: .keepActiveAndRollback(count: 0),
         activeGenerationLink: FilePath(current.path),
-        rollbackGenerationCount: 0,
-        retention: "fixture")
+        interruptedCandidateNaming: nil)
     let catalog = ComponentCatalog(
         components: [
             try ComponentDefinition(
@@ -545,9 +1015,7 @@ private func repositoryContext(
     let repository = RepositoryCache(context: context, catalog: catalog)
 
     async let status: Void = repository.status(measureAllocations: true)
-    async let prune: Void = repository.prune(
-        keepingRuns: 0,
-        dryRun: false)
+    async let prune: Void = repository.prune(dryRun: false)
     _ = try await (status, prune)
 
     #expect(FileManager.default.fileExists(atPath: active.path))

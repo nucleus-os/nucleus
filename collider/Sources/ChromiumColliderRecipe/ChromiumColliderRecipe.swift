@@ -124,17 +124,24 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         }
         var storage: [StorageDeclaration] = [
             StorageDeclaration(
+                id: "browser-repository-cache",
+                owner: descriptor.id,
+                producers: producers(ChromiumTaskIDs.source),
+                storageClass: .cache,
+                root: cacheRoot.appending("repository-cache"),
+                safetyRoot: cacheRoot,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
                 id: "browser-source-generations",
                 owner: descriptor.id,
                 producers: producers(ChromiumTaskIDs.source, retention),
                 storageClass: .generation,
                 root: cacheRoot.appending("source-generations"),
                 safetyRoot: cacheRoot,
-                cleanupPolicy: .automaticRetention,
+                retentionPolicy: .keepActiveAndRollback(
+                    count: ChromiumRetention.sourceRollbackGenerationCount),
                 activeGenerationLink: cacheRoot.appending("source-generations/current"),
-                rollbackGenerationCount: ChromiumRetention.sourceRollbackGenerationCount,
-                interruptedCandidateNaming: .contentIdentityCandidate,
-                retention: "the active pinned Chromium source generation remains"),
+                interruptedCandidateNaming: .contentIdentityCandidate),
             StorageDeclaration(
                 id: "browser-build-metadata",
                 owner: descriptor.id,
@@ -143,8 +150,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .incremental,
                 root: cacheRoot.appending("build-metadata"),
                 safetyRoot: cacheRoot,
-                cleanupPolicy: .explicitClean,
-                retention: "target build manifests remain reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "browser-depot-tools",
                 owner: descriptor.id,
@@ -154,8 +160,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: cacheRoot.appending("depot_tools"),
                 safetyRoot: cacheRoot,
-                cleanupPolicy: .explicitClean,
-                retention: "the pinned depot_tools checkout remains reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "browser-builder-metadata",
                 owner: descriptor.id,
@@ -166,9 +171,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .cache,
                 root: cacheRoot.appending("build-container"),
                 safetyRoot: cacheRoot,
-                cleanupPolicy: .explicitClean,
-                retention:
-                    "the Chromium build and artifact image metadata remains reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "browser-logs",
                 owner: descriptor.id,
@@ -176,8 +179,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .diagnostic,
                 root: context.logRoot.appending("browser"),
                 safetyRoot: context.logRoot,
-                cleanupPolicy: .explicitClean,
-                retention: "browser build diagnostics remain until explicit clean"),
+                retentionPolicy: .boundedHistory(maximumEntries: 20)),
             StorageDeclaration(
                 id: "browser-locks",
                 owner: descriptor.id,
@@ -185,8 +187,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .incremental,
                 root: cacheRoot.appending("locks"),
                 safetyRoot: cacheRoot,
-                cleanupPolicy: .protected,
-                retention: "workflow lock identity remains with browser storage"),
+                retentionPolicy: .protected),
             StorageDeclaration(
                 id: "browser-installations",
                 owner: descriptor.id,
@@ -194,17 +195,25 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 storageClass: .generation,
                 root: installationRoot.appending("generations"),
                 safetyRoot: installationRoot,
-                cleanupPolicy: .automaticRetention,
+                retentionPolicy: .keepActiveAndRollback(
+                    count: ChromiumRetention.installationRollbackGenerationCount),
                 activeGenerationLink: installationRoot.appending("current"),
-                rollbackGenerationCount:
-                    ChromiumRetention.installationRollbackGenerationCount,
-                retention: "the active browser installation and one rollback generation remain"),
+                interruptedCandidateNaming: nil),
         ]
         for target in chromiumLinuxTargets {
             let identifier = target.identifier
             let cefRoot = context.artifactRoot.appending("browser/cef/\(identifier)")
             let browserRoot = context.artifactRoot.appending(
                 "browser/product/\(identifier)")
+            storage.append(
+                StorageDeclaration(
+                    id: "browser-cef-\(target.architecture.rawValue)-artifact-root",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.artifact(.cef, target)),
+                    storageClass: .published,
+                    root: cefRoot,
+                    safetyRoot: cefRoot.removingLastComponent(),
+                    retentionPolicy: .protected))
             storage.append(
                 StorageDeclaration(
                     id: "browser-cef-\(target.architecture.rawValue)-generations",
@@ -214,12 +223,19 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     storageClass: .generation,
                     root: cefRoot.appending("releases"),
                     safetyRoot: cefRoot,
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(
+                        count: ChromiumRetention.cefRollbackGenerationCount),
                     activeGenerationLink: cefRoot.appending("current-release"),
-                    rollbackGenerationCount: ChromiumRetention.cefRollbackGenerationCount,
-                    retention:
-                        "the active CEF \(identifier) publication and one rollback generation remain"
-                ))
+                    interruptedCandidateNaming: nil))
+            storage.append(
+                StorageDeclaration(
+                    id: "browser-product-\(target.architecture.rawValue)-artifact-root",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.artifact(.browser, target)),
+                    storageClass: .published,
+                    root: browserRoot,
+                    safetyRoot: browserRoot.removingLastComponent(),
+                    retentionPolicy: .protected))
             storage.append(
                 StorageDeclaration(
                     id: "browser-product-\(target.architecture.rawValue)-generations",
@@ -229,12 +245,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     storageClass: .generation,
                     root: browserRoot.appending("generations"),
                     safetyRoot: browserRoot,
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(
+                        count: ChromiumRetention.browserRollbackGenerationCount),
                     activeGenerationLink: browserRoot.appending("current"),
-                    rollbackGenerationCount: ChromiumRetention.browserRollbackGenerationCount,
-                    retention:
-                        "the active browser \(identifier) publication and one rollback generation remain"
-                ))
+                    interruptedCandidateNaming: nil))
         }
         return try ComponentDefinition(
             descriptor: descriptor,
@@ -961,6 +975,9 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
     }
 
     var environment: [String: String] { dependencyPreparation.environment }
+    var imagePreparations: [OCIImagePreparation] {
+        [resolverPreparation, dependencyPreparation]
+    }
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(inputRoot)
@@ -1158,7 +1175,7 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
             effects: [
                 ActionEffect(
                     .readWrite,
-                    scope: .checkout(repository.removingLastComponent()))
+                    scope: .checkout(repository))
             ],
             executionPlatform: .macOSARM64Native)
     }

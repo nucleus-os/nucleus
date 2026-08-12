@@ -72,7 +72,17 @@ public enum WaylandColliderRecipe: ColliderComponent {
             builder: native.builder,
             scanner: scanner)
         tasks.append(contentsOf: generation.tasks)
-        let storage = PlatformArchitecture.allCases.flatMap { architecture in
+        var storage = [
+            StorageDeclaration(
+                id: "wayland-generated-sources",
+                owner: descriptor.id,
+                producers: [.task(generation.task.id)],
+                storageClass: .source,
+                root: root,
+                safetyRoot: root.removingLastComponent(),
+                retentionPolicy: .protected)
+        ]
+        storage += PlatformArchitecture.allCases.flatMap { architecture in
             let target = NativeLinuxTarget(architecture: architecture)
             let sdkRoot = native.nativeSDK(for: target)
             let producers: Set<StorageProducer> = [
@@ -86,8 +96,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     storageClass: .published,
                     root: sdkRoot.appending("wayland"),
                     safetyRoot: sdkRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "the validated Wayland SDK remains published")
+                    retentionPolicy: .singleWorkingSet)
             ]
         }
         let component = try ComponentDefinition(
@@ -717,7 +726,8 @@ private struct WaylandNativeWorkspaces {
                 role: "compiler-cache"),
             capacityBytes: 50 * 1_024 * 1_024 * 1_024,
             filesystem: .ext4,
-            journal: .writeback64MiB)
+            journal: .writeback64MiB,
+            retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
     }
 }
 

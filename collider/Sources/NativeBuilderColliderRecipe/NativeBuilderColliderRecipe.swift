@@ -131,8 +131,7 @@ public enum NativeBuilderColliderRecipe {
                         storageClass: .cache,
                         root: cacheRoot,
                         safetyRoot: cacheRoot.removingLastComponent(),
-                        cleanupPolicy: .explicitClean,
-                        retention: "the native builder image and generated context remain reusable"),
+                        retentionPolicy: .singleWorkingSet),
                     StorageDeclaration(
                         id: "native-builder-ccache",
                         owner: descriptor.id,
@@ -140,8 +139,8 @@ public enum NativeBuilderColliderRecipe {
                         storageClass: .cache,
                         root: ccache,
                         safetyRoot: ccache.removingLastComponent(),
-                        cleanupPolicy: .explicitClean,
-                        retention: "native builder compiler results remain reusable"),
+                        retentionPolicy: .toolManagedLimit(
+                            maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 ]),
             configuration: configuration)
     }
@@ -262,6 +261,9 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
     }
 
     var environment: [String: String] { dependencyPreparation.environment }
+    var imagePreparations: [OCIImagePreparation] {
+        [resolverPreparation, dependencyPreparation]
+    }
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(ccache)

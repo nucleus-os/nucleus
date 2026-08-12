@@ -69,10 +69,9 @@ public enum ShellColliderRecipe: ColliderComponent {
                     storageClass: .generation,
                     root: configuration.generationsRoot,
                     safetyRoot: configuration.generationsRoot.removingLastComponent(),
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: configuration.prefix,
-                    rollbackGenerationCount: rollbackGenerationCount,
-                    retention: "the active runtime and two rollback generations remain reusable"),
+                    interruptedCandidateNaming: nil),
                 StorageDeclaration(
                     id: "shell-package-manifest-generations",
                     owner: descriptor.id,
@@ -80,10 +79,9 @@ public enum ShellColliderRecipe: ColliderComponent {
                     storageClass: .generation,
                     root: configuration.packageManifestsRoot,
                     safetyRoot: configuration.packageManifestsRoot.removingLastComponent(),
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: configuration.packageManifestsRoot.appending("current"),
-                    rollbackGenerationCount: rollbackGenerationCount,
-                    retention: "the active package manifests and two rollback generations remain"),
+                    interruptedCandidateNaming: nil),
                 StorageDeclaration(
                     id: "shell-tracy-receivers",
                     owner: descriptor.id,
@@ -91,8 +89,7 @@ public enum ShellColliderRecipe: ColliderComponent {
                     storageClass: .incremental,
                     root: context.repositoryRoot.appending("compositor/.tracy-build"),
                     safetyRoot: context.repositoryRoot.appending("compositor"),
-                    cleanupPolicy: .explicitClean,
-                    retention: "Tracy receiver build state remains reusable"),
+                    retentionPolicy: .singleWorkingSet),
             ])
         #else
         return try ComponentDefinition(

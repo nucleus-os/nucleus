@@ -122,8 +122,12 @@ public actor ColliderRuntime {
         try await ociBackend.diskUsage(configuration: ociConfiguration)
     }
 
-    public func pruneOCIImages() async throws {
-        try await ociBackend.pruneImages()
+    public func ociImages() async throws -> [OCIImageState] {
+        try await ociBackend.images()
+    }
+
+    public func deleteOCIImages(references: [String]) async throws -> UInt64 {
+        try await ociBackend.deleteImages(references: references)
     }
 
     public func ociPersistentWorkspaces() async throws

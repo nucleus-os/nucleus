@@ -341,15 +341,50 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         tasks: [TaskDeclaration]
     ) -> [StorageDeclaration] {
         let artifactRoot = configuration.active.removingLastComponent()
+        let runtimeInputs = artifactRoot.appending("runtime-inputs")
         func producers(_ matches: (String) -> Bool, runtime: String) -> Set<StorageProducer> {
             let resolved = Set(
                 tasks.compactMap { matches($0.id.rawValue) ? StorageProducer.task($0.id) : nil })
             return resolved.isEmpty ? [.runtime(runtime)] : resolved
         }
+        func writableProducers(
+            in root: FilePath,
+            runtime: String
+        ) -> Set<StorageProducer> {
+            let resolved: Set<StorageProducer> = Set(
+                tasks.compactMap { task -> StorageProducer? in
+                    let writesRoot =
+                        task.action?.requirements.effects.contains {
+                            $0.access != .read && $0.scope.root.isContained(in: root)
+                        } == true
+                    return writesRoot ? .task(task.id) : nil
+                })
+            return resolved.isEmpty ? [.runtime(runtime)] : resolved
+        }
 
         return [
             StorageDeclaration(
-                id: "swift-target-sdk-generations",
+                id: "swift-target-sdk-discovery",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0.hasPrefix("swift-sdk.discover-") },
+                    runtime: "swift-sdk-discovery"),
+                storageClass: .published,
+                root: configuration.sdkDiscoveryRoot,
+                safetyRoot: configuration.sdkDiscoveryRoot.removingLastComponent(),
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "swift-target-sdk-displaced-discovery",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0.hasPrefix("swift-sdk.discover-") },
+                    runtime: "swift-sdk-discovery"),
+                storageClass: .published,
+                root: configuration.displacedRoot,
+                safetyRoot: configuration.displacedRoot.removingLastComponent(),
+                retentionPolicy: .protected),
+            StorageDeclaration(
+                id: "swift-target-sdk-active",
                 owner: descriptor.id,
                 producers: producers(
                     {
@@ -357,15 +392,33 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             || $0 == "swift-sdk.use-active-generation"
                     },
                     runtime: "swift-sdk-generation-lifecycle"),
+                storageClass: .published,
+                root: configuration.active,
+                safetyRoot: artifactRoot,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "swift-target-sdk-runtime-inputs",
+                owner: descriptor.id,
+                producers: writableProducers(
+                    in: runtimeInputs,
+                    runtime: "swift-sdk-runtime-inputs"),
+                storageClass: .incremental,
+                root: runtimeInputs,
+                safetyRoot: artifactRoot,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "swift-target-sdk-generations",
+                owner: descriptor.id,
+                producers: writableProducers(
+                    in: artifactRoot.appending("generations"),
+                    runtime: "swift-sdk-generation-lifecycle"),
                 storageClass: .generation,
                 root: artifactRoot.appending("generations"),
                 safetyRoot: artifactRoot,
-                cleanupPolicy: .explicitPrune,
+                retentionPolicy: .keepActiveAndRollback(count: 0),
                 activeGenerationLink: configuration.active,
-                rollbackGenerationCount: 0,
                 interruptedCandidateNaming: DirectoryNamePattern(
-                    rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#),
-                retention: "the active generation is protected; inactive generations are prunable"),
+                    rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#)),
             StorageDeclaration(
                 id: "swift-sdk-generator-build",
                 owner: descriptor.id,
@@ -375,8 +428,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 storageClass: .incremental,
                 root: configuration.generatorScratch,
                 safetyRoot: configuration.generatorScratch.removingLastComponent(),
-                cleanupPolicy: .explicitClean,
-                retention: "the generator build remains reusable until explicit clean"),
+                retentionPolicy: .singleWorkingSet),
         ]
     }
 
@@ -685,6 +737,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .nonEmptyDirectory)
         let task = builder.build(
             inputs: [.file(configuration.sysrootPreparer)],
+            locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime-inputs")],
             assessmentPolicy: .incremental,
             action:
                 try AnyColliderAction(
@@ -1080,6 +1133,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             tasks.append(
                 builder.build(
                     inputs: [.sourceCheckout(configuration.validationFixture)],
+                    locks: [.checkout("swift-target-sdk-generations")],
                     action: try AnyColliderAction(
                         ValidateSwiftTargetSDKConsumerAction(
                             hostSwift: hostSwift,
@@ -1110,6 +1164,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         tasks.append(
             verificationBuilder.build(
                 inputs: [.file(configuration.validator)],
+                locks: [.checkout("swift-target-sdk-generations")],
                 action: try AnyColliderAction(
                     ValidateSwiftTargetSDKArtifactsAction(
                         linuxSDK: assembly.linuxSDK.path,
@@ -1190,6 +1245,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     postconditions: [
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
+                    locks: [.checkout("swift-target-sdk-discovery")],
                     assessmentPolicy: .always,
                     action:
                         try AnyColliderAction(

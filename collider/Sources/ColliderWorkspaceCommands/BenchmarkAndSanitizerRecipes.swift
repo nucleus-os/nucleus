@@ -121,8 +121,7 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                     storageClass: .diagnostic,
                     root: context.logRoot.appending("benchmarks"),
                     safetyRoot: context.logRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "benchmark result sets remain until explicit clean")
+                    retentionPolicy: .boundedHistory(maximumEntries: 20))
             ])
     }
 }

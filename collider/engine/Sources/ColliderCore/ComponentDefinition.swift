@@ -352,6 +352,10 @@ public struct ComponentCatalog: Sendable {
         components.flatMap(\.storage)
     }
 
+    public var imagePreparations: [OCIImagePreparation] {
+        tasks.compactMap(\.action).flatMap(\.imagePreparations)
+    }
+
     public func workflowLocks(
         for declaration: StorageDeclaration
     ) throws -> Set<TaskLock> {

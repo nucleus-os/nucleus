@@ -76,6 +76,31 @@ public struct OCIRuntimeDiskUsage: Codable, Equatable, Sendable {
     }
 }
 
+public struct OCIImageState: Codable, Equatable, Sendable {
+    public let reference: String
+    public let repository: String
+    public let tag: String?
+    public let digest: String
+    public let creationDate: Date?
+    public let active: Bool
+
+    public init(
+        reference: String,
+        repository: String,
+        tag: String?,
+        digest: String,
+        creationDate: Date?,
+        active: Bool
+    ) {
+        self.reference = reference
+        self.repository = repository
+        self.tag = tag
+        self.digest = digest
+        self.creationDate = creationDate
+        self.active = active
+    }
+}
+
 public struct OCIPersistentWorkspaceState: Codable, Equatable, Sendable {
     public let name: String
     public let identity: PersistentWorkspaceIdentity
@@ -146,7 +171,8 @@ public protocol OCIRuntimeBackend: Sendable {
     func diskUsage(
         configuration: OCIRuntimeConfiguration
     ) async throws -> OCIRuntimeDiskUsage
-    func pruneImages() async throws
+    func images() async throws -> [OCIImageState]
+    func deleteImages(references: [String]) async throws -> UInt64
     func persistentWorkspaces(
         configuration: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState]
@@ -171,7 +197,11 @@ extension OCIRuntimeBackend {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
-    public func pruneImages() async throws {
+    public func images() async throws -> [OCIImageState] {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func deleteImages(references _: [String]) async throws -> UInt64 {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 

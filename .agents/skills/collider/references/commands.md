@@ -266,7 +266,7 @@ Arguments and options:
 
 Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images.
 
-Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--keep-runs <keep-runs>] [--version] [--help]`
+Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
 
 Arguments and options:
 
@@ -274,7 +274,6 @@ Arguments and options:
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
-- `--keep-runs` `<keep-runs>` — Number of recent completed runs to retain.; default: `20`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

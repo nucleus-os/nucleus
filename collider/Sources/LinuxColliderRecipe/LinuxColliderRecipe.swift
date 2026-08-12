@@ -116,16 +116,23 @@ public enum LinuxColliderRecipe: ColliderComponent {
             ],
             storage: [
                 StorageDeclaration(
+                    id: "linux-runtime-artifact-root",
+                    owner: descriptor.id,
+                    producers: [.task(artifactTask.id)],
+                    storageClass: .published,
+                    root: runtimeArtifact.artifactRoot,
+                    safetyRoot: runtimeArtifact.artifactRoot.removingLastComponent(),
+                    retentionPolicy: .protected),
+                StorageDeclaration(
                     id: "linux-runtime-generations",
                     owner: descriptor.id,
                     producers: [.task(artifactTask.id)],
                     storageClass: .generation,
                     root: runtimeArtifact.artifactRoot.appending("generations"),
                     safetyRoot: runtimeArtifact.artifactRoot,
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: runtimeArtifact.artifactRoot.appending("current"),
-                    rollbackGenerationCount: rollbackGenerationCount,
-                    retention: "the active assembled Linux runtime and one rollback remain"),
+                    interruptedCandidateNaming: nil),
                 StorageDeclaration(
                     id: "linux-package-manifest-generations",
                     owner: descriptor.id,
@@ -133,11 +140,10 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     storageClass: .generation,
                     root: runtimeArtifact.artifactRoot.appending("package-manifests"),
                     safetyRoot: runtimeArtifact.artifactRoot,
-                    cleanupPolicy: .automaticRetention,
+                    retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: runtimeArtifact.artifactRoot.appending(
                         "package-manifests/current"),
-                    rollbackGenerationCount: rollbackGenerationCount,
-                    retention: "the active package manifests and one rollback remain"),
+                    interruptedCandidateNaming: nil),
             ])
     }
 

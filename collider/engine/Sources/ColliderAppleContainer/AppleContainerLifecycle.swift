@@ -17,6 +17,7 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
     case builderCleanupFailed(operation: String, cleanup: String)
     case cleanupFailed(name: String, reason: String)
     case invalidImageDigest
+    case imageDeletionRefused(String)
     case invalidIsolatedNetwork(name: String, mode: String)
     case invalidPersistentWorkspaceOwner(String?)
     case persistentWorkspaceConfigurationMismatch(name: String, reason: String)
@@ -33,6 +34,8 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
             "Apple container cleanup failed for \(name): \(reason)"
         case .invalidImageDigest:
             "Apple container image API did not return one OCI digest"
+        case .imageDeletionRefused(let reference):
+            "refusing to delete Apple container image used by an active container: \(reference)"
         case .invalidIsolatedNetwork(let name, let mode):
             "Apple container network \(name) uses \(mode) mode; hostOnly is required"
         case .invalidPersistentWorkspaceOwner(let owner):
@@ -191,16 +194,44 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             volumes: volumes)
     }
 
-    public func pruneImages() async throws {
+    public func images() async throws -> [OCIImageState] {
         try validateRunner()
+        let configuration = try await Application.loadContainerSystemConfig()
+        let activeReferences = Set(
+            try await ContainerClient().list().map(\.configuration.image.reference))
+        var states: [OCIImageState] = []
         for image in try await ClientImage.list() {
             let reference = try ContainerizationOCI.Reference.parse(image.reference)
-            guard reference.tag == nil else { continue }
+            let creationDate = try? await image.toImageResource(
+                containerSystemConfig: configuration
+            ).creationDate
+            states.append(
+                OCIImageState(
+                    reference: image.reference,
+                    repository: reference.name,
+                    tag: reference.tag,
+                    digest: image.digest,
+                    creationDate: creationDate,
+                    active: activeReferences.contains(image.reference)))
+        }
+        return states
+    }
+
+    public func deleteImages(references: [String]) async throws -> UInt64 {
+        try validateRunner()
+        let activeReferences = Set(
+            try await ContainerClient().list().map(\.configuration.image.reference))
+        for reference in references {
+            try Task.checkCancellation()
+            guard !activeReferences.contains(reference) else {
+                throw AppleContainerFailure.imageDeletionRefused(reference)
+            }
             try await ClientImage.delete(
-                reference: image.reference,
+                reference: reference,
                 garbageCollect: false)
         }
-        _ = try await ClientImage.cleanUpOrphanedBlobs()
+        let (_, reclaimedBytes) = try await ClientImage.cleanUpOrphanedBlobs()
+        return reclaimedBytes
     }
 
     public func persistentWorkspaces(

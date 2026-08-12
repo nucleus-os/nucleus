@@ -134,8 +134,7 @@ public enum ReactNativeColliderRecipe {
                 storageClass: .cache,
                 root: context.cacheRoot.appending("inputs/react-native/boost"),
                 safetyRoot: context.cacheRoot.appending("inputs/react-native"),
-                cleanupPolicy: .explicitClean,
-                retention: "the pinned Boost archive and extracted headers remain reusable"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "rn-node-modules",
                 owner: descriptor.id,
@@ -143,8 +142,7 @@ public enum ReactNativeColliderRecipe {
                 storageClass: .incremental,
                 root: root.appending("node_modules"),
                 safetyRoot: root,
-                cleanupPolicy: .explicitClean,
-                retention: "the lockfile-selected JavaScript dependency generation remains active"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "rn-javascript-cache",
                 owner: descriptor.id,
@@ -152,8 +150,7 @@ public enum ReactNativeColliderRecipe {
                 storageClass: .cache,
                 root: context.cacheRoot.appending("bun/linux-multiarch"),
                 safetyRoot: context.cacheRoot.appending("bun"),
-                cleanupPolicy: .explicitClean,
-                retention: "Bun package archives remain reusable"),
+                retentionPolicy: .singleWorkingSet),
         ]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
@@ -171,8 +168,7 @@ public enum ReactNativeColliderRecipe {
                     storageClass: .published,
                     root: sdkRoot.appending("rn"),
                     safetyRoot: sdkRoot,
-                    cleanupPolicy: .explicitClean,
-                    retention: "the validated React Native SDK remains published"))
+                    retentionPolicy: .singleWorkingSet))
         }
         let component = try ComponentDefinition(
             descriptor: descriptor,
@@ -320,7 +316,8 @@ public enum ReactNativeColliderRecipe {
             component: "hermes",
             target: target)
         let icuSource = root.appending(
-            "../core/third-party/skia/third_party/externals/icu/source")
+            "../core/third-party/skia/third_party/externals/icu/source"
+        ).lexicallyNormalized()
         let icuLibraryDirectory = icuLibrary.path.removingLastComponent()
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
@@ -341,7 +338,7 @@ public enum ReactNativeColliderRecipe {
         let task = taskBuilder.build(
             inputs: [
                 .sourceCheckout(source),
-                .file(root.appending("../tools/merge-static-archives.sh")),
+                .file(root.appending("../tools/merge-static-archives.sh").lexicallyNormalized()),
             ],
             locks: [.checkout("rn-hermes-\(target.identifier)")],
             action:
@@ -606,7 +603,8 @@ public enum ReactNativeColliderRecipe {
                 .sourceCheckout(root.appending("third-party/fast_float")),
                 .sourceCheckout(root.appending("third-party/hermes")),
                 .sourceCheckout(root.appending("third-party/react-native")),
-                .sourceCheckout(root.appending("../core/swiftpm/cmake/reactnative")),
+                .sourceCheckout(
+                    root.appending("../core/swiftpm/cmake/reactnative").lexicallyNormalized()),
             ],
             locks: [.checkout("rn-runtime-\(target.identifier)")],
             action:
@@ -1047,7 +1045,8 @@ private struct ReactNativeBuildWorkspaces {
                 role: "compiler-cache"),
             capacityBytes: 50 * 1_024 * 1_024 * 1_024,
             filesystem: .ext4,
-            journal: .writeback64MiB)
+            journal: .writeback64MiB,
+            retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
     }
 }
 
@@ -1128,11 +1127,11 @@ private func nativeContainerOperation(
                 target: "/react-native",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("../core/swiftpm/cmake/reactnative"),
+                source: root.appending("../core/swiftpm/cmake/reactnative").lexicallyNormalized(),
                 target: "/core-cmake",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("../tools"),
+                source: root.appending("../tools").lexicallyNormalized(),
                 target: "/tools",
                 access: .readOnly),
             OCIMount(
