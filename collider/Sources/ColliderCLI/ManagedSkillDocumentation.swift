@@ -58,6 +58,7 @@ enum SwiftCxxInteropSkillDocumentation {
     struct UpstreamSnapshot {
         let revision: String
         let documentation: Data
+        let safeInterop: Data
         let license: Data
     }
 
@@ -66,6 +67,7 @@ enum SwiftCxxInteropSkillDocumentation {
     private static let upstreamRepository =
         "https://github.com/swiftlang/swift-org-website.git"
     private static let documentationPath = "documentation/cxx-interop/index.md"
+    private static let safeInteropPath = "documentation/cxx-interop/safe-interop/index.md"
     private static let licensePath = "LICENSE.txt"
 
     static func sync(to repositoryRoot: FilePath) throws -> String {
@@ -73,10 +75,13 @@ enum SwiftCxxInteropSkillDocumentation {
         let skillRoot = repositoryRoot.appending(root)
         let checkedInDocumentation = try? read(
             skillRoot.appending("references/mixing-swift-and-cxx.md"))
+        let checkedInSafeInterop = try? read(
+            skillRoot.appending("references/safe-interop.md"))
         let checkedInLicense = try? read(
             skillRoot.appending("references/swift-org-license.txt"))
         let contentMatches =
             checkedInDocumentation == upstream.documentation
+            && checkedInSafeInterop == upstream.safeInterop
             && checkedInLicense == upstream.license
         let recordedRevision = try? checkedInRevision(at: skillRoot)
         let provenanceRevision =
@@ -85,6 +90,7 @@ enum SwiftCxxInteropSkillDocumentation {
             : upstream.revision
         let documents = try synchronizedDocuments(
             documentation: upstream.documentation,
+            safeInterop: upstream.safeInterop,
             license: upstream.license,
             revision: provenanceRevision)
         if documentsMatch(documents, under: skillRoot) {
@@ -121,19 +127,26 @@ enum SwiftCxxInteropSkillDocumentation {
             throw SkillDocumentationFailure.invalid(
                 "Swift.org returned invalid Git revision '\(revision)'")
         }
-        let documentation = try runGit([
+        let documentationSource = try runGit([
             "-C", checkout.path, "show", "\(revision):\(documentationPath)",
         ])
+        let safeInteropSource = try runGit([
+            "-C", checkout.path, "show", "\(revision):\(safeInteropPath)",
+        ])
+        let documentation = try renderTableOfContents(in: documentationSource)
+        let safeInterop = try renderTableOfContents(in: safeInteropSource)
         let license = try runGit([
             "-C", checkout.path, "show", "\(revision):\(licensePath)",
         ])
         _ = try synchronizedDocuments(
             documentation: documentation,
+            safeInterop: safeInterop,
             license: license,
             revision: revision)
         return UpstreamSnapshot(
             revision: revision,
             documentation: documentation,
+            safeInterop: safeInterop,
             license: license)
     }
 
@@ -150,9 +163,12 @@ enum SwiftCxxInteropSkillDocumentation {
         let checkedInRevision = try checkedInRevision(at: skillRoot)
         let documentation = try read(
             skillRoot.appending("references/mixing-swift-and-cxx.md"))
+        let safeInterop = try read(
+            skillRoot.appending("references/safe-interop.md"))
         let license = try read(
             skillRoot.appending("references/swift-org-license.txt"))
         guard documentation == upstream.documentation,
+            safeInterop == upstream.safeInterop,
             license == upstream.license
         else {
             throw SkillDocumentationFailure.upstreamOutOfDate(
@@ -167,6 +183,8 @@ enum SwiftCxxInteropSkillDocumentation {
 
         let documentation = try read(
             skillRoot.appending("references/mixing-swift-and-cxx.md"))
+        let safeInterop = try read(
+            skillRoot.appending("references/safe-interop.md"))
         let license = try read(
             skillRoot.appending("references/swift-org-license.txt"))
         let provenance = try utf8(
@@ -179,6 +197,7 @@ enum SwiftCxxInteropSkillDocumentation {
         }
         let expected = try synchronizedDocuments(
             documentation: documentation,
+            safeInterop: safeInterop,
             license: license,
             revision: revision)
         try ManagedSkillDocumentation.verify(expected, under: skillRoot)
@@ -186,17 +205,33 @@ enum SwiftCxxInteropSkillDocumentation {
 
     static func synchronizedDocuments(
         documentation: Data,
+        safeInterop: Data,
         license: Data,
         revision: String
     ) throws -> [String: Data] {
         let source = try utf8(documentation, label: "Swift/C++ interoperability guide")
         guard source.hasPrefix("---\n"),
             source.contains("title: Mixing Swift and C++"),
+            !source.contains("{:.no_toc}"),
+            !source.contains("{:toc}"),
             source.contains("## Introduction"),
             source.contains("## Appendix")
         else {
             throw SkillDocumentationFailure.invalid(
                 "Swift.org Swift/C++ interoperability guide has an unexpected structure")
+        }
+        let safeInteropSource = try utf8(
+            safeInterop,
+            label: "Swift/C++ safe interoperability guide")
+        guard safeInteropSource.hasPrefix("---\n"),
+            safeInteropSource.contains("title: Safely Mixing Swift and C/C++"),
+            !safeInteropSource.contains("{:.no_toc}"),
+            !safeInteropSource.contains("{:toc}"),
+            safeInteropSource.contains("## Introduction"),
+            safeInteropSource.contains("## Lifetime Annotations in Detail")
+        else {
+            throw SkillDocumentationFailure.invalid(
+                "Swift.org Swift/C++ safe interoperability guide has an unexpected structure")
         }
         let licenseText = try utf8(license, label: "Swift.org license")
         guard licenseText.contains("Apache License"),
@@ -212,75 +247,157 @@ enum SwiftCxxInteropSkillDocumentation {
 
         return [
             "references/mixing-swift-and-cxx.md": documentation,
+            "references/safe-interop.md": safeInterop,
             "references/swift-org-license.txt": license,
-            "references/topic-index.md": Data(topicIndex(for: source).utf8),
+            "references/topic-index.md": Data(
+                topicIndex(for: source, safeInterop: safeInteropSource).utf8),
             "references/upstream.md": Data(
                 provenance(
                     revision: revision,
                     documentation: documentation,
+                    safeInterop: safeInterop,
                     license: license
                 ).utf8),
         ]
     }
 
-    static func topicIndex(for source: String) -> String {
-        var lines = source.components(separatedBy: "\n")
-        if lines.last?.isEmpty == true { lines.removeLast() }
-        let headings = lines.enumerated().compactMap { index, line -> (Int, String)? in
-            guard line.hasPrefix("## "), !line.hasPrefix("### ") else { return nil }
-            return (index + 1, String(line.dropFirst(3)))
-        }
+    static func topicIndex(for source: String, safeInterop: String) -> String {
         var sections: [String] = [
             "# Topic index",
             "",
-            "`mixing-swift-and-cxx.md` is the verbatim canonical Markdown source for the official guide. Read it with `sed -n '<start>,<end>p'` using the generated ranges below.",
+            "Both vendored pages preserve the canonical Swift.org content with the site-only Jekyll TOC placeholders expanded into linked Markdown tables of contents. The generated heading tables below provide exact line ranges for agent navigation.",
             "",
-            "| Lines | Section |",
-            "| ---: | --- |",
         ]
-        for (index, heading) in headings.enumerated() {
-            let start = heading.0
-            let end = index + 1 < headings.count ? headings[index + 1].0 - 1 : lines.count
-            sections.append("| \(start)–\(end) | \(heading.1) |")
-        }
+        appendHeadingIndex(
+            for: source,
+            file: "mixing-swift-and-cxx.md",
+            title: "Mixing Swift and C++",
+            to: &sections)
+        appendHeadingIndex(
+            for: safeInterop,
+            file: "safe-interop.md",
+            title: "Safely Mixing Swift and C/C++",
+            to: &sections)
         sections.append(contentsOf: [
-            "",
-            "Use `rg -n '^##+ ' references/mixing-swift-and-cxx.md` when a narrower subsection is needed.",
-            "",
             "## Live companion pages",
             "",
-            "The guide links to companion pages whose current contents are not duplicated here:",
+            "These companion pages are not duplicated here:",
             "",
             "- [Supported features and constraints](https://www.swift.org/documentation/cxx-interop/status/)",
             "- [Mixed-language project and build setup](https://www.swift.org/documentation/cxx-interop/project-build-setup/)",
-            "- [Safe interoperability](https://www.swift.org/documentation/cxx-interop/safe-interop/)",
             "",
-            "Consult these live pages for toolchain/platform support, current limitations, and build-system behavior that may have changed after the vendored revision.",
+            "Consult them for toolchain/platform support, current limitations, and build-system behavior that may have changed after the vendored revision.",
             "",
         ])
         return sections.joined(separator: "\n")
     }
 
+    private static func appendHeadingIndex(
+        for source: String,
+        file: String,
+        title: String,
+        to sections: inout [String]
+    ) {
+        var lines = source.components(separatedBy: "\n")
+        if lines.last?.isEmpty == true { lines.removeLast() }
+        let headings = lines.enumerated().compactMap { index, line -> (Int, Int, String)? in
+            let level = line.prefix(while: { $0 == "#" }).count
+            guard level >= 2, level <= 4, line.dropFirst(level).hasPrefix(" ") else {
+                return nil
+            }
+            return (index + 1, level, String(line.dropFirst(level + 1)))
+        }
+        sections.append(contentsOf: [
+            "## \(title)",
+            "",
+            "Read `\(file)` with `sed -n '<start>,<end>p'` using these ranges.",
+            "",
+            "| Lines | Section |",
+            "| ---: | --- |",
+        ])
+        for (index, heading) in headings.enumerated() {
+            let start = heading.0
+            let end = index + 1 < headings.count ? headings[index + 1].0 - 1 : lines.count
+            let indentation = String(repeating: "↳ ", count: heading.1 - 2)
+            sections.append("| \(start)–\(end) | \(indentation)\(heading.2) |")
+        }
+        sections.append(contentsOf: [
+            "",
+            "Use `rg -n '^##+ ' references/\(file)` for direct heading lookup.",
+            "",
+        ])
+    }
+
     private static func provenance(
         revision: String,
         documentation: Data,
+        safeInterop: Data,
         license: Data
     ) -> String {
         """
         # Upstream provenance
 
-        `mixing-swift-and-cxx.md` is an unmodified, byte-for-byte copy of:
+        The vendored Markdown files are deterministic agent-oriented renderings of:
 
         - Project: Swift.org website
         - Repository: https://github.com/swiftlang/swift-org-website
-        - Path: `\(documentationPath)`
+        - Main guide path: `\(documentationPath)`
+        - Safe interoperability path: `\(safeInteropPath)`
         - Revision: `\(revision)`
-        - Documentation SHA-256: `\(ArtifactDigest.sha256(documentation).hexadecimal)`
+        - Main guide SHA-256: `\(ArtifactDigest.sha256(documentation).hexadecimal)`
+        - Safe interoperability SHA-256: `\(ArtifactDigest.sha256(safeInterop).hexadecimal)`
         - License SHA-256: `\(ArtifactDigest.sha256(license).hexadecimal)`
-        - Published page: https://www.swift.org/documentation/cxx-interop/
+        - Main guide page: https://www.swift.org/documentation/cxx-interop/
+        - Safe interoperability page: https://www.swift.org/documentation/cxx-interop/safe-interop/
 
-        The upstream repository distributes the documentation under the Apache License, Version 2.0. The complete upstream license is preserved in `swift-org-license.txt`. The vendored documentation file has not been modified. The surrounding skill instructions and generated topic index are not part of the upstream document.
+        Collider preserves the upstream prose and examples and replaces only each site-only TOC placeholder block with the linked Markdown table of contents that it represents on Swift.org. The recorded guide hashes cover those rendered files. The upstream repository distributes the documentation under the Apache License, Version 2.0; the complete upstream license is preserved in `swift-org-license.txt`.
         """ + "\n"
+    }
+
+    static func renderTableOfContents(in documentation: Data) throws -> Data {
+        let source = try utf8(documentation, label: "Swift.org documentation")
+        let placeholder = "## Table of Contents\n{:.no_toc}\n\n* TOC\n{:toc}"
+        guard source.components(separatedBy: placeholder).count == 2 else {
+            throw SkillDocumentationFailure.invalid(
+                "Swift.org documentation has an unexpected table-of-contents placeholder")
+        }
+        let headings = source.components(separatedBy: "\n").compactMap {
+            line -> (level: Int, title: String)? in
+            let level = line.prefix(while: { $0 == "#" }).count
+            guard level >= 2, level <= 4, line.dropFirst(level).hasPrefix(" ") else {
+                return nil
+            }
+            let title = String(line.dropFirst(level + 1))
+            guard title != "Table of Contents" else { return nil }
+            return (level, title)
+        }
+        guard !headings.isEmpty else {
+            throw SkillDocumentationFailure.invalid(
+                "Swift.org documentation has no headings for its table of contents")
+        }
+        let entries = headings.map { heading in
+            let indentation = String(repeating: "  ", count: heading.level - 2)
+            return "\(indentation)- [\(heading.title)](#\(headingAnchor(heading.title)))"
+        }
+        let rendered = source.replacingOccurrences(
+            of: placeholder,
+            with: (["## Table of Contents", ""] + entries).joined(separator: "\n"))
+        return Data(rendered.utf8)
+    }
+
+    private static func headingAnchor(_ title: String) -> String {
+        var anchor = ""
+        var pendingHyphen = false
+        for character in title.lowercased() {
+            if character.isLetter || character.isNumber || character == "_" {
+                if pendingHyphen, !anchor.isEmpty { anchor.append("-") }
+                anchor.append(character)
+                pendingHyphen = false
+            } else if character.isWhitespace || character == "-" {
+                pendingHyphen = true
+            }
+        }
+        return anchor
     }
 
     private static func validateSkillStructure(at skillRoot: FilePath) throws {

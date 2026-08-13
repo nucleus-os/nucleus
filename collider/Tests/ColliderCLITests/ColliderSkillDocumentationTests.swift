@@ -38,6 +38,35 @@ func checkedInSwiftCxxInteropSkillIsInternallyConsistent() throws {
 }
 
 @Test
+func swiftCxxInteropRenderingExpandsTheWebsiteTableOfContents() throws {
+    let source = Data(
+        """
+        ---
+        title: Guide
+        ---
+
+        ## Table of Contents
+        {:.no_toc}
+
+        * TOC
+        {:toc}
+
+        ## First Section
+        ### Using `std::span`
+        #### C++ Details
+        """.utf8)
+    let rendered = try #require(
+        String(
+            data: SwiftCxxInteropSkillDocumentation.renderTableOfContents(in: source),
+            encoding: .utf8))
+    #expect(!rendered.contains("no_toc"))
+    #expect(!rendered.contains("{:toc}"))
+    #expect(rendered.contains("- [First Section](#first-section)"))
+    #expect(rendered.contains("  - [Using `std::span`](#using-stdspan)"))
+    #expect(rendered.contains("    - [C++ Details](#c-details)"))
+}
+
+@Test
 func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws {
     let repositoryRoot = FilePath(
         URL(fileURLWithPath: #filePath)
@@ -56,10 +85,16 @@ func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws
             fileURLWithPath: skillRoot.appending(
                 "references/swift-org-license.txt"
             ).string))
+    let safeInterop = try Data(
+        contentsOf: URL(
+            fileURLWithPath: skillRoot.appending(
+                "references/safe-interop.md"
+            ).string))
     try SwiftCxxInteropSkillDocumentation.verify(
         .init(
             revision: String(repeating: "f", count: 40),
             documentation: documentation,
+            safeInterop: safeInterop,
             license: license),
         at: repositoryRoot)
 
@@ -70,6 +105,19 @@ func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws
             .init(
                 revision: String(repeating: "f", count: 40),
                 documentation: changedDocumentation,
+                safeInterop: safeInterop,
+                license: license),
+            at: repositoryRoot)
+    }
+
+    var changedSafeInterop = safeInterop
+    changedSafeInterop.append(UInt8(ascii: "\n"))
+    #expect(throws: SkillDocumentationFailure.self) {
+        try SwiftCxxInteropSkillDocumentation.verify(
+            .init(
+                revision: String(repeating: "f", count: 40),
+                documentation: documentation,
+                safeInterop: changedSafeInterop,
                 license: license),
             at: repositoryRoot)
     }

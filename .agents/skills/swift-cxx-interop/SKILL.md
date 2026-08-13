@@ -5,12 +5,12 @@ description: Design, implement, review, and debug bidirectional Swift/C++ intero
 
 # Swift/C++ Interoperability
 
-Use the vendored official Swift.org guide as the authority for language mappings and supported interop behavior. Keep it out of context until the task's topic is known, then load only the relevant section.
+Use the vendored official Swift.org guides as the authority for language mappings and supported interop behavior. Collider preserves their content while expanding the website's generated tables of contents into ordinary linked Markdown. Keep the guides out of context until the task's topic is known, then load only the relevant section.
 
 ## Route the task
 
-1. Read [references/topic-index.md](references/topic-index.md).
-2. Select the narrowest relevant line range in `references/mixing-swift-and-cxx.md`.
+1. Read [references/topic-index.md](references/topic-index.md). Its generated heading tables are the agent-readable equivalents of the tables of contents rendered on Swift.org.
+2. Read the narrowest relevant line range in `references/mixing-swift-and-cxx.md`. For strict memory safety, non-escapable types, lifetime annotations, lifetime dependence, or unsafe foreign API diagnostics, read `references/safe-interop.md` as well.
 3. Read adjacent sections when ownership, lifetime, copying, or generated-header behavior crosses the selected boundary.
 4. For current support status or build-system limitations, follow the official live links in the topic index. These evolve independently from the vendored guide.
 5. Inspect the actual declarations, module map or umbrella header, `Package.swift` settings, generated interface, build command, and full diagnostic before proposing a change.
@@ -62,4 +62,4 @@ Choose the simplest representation whose ownership is explicit. Prefer values fo
 
 ## Maintain the reference
 
-The vendored guide is intentionally unmodified. See [references/upstream.md](references/upstream.md) for its exact source revision, digests, and license. Check the vendored guide and license against the latest canonical upstream content with `collider skill verify swift-cxx-interop`. Refresh all Collider-managed reference files with `collider skill sync swift-cxx-interop` when verification reports drift. Do not edit the vendored guide, provenance, license, or generated topic index by hand.
+The vendored guides preserve upstream prose and examples while replacing only Swift.org's Jekyll TOC placeholders with linked Markdown tables of contents. See [references/upstream.md](references/upstream.md) for their exact source revision, rendered-file digests, transformation, and license. Check both guides and the license against the latest canonical upstream content with `collider skill verify swift-cxx-interop`. Refresh all Collider-managed reference files with `collider skill sync swift-cxx-interop` when verification reports drift. Do not edit the rendered guides, provenance, license, or generated topic index by hand.

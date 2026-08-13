@@ -560,6 +560,8 @@ private func fixtureReactNativeNodeModules(
 
     #expect(
         all == [
+            "collider.test.cli",
+            "collider.test.engine",
             "linux.arm64.test",
             "test.release-gate.collection",
             "test.release-gate.compositor-transition",
@@ -567,6 +569,15 @@ private func fixtureReactNativeNodeModules(
             "test.release-gate.foundation-publication",
             "test.release-gate.platform-transport",
             "test.release-gate.text-editor",
+        ])
+    #expect(
+        try selectedTestTasks(in: registry, selection: "collider") == [
+            ColliderSelfTaskIDs.cliTests,
+            ColliderSelfTaskIDs.engineTests,
+        ])
+    #expect(
+        try selectedTestTasks(in: registry, selection: "runtime").map(\.rawValue) == [
+            "linux.arm64.test"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "config").map(\.rawValue) == [

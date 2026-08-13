@@ -14,6 +14,7 @@ Read the repository `AGENTS.md` before changing code or running a workflow.
 5. Keep container actions offline. Host-side Collider actions own downloads and caches; retry an intermittent host download instead of reducing package-manager concurrency or enabling container networking.
 6. Inspect durable execution state with `collider runs` and `collider logs`; use the run or task log named by a failure before changing behavior.
 7. Preserve the build graph's incremental contract. Use `--rebuild` only when the user requests a forced rebuild or the declared outputs cannot establish the required state.
+8. After changing Collider itself, run `collider test collider`; this verifies both the Collider CLI package and its engine package.
 
 Read [references/commands.md](references/commands.md) when exact command, argument, option, or subcommand syntax is needed. That reference is generated from Swift Argument Parser's structured representation of the current Collider command tree.
 

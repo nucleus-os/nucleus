@@ -99,7 +99,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
-- `<component>` — all, runtime, android, browser, loader, gpu-headless, gpu-drm, or a component name.
+- `<component>` — all, runtime, collider, android, browser, loader, gpu-headless, gpu-drm, or a component name.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

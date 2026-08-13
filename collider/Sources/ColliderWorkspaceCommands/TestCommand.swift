@@ -8,8 +8,8 @@ struct Test: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
     @Argument(
         help: """
-            all, runtime, android, browser, loader, gpu-headless, gpu-drm, \
-            or a component name.
+            all, runtime, collider, android, browser, loader, gpu-headless, \
+            gpu-drm, or a component name.
             """)
     var component: String?
 

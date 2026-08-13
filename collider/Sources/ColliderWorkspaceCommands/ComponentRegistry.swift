@@ -180,6 +180,7 @@ package struct ComponentRegistry {
         let components =
             [
                 try ColliderStorageComponent.makeComponent(in: context),
+                try ColliderSelfComponent.makeComponent(in: context),
                 nativeBuilder.component, swiftTargetSDK.component,
                 coreArtifacts.component,
                 androidRuntime.component, reactNativeArtifacts.component,
@@ -193,6 +194,7 @@ package struct ComponentRegistry {
         let reactNative = ReactNativeColliderRecipe.descriptor.id
         let linux = LinuxColliderRecipe.descriptor.id
         let shell = ShellColliderRecipe.descriptor.id
+        let collider = ColliderSelfComponent.descriptor.id
         let runtime = Set([
             NativeBuilderColliderRecipe.descriptor.id,
             AndroidRuntimeColliderRecipe.descriptor.id,
@@ -371,7 +373,9 @@ package struct ComponentRegistry {
         let catalog = ComponentCatalog(
             components: components,
             groups: [
-                ComponentSelectionGroup(name: "all", components: runtime),
+                ComponentSelectionGroup(
+                    name: "all",
+                    components: runtime.union([collider])),
                 ComponentSelectionGroup(name: "runtime", components: runtime),
             ],
             routes: routes,
@@ -426,6 +430,7 @@ package struct ComponentRegistry {
                     "android", "browser", "chromium", "gpu-headless",
                     "gpu-drm", "loader",
                 ])
+        expose(.testDefault, to: ["collider"])
         var bootstrapSpellings = [
             "all", "runtime", "linux", "native-builder", "core",
             "react-native", "rn", "wayland", "android-runtime",
