@@ -22,7 +22,7 @@ Subcommands:
 - `check`
 - `generate`
 - `install`: Install Nucleus runtime and browser products.
-- `skill`: Maintain the repository-scoped Collider agent skill.
+- `skill`: Maintain repository-scoped agent skills.
 - `benchmark`
 - `clean`: Remove a component's graph-declared rebuildable storage.
 - `cache`: Inspect and explicitly reclaim Collider-owned generated storage.
@@ -174,7 +174,7 @@ Arguments and options:
 
 ## `collider skill`
 
-Maintain the repository-scoped Collider agent skill.
+Maintain repository-scoped agent skills.
 
 Usage: `collider skill [--version] [--help] <subcommand>`
 
@@ -185,16 +185,43 @@ Arguments and options:
 
 Subcommands:
 
-- `generate`: Regenerate the Collider agent skill from the current CLI grammar.
+- `generate`: Generate a skill entirely from local repository state.
+- `sync`: Synchronize a skill from its canonical upstream source.
+- `verify`: Verify managed skills against their authoritative sources.
 
 ## `collider skill generate`
 
-Regenerate the Collider agent skill from the current CLI grammar.
+Generate a skill entirely from local repository state.
 
-Usage: `collider skill generate [--version] [--help]`
+Usage: `collider skill generate <skill> [--version] [--help]`
 
 Arguments and options:
 
+- `<skill>` — The locally generated skill to update.; values: `collider`
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider skill sync`
+
+Synchronize a skill from its canonical upstream source.
+
+Usage: `collider skill sync <skill> [--version] [--help]`
+
+Arguments and options:
+
+- `<skill>` — The upstream-backed skill to synchronize.; values: `swift-cxx-interop`
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider skill verify`
+
+Verify managed skills against their authoritative sources.
+
+Usage: `collider skill verify [<skill>] [--version] [--help]`
+
+Arguments and options:
+
+- `<skill>` — The skill to verify; omit to verify every managed skill.; values: `collider`, `swift-cxx-interop`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

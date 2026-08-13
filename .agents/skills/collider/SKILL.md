@@ -20,7 +20,13 @@ Read [references/commands.md](references/commands.md) when exact command, argume
 Regenerate this skill after changing Collider command grammar:
 
 ```sh
-collider skill generate
+collider skill generate collider
+```
+
+Verify every managed skill against its authoritative source. This uses host networking for upstream-backed skills:
+
+```sh
+collider skill verify
 ```
 
 Do not edit generated files under `.agents/skills/collider` by hand. Change `ColliderSkillDocumentation` and regenerate them.

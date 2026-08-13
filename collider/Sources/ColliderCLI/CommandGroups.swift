@@ -22,23 +22,69 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
 
 package struct Skill: ParsableCommand {
     package static let configuration = CommandConfiguration(
-        abstract: "Maintain the repository-scoped Collider agent skill.",
-        subcommands: [GenerateColliderSkill.self])
+        abstract: "Maintain repository-scoped agent skills.",
+        subcommands: [GenerateSkill.self, SyncSkill.self, VerifySkill.self])
 
     package init() {}
 }
 
-private struct GenerateColliderSkill: ParsableCommand {
+private struct GenerateSkill: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "generate",
-        abstract: "Regenerate the Collider agent skill from the current CLI grammar.")
+        abstract: "Generate a skill entirely from local repository state.")
+
+    @Argument(help: "The locally generated skill to update.")
+    var skill: GeneratedSkill
 
     mutating func run() throws {
         let root = try resolveWorkspaceRoot(
             environment: ProcessInfo.processInfo.environment)
-        try ColliderSkillDocumentation.write(to: root)
+        switch skill {
+        case .collider:
+            try ColliderSkillDocumentation.write(to: root)
+        }
         throw CleanExit.message(
             "generated .agents/skills/collider from the current Collider grammar")
+    }
+}
+
+private struct SyncSkill: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "sync",
+        abstract: "Synchronize a skill from its canonical upstream source.")
+
+    @Argument(help: "The upstream-backed skill to synchronize.")
+    var skill: SynchronizedSkill
+
+    mutating func run() throws {
+        let root = try resolveWorkspaceRoot(
+            environment: ProcessInfo.processInfo.environment)
+        switch skill {
+        case .swiftCxxInterop:
+            throw CleanExit.message(
+                try SwiftCxxInteropSkillDocumentation.sync(to: root))
+        }
+    }
+}
+
+private struct VerifySkill: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "verify",
+        abstract: "Verify managed skills against their authoritative sources.")
+
+    @Argument(help: "The skill to verify; omit to verify every managed skill.")
+    var skill: ManagedSkill?
+
+    mutating func run() throws {
+        let root = try resolveWorkspaceRoot(
+            environment: ProcessInfo.processInfo.environment)
+        if let skill {
+            throw CleanExit.message(
+                try ManagedSkillDocumentation.verify(skill, at: root))
+        }
+        throw CleanExit.message(
+            try ManagedSkillDocumentation.verifyAll(at: root)
+                .joined(separator: "\n"))
     }
 }
 

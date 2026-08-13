@@ -1,0 +1,4 @@
+interface:
+  display_name: "Swift/C++ Interop"
+  short_description: "Design and debug safe Swift/C++ boundaries"
+  default_prompt: "Use $swift-cxx-interop to design or review this Swift/C++ interoperability boundary."
