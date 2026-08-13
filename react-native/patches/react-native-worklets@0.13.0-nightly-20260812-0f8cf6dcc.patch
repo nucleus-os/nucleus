@@ -1,0 +1,14 @@
+diff --git a/Common/cpp/worklets/RunLoop/AsyncQueueImpl.cpp b/Common/cpp/worklets/RunLoop/AsyncQueueImpl.cpp
+index 705b610ddad023fe5ae89d84b8e288840a1a388f..0bc8e2f6664ae2f32184bd2fc9a98443f87c61a4 100644
+--- a/Common/cpp/worklets/RunLoop/AsyncQueueImpl.cpp
++++ b/Common/cpp/worklets/RunLoop/AsyncQueueImpl.cpp
+@@ -67,6 +67,9 @@ AsyncQueueImpl::AsyncQueueImpl(const std::string &name) : state_(std::make_share
+ #ifdef ANDROID
+     pthread_setname_np(pthread_self(), name.c_str());
+     jni::ThreadScope::WithClassLoader([state]() { AsyncQueueImpl::runLoop(state); });
++#elif defined(NUCLEUS)
++    pthread_setname_np(pthread_self(), name.c_str());
++    AsyncQueueImpl::runLoop(state);
+ #else
+     pthread_setname_np(name.c_str());
+     AsyncQueueImpl::runLoop(state);

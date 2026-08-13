@@ -8,6 +8,10 @@ targetSdkApi = "37"
 buildTools = "37.0.0"
 ndk = "30.0.15729638"
 jvm = "17"
+junit = "4.13.2"
+
+[libraries]
+junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

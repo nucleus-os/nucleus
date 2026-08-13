@@ -33,7 +33,12 @@ tasks.register("assembleDebugSigned") {
 tasks.register("verifyDebug") {
     group = "verification"
     description = "Verify all Android debug scaffold artifacts."
-    dependsOn(":nucleus:verifyDebugAar", ":smoke-app:verifyDebugPackage", ":smoke-app:verifyDebugSignedPackage")
+    dependsOn(
+        ":nucleus:testDebugUnitTest",
+        ":nucleus:verifyDebugAar",
+        ":smoke-app:verifyDebugPackage",
+        ":smoke-app:verifyDebugSignedPackage",
+    )
 }
 
 allprojects {

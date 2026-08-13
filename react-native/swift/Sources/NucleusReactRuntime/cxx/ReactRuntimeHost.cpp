@@ -5,6 +5,8 @@
 #include <NucleusReactRuntime/NucleusPlatformTimerRegistry.hpp>
 #include <NucleusReactRuntime/NucleusSourceCodeModule.hpp>
 #include <NucleusReactRuntime/NucleusAppStateModule.hpp>
+#include <NucleusReactRuntime/NucleusAnimationFrameClock.hpp>
+#include <NucleusReactRuntime/NucleusAnimationModules.hpp>
 #include <NucleusReactRuntime/ReactRuntimeHost.hpp>
 #include <NucleusReactRuntime/ReactRuntimeHostFacade.hpp>
 #include <NucleusReactRuntime/RuntimeJSCallInvoker.hpp>
@@ -20,6 +22,8 @@
 #include <react/renderer/componentregistry/ComponentDescriptorProvider.h>
 #include <react/renderer/componentregistry/ComponentDescriptorProviderRegistry.h>
 #include <react/renderer/componentregistry/native/NativeComponentRegistryBinding.h>
+#include <react/featureflags/ReactNativeFeatureFlags.h>
+#include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/components/image/ImageComponentDescriptor.h>
 #include <react/renderer/components/image/ImageProps.h>
 #include <react/renderer/components/root/RootComponentDescriptor.h>
@@ -34,6 +38,7 @@
 #include <react/renderer/components/view/ConcreteViewShadowNode.h>
 #include <react/renderer/components/view/ViewEventEmitter.h>
 #include <react/renderer/components/view/ViewComponentDescriptor.h>
+#include <react/renderer/components/rnreanimated/REASharedTransitionBoundaryComponentDescriptor.h>
 #include <react/renderer/components/view/ViewShadowNode.h>
 #include <react/renderer/textlayoutmanager/TextLayoutManager.h>
 #include <react/renderer/core/EventBeat.h>
@@ -59,6 +64,7 @@
 #include <react/renderer/graphics/Color.h>
 #include <react/runtime/TimerManager.h>
 #include <react/utils/ContextContainer.h>
+#include <react/renderer/components/rnreanimated/REASharedTransitionBoundaryComponentDescriptor.h>
 
 #include <algorithm>
 #include <chrono>
@@ -71,6 +77,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -81,6 +88,20 @@
 #include <vector>
 
 namespace {
+
+class NucleusReactNativeFeatureFlags final
+    : public facebook::react::ReactNativeFeatureFlagsDefaults {
+ public:
+  bool useSharedAnimatedBackend() override { return true; }
+};
+
+void enableSharedAnimationBackend() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    facebook::react::ReactNativeFeatureFlags::override(
+        std::make_unique<NucleusReactNativeFeatureFlags>());
+  });
+}
 
 void logRuntimeHost(const char *message) {
   if (std::getenv("NUCLEUS_RN_HOST_DEBUG") != nullptr) {
@@ -232,12 +253,15 @@ class ReactRuntimeHostImpl final {
                 .withMicrotaskQueue(true)
                 .withIntl(true)
                 .build())) {
+    enableSharedAnimationBackend();
     logRuntimeHostf("ReactRuntimeHostImpl constructed this=%p runtime=%p", this, runtime_.get());
     if (runtime_ == nullptr) {
       throw std::runtime_error("failed to create Hermes runtime");
     }
     jsThreadId_ = std::this_thread::get_id();
     jsInvoker_ = std::make_shared<RuntimeJSCallInvoker>(*runtime_, jsThreadId_);
+    animationFrameClock_ =
+        std::make_shared<NucleusAnimationFrameClock>(*runtime_);
     deviceEventEmitter_ =
         std::make_shared<DeviceEventEmitter>(*runtime_, jsInvoker_);
     // Mutable backing store for `NucleusDeviceInfoModule::getConstants`.
@@ -246,12 +270,12 @@ class ReactRuntimeHostImpl final {
     displayMetricsState_ = std::make_shared<DisplayMetricsState>();
     sourceCodeState_ = std::make_shared<SourceCodeState>();
     appStateState_ = std::make_shared<AppStateState>();
-    // TimerManager owns the JSI globals (setTimeout, setInterval,
-    // requestAnimationFrame, clearTimeout, clearInterval,
-    // cancelAnimationFrame). Timer fires arrive on the registry's worker
-    // thread and route back to the JS thread via `jsInvoker_`. Each
-    // dispatched callback drains microtasks so React's commit phase
-    // observes Promise resolutions queued by user code.
+    // TimerManager owns ordinary timer globals. Timer fires arrive on the
+    // registry's worker thread and route back to the JS thread via
+    // `jsInvoker_`. Each dispatched callback drains microtasks so React's
+    // commit phase observes Promise resolutions queued by user code. The
+    // presentation clock replaces TimerManager's requestAnimationFrame
+    // globals below.
     auto timerRegistry = std::make_unique<NucleusPlatformTimerRegistry>(
         [this](uint32_t id) {
           if (timerManager_ != nullptr) {
@@ -278,12 +302,16 @@ class ReactRuntimeHostImpl final {
   }
 
   ~ReactRuntimeHostImpl() {
-    // Stop the timer worker before any other shutdown so no more fires
-    // race against `jsInvoker_`'s queue or `runtime_`'s teardown. The
-    // timer map still holds `jsi::Function`s; those destruct when
-    // `timerManager_` itself destructs, which happens while `runtime_`
-    // is still alive (`timerManager_` is declared after `runtime_` so
-    // it tears down first).
+    // Retire presentation callbacks and the timer worker before any other
+    // shutdown so neither can race the JS queue or runtime teardown. Both
+    // registries hold jsi::Functions that must be destroyed while runtime_
+    // remains alive.
+    if (animationModules_ != nullptr) {
+      animationModules_->shutdown();
+    }
+    if (animationFrameClock_ != nullptr) {
+      animationFrameClock_->shutdown();
+    }
     if (timerManager_ != nullptr) {
       timerManager_->quit();
     }
@@ -313,6 +341,18 @@ class ReactRuntimeHostImpl final {
       return;
     }
     jsInvoker_->setWakeHandler(std::move(wake));
+  }
+
+  void setAnimationFrameScheduler(
+      NucleusAnimationFrameClock::RequestFrame requestFrame,
+      NucleusAnimationFrameClock::CancelFrame cancelFrame) {
+    animationFrameClock_->setScheduler(
+        std::move(requestFrame), std::move(cancelFrame));
+  }
+
+  void deliverAnimationFrame(std::uint64_t timestampNanoseconds) {
+    animationFrameClock_->deliver(timestampNanoseconds);
+    runtime_->drainMicrotasks();
   }
 
   void evaluateJavaScriptSource(const char *source, const char *sourceUrl) {
@@ -398,7 +438,10 @@ class ReactRuntimeHostImpl final {
     logRuntimeHostf("installFabricRuntime begin this=%p runtime=%p", this, runtime_.get());
     auto textMeasure = std::move(textMeasure_);
     fabric_ = std::make_unique<FabricRuntime>(
-        *runtime_, jsThreadId_, std::move(textMeasure));
+        *runtime_,
+        jsThreadId_,
+        std::move(textMeasure),
+        animationFrameClock_);
     if (mountingObserver_ != nullptr) {
       fabric_->setMountingObserver(mountingObserver_);
     }
@@ -1150,7 +1193,8 @@ class ReactRuntimeHostImpl final {
     FabricRuntime(
         facebook::jsi::Runtime &runtime,
         std::thread::id jsThreadId,
-        nucleus::react::TextMeasureFunction textMeasure)
+        nucleus::react::TextMeasureFunction textMeasure,
+        std::shared_ptr<NucleusAnimationFrameClock> animationFrameClock)
         : runtime_(runtime),
           jsThreadId_(jsThreadId),
           contextContainer_(std::make_shared<facebook::react::ContextContainer>()),
@@ -1205,6 +1249,8 @@ class ReactRuntimeHostImpl final {
                 facebook::react::ScrollViewComponentDescriptor>());
             addProvider(facebook::react::concreteComponentDescriptorProvider<
                 facebook::react::LayoutConformanceComponentDescriptor>());
+            addProvider(facebook::react::concreteComponentDescriptorProvider<
+                facebook::react::REASharedTransitionBoundaryComponentDescriptor>());
             auto registry = providerRegistry->createComponentDescriptorRegistry(
                 facebook::react::ComponentDescriptorParameters{
                     .eventDispatcher = eventDispatcher,
@@ -1222,7 +1268,7 @@ class ReactRuntimeHostImpl final {
                 jsThreadId_);
           },
           .commitHooks = {},
-          .animationChoreographer = nullptr,
+          .animationChoreographer = std::move(animationFrameClock),
       };
 
       scheduler_ = std::make_unique<facebook::react::Scheduler>(
@@ -1288,6 +1334,10 @@ class ReactRuntimeHostImpl final {
 
     std::size_t surfaceCount() const {
       return surfaces_.size();
+    }
+
+    std::shared_ptr<facebook::react::UIManager> uiManager() const {
+      return scheduler_->getUIManager();
     }
 
    private:
@@ -1428,6 +1478,26 @@ class ReactRuntimeHostImpl final {
   }
 
   void registerCoreTurboModules() {
+    animationModules_ = std::make_unique<NucleusAnimationModules>(
+        *runtime_,
+        std::static_pointer_cast<facebook::react::CallInvoker>(jsInvoker_),
+        animationFrameClock_,
+        jsThreadId_,
+        [this]() -> std::shared_ptr<facebook::react::UIManager> {
+          return fabric_ == nullptr ? nullptr : fabric_->uiManager();
+        });
+    turboModuleRegistry_.add(
+        "WorkletsModule",
+        [modules = animationModules_.get()](
+            std::shared_ptr<facebook::react::CallInvoker>) {
+          return modules->workletsModule();
+        });
+    turboModuleRegistry_.add(
+        "ReanimatedModule",
+        [modules = animationModules_.get()](
+            std::shared_ptr<facebook::react::CallInvoker>) {
+          return modules->reanimatedModule();
+        });
     // `PlatformConstants` stays on the iOS-shape hand-rolled implementation:
     // the bundle's `Platform.nucleus.js` derives from `Platform.ios.js`, so
     // JS that drops into native-side constants (e.g. `Platform.constants`)
@@ -1837,6 +1907,11 @@ class ReactRuntimeHostImpl final {
     // the full NativePerformance TurboModule replaces this during InitializeCore.
     installMinimalPerformanceGlobal();
     timerManager_->attachGlobals(*runtime_);
+    // React Native 0.87 intentionally implements requestAnimationFrame as a
+    // zero-delay timer. Replace only those two globals with the runtime's
+    // presentation-clock authority; setTimeout and setInterval remain on the
+    // platform timer registry.
+    animationFrameClock_->attachGlobals();
     // `setImmediate`/`clearImmediate` are not hand-installed here: React Native's
     // JS layer (`InitializeCore` / `@react-native/js-polyfills`, pulled in by every
     // Metro-built bundle) defines them on top of the Timing module that
@@ -2015,13 +2090,14 @@ class ReactRuntimeHostImpl final {
   // lambda is destroyed (which happens when `runtime_` is destroyed).
   TurboModuleRegistry turboModuleRegistry_;
   std::unique_ptr<facebook::jsi::Runtime> runtime_;
-  // Declared after `runtime_` so destruction order is timer-manager →
-  // runtime. The manager's `timers_` map holds live `jsi::Function`s
-  // that must be destroyed while the runtime is still alive.
+  // Declared after `runtime_` so both registries destroy their live
+  // jsi::Functions before the runtime.
   std::unique_ptr<facebook::react::TimerManager> timerManager_;
+  std::shared_ptr<NucleusAnimationFrameClock> animationFrameClock_;
   std::thread::id jsThreadId_{};
   std::shared_ptr<RuntimeJSCallInvoker> jsInvoker_;
   std::shared_ptr<DeviceEventEmitter> deviceEventEmitter_;
+  std::unique_ptr<NucleusAnimationModules> animationModules_;
   // The JS→native command handler, shared with every NucleusHostCommand instance; the
   // callback stays null (invoke is a no-op) until an embedding host installs one.
   std::shared_ptr<HostCommandHandler> commandHandler_ =
@@ -2237,6 +2313,32 @@ RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(JSWorkWake wake) 
       throw std::runtime_error("React runtime host facade is moved-from");
     }
     impl_->setJSWorkWakeHandler(std::move(wake));
+  });
+}
+
+RuntimeHostResult ReactRuntimeHostFacade::setAnimationFrameScheduler(
+    AnimationFrameRequest requestFrame,
+    AnimationFrameCancel cancelFrame) {
+  return invokeRuntimeHostEntry(
+      [this,
+       requestFrame = std::move(requestFrame),
+       cancelFrame = std::move(cancelFrame)]() mutable {
+        if (impl_ == nullptr) {
+          throw std::runtime_error("React runtime host facade is moved-from");
+        }
+        impl_->setAnimationFrameScheduler(
+            std::move(requestFrame), std::move(cancelFrame));
+      });
+}
+
+RuntimeHostResult ReactRuntimeHostFacade::deliverAnimationFrame(
+    unsigned long long timestampNanoseconds) {
+  return invokeRuntimeHostEntry([this, timestampNanoseconds] {
+    if (impl_ == nullptr) {
+      throw std::runtime_error("React runtime host facade is moved-from");
+    }
+    impl_->deliverAnimationFrame(
+        static_cast<std::uint64_t>(timestampNanoseconds));
   });
 }
 

@@ -87,6 +87,9 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
                 entrypoint: CoreEntrypoints.androidVerify,
                 selection: CoreColliderRecipe.descriptor.canonicalName))
     #expect(
+        try selectedTasks(in: catalog, entrypoint: .testDefault, selection: "android")
+            .contains(CoreTaskIDs.androidBuild))
+    #expect(
         try selectedTasks(in: catalog, entrypoint: .bootstrap, selection: "android-source")
             == selectedTasks(
                 in: catalog,

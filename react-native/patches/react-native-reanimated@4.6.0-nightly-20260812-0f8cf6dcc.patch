@@ -1,0 +1,36 @@
+diff --git a/Common/cpp/reanimated/CSS/core/transition/CSSPlatformTransitionProxy.cpp b/Common/cpp/reanimated/CSS/core/transition/CSSPlatformTransitionProxy.cpp
+index 05a2889597609f56529896a3d9332842d25fcd14..fd0b9a09169ef57da694e06d1a2210a61f2ff9ba 100644
+--- a/Common/cpp/reanimated/CSS/core/transition/CSSPlatformTransitionProxy.cpp
++++ b/Common/cpp/reanimated/CSS/core/transition/CSSPlatformTransitionProxy.cpp
+@@ -41,18 +41,14 @@ CSSTransitionConfig CSSPlatformTransitionProxy::processConfig(
+     CSSTransitionRouting &routing,
+     const double timestamp) const {
+   CSSTransitionConfig loopConfig;
+-#ifndef NDEBUG
+   size_t matchedValues = 0;
+-#endif // NDEBUG
+ 
+   for (const auto &[propertyName, settings] : config.changedPropertiesSettings) {
+     const auto valueIt = config.changedProperties.find(propertyName);
+     const bool hasValue = valueIt != config.changedProperties.end();
+-#ifndef NDEBUG
+     if (hasValue) {
+       ++matchedValues;
+     }
+-#endif // NDEBUG
+ 
+     bool routable = canRoute(propertyName, settings.easingConfig);
+     if (routable && hasValue) {
+diff --git a/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h b/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
+index 262c495f18351f6d98e12651438fd5f2a08a187e..21b7e042638fb3d97da37c4d438f568f7b27780d 100644
+--- a/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
++++ b/Common/cpp/reanimated/Tools/PlatformDepMethodsHolder.h
+@@ -31,7 +31,7 @@ using MeasureFunction = std::function<jsi::Value(jsi::Runtime &rt, const jsi::Va
+ using RequestRenderFunction = std::function<void(std::function<void(const double)>)>;
+ #ifdef ANDROID
+ using SynchronouslyUpdateUIPropsFunction = std::function<void(const std::vector<int> &, const std::vector<double> &)>;
+-#elif __APPLE__
++#elif defined(__APPLE__) || defined(NUCLEUS)
+ using SynchronouslyUpdateUIPropsFunction = std::function<void(const int, const folly::dynamic &)>;
+ #endif // ANDROID
+ using PreserveMountedTagsFunction = std::function<std::optional<std::unique_ptr<int[]>>(std::vector<int> &)>;

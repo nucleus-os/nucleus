@@ -1,3 +1,5 @@
+import Glibc
+public import NucleusAppHostProtocols
 public import NucleusWindowClientContracts
 package import WaylandClientDispatch
 
@@ -9,6 +11,10 @@ public final class NucleusDesktopWindow {
     private var alpha: WaylandProxy<WpAlphaModifierSurfaceV1Client>?
     private var pendingWidth: Int32 = 0
     private var pendingHeight: Int32 = 0
+    private var presentationFrameCallback: WaylandProxy<WlCallbackClient>?
+    private var presentationFrameCompletion: (@MainActor @Sendable (UInt64) -> Void)?
+    private var presentationFrameTimestamp =
+        NucleusPresentationFrameTimestamp()
     private var closed = false
 
     public var onEvent: ((NucleusDesktopWindowEvent) -> Void)?
@@ -47,6 +53,7 @@ public final class NucleusDesktopWindow {
     public func close() {
         guard !closed else { return }
         closed = true
+        cancelPresentationFrame()
         if let alpha {
             try? alpha.destroy()
             self.alpha = nil
@@ -108,6 +115,30 @@ public final class NucleusDesktopWindow {
         }
     }
 
+    public func requestPresentationFrame(
+        _ completion: @escaping @MainActor @Sendable (UInt64) -> Void
+    ) throws(NucleusDesktopWindowError) {
+        guard !closed, presentationFrameCallback == nil else {
+            throw .protocolFailure
+        }
+        do {
+            let callback = try surface.frame()
+            try callback.installListener(self)
+            presentationFrameCompletion = completion
+            presentationFrameCallback = callback
+            try surface.commit()
+        } catch {
+            presentationFrameCompletion = nil
+            presentationFrameCallback = nil
+            throw .protocolFailure
+        }
+    }
+
+    public func cancelPresentationFrame() {
+        presentationFrameCompletion = nil
+        presentationFrameCallback = nil
+    }
+
     package func withUnsafeNativeSurface<Result>(
         _ body: (OpaquePointer) throws -> Result
     ) throws -> Result {
@@ -142,6 +173,30 @@ public final class NucleusDesktopWindow {
         onEvent?(.closeRequested)
     }
 
+    // swift-format-ignore: AlwaysUseLowerCamelCase
+    package func done(
+        _ proxy: WaylandBorrowedProxy<WlCallbackClient>,
+        callback_data callbackData: UInt32
+    ) {
+        guard presentationFrameCallback != nil else { return }
+        let completion = presentationFrameCompletion
+        presentationFrameCompletion = nil
+        presentationFrameCallback = nil
+
+        var timestamp = timespec(tv_sec: 0, tv_nsec: 0)
+        let observedNanoseconds =
+            if unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp) == 0 {
+                UInt64(timestamp.tv_sec) * 1_000_000_000
+                    + UInt64(timestamp.tv_nsec)
+            } else {
+                UInt64(callbackData) * 1_000_000
+            }
+        completion?(
+            presentationFrameTimestamp.resolve(
+                protocolMilliseconds: callbackData,
+                observedMonotonicNanoseconds: observedNanoseconds))
+    }
+
     package func configureBounds(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         width: Int32,
@@ -154,7 +209,10 @@ public final class NucleusDesktopWindow {
     ) {}
 }
 
-extension NucleusDesktopWindow: XdgSurfaceEvents, XdgToplevelEvents {}
+extension NucleusDesktopWindow: NucleusPresentationFrameSource {}
+extension NucleusDesktopWindow:
+    WlCallbackEvents, XdgSurfaceEvents, XdgToplevelEvents
+{}
 
 @MainActor
 public final class NucleusDesktopPopup {

@@ -80,6 +80,7 @@ Desktop.ini
 **/jest-stare/
 **/.tap
 /react-native/dist/
+/react-native/.rn-build/
 
 # Python bytecode
 **/__pycache__/

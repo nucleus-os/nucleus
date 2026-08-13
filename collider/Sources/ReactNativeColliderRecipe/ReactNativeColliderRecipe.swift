@@ -19,6 +19,11 @@ package struct JavaScriptDependencyArtifacts: Sendable {
     package let nodeModules: ArtifactReference
 }
 
+package struct ReactNativeCodegenArtifacts: Sendable {
+    package let task: TaskDeclaration
+    package let output: ArtifactReference
+}
+
 package struct HermesArtifacts: Sendable {
     package let task: TaskDeclaration
     package let libraries: [ArtifactReference]
@@ -69,11 +74,15 @@ public enum ReactNativeColliderRecipe {
             root: root,
             cacheRoot: context.cacheRoot,
             environment: context.environment)
+        let codegen = try generateReactNativeCode(
+            root: root,
+            dependencies: javascript.nodeModules,
+            environment: context.environment)
         let boost = try provisionBoost(
             root: root,
             cacheRoot: context.cacheRoot,
             environment: context.environment)
-        var tasks = [javascript.task] + boost.tasks
+        var tasks = [javascript.task, codegen.task] + boost.tasks
         var bootstrapRoots: Set<TaskID> = []
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         for architecture in PlatformArchitecture.allCases {
@@ -102,6 +111,7 @@ public enum ReactNativeColliderRecipe {
                 environment: context.environment,
                 target: target,
                 dependencies: javascript.nodeModules,
+                codegen: codegen.output,
                 boost: boost.active,
                 hermes: hermes,
                 support: support,
@@ -123,6 +133,7 @@ public enum ReactNativeColliderRecipe {
             Set(tasks.compactMap { matches($0.id.rawValue) ? .task($0.id) : nil })
         }
         let javascriptProducers = producers { $0 == "rn.javascript-dependencies" }
+        let codegenProducers = producers { $0 == "rn.codegen" }
         let boostProducers = producers {
             $0 == "rn.boost-download" || $0 == "rn.boost"
         }
@@ -142,6 +153,14 @@ public enum ReactNativeColliderRecipe {
                 storageClass: .incremental,
                 root: root.appending("node_modules"),
                 safetyRoot: root,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "rn-codegen",
+                owner: descriptor.id,
+                producers: codegenProducers,
+                storageClass: .incremental,
+                root: root.appending(".rn-build/codegen"),
+                safetyRoot: root.appending(".rn-build"),
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "rn-javascript-cache",
@@ -217,6 +236,34 @@ public enum ReactNativeColliderRecipe {
         return JavaScriptDependencyArtifacts(
             task: declaration,
             nodeModules: nodeModules)
+    }
+
+    package static func generateReactNativeCode(
+        root: FilePath,
+        dependencies: ArtifactReference,
+        environment: [String: String]
+    ) throws -> ReactNativeCodegenArtifacts {
+        let output = root.appending(".rn-build/codegen")
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "rn.codegen"),
+            component: ComponentID(rawValue: "rn"))
+        builder.consume(dependencies)
+        let artifact: ArtifactReference = try builder.output(
+            "codegen",
+            path: output,
+            validation: .nonEmptyDirectory)
+        let task = builder.build(
+            inputs: [
+                .file(root.appending("package.json")),
+                .file(root.appending("bun.lock")),
+            ],
+            locks: [.checkout("rn-codegen")],
+            action: try AnyColliderAction(
+                GenerateReactNativeCodeAction(
+                    root: root,
+                    output: output,
+                    environment: environment)))
+        return ReactNativeCodegenArtifacts(task: task, output: artifact)
     }
 
     package static func provisionBoost(
@@ -556,6 +603,7 @@ public enum ReactNativeColliderRecipe {
         environment: [String: String],
         target: NativeLinuxTarget,
         dependencies: ArtifactReference,
+        codegen: ArtifactReference,
         boost: ArtifactReference,
         hermes: HermesArtifacts,
         support: SupportLibraryArtifacts,
@@ -571,6 +619,7 @@ public enum ReactNativeColliderRecipe {
         taskBuilder.consume(builder.image)
         taskBuilder.consume(builder.swiftSDK)
         taskBuilder.consume(dependencies)
+        taskBuilder.consume(codegen)
         taskBuilder.consume(boost)
         for library in hermes.libraries + support.libraries {
             taskBuilder.consume(library)
@@ -585,7 +634,8 @@ public enum ReactNativeColliderRecipe {
             [artifacts.appending("glog/libglog.a")]
             + generatedGlogHeaders
             + [
-                "libfolly_runtime.a", "libjsi.a", "libreact_native.a",
+                "libfolly_runtime.a", "libjsi.a", "libreact_native.a", "libworklets.a",
+                "libreanimated.a",
                 "libreact_cxx_platform.a", "libyogacore.a",
             ].map({ artifacts.appending("reactnative/\($0)") })
         for output in runtimeOutputs {
@@ -648,6 +698,9 @@ public enum ReactNativeColliderRecipe {
                                     "-DRCXXP_ROOT=/src/react-native/packages/react-native/ReactCxxPlatform",
                                     "-DRN_CODEGEN_ROOT=/react-native/React/FBReactNativeSpec",
                                     "-DHERMES_DIR=/src/hermes",
+                                    "-DWORKLETS_ROOT=/worklets",
+                                    "-DREANIMATED_ROOT=/reanimated",
+                                    "-DRN_LIBRARY_CODEGEN_ROOT=/rn-codegen/android/app/build/generated/source/codegen/jni",
                                 ],
                                 root: root,
                                 environment: environment,
@@ -658,13 +711,17 @@ public enum ReactNativeColliderRecipe {
                                     OCIMount(
                                         source: boost.path.removingLastComponent(),
                                         target: "/dependencies/boost",
-                                        access: .readOnly)
+                                        access: .readOnly),
+                                    OCIMount(
+                                        source: codegen.path,
+                                        target: "/rn-codegen",
+                                        access: .readOnly),
                                 ]),
                             try nativeNinja(
                                 containerBuild: "/build/reactnative",
                                 targets: [
                                     "folly_runtime", "jsi", "react_native",
-                                    "react_cxx_platform", "yogacore",
+                                    "react_cxx_platform", "yogacore", "worklets", "reanimated",
                                 ],
                                 root: root,
                                 environment: environment,
@@ -675,7 +732,11 @@ public enum ReactNativeColliderRecipe {
                                     OCIMount(
                                         source: boost.path.removingLastComponent(),
                                         target: "/dependencies/boost",
-                                        access: .readOnly)
+                                        access: .readOnly),
+                                    OCIMount(
+                                        source: codegen.path,
+                                        target: "/rn-codegen",
+                                        access: .readOnly),
                                 ]),
                             try nativeContainerOperation(
                                 root: root,
@@ -692,7 +753,8 @@ public enum ReactNativeColliderRecipe {
                                         + " /export/glog/glog/$header; done"
                                         + " && for library in"
                                         + " libfolly_runtime.a libjsi.a libreact_native.a"
-                                        + " libreact_cxx_platform.a libyogacore.a; do"
+                                        + " libreact_cxx_platform.a libyogacore.a"
+                                        + " libworklets.a libreanimated.a; do"
                                         + " install -m 0644 /build/reactnative/$library"
                                         + " /export/reactnative/$library; done",
                                 ],
@@ -743,6 +805,22 @@ public enum ReactNativeColliderRecipe {
             (
                 "include/react-native",
                 root.appending("node_modules/react-native")
+            ),
+            (
+                "include/react-native-worklets",
+                root.appending("node_modules/react-native-worklets/Common/cpp")
+            ),
+            (
+                "include/react-native-reanimated",
+                root.appending("node_modules/react-native-reanimated/Common/cpp")
+            ),
+            (
+                "include/react-native-reanimated-native-view",
+                root.appending("node_modules/react-native-reanimated/Common/NativeView")
+            ),
+            (
+                "include/rn-library-codegen",
+                root.appending(".rn-build/codegen/android/app/build/generated/source/codegen/jni")
             ),
             (
                 "include/react-cxx-platform",
@@ -1138,6 +1216,14 @@ private func nativeContainerOperation(
                 target: "/react-native",
                 access: .readOnly),
             OCIMount(
+                source: root.appending("node_modules/react-native-worklets"),
+                target: "/worklets",
+                access: .readOnly),
+            OCIMount(
+                source: root.appending("node_modules/react-native-reanimated"),
+                target: "/reanimated",
+                access: .readOnly),
+            OCIMount(
                 source: root.appending("../core/swiftpm/cmake/reactnative").lexicallyNormalized(),
                 target: "/core-cmake",
                 access: .readOnly),
@@ -1234,6 +1320,63 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
         guard result.succeeded else {
             throw result.executionFailure(
                 reason: "JavaScript dependency installation failed")
+        }
+    }
+}
+
+private struct GenerateReactNativeCodeAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let root: FilePath
+        let output: FilePath
+
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: root)
+            encoder.append(path: output)
+            encoder.append("android")
+            encoder.append("app")
+            encoder.append(true)
+        }
+    }
+
+    static let kind: ActionKind = "rn.generate-codegen"
+
+    let root: FilePath
+    let output: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(root: root, output: output) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "node", executable: .named("node"), role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .checkout(root)),
+                ActionEffect(.write, scope: .output(output)),
+            ],
+            executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(output)
+        try context.files.createDirectory(output)
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("node"),
+                arguments: [
+                    "node_modules/react-native/scripts/generate-codegen-artifacts.js",
+                    "--path", root.string,
+                    "--targetPlatform", "android",
+                    "--outputPath", output.string,
+                    "--source", "app",
+                    "--forceOutputPath",
+                ],
+                workingDirectory: root,
+                environment: environment))
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "React Native code generation failed")
         }
     }
 }

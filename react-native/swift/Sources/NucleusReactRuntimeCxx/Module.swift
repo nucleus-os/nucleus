@@ -24,6 +24,18 @@ private nonisolated func makeJSWorkWake(
     unsafe .init { handler() }
 }
 
+private nonisolated func makeAnimationFrameRequest(
+    _ handler: @escaping @Sendable () -> Bool
+) -> nucleus.react.ReactRuntimeHostFacade.AnimationFrameRequest {
+    unsafe .init { handler() }
+}
+
+private nonisolated func makeAnimationFrameCancel(
+    _ handler: @escaping @Sendable () -> Void
+) -> nucleus.react.ReactRuntimeHostFacade.AnimationFrameCancel {
+    unsafe .init { handler() }
+}
+
 @MainActor
 @safe package final class RuntimeHost {
     private var facade: nucleus.react.ReactRuntimeHostFacade
@@ -138,6 +150,25 @@ private nonisolated func makeJSWorkWake(
     ) throws {
         try requireSuccess(
             unsafe facade.setJSWorkWakeHandler(makeJSWorkWake(handler)))
+    }
+
+    /// Installs the platform's one-shot presentation callback. All native and
+    /// JavaScript animation demand in this runtime is coalesced onto it.
+    package func setAnimationFrameScheduler(
+        request: @escaping @Sendable () -> Bool,
+        cancel: @escaping @Sendable () -> Void
+    ) throws {
+        try requireSuccess(
+            unsafe facade.setAnimationFrameScheduler(
+                makeAnimationFrameRequest(request),
+                makeAnimationFrameCancel(cancel)
+            ))
+    }
+
+    /// Delivers one monotonic platform presentation timestamp.
+    package func deliverAnimationFrame(timestampNanoseconds: UInt64) throws {
+        try requireSuccess(
+            unsafe facade.deliverAnimationFrame(timestampNanoseconds))
     }
 
     /// Thread-safe. Schedules a JS-thread dispatch of a device event with the

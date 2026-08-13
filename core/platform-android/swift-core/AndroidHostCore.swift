@@ -4,7 +4,8 @@
 // wraps an instance of this and is what swift-java extracts; this type carries
 // the whole state machine.
 
-import NucleusAndroidHostLifecycle
+internal import NucleusAndroidHostLifecycle
+package import NucleusAppHostProtocols
 
 package enum AndroidErrorCode: Int32 {
     case none = 0
@@ -267,10 +268,20 @@ package final class AndroidHostCore {
     var runtime = RuntimeSlot()
     var lifecycle = LifecycleStats()
     var last_error: AndroidErrorCode = .none
+    package let presentationFrames: NucleusPresentationFrameRelay
 
-    package init() {}
+    package init() {
+        presentationFrames = MainActor.assumeIsolated {
+            NucleusPresentationFrameRelay()
+        }
+    }
 
     package func teardown() -> UnsafeMutableRawPointer? {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated {
+            presentationFrames.stop()
+            presentationFrames.detachSurface()
+        }
         let window = unsafe surface.detach()
         unsafe runtime.host.updateSurface(nil, 0, 0, 0, surface.generation)
         if runtime.host.started {
@@ -284,6 +295,8 @@ package final class AndroidHostCore {
     }
 
     package func start() -> Bool {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated { presentationFrames.start() }
         frame_clock.started = true
         lifecycle.start_count &+= 1
         events.push(AndroidEvent(kind: .host_start))
@@ -292,6 +305,8 @@ package final class AndroidHostCore {
     }
 
     package func stop() -> Bool {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated { presentationFrames.stop() }
         frame_clock.started = false
         lifecycle.stop_count &+= 1
         events.push(AndroidEvent(kind: .host_stop))
@@ -329,6 +344,8 @@ package final class AndroidHostCore {
         _ height: Int32,
         _ format: Int32
     ) -> UnsafeMutableRawPointer? {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated { presentationFrames.attachSurface() }
         let previous = unsafe surface.attach(window, width, height, format)
         unsafe runtime.host.updateSurface(
             surface.native_window,
@@ -362,6 +379,8 @@ package final class AndroidHostCore {
     }
 
     package func detachSurface() -> UnsafeMutableRawPointer? {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated { presentationFrames.detachSurface() }
         guard let previous = unsafe surface.detach() else {
             last_error = .no_surface
             return nil
@@ -558,6 +577,11 @@ package final class AndroidHostCore {
     }
 
     package func runtimeFrame(_ frameTimeNanos: Int64) -> Bool {
+        let presentationFrames = presentationFrames
+        MainActor.assumeIsolated {
+            presentationFrames.deliver(
+                frameTimeNanoseconds: frameTimeNanos)
+        }
         let drainedEvents = events.drainStats()
         if !runtime.host.frame(frameTimeNanos, drainedEvents) {
             last_error = .render_not_started

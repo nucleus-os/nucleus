@@ -12,7 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Dep roots passed via -D (absolute):
 #   FOLLY_DIR FAST_FLOAT_INC FMT_INC DOUBLE_CONVERSION_SOURCE_DIR GLOG_INC GLOG_SRC_INC
-#   BOOST_INC JSI_DIR RN_ROOT RCXXP_ROOT HERMES_DIR
+#   BOOST_INC JSI_DIR RN_ROOT RCXXP_ROOT HERMES_DIR WORKLETS_ROOT
+#   REANIMATED_ROOT RN_LIBRARY_CODEGEN_ROOT
 set(RC ${RN_ROOT}/ReactCommon)
 set(RCXXP ${RCXXP_ROOT})
 
@@ -204,3 +205,37 @@ rn_glob(YOGA_SRC "${RC}/yoga" "${RN_EXCLUDE_PATTERNS}"
 add_library(yogacore STATIC ${YOGA_SRC})
 target_compile_options(yogacore PRIVATE -fexceptions -frtti ${RN_DEFS} ${RN_WARN})
 target_include_directories(yogacore PUBLIC ${RC}/yoga ${DEP_INCLUDES})
+
+# ── React Native Worklets ───────────────────────────────────────────────────
+file(GLOB_RECURSE WORKLETS_SRC CONFIGURE_DEPENDS
+    "${WORKLETS_ROOT}/Common/cpp/worklets/*.cpp")
+add_library(worklets STATIC ${WORKLETS_SRC})
+target_compile_options(worklets PRIVATE
+    -fexceptions -frtti ${RN_DEFS} ${RN_WARN}
+    -DNUCLEUS=1 -DWORKLETS_VERSION=0.13.0)
+target_include_directories(worklets PUBLIC
+    ${WORKLETS_ROOT}/Common/cpp ${RN_INCLUDES} ${DEP_INCLUDES})
+target_link_libraries(worklets PUBLIC react_native)
+
+# ── React Native Reanimated ──────────────────────────────────────────────
+file(GLOB_RECURSE REANIMATED_SRC CONFIGURE_DEPENDS
+    "${REANIMATED_ROOT}/Common/cpp/reanimated/*.cpp")
+file(GLOB REANIMATED_CODEGEN_SRC CONFIGURE_DEPENDS
+    "${RN_LIBRARY_CODEGEN_ROOT}/react/renderer/components/rnreanimated/*.cpp")
+file(GLOB REANIMATED_NATIVE_VIEW_SRC CONFIGURE_DEPENDS
+    "${REANIMATED_ROOT}/Common/NativeView/react/renderer/components/rnreanimated/*.cpp")
+add_library(reanimated STATIC
+    ${REANIMATED_SRC}
+    ${REANIMATED_CODEGEN_SRC}
+    ${REANIMATED_NATIVE_VIEW_SRC})
+target_compile_options(reanimated PRIVATE
+    -fexceptions -frtti ${RN_DEFS} ${RN_WARN}
+    -DNUCLEUS=1 -DREANIMATED_VERSION=4.6.0
+    "-DREANIMATED_FEATURE_FLAGS=[RUNTIME_TEST_FLAG:false][DISABLE_COMMIT_PAUSING_MECHANISM:false][ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS:false][IOS_SYNCHRONOUSLY_UPDATE_UI_PROPS:false][EXPERIMENTAL_CSS_ANIMATIONS_FOR_SVG_COMPONENTS:true][IOS_CSS_CORE_ANIMATION:false][ANDROID_CSS_PLATFORM_TRANSITIONS:false][USE_SYNCHRONIZABLE_FOR_MUTABLES:true][USE_COMMIT_HOOK_ONLY_FOR_REACT_COMMITS:true][ENABLE_SHARED_ELEMENT_TRANSITIONS:false][FORCE_REACT_RENDER_FOR_SETTLED_ANIMATIONS:false][USE_ANIMATION_BACKEND:true]")
+target_include_directories(reanimated PUBLIC
+    ${REANIMATED_ROOT}/Common/cpp
+    ${REANIMATED_ROOT}/Common/NativeView
+    ${RN_LIBRARY_CODEGEN_ROOT}
+    ${WORKLETS_ROOT}/Common/cpp
+    ${RN_INCLUDES} ${DEP_INCLUDES})
+target_link_libraries(reanimated PUBLIC worklets react_native)

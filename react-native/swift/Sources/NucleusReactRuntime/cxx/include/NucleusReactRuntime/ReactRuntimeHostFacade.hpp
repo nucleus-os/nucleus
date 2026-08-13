@@ -58,6 +58,18 @@ class ReactRuntimeHostFacade final {
   // an empty invoker queue. Replacing the wake, or shutting the runtime down,
   // retires the previous callable once every in-flight signal has released it.
   RuntimeHostResult setJSWorkWakeHandler(JSWorkWake wake);
+  using AnimationFrameRequest = std::function<bool()>;
+  using AnimationFrameCancel = std::function<void()>;
+  // Installs the embedding platform's one-shot presentation callback. The
+  // runtime coalesces all native-animation and requestAnimationFrame demand
+  // into at most one outstanding request.
+  RuntimeHostResult setAnimationFrameScheduler(
+      AnimationFrameRequest requestFrame,
+      AnimationFrameCancel cancelFrame);
+  // Delivers a CLOCK_MONOTONIC timestamp from the selected presentation
+  // source. Regressing timestamps are clamped to the last delivered value.
+  RuntimeHostResult deliverAnimationFrame(
+      unsigned long long timestampNanoseconds);
   // Thread-safe. Schedules a JS-thread call to the global device-event
   // emitter with `name` and the optionally JSON-encoded `payloadJson`. The
   // event is dropped if the JS-side emitter is not installed yet.

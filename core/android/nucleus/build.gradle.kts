@@ -14,6 +14,10 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
+dependencies {
+    testImplementation(libs.junit)
+}
+
 val coreRoot = layout.projectDirectory.dir("../..")
 val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId")
     .orElse(providers.environmentVariable("NUCLEUS_SWIFT_SOURCE_ID"))

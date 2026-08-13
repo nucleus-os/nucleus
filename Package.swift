@@ -89,13 +89,14 @@ let reactNativeHostCxxSettings: [CXXSetting] = [
         "-std=c++20", "-fexceptions", "-frtti", "-DJS_RUNTIME_HERMES=1",
         "-DHERMES_V1_ENABLED=1", "-DREACT_NATIVE_DEBUG=1", "-DFOLLY_NO_CONFIG=1",
         "-DFOLLY_MOBILE=0", "-DFOLLY_CFG_NO_COROUTINES=1", "-DFMT_USE_CONSTEVAL=0",
-        "-DSK_GRAPHITE", "-DSK_VULKAN",
+        "-DSK_GRAPHITE", "-DSK_VULKAN", "-DNUCLEUS=1",
     ])
 ]
 
 let reactNativeRuntimeLinkerSettings: [LinkerSetting] = [
     .unsafeFlags([
         "-Xlinker", "--start-group", "-lhermes_lean_combined", "-lreact_native",
+        "-lworklets", "-lreanimated",
         "-lreact_cxx_platform", "-lyogacore", "-lfolly_runtime", "-lglog", "-lfmt",
         "-ldouble-conversion", "-Xlinker", "--end-group", "-latomic", "-lpthread", "-ldl",
         "-lm", "-Xlinker", "--start-group", "-lskia", "-lskshaper", "-lskparagraph",
@@ -956,7 +957,7 @@ let targets: [Target] = [
     .target(
         name: "NucleusTypes", path: "foundation/Sources/NucleusTypes"),
     .testTarget(
-        name: "NucleusTypesTests", dependencies: ["NucleusTypes"],
+        name: "NucleusTypesTests", dependencies: ["NucleusAppHostProtocols", "NucleusTypes"],
         path: "foundation/Tests/NucleusTypesTests"),
     .target(
         name: "NucleusDiagnostics", path: "foundation/Sources/NucleusDiagnostics"),
@@ -1213,6 +1214,8 @@ let targets: [Target] = [
     .testTarget(
         name: "NucleusReactRuntimeFabricTests",
         dependencies: [
+            "NucleusAppHostProtocols",
+            "NucleusReactRuntime",
             "NucleusReactRuntimeCxxBridge",
             "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
             "Nucleus",
@@ -1271,7 +1274,7 @@ let targets: [Target] = [
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-            "NucleusFoundation", "Tracy",
+            "NucleusFoundation", "NucleusAppHostProtocols", "Tracy",
         ], path: "react-native/swift/Sources/NucleusReactRuntime", exclude: ["cxx"],
         swiftSettings: reactNativeSwiftSettings),
     .target(
@@ -1532,6 +1535,7 @@ let targets: [Target] = [
     .target(
         name: "NucleusWindowClientWayland",
         dependencies: [
+            "NucleusAppHostProtocols",
             "NucleusWindowClientContracts", "NucleusWindowClientXkbC", "NucleusWindowClientRuntime",
             "WaylandClientC", "WaylandClientDispatch", "WaylandClient",
             "WaylandProtocolTypes", "WaylandProtocolsC", "NucleusFoundation",

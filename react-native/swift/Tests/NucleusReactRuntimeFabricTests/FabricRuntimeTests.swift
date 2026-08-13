@@ -1,9 +1,43 @@
 import CxxStdlib
 import Foundation
+import NucleusAppHostProtocols
+import NucleusReactRuntime
 import NucleusReactRuntimeCxx
 import NucleusReactRuntimeCxxBridge
 import Synchronization
 import Testing
+
+@MainActor
+private final class TestPresentationFrameSource:
+    NucleusPresentationFrameSource
+{
+    struct RequestFailure: Error {}
+
+    var rejectsRequests = false
+    private(set) var requestCount = 0
+    private(set) var cancellationCount = 0
+    private var completion: (@MainActor @Sendable (UInt64) -> Void)?
+
+    func requestPresentationFrame(
+        _ completion: @escaping @MainActor @Sendable (UInt64) -> Void
+    ) throws {
+        requestCount += 1
+        if rejectsRequests { throw RequestFailure() }
+        precondition(self.completion == nil)
+        self.completion = completion
+    }
+
+    func cancelPresentationFrame() {
+        cancellationCount += 1
+        completion = nil
+    }
+
+    func deliver(_ timestampNanoseconds: UInt64) {
+        let completion = completion
+        self.completion = nil
+        completion?(timestampNanoseconds)
+    }
+}
 
 @safe private final class CrossThreadRuntimeFacade: @unchecked Sendable {
     nonisolated(unsafe) private var facade: nucleus.react.ReactRuntimeHostFacade
@@ -107,6 +141,29 @@ import Testing
         _ = try host.drainPendingJSCalls()
     }
 
+    @Test func animationModulesPublishTheirFabricRuntimeContracts() throws {
+        let host = try RuntimeHost()
+        try host.installFabric()
+        try host.evaluateJavaScriptSource(
+            """
+            const worklets = global.__turboModuleProxy('WorkletsModule');
+            const workletsInstalled = worklets.installTurboModule(false);
+            const reanimated = global.__turboModuleProxy('ReanimatedModule');
+            globalThis.nucleusAnimationModules = JSON.stringify([
+              workletsInstalled,
+              typeof globalThis.__workletsModuleProxy,
+              typeof reanimated.installTurboModule,
+            ]);
+            """,
+            sourceUrl: "animation-modules.js")
+
+        #expect(
+            try host.evaluateJavaScriptForString(
+                "globalThis.nucleusAnimationModules",
+                sourceUrl: "animation-modules-result.js")
+                == #"[true,"object","function"]"#)
+    }
+
     @Test func runtimeFailureCrossesTheCxxBoundary() {
         do {
             let host = try RuntimeHost()
@@ -138,6 +195,163 @@ import Testing
         usleep(20_000)
         #expect(wakes.withLock { $0 } == 1)
         #expect(try host.drainPendingJSCalls() > 0)
+    }
+
+    @Test func animationFramesCoalesceCancelAndUseThePresentationTimestamp() throws {
+        let requests = Mutex(0)
+        let cancellations = Mutex(0)
+        let host = try RuntimeHost()
+        try host.setAnimationFrameScheduler(
+            request: {
+                requests.withLock { $0 += 1 }
+                return true
+            },
+            cancel: { cancellations.withLock { $0 += 1 } }
+        )
+        try host.evaluateJavaScriptSource(
+            """
+            globalThis.animationFrames = [];
+            const cancelledFrame = requestAnimationFrame(function (timestamp) {
+              globalThis.animationFrames.push(['cancelled', timestamp]);
+            });
+            requestAnimationFrame(function (timestamp) {
+              globalThis.animationFrames.push(['delivered', timestamp]);
+            });
+            cancelAnimationFrame(cancelledFrame);
+            """,
+            sourceUrl: "animation-frame-coalescing.js")
+
+        #expect(requests.withLock { $0 } == 1)
+        #expect(cancellations.withLock { $0 } == 0)
+        try host.deliverAnimationFrame(timestampNanoseconds: 12_500_000)
+
+        #expect(
+            try host.evaluateJavaScriptForString(
+                "JSON.stringify(globalThis.animationFrames)",
+                sourceUrl: "animation-frame-result.js")
+                == #"[["delivered",12.5]]"#)
+        #expect(requests.withLock { $0 } == 1)
+        #expect(cancellations.withLock { $0 } == 0)
+    }
+
+    @Test func animationFramesRearmAndClampRegressingTimestamps() throws {
+        let requests = Mutex(0)
+        let host = try RuntimeHost()
+        try host.setAnimationFrameScheduler(
+            request: {
+                requests.withLock { $0 += 1 }
+                return true
+            },
+            cancel: {})
+        try host.evaluateJavaScriptSource(
+            """
+            globalThis.animationFrames = [];
+            requestAnimationFrame(function first(timestamp) {
+              globalThis.animationFrames.push(timestamp);
+              requestAnimationFrame(function second(nextTimestamp) {
+                globalThis.animationFrames.push(nextTimestamp);
+              });
+            });
+            """,
+            sourceUrl: "animation-frame-rearm.js")
+
+        try host.deliverAnimationFrame(timestampNanoseconds: 20_000_000)
+        #expect(requests.withLock { $0 } == 2)
+        try host.deliverAnimationFrame(timestampNanoseconds: 10_000_000)
+
+        #expect(
+            try host.evaluateJavaScriptForString(
+                "JSON.stringify(globalThis.animationFrames)",
+                sourceUrl: "animation-frame-monotonic-result.js")
+                == "[20,20]")
+        #expect(requests.withLock { $0 } == 2)
+    }
+
+    @Test func cancellingTheLastAnimationFrameRetiresPlatformDemand() throws {
+        let requests = Mutex(0)
+        let cancellations = Mutex(0)
+        let host = try RuntimeHost()
+        try host.setAnimationFrameScheduler(
+            request: {
+                requests.withLock { $0 += 1 }
+                return true
+            },
+            cancel: { cancellations.withLock { $0 += 1 } }
+        )
+        try host.evaluateJavaScriptSource(
+            """
+            const frame = requestAnimationFrame(function () {});
+            cancelAnimationFrame(frame);
+            """,
+            sourceUrl: "animation-frame-cancel.js")
+
+        #expect(requests.withLock { $0 } == 1)
+        #expect(cancellations.withLock { $0 } == 1)
+    }
+
+    @Test func runtimeTeardownCancelsOutstandingAnimationFrame() throws {
+        let cancellations = Mutex(0)
+        var host: RuntimeHost? = try RuntimeHost()
+        try host?.setAnimationFrameScheduler(
+            request: { true },
+            cancel: { cancellations.withLock { $0 += 1 } }
+        )
+        try host?.evaluateJavaScriptSource(
+            "requestAnimationFrame(function () {});",
+            sourceUrl: "animation-frame-teardown.js")
+
+        host = nil
+        #expect(cancellations.withLock { $0 } == 1)
+    }
+
+    @Test func presentationFrameSourceDrivesAndCancelsRuntimeDemand() throws {
+        let source = TestPresentationFrameSource()
+        let host = try RuntimeHost()
+        try host.setPresentationFrameSource(source)
+        try host.evaluateJavaScriptSource(
+            """
+            globalThis.presentationFrames = [];
+            requestAnimationFrame(function (timestamp) {
+              globalThis.presentationFrames.push(timestamp);
+            });
+            """,
+            sourceUrl: "presentation-frame-source.js")
+
+        #expect(source.requestCount == 1)
+        source.deliver(33_250_000)
+        #expect(
+            try host.evaluateJavaScriptForString(
+                "JSON.stringify(globalThis.presentationFrames)",
+                sourceUrl: "presentation-frame-source-result.js")
+                == "[33.25]")
+
+        try host.evaluateJavaScriptSource(
+            """
+            globalThis.pendingPresentationFrame = requestAnimationFrame(
+              function () {}
+            );
+            """,
+            sourceUrl: "presentation-frame-source-cancel.js")
+        #expect(source.requestCount == 2)
+        try host.evaluateJavaScriptSource(
+            "cancelAnimationFrame(globalThis.pendingPresentationFrame);",
+            sourceUrl: "presentation-frame-source-cancel-result.js")
+        #expect(source.cancellationCount == 1)
+    }
+
+    @Test func rejectedPresentationRequestCanBeReplaced() throws {
+        let rejected = TestPresentationFrameSource()
+        rejected.rejectsRequests = true
+        let host = try RuntimeHost()
+        try host.setPresentationFrameSource(rejected)
+        try host.evaluateJavaScriptSource(
+            "requestAnimationFrame(function () {});",
+            sourceUrl: "rejected-presentation-frame.js")
+        #expect(rejected.requestCount == 1)
+
+        let replacement = TestPresentationFrameSource()
+        try host.setPresentationFrameSource(replacement)
+        #expect(replacement.requestCount == 1)
     }
 
     @Test func jsThreadCommandDeliveryHopsToMainActor() async throws {

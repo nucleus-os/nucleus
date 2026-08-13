@@ -229,7 +229,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                     roots: [androidValidation.task.id]),
                 ComponentEntrypoint(
                     id: CoreEntrypoints.androidVerify,
-                    roots: [androidValidation.task.id]),
+                    roots: [androidBuild.id]),
             ],
             storage: storage)
         return ComponentArtifacts(

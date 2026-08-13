@@ -141,7 +141,7 @@ public final class Host {
         runtimeHost?.pendingMountEventCount(surfaceID: surfaceID) ?? 0
     }
 
-    private func requireHost() throws -> RuntimeHost {
+    package func requireHost() throws -> RuntimeHost {
         guard let runtimeHost else {
             throw RuntimeError.destroyed
         }

@@ -17,8 +17,8 @@ class NucleusView @JvmOverloads constructor(
     SurfaceHolder.Callback,
     AutoCloseable {
     private val host = NucleusHost(context)
-    private val choreographer = Choreographer.getInstance()
-    private val frameCallback = Choreographer.FrameCallback { frameTimeNanos -> doFrame(frameTimeNanos) }
+    private val frameLoop =
+        AndroidFrameLoop(ChoreographerFrameScheduler(Choreographer.getInstance()), ::doFrame)
 
     private var closed = false
     private var started = false
@@ -26,7 +26,6 @@ class NucleusView @JvmOverloads constructor(
     private var surfaceAttached = false
     private var runtimeAttached = false
     private var runtimeStarted = false
-    private var frameCallbackPosted = false
 
     init {
         holder.addCallback(this)
@@ -58,14 +57,14 @@ class NucleusView @JvmOverloads constructor(
         host.start()
         started = true
         maybeStartRuntime()
-        maybePostFrameCallback()
+        updateFrameLoop()
     }
 
     fun stop() {
         if (closed || !started) {
             return
         }
-        removeFrameCallback()
+        frameLoop.setEligible(false)
         stopRuntime()
         started = false
         host.stop()
@@ -80,7 +79,7 @@ class NucleusView @JvmOverloads constructor(
         if (closed) {
             return
         }
-        removeFrameCallback()
+        frameLoop.setEligible(false)
         stopRuntime()
         if (surfaceAttached) {
             surfaceAttached = false
@@ -107,12 +106,12 @@ class NucleusView @JvmOverloads constructor(
         windowAttached = true
         host.windowAttached()
         notifyConfiguration()
-        maybePostFrameCallback()
+        updateFrameLoop()
     }
 
     override fun onDetachedFromWindow() {
         if (!closed && windowAttached) {
-            removeFrameCallback()
+            frameLoop.setEligible(false)
             windowAttached = false
             host.windowDetached()
         }
@@ -143,13 +142,15 @@ class NucleusView @JvmOverloads constructor(
     override fun surfaceCreated(holder: SurfaceHolder) {
         checkOpen()
         if (surfaceAttached) {
+            frameLoop.setEligible(false)
+            stopRuntime()
             host.surfaceDestroyed()
             surfaceAttached = false
         }
         host.surfaceCreated(holder.surface)
         surfaceAttached = true
         maybeStartRuntime()
-        maybePostFrameCallback()
+        updateFrameLoop()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -164,7 +165,7 @@ class NucleusView @JvmOverloads constructor(
         if (closed || !surfaceAttached) {
             return
         }
-        removeFrameCallback()
+        frameLoop.setEligible(false)
         stopRuntime()
         surfaceAttached = false
         host.surfaceDestroyed()
@@ -190,29 +191,15 @@ class NucleusView @JvmOverloads constructor(
     }
 
     private fun doFrame(frameTimeNanos: Long) {
-        frameCallbackPosted = false
         if (closed || !started || !surfaceAttached) {
             return
         }
         host.frame(frameTimeNanos)
         host.runtimeFrame(frameTimeNanos)
-        maybePostFrameCallback()
     }
 
-    private fun maybePostFrameCallback() {
-        if (closed || !started || !surfaceAttached || !runtimeStarted || frameCallbackPosted) {
-            return
-        }
-        frameCallbackPosted = true
-        choreographer.postFrameCallback(frameCallback)
-    }
-
-    private fun removeFrameCallback() {
-        if (!frameCallbackPosted) {
-            return
-        }
-        choreographer.removeFrameCallback(frameCallback)
-        frameCallbackPosted = false
+    private fun updateFrameLoop() {
+        frameLoop.setEligible(!closed && started && surfaceAttached && runtimeStarted)
     }
 
     private fun maybeStartRuntime() {
@@ -225,6 +212,7 @@ class NucleusView @JvmOverloads constructor(
         }
         host.runtimeStart()
         runtimeStarted = true
+        updateFrameLoop()
     }
 
     private fun stopRuntime() {
