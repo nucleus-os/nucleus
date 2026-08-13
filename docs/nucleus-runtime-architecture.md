@@ -90,11 +90,12 @@ usage, container creation, process execution, and cleanup. Only the current-user
 login-session bootstrap script invokes the installed `container` executable,
 because it must establish and verify the service before Collider can use its
 API. The bootstrap installs its launcher under the user's Library and requires
-no elevated privileges. SwiftPM may still print missing pkg-config-file warnings
-while planning the Collider package on macOS: the single root runtime package
-contains Linux system-library targets, but those targets are not compiled into
-the macOS CLI. Linux target builds resolve their system libraries from the
-selected Swift SDK's architecture-specific pkg-config paths.
+no elevated privileges. The single root runtime package contains Linux
+system-library targets, but pkg-config discovery for those targets is enabled
+only when SwiftPM evaluates the manifest on Linux. Planning the Collider package
+on macOS neither searches for those Linux packages nor compiles their targets.
+Linux target builds resolve their system libraries from the selected Swift SDK's
+architecture-specific pkg-config paths.
 
 Collider recipes declare typed actions, inputs, outputs, execution placement,
 filesystem effects, and locks. Planning lowers those declarations into one

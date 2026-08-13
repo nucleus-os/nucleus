@@ -5,6 +5,14 @@
 
 import PackageDescription
 
+func linuxPkgConfig(_ name: String) -> String? {
+    #if os(Linux)
+    name
+    #else
+    nil
+    #endif
+}
+
 let products: [Product] = [
     .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
     .executable(name: "nucleus-android-runtime", targets: ["NucleusAndroidRuntime"]),
@@ -348,15 +356,15 @@ let targets: [Target] = [
     .systemLibrary(
         name: "NucleusCompositorDrmC",
         path: "compositor/compositor-core/Sources/NucleusCompositorDrmC",
-        pkgConfig: "nucleus-compositor-drm"),
+        pkgConfig: linuxPkgConfig("nucleus-compositor-drm")),
     .systemLibrary(
         name: "NucleusCompositorXcbC",
         path: "compositor/compositor-core/Sources/NucleusCompositorXcbC",
-        pkgConfig: "nucleus-compositor-xcb"),
+        pkgConfig: linuxPkgConfig("nucleus-compositor-xcb")),
     .systemLibrary(
         name: "NucleusCompositorInputC",
         path: "compositor/compositor-core/Sources/NucleusCompositorInputC",
-        pkgConfig: "nucleus-compositor-input"),
+        pkgConfig: linuxPkgConfig("nucleus-compositor-input")),
     .target(
         name: "NucleusCompositorSignalC",
         path: "compositor/compositor-core/Sources/NucleusCompositorSignalC"),
@@ -680,7 +688,7 @@ let targets: [Target] = [
         path: "core/swift/Sources/NucleusLayers"),
     .systemLibrary(
         name: "NucleusRenderSystemC", path: "core/swiftpm/cmodules/NucleusRenderSystemC",
-        pkgConfig: "nucleus-render-system"),
+        pkgConfig: linuxPkgConfig("nucleus-render-system")),
     .target(
         name: "NucleusTextBackendNative", path: "core/render-cxx/skia",
         cxxSettings: [
@@ -1063,7 +1071,7 @@ let targets: [Target] = [
         name: "NucleusLinuxReactorC", path: "platform-linux/Sources/NucleusLinuxReactorC"),
     .systemLibrary(
         name: "NucleusLinuxDBusC", path: "platform-linux/Sources/NucleusLinuxDBusC",
-        pkgConfig: "libsystemd"),
+        pkgConfig: linuxPkgConfig("libsystemd")),
     .target(
         name: "NucleusLinuxDBus", dependencies: ["NucleusLinuxDBusC", "NucleusLinuxReactor"],
         path: "platform-linux/Sources/NucleusLinuxDBus"),
@@ -1271,7 +1279,8 @@ let targets: [Target] = [
         dependencies: ["NucleusSessionProtocol", "NucleusIPCTransport", "NucleusIPCTransportC"],
         path: "session/protocol/Tests/NucleusSessionProtocolTests"),
     .systemLibrary(
-        name: "NucleusShellPamC", path: "shell/Sources/NucleusShellPamC", pkgConfig: "pam"),
+        name: "NucleusShellPamC", path: "shell/Sources/NucleusShellPamC",
+        pkgConfig: linuxPkgConfig("pam")),
     .executableTarget(
         name: "NucleusShellPamHelper", dependencies: ["NucleusShellAuthWire", "NucleusShellPamC"],
         path: "shell/Sources/NucleusShellPamHelper"),
@@ -1390,7 +1399,9 @@ let targets: [Target] = [
         name: "Tracy", dependencies: ["TracyBridge"], path: "swift-tracy/Sources/Tracy"),
     .testTarget(
         name: "TracyTests", dependencies: ["Tracy"], path: "swift-tracy/Tests/TracyTests"),
-    .systemLibrary(name: "VulkanC", path: "swift-vulkan/Sources/VulkanC", pkgConfig: "vulkan"),
+    .systemLibrary(
+        name: "VulkanC", path: "swift-vulkan/Sources/VulkanC",
+        pkgConfig: linuxPkgConfig("vulkan")),
     .target(
         name: "Vulkan", dependencies: ["VulkanC"], path: "swift-vulkan/Sources/Vulkan"),
     .executableTarget(
@@ -1411,10 +1422,10 @@ let targets: [Target] = [
         path: "swift-wayland/Sources/SwiftWaylandGen"),
     .systemLibrary(
         name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC",
-        pkgConfig: "wayland-server"),
+        pkgConfig: linuxPkgConfig("wayland-server")),
     .systemLibrary(
         name: "WaylandClientC", path: "swift-wayland/Sources/WaylandClientC",
-        pkgConfig: "wayland-client"),
+        pkgConfig: linuxPkgConfig("wayland-client")),
     .target(
         name: "WaylandServer",
         dependencies: [
@@ -1510,7 +1521,7 @@ let targets: [Target] = [
         ], path: "window-client/Sources/NucleusWindowClientRuntime"),
     .systemLibrary(
         name: "NucleusWindowClientXkbC", path: "window-client/Sources/NucleusWindowClientXkbC",
-        pkgConfig: "xkbcommon"),
+        pkgConfig: linuxPkgConfig("xkbcommon")),
     .systemLibrary(
         name: "NucleusWindowClientVulkanWaylandC",
         path: "window-client/Sources/NucleusWindowClientVulkanWaylandC"),
