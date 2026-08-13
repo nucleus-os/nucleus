@@ -29,6 +29,8 @@ isolation, handler binding, and resource ownership follow
   management;
 - blur, background effect, ext-workspace, ext-data-control, foreign-toplevel
   management, screencopy, text-input-v3, input-method-v2, and security context.
+- supervisor-authorized virtual-keyboard-v1 and virtual-pointer-v2, visible only
+  on the current shell generation's private Wayland connection.
 
 This list supersedes the older inventory that described alpha modifier,
 security context, text-input-v3, ext-data-control, screencopy, and several shell
@@ -82,18 +84,35 @@ multi-device seats, focus changes, device removal, and client teardown.
 Gate evidence: the gesture and tablet normalization suites, tablet-v2 inventory
 and wire lifecycle coverage, production global contract, multi-device
 cancellation, device removal, focus transition, and client teardown coverage all
-pass under `collider test compositor`. The complete command currently continues
-past those gates and fails in the independent session-supervisor acceptance suite
-because malformed readiness races the startup deadline.
+pass under `collider test compositor`.
 
 ## Phase 3 — Add trusted synthetic input
 
+Status: complete.
+
 Implement virtual-keyboard and virtual-pointer through the existing input
-dispatch path. Bind authorization to the existing security-context and session
-policy rather than allowing an untrusted client to inject global input.
+dispatch path. Bind authorization to a private supervisor-issued Wayland
+connection for the current shell generation rather than to client-controlled
+security-context metadata.
 
 Gate: unauthorized clients are rejected, authorized clients share normal focus
 and serial rules, and disconnect cannot leave pressed keys, buttons, or grabs.
+
+Achieved state: the supervisor creates one private Wayland socketpair alongside
+each shell policy endpoint. The compositor adopts the server endpoint as a
+revocable managed client, and the shell uses the client endpoint for its normal
+Wayland connection. Only that exact live client can discover or bind the virtual
+keyboard and virtual pointer globals. Requests enter the central annotated
+session input path, virtual keymaps replace and republish the seat keymap, and
+resource or shell-generation teardown synthesizes releases for every held key
+and button before destroying the client.
+
+Gate evidence: the production registry fixture proves ordinary clients cannot
+discover either global while the supervisor-issued client discovers both at the
+implemented versions. Session protocol and supervisor acceptance tests prove the
+two-endpoint generation handoff, replacement, and teardown. The complete
+`collider test compositor` gate passes, including malformed-readiness precedence
+and shell-restart coverage.
 
 ## Phase 4 — Close current desktop consumer gaps
 

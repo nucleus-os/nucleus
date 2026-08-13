@@ -55,8 +55,6 @@ package enum PrivilegedGlobals {
         "zwlr_gamma_control_manager_v1",
         "zwlr_output_manager_v1",
         "zwlr_output_power_manager_v1",
-        "zwlr_virtual_pointer_manager_v1",
-        "zwp_virtual_keyboard_manager_v1",
         "zwp_input_method_manager_v2",
         "xwayland_shell_v1",
         "wp_security_context_manager_v1",

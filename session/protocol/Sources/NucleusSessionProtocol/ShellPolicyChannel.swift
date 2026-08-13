@@ -14,7 +14,7 @@ public enum ShellPolicyChannelFailure: Error, CustomStringConvertible {
         case .invalidProtocolVersion(let version):
             "unsupported shell policy protocol version \(version)"
         case .invalidAttachment:
-            "shell policy attachment must carry exactly one endpoint"
+            "shell session attachment must carry policy and Wayland endpoints"
         }
     }
 }
@@ -175,7 +175,20 @@ public final class ShellPolicyChannel: @unchecked Sendable {
     }
 }
 
-/// Supervisor-to-compositor transfer of the policy endpoint for one shell
+public struct ShellSessionAttachment: Sendable {
+    public let policy: OwnedFileDescriptor
+    public let wayland: OwnedFileDescriptor
+
+    public init(
+        policy: OwnedFileDescriptor,
+        wayland: OwnedFileDescriptor
+    ) {
+        self.policy = policy
+        self.wayland = wayland
+    }
+}
+
+/// Supervisor-to-compositor transfer of the private endpoints for one shell
 /// generation.
 public final class ShellPolicyAttachmentChannel: @unchecked Sendable {
     public static let descriptorArgument =
@@ -214,19 +227,24 @@ public final class ShellPolicyAttachmentChannel: @unchecked Sendable {
         return ShellPolicyAttachmentChannel(owning: descriptor)
     }
 
-    public func send(policyDescriptor: Int32) throws {
+    public func send(
+        policyDescriptor: Int32,
+        waylandDescriptor: Int32
+    ) throws {
         try connection.send(
             [UInt8](repeating: 0, count: 1),
-            descriptors: [policyDescriptor])
+            descriptors: [policyDescriptor, waylandDescriptor])
     }
 
-    public func receive() throws -> OwnedFileDescriptor {
+    public func receive() throws -> ShellSessionAttachment {
         let packet = try connection.receive(
             maximumBytes: 1,
-            maximumDescriptors: 1)
-        guard packet.bytes == [0], packet.descriptors.count == 1 else {
+            maximumDescriptors: 2)
+        guard packet.bytes == [0], packet.descriptors.count == 2 else {
             throw ShellPolicyChannelFailure.invalidAttachment
         }
-        return packet.descriptors[0]
+        return ShellSessionAttachment(
+            policy: packet.descriptors[0],
+            wayland: packet.descriptors[1])
     }
 }

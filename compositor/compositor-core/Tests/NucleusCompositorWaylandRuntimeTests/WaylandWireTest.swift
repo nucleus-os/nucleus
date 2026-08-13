@@ -9,10 +9,11 @@
 // sides.
 
 import Glibc
-import WaylandWireTestC
-import WaylandServerC
-import WaylandServer
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandWireTestC
+
 @testable import NucleusCompositorWaylandRuntime
 
 // SOCK_NONBLOCK == O_NONBLOCK on Linux; OR'd into socketpair's type so reads on
@@ -109,10 +110,11 @@ struct WireMessage {
             let size = Int(sizeOpcode >> 16)
             let opcode = UInt16(sizeOpcode & 0xffff)
             if size < 8 || off + size > bytes.count { break }
-            out.append(WireMessage(
-                objectId: objectId, opcode: opcode,
-                body: Array(bytes[(off + 8)..<(off + size)])
-            ))
+            out.append(
+                WireMessage(
+                    objectId: objectId, opcode: opcode,
+                    body: Array(bytes[(off + 8)..<(off + size)])
+                ))
             off += size
         }
         return out
@@ -154,18 +156,29 @@ final class WaylandTestClient {
     let display: WaylandDisplay
     private let testFd: Int32  // our end; the server end (sv[0]) is owned by wl_client
 
-    init?(display: WaylandDisplay) {
+    convenience init?(display: WaylandDisplay) {
+        self.init(display: display) { serverEndpoint in
+            unsafe display.createClient(fd: serverEndpoint) != nil
+        }
+    }
+
+    init?(
+        display: WaylandDisplay,
+        adoptServerEndpoint: (Int32) -> Bool
+    ) {
         var sv: [Int32] = [0, 0]
-        guard unsafe socketpair(
-            AF_UNIX, Int32(SOCK_STREAM.rawValue) | nonblock, 0, &sv) == 0
+        guard
+            unsafe socketpair(
+                AF_UNIX, Int32(SOCK_STREAM.rawValue) | nonblock, 0, &sv) == 0
         else {
             return nil
         }
-        guard let client = unsafe display.createClient(fd: sv[0]) else {
-            close(sv[0]); close(sv[1]); return nil
+        guard adoptServerEndpoint(sv[0]) else {
+            close(sv[0])
+            close(sv[1])
+            return nil
         }
         self.display = display
-        _ = unsafe client // retained by the Wayland display until disconnect
         self.testFd = sv[1]
     }
 

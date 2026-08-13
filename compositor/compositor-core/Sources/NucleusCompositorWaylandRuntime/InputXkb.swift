@@ -6,6 +6,7 @@
 // from there. It holds raw xkb pointers and an owned fd, so it is a reference type
 // with explicit teardown rather than a value.
 
+import Glibc
 import NucleusCompositorInputC
 import NucleusLinuxPrimitives
 
@@ -78,8 +79,8 @@ private func withOptionalCString<R>(
     static let evdevKeycodeOffset: UInt32 = 8
 
     private let context: OpaquePointer
-    private let keymap: OpaquePointer
-    private let state: OpaquePointer
+    private var keymap: OpaquePointer
+    private var state: OpaquePointer
 
     /// Sealed keymap shared with clients via wl_keyboard.keymap; owned here.
     private var keymapFile: LinuxSealedFile?
@@ -164,6 +165,54 @@ private func withOptionalCString<R>(
 
     func duplicateKeymapDescriptor() -> LinuxOwnedFileDescriptor? {
         keymapFile?.duplicateDescriptor()
+    }
+
+    /// Adopt the XKB_V1 map supplied by a trusted virtual keyboard. A Wayland
+    /// client receives this exact map from the seat after installation, so key
+    /// codes and modifier masks cannot diverge across the injection boundary.
+    func installKeymap(descriptor: Int32, size: UInt32) -> Bool {
+        let maximumKeymapSize = 16 * 1024 * 1024
+        guard descriptor >= 0, size > 0, size <= maximumKeymapSize else { return false }
+        var bytes = [UInt8](repeating: 0, count: Int(size))
+        var offset = 0
+        while offset < bytes.count {
+            let count = bytes.withUnsafeMutableBytes { buffer in
+                unsafe pread(
+                    descriptor,
+                    buffer.baseAddress?.advanced(by: offset),
+                    buffer.count - offset,
+                    off_t(offset))
+            }
+            if count < 0 && errno == EINTR { continue }
+            guard count > 0 else { return false }
+            offset += count
+        }
+        guard bytes.last == 0 else { return false }
+        let newKeymap = bytes.withUnsafeBytes { buffer in
+            unsafe xkb_keymap_new_from_string(
+                context,
+                buffer.baseAddress?.assumingMemoryBound(to: CChar.self),
+                XKB_KEYMAP_FORMAT_TEXT_V1,
+                XKB_KEYMAP_COMPILE_NO_FLAGS)
+        }
+        guard let newKeymap = unsafe newKeymap,
+            let newState = unsafe xkb_state_new(newKeymap)
+        else {
+            if let newKeymap = unsafe newKeymap {
+                unsafe xkb_keymap_unref(newKeymap)
+            }
+            return false
+        }
+        let oldState = unsafe state
+        let oldKeymap = unsafe keymap
+        unsafe state = newState
+        unsafe keymap = newKeymap
+        pressedKeysLow = 0
+        keymapFile = nil
+        buildKeymapMemfd()
+        unsafe xkb_state_unref(oldState)
+        unsafe xkb_keymap_unref(oldKeymap)
+        return true
     }
 
     // MARK: - state advancement

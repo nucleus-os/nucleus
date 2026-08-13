@@ -1,5 +1,6 @@
 import Glibc
 import Testing
+
 @testable import NucleusCompositorWaylandRuntime
 
 // The gating decision, and the listener that produces the identities it acts
@@ -18,8 +19,9 @@ import Testing
         // that need these globals. Xwayland's protocol is scoped to a single
         // client instead, which RouterHost decides before consulting this.
         for interface in PrivilegedGlobals.interfaceNames {
-            #expect(PrivilegedGlobals.allows(
-                interface: interface, identity: nil), "\(interface)")
+            #expect(
+                PrivilegedGlobals.allows(
+                    interface: interface, identity: nil), "\(interface)")
         }
     }
 
@@ -28,14 +30,16 @@ import Testing
         // well means a sandboxed client is denied it by both rules rather than
         // relying on either one alone.
         #expect(PrivilegedGlobals.interfaceNames.contains("xwayland_shell_v1"))
-        #expect(!PrivilegedGlobals.allows(
-            interface: "xwayland_shell_v1", identity: sandboxed))
+        #expect(
+            !PrivilegedGlobals.allows(
+                interface: "xwayland_shell_v1", identity: sandboxed))
     }
 
     @Test func aSandboxedClientIsDeniedEveryPrivilegedGlobal() {
         for interface in PrivilegedGlobals.interfaceNames {
-            #expect(!PrivilegedGlobals.allows(
-                interface: interface, identity: sandboxed), "\(interface)")
+            #expect(
+                !PrivilegedGlobals.allows(
+                    interface: interface, identity: sandboxed), "\(interface)")
         }
     }
 
@@ -48,37 +52,38 @@ import Testing
             "wp_viewporter", "zxdg_decoration_manager_v1",
             "wp_fractional_scale_manager_v1", "wl_data_device_manager",
         ] {
-            #expect(PrivilegedGlobals.allows(
-                interface: interface, identity: sandboxed), "\(interface)")
+            #expect(
+                PrivilegedGlobals.allows(
+                    interface: interface, identity: sandboxed), "\(interface)")
         }
     }
 
     @Test func theClipboardAndCaptureGlobalsAreCovered() {
         // The two that motivated the protocol: today any client can read the
         // clipboard and record the screen with no consent step.
-        #expect(PrivilegedGlobals.interfaceNames
-            .contains("ext_data_control_manager_v1"))
-        #expect(PrivilegedGlobals.interfaceNames
-            .contains("zwlr_screencopy_manager_v1"))
+        #expect(
+            PrivilegedGlobals.interfaceNames
+                .contains("ext_data_control_manager_v1"))
+        #expect(
+            PrivilegedGlobals.interfaceNames
+                .contains("zwlr_screencopy_manager_v1"))
     }
 
     @Test func theManagerWithholdsItself() {
         // Nesting is a protocol error, but hiding the global is what makes the
         // error unreachable — a sandboxed client cannot mint its own identity.
-        #expect(!PrivilegedGlobals.allows(
-            interface: "wp_security_context_manager_v1", identity: sandboxed))
+        #expect(
+            !PrivilegedGlobals.allows(
+                interface: "wp_security_context_manager_v1", identity: sandboxed))
     }
 
-    @Test func globalsNotYetImplementedAreAlreadyListed() {
-        // These land later in the protocol backlog. Listing them now means the
-        // gate cannot be forgotten at the moment the global is added, which is
-        // exactly when it would be.
+    @Test func sessionWideObservationAndControlGlobalsAreWithheld() {
         for interface in [
-            "zwlr_output_manager_v1", "zwp_virtual_keyboard_manager_v1",
-            "zwp_input_method_manager_v2", "zwlr_virtual_pointer_manager_v1",
+            "zwlr_output_manager_v1", "zwp_input_method_manager_v2",
             "ext_foreign_toplevel_list_v1",
         ] {
-            #expect(PrivilegedGlobals.interfaceNames.contains(interface),
+            #expect(
+                PrivilegedGlobals.interfaceNames.contains(interface),
                 "\(interface) must be gated before it is advertised")
         }
     }

@@ -173,6 +173,12 @@ final class InputHost {
             delay: Int32(clamping: inputConfiguration.keyboard.repeatDelay))
     }
 
+    func installVirtualKeymap(descriptor: Int32, size: UInt32) -> Bool {
+        guard xkb.installKeymap(descriptor: descriptor, size: size) else { return false }
+        publishKeymap()
+        return true
+    }
+
     /// Adopt a new input configuration.
     ///
     /// Applies to every device already connected, not only to ones that arrive

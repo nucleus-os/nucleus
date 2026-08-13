@@ -149,6 +149,33 @@ struct WaylandProtocolConformanceTests {
         // Xwayland's protocol is registered but filtered to the Xwayland client;
         // an ordinary client must never see it, or it could claim X11 windows.
         #expect(actual["xwayland_shell_v1"] == nil)
+        #expect(actual["zwp_virtual_keyboard_manager_v1"] == nil)
+        #expect(actual["zwlr_virtual_pointer_manager_v1"] == nil)
+    }
+
+    @Test func syntheticInputGlobalsAreVisibleOnlyOnTheSupervisorCapability() throws {
+        let graph = WaylandTestGraph()
+        let author = WindowSceneAuthor(commitSinkFactory: { InMemoryCommitSink() })
+        let runtime = try #require(graph.routerRuntime(author: author))
+        graph.host.install(runtime)
+        let trusted = try #require(
+            WaylandTestClient(
+                display: runtime.router.display,
+                adoptServerEndpoint: {
+                    graph.host.installTrustedSyntheticInputClient(
+                        fileDescriptor: $0)
+                }))
+
+        let globals = Dictionary(
+            uniqueKeysWithValues: trusted.globals().map { ($0.interface, $0.version) })
+        #expect(globals["zwp_virtual_keyboard_manager_v1"] == 1)
+        #expect(globals["zwlr_virtual_pointer_manager_v1"] == 2)
+
+        graph.host.revokeTrustedSyntheticInputClient()
+        let ordinary = try #require(WaylandTestClient(display: runtime.router.display))
+        let ordinaryNames = Set(ordinary.globals().map(\.interface))
+        #expect(!ordinaryNames.contains("zwp_virtual_keyboard_manager_v1"))
+        #expect(!ordinaryNames.contains("zwlr_virtual_pointer_manager_v1"))
     }
 
     // MARK: - core surface and XDG construction

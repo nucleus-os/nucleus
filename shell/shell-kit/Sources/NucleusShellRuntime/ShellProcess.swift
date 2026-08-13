@@ -27,6 +27,7 @@ package func runShell() async -> Int32 {
     let configurationChannel: ConfigurationClientChannel
     let readiness: SessionReadinessReporter?
     let policyChannel: ShellPolicyChannel?
+    let waylandDescriptor: Int32?
     do {
         configuration = try SessionConfiguration.inherited()
         guard
@@ -50,6 +51,10 @@ package func runShell() async -> Int32 {
         configurationChannel = inheritedChannel
         readiness = try SessionReadinessReporter.inherited(role: .shell)
         policyChannel = try ShellPolicyChannel.inherited()
+        waylandDescriptor = try ShellWaylandConnection.inherited()
+        guard waylandDescriptor != nil else {
+            throw ShellWaylandConnectionFailure.invalidDescriptor("<missing>")
+        }
     } catch {
         NucleusLogger(subsystem: "shell").error(
             "invalid session readiness channel: \(error)")
@@ -59,7 +64,7 @@ package func runShell() async -> Int32 {
     guard
         let host = ShellHost(
             socketName: socket,
-            waylandDescriptor: nil,
+            waylandDescriptor: waylandDescriptor,
             configuration: configuration,
             liveConfiguration: liveConfiguration,
             configurationEpoch: configurationEpoch,

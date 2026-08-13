@@ -33,11 +33,13 @@
 #include "input_method_unstable_v2-client-protocol.h"
 #include "blur-client-protocol.h"
 #include "appmenu-client-protocol.h"
+#include "virtual_keyboard_unstable_v1-client-protocol.h"
 #include "wlr_foreign_toplevel_management_unstable_v1-client-protocol.h"
 #include "wlr_gamma_control_unstable_v1-client-protocol.h"
 #include "wlr_layer_shell_unstable_v1-client-protocol.h"
 #include "wlr_output_management_unstable_v1-client-protocol.h"
 #include "wlr_screencopy_unstable_v1-client-protocol.h"
+#include "wlr_virtual_pointer_unstable_v1-client-protocol.h"
 #include "linux_dmabuf_v1-client-protocol.h"
 #include "presentation_time-client-protocol.h"
 #include "tablet_v2-client-protocol.h"
@@ -945,6 +947,51 @@ swift_wayland_client_request_org_kde_kwin_appmenu_release(
 }
 
 static inline void
+swift_wayland_client_request_zwp_virtual_keyboard_v1_keymap(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_format, int32_t swift_wayland_arg_fd, uint32_t swift_wayland_arg_size
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_format, swift_wayland_arg_fd, swift_wayland_arg_size);
+}
+
+static inline void
+swift_wayland_client_request_zwp_virtual_keyboard_v1_key(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_key, uint32_t swift_wayland_arg_state
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_key, swift_wayland_arg_state);
+}
+
+static inline void
+swift_wayland_client_request_zwp_virtual_keyboard_v1_modifiers(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_mods_depressed, uint32_t swift_wayland_arg_mods_latched, uint32_t swift_wayland_arg_mods_locked, uint32_t swift_wayland_arg_group
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_mods_depressed, swift_wayland_arg_mods_latched, swift_wayland_arg_mods_locked, swift_wayland_arg_group);
+}
+
+static inline void
+swift_wayland_client_request_zwp_virtual_keyboard_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_virtual_keyboard_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, NULL);
+}
+
+static inline void
 swift_wayland_client_request_zwlr_foreign_toplevel_manager_v1_stop(
     struct wl_proxy *swift_wayland_proxy
 ) {
@@ -1374,6 +1421,114 @@ swift_wayland_client_request_zwlr_screencopy_frame_v1_copy_with_damage(
     wl_proxy_marshal_flags(
         swift_wayland_proxy, 2, NULL,
         wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_buffer);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_motion(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, wl_fixed_t swift_wayland_arg_dx, wl_fixed_t swift_wayland_arg_dy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_dx, swift_wayland_arg_dy);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_motion_absolute(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_x, uint32_t swift_wayland_arg_y, uint32_t swift_wayland_arg_x_extent, uint32_t swift_wayland_arg_y_extent
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_x, swift_wayland_arg_y, swift_wayland_arg_x_extent, swift_wayland_arg_y_extent);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_button(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_button, uint32_t swift_wayland_arg_state
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_button, swift_wayland_arg_state);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_axis(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_axis, wl_fixed_t swift_wayland_arg_value
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_axis, swift_wayland_arg_value);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_frame(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_axis_source(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_axis_source
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_axis_source);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_axis_stop(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_axis
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_axis);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_axis_discrete(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_time, uint32_t swift_wayland_arg_axis, wl_fixed_t swift_wayland_arg_value, int32_t swift_wayland_arg_discrete
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 7, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_time, swift_wayland_arg_axis, swift_wayland_arg_value, swift_wayland_arg_discrete);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 8, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_virtual_pointer_manager_v1_create_virtual_pointer(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwlr_virtual_pointer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwlr_virtual_pointer_manager_v1_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwlr_virtual_pointer_manager_v1_create_virtual_pointer_with_output(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat, struct wl_proxy * swift_wayland_arg_output
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, &zwlr_virtual_pointer_v1_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, swift_wayland_arg_output, NULL);
 }
 
 static inline void
@@ -5054,6 +5209,8 @@ static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur_m
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur(void) { return &org_kde_kwin_blur_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu_manager(void) { return &org_kde_kwin_appmenu_manager_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu(void) { return &org_kde_kwin_appmenu_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_virtual_keyboard_v1(void) { return &zwp_virtual_keyboard_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_virtual_keyboard_manager_v1(void) { return &zwp_virtual_keyboard_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_foreign_toplevel_manager_v1(void) { return &zwlr_foreign_toplevel_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_foreign_toplevel_handle_v1(void) { return &zwlr_foreign_toplevel_handle_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_gamma_control_manager_v1(void) { return &zwlr_gamma_control_manager_v1_interface; }
@@ -5067,6 +5224,8 @@ static inline const struct wl_interface *swift_wayland_iface_zwlr_output_configu
 static inline const struct wl_interface *swift_wayland_iface_zwlr_output_configuration_head_v1(void) { return &zwlr_output_configuration_head_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_screencopy_manager_v1(void) { return &zwlr_screencopy_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_screencopy_frame_v1(void) { return &zwlr_screencopy_frame_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwlr_virtual_pointer_v1(void) { return &zwlr_virtual_pointer_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwlr_virtual_pointer_manager_v1(void) { return &zwlr_virtual_pointer_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_dmabuf_v1(void) { return &zwp_linux_dmabuf_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_buffer_params_v1(void) { return &zwp_linux_buffer_params_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_dmabuf_feedback_v1(void) { return &zwp_linux_dmabuf_feedback_v1_interface; }

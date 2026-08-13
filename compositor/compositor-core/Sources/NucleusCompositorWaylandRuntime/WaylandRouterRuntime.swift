@@ -106,6 +106,8 @@ package final class WaylandRouterRuntime {
         let relativePointer = RelativePointerManager()
         let pointerGestures = PointerGestureManager(seat: seat)
         let tablet = TabletManager(host: host, seat: seat)
+        let virtualKeyboard = VirtualKeyboardManager(host: host, seat: seat)
+        let virtualPointer = VirtualPointerManager(host: host, seat: seat)
         let pointerConstraints = PointerConstraintsManager()
         // Xwayland surface association. Dormant until Xwayland attaches to the
         // router at the socket handover; reports pairings to the Swift XWM directly.
@@ -296,6 +298,12 @@ package final class WaylandRouterRuntime {
         router.addGlobal(
             ZwpTabletManagerV2Server.global(
                 implementation: tablet))
+        router.addGlobal(
+            ZwpVirtualKeyboardManagerV1Server.global(
+                implementation: virtualKeyboard))
+        router.addGlobal(
+            ZwlrVirtualPointerManagerV1Server.global(
+                implementation: virtualPointer))
         router.addGlobal(
             ZwpPointerConstraintsV1Server.global(
                 implementation: pointerConstraints))

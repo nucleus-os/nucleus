@@ -33,11 +33,13 @@
 #include "input_method_unstable_v2-server-protocol.h"
 #include "blur-server-protocol.h"
 #include "appmenu-server-protocol.h"
+#include "virtual_keyboard_unstable_v1-server-protocol.h"
 #include "wlr_foreign_toplevel_management_unstable_v1-server-protocol.h"
 #include "wlr_gamma_control_unstable_v1-server-protocol.h"
 #include "wlr_layer_shell_unstable_v1-server-protocol.h"
 #include "wlr_output_management_unstable_v1-server-protocol.h"
 #include "wlr_screencopy_unstable_v1-server-protocol.h"
+#include "wlr_virtual_pointer_unstable_v1-server-protocol.h"
 #include "linux_dmabuf_v1-server-protocol.h"
 #include "presentation_time-server-protocol.h"
 #include "tablet_v2-server-protocol.h"
@@ -216,6 +218,8 @@ static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur_m
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur(void) { return &org_kde_kwin_blur_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu_manager(void) { return &org_kde_kwin_appmenu_manager_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu(void) { return &org_kde_kwin_appmenu_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_virtual_keyboard_v1(void) { return &zwp_virtual_keyboard_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_virtual_keyboard_manager_v1(void) { return &zwp_virtual_keyboard_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_foreign_toplevel_manager_v1(void) { return &zwlr_foreign_toplevel_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_foreign_toplevel_handle_v1(void) { return &zwlr_foreign_toplevel_handle_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_gamma_control_manager_v1(void) { return &zwlr_gamma_control_manager_v1_interface; }
@@ -229,6 +233,8 @@ static inline const struct wl_interface *swift_wayland_iface_zwlr_output_configu
 static inline const struct wl_interface *swift_wayland_iface_zwlr_output_configuration_head_v1(void) { return &zwlr_output_configuration_head_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_screencopy_manager_v1(void) { return &zwlr_screencopy_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwlr_screencopy_frame_v1(void) { return &zwlr_screencopy_frame_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwlr_virtual_pointer_v1(void) { return &zwlr_virtual_pointer_v1_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwlr_virtual_pointer_manager_v1(void) { return &zwlr_virtual_pointer_manager_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_dmabuf_v1(void) { return &zwp_linux_dmabuf_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_buffer_params_v1(void) { return &zwp_linux_buffer_params_v1_interface; }
 static inline const struct wl_interface *swift_wayland_iface_zwp_linux_dmabuf_feedback_v1(void) { return &zwp_linux_dmabuf_feedback_v1_interface; }
@@ -542,6 +548,17 @@ typedef struct swift_wayland_org_kde_kwin_appmenu_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
 } swift_wayland_org_kde_kwin_appmenu_requests;
 _Static_assert(sizeof(swift_wayland_org_kde_kwin_appmenu_requests) == sizeof(struct org_kde_kwin_appmenu_interface), "org_kde_kwin_appmenu request layout mismatch");
+typedef struct swift_wayland_zwp_virtual_keyboard_v1_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *keymap)(struct wl_client *, struct wl_resource *, uint32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *key)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwp_virtual_keyboard_v1_requests;
+_Static_assert(sizeof(swift_wayland_zwp_virtual_keyboard_v1_requests) == sizeof(struct zwp_virtual_keyboard_v1_interface), "zwp_virtual_keyboard_v1 request layout mismatch");
+typedef struct swift_wayland_zwp_virtual_keyboard_manager_v1_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *create_virtual_keyboard)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+} swift_wayland_zwp_virtual_keyboard_manager_v1_requests;
+_Static_assert(sizeof(swift_wayland_zwp_virtual_keyboard_manager_v1_requests) == sizeof(struct zwp_virtual_keyboard_manager_v1_interface), "zwp_virtual_keyboard_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwlr_foreign_toplevel_manager_v1_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *stop)(struct wl_client *, struct wl_resource *);
 } swift_wayland_zwlr_foreign_toplevel_manager_v1_requests;
@@ -629,6 +646,24 @@ typedef struct swift_wayland_zwlr_screencopy_frame_v1_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *copy_with_damage)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_zwlr_screencopy_frame_v1_requests;
 _Static_assert(sizeof(swift_wayland_zwlr_screencopy_frame_v1_requests) == sizeof(struct zwlr_screencopy_frame_v1_interface), "zwlr_screencopy_frame_v1 request layout mismatch");
+typedef struct swift_wayland_zwlr_virtual_pointer_v1_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *motion)(struct wl_client *, struct wl_resource *, uint32_t, wl_fixed_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *motion_absolute)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *button)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, wl_fixed_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *frame)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_source)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_stop)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *axis_discrete)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t, wl_fixed_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwlr_virtual_pointer_v1_requests;
+_Static_assert(sizeof(swift_wayland_zwlr_virtual_pointer_v1_requests) == sizeof(struct zwlr_virtual_pointer_v1_interface), "zwlr_virtual_pointer_v1 request layout mismatch");
+typedef struct swift_wayland_zwlr_virtual_pointer_manager_v1_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *create_virtual_pointer)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *create_virtual_pointer_with_output)(struct wl_client *, struct wl_resource *, struct wl_resource *, struct wl_resource *, uint32_t);
+} swift_wayland_zwlr_virtual_pointer_manager_v1_requests;
+_Static_assert(sizeof(swift_wayland_zwlr_virtual_pointer_manager_v1_requests) == sizeof(struct zwlr_virtual_pointer_manager_v1_interface), "zwlr_virtual_pointer_manager_v1 request layout mismatch");
 typedef struct swift_wayland_zwp_linux_dmabuf_v1_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
     void (NUCLEUS_WL_MAIN_ACTOR *create_params)(struct wl_client *, struct wl_resource *, uint32_t);

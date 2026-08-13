@@ -152,6 +152,20 @@ package final class WaylandRuntime {
         host.router?.flushClients()
     }
 
+    /// Adopt the supervisor-issued Wayland endpoint for the current shell
+    /// generation. Synthetic-input globals are visible only on this exact
+    /// managed client connection.
+    package func installTrustedSyntheticInputClient(
+        fileDescriptor: Int32
+    ) -> Bool {
+        host.installTrustedSyntheticInputClient(
+            fileDescriptor: fileDescriptor)
+    }
+
+    package func revokeTrustedSyntheticInputClient() {
+        host.revokeTrustedSyntheticInputClient()
+    }
+
     /// Run a deferred keybind action that arrived from outside the input path.
     ///
     /// The control socket routes through here rather than duplicating the

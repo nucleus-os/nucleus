@@ -257,6 +257,7 @@ private final class SessionSupervisor {
     private static let serviceAttachmentDescriptor: Int32 = 193
     private static let compositorShellPolicyAttachmentDescriptor: Int32 = 193
     private static let shellPolicyDescriptor: Int32 = 193
+    private static let shellWaylandDescriptor: Int32 = 194
 
     private let arguments: SupervisorArguments
     private let statusPublisher: SessionStatusPublisher
@@ -784,7 +785,7 @@ private final class SessionSupervisor {
         elevatedDescriptor: Int32,
         attachments: ShellPolicyAttachmentChannel
     ) throws -> SupervisedChild {
-        let policy = try issueShellPolicy(to: attachments)
+        let session = try issueShellSession(to: attachments)
         return try spawn(
             role: .shell,
             command: [arguments.shell],
@@ -800,26 +801,55 @@ private final class SessionSupervisor {
                     argument:
                         "--nucleus-shell-control-capability-fd"),
                 InheritedDescriptor(
-                    source: policy,
+                    source: session.policy,
                     target: Self.shellPolicyDescriptor,
                     argument:
                         ShellPolicyChannel.descriptorArgument),
+                InheritedDescriptor(
+                    source: session.wayland,
+                    target: Self.shellWaylandDescriptor,
+                    argument:
+                        ShellWaylandConnection.descriptorArgument),
             ])
     }
 
-    private func issueShellPolicy(
+    private struct IssuedShellSession {
+        let policy: Int32
+        let wayland: Int32
+    }
+
+    private func issueShellSession(
         to attachments: ShellPolicyAttachmentChannel
-    ) throws -> Int32 {
+    ) throws -> IssuedShellSession {
         let policy = try SessionChannel.socketPair()
+        var wayland = [Int32](repeating: -1, count: 2)
+        guard
+            unsafe socketpair(
+                AF_UNIX,
+                Int32(SOCK_STREAM.rawValue) | Int32(SOCK_CLOEXEC.rawValue),
+                0,
+                &wayland) == 0
+        else {
+            _ = close(policy.0)
+            _ = close(policy.1)
+            throw SupervisorFailure.system("creating shell Wayland connection", errno)
+        }
         do {
-            try attachments.send(policyDescriptor: policy.0)
+            try attachments.send(
+                policyDescriptor: policy.0,
+                waylandDescriptor: wayland[0])
         } catch {
             _ = close(policy.0)
             _ = close(policy.1)
+            _ = close(wayland[0])
+            _ = close(wayland[1])
             throw error
         }
         _ = close(policy.0)
-        return policy.1
+        _ = close(wayland[0])
+        return IssuedShellSession(
+            policy: policy.1,
+            wayland: wayland[1])
     }
 
     private func createControlSocketDirectory() throws -> String {
@@ -1159,9 +1189,6 @@ private final class SessionSupervisor {
             if pollResult == 0 {
                 throw SupervisorFailure.startupTimedOut(child.role)
             }
-            if descriptors[1].revents & Int16(POLLIN) != 0 {
-                try processSignals(monitoring: children)
-            }
             if descriptors[0].revents & Int16(POLLIN) != 0 {
                 let bytes: [UInt8]
                 do {
@@ -1183,6 +1210,9 @@ private final class SessionSupervisor {
                 & Int16(POLLHUP | POLLERR | POLLNVAL) != 0
             {
                 throw SupervisorFailure.readinessClosed(child.role)
+            }
+            if descriptors[1].revents & Int16(POLLIN) != 0 {
+                try processSignals(monitoring: children)
             }
         }
     }

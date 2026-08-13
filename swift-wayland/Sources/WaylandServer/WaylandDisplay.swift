@@ -171,6 +171,10 @@ package final class WaylandManagedClient {
         display?.destroyManagedClient(self)
     }
 
+    package var isAlive: Bool {
+        unsafe client != nil
+    }
+
     fileprivate var nativeClient: OpaquePointer? {
         unsafe client
     }

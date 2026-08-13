@@ -10,6 +10,10 @@ import WaylandServer
 @MainActor
 package final class RouterHost {
     private static let xwaylandOnlyGlobal = "xwayland_shell_v1"
+    private static let syntheticInputGlobals: Set<String> = [
+        "zwlr_virtual_pointer_manager_v1",
+        "zwp_virtual_keyboard_manager_v1",
+    ]
     unowned let server: NucleusCompositorServer
     unowned let windowManager: WindowManager
     let diagnostics: WaylandRuntimeDiagnostics
@@ -36,6 +40,7 @@ package final class RouterHost {
     /// handlers drive it and the DRM bring-up borrows its seat for device opens.
     var inputHost: InputHost?
     var xwaylandClientID: WaylandClientID?
+    private var trustedSyntheticInputClient: WaylandManagedClient?
 
     lazy var sessionLockGate = SessionLockGate(host: self)
     lazy var pointerCursorSurface = PointerCursorSurface(server: server)
@@ -72,14 +77,36 @@ package final class RouterHost {
         client: WaylandClientID,
         interfaceName: String
     ) -> Bool {
-        // Two rules, and this is the only place either is enforced. Xwayland's
-        // protocol is scoped to one client; everything else is visible unless
-        // the client connected through a security context.
+        if Self.syntheticInputGlobals.contains(interfaceName) {
+            return trustedSyntheticInputClient?.isAlive == true
+                && trustedSyntheticInputClient?.identity == client
+        }
+        // Xwayland's protocol is scoped to one client; everything else is
+        // visible unless the client connected through a security context.
         guard interfaceName == Self.xwaylandOnlyGlobal else {
             return runtime?.securityContext.allows(
                 client: client, interface: interfaceName) ?? true
         }
         return client == xwaylandClientID
+    }
+
+    func installTrustedSyntheticInputClient(fileDescriptor: Int32) -> Bool {
+        revokeTrustedSyntheticInputClient()
+        guard
+            let client = runtime?.router.display.createManagedClient(
+                fd: fileDescriptor)
+        else {
+            _ = close(fileDescriptor)
+            return false
+        }
+        trustedSyntheticInputClient = client
+        return true
+    }
+
+    func revokeTrustedSyntheticInputClient() {
+        let client = trustedSyntheticInputClient
+        trustedSyntheticInputClient = nil
+        client?.destroy()
     }
 }
 

@@ -1186,6 +1186,45 @@
     case setAddress = 0
     case release = 1
 }
+@frozen package enum ZwpVirtualKeyboardV1RequestOpcode: UInt16, WaylandRequestOpcode {
+    case keymap = 0
+    case key = 1
+    case modifiers = 2
+    case destroy = 3
+}
+@frozen package struct ZwpVirtualKeyboardV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let noKeymap = Self(rawValue: 0)
+    package var knownName: String? {
+        switch self {
+        case .noKeymap:
+            "no_keymap"
+        default:
+            nil
+        }
+    }
+}
+@frozen package enum ZwpVirtualKeyboardManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
+    case createVirtualKeyboard = 0
+}
+@frozen package struct ZwpVirtualKeyboardManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let unauthorized = Self(rawValue: 0)
+    package var knownName: String? {
+        switch self {
+        case .unauthorized:
+            "unauthorized"
+        default:
+            nil
+        }
+    }
+}
 @frozen package enum ZwlrForeignToplevelManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case stop = 0
 }
@@ -1558,6 +1597,40 @@
         self.rawValue = rawValue
     }
     package static let yInvert = Self(rawValue: 1)
+}
+@frozen package enum ZwlrVirtualPointerV1RequestOpcode: UInt16, WaylandRequestOpcode {
+    case motion = 0
+    case motionAbsolute = 1
+    case button = 2
+    case axis = 3
+    case frame = 4
+    case axisSource = 5
+    case axisStop = 6
+    case axisDiscrete = 7
+    case destroy = 8
+}
+@frozen package struct ZwlrVirtualPointerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let invalidAxis = Self(rawValue: 0)
+    package static let invalidAxisSource = Self(rawValue: 1)
+    package var knownName: String? {
+        switch self {
+        case .invalidAxis:
+            "invalid_axis"
+        case .invalidAxisSource:
+            "invalid_axis_source"
+        default:
+            nil
+        }
+    }
+}
+@frozen package enum ZwlrVirtualPointerManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
+    case createVirtualPointer = 0
+    case destroy = 1
+    case createVirtualPointerWithOutput = 2
 }
 @frozen package enum ZwpLinuxDmabufV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case destroy = 0

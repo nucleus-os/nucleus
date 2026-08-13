@@ -30,7 +30,13 @@ extension CompositorRuntime {
             let attachment = try shellPolicyAttachments.receive()
             revokeShellSession()
             let policy = ShellPolicyChannel(
-                owning: attachment.take())
+                owning: attachment.policy.take())
+            guard
+                waylandRuntime.installTrustedSyntheticInputClient(
+                    fileDescriptor: attachment.wayland.take())
+            else {
+                throw ShellPolicyChannelFailure.invalidAttachment
+            }
             shellPolicyChannel = policy
             try policy.send(
                 ShellPolicyPublication(
@@ -79,6 +85,7 @@ extension CompositorRuntime {
     func revokeShellSession() {
         offeredWindowMenuID = nil
         shellPolicyChannel = nil
+        waylandRuntime.revokeTrustedSyntheticInputClient()
     }
 
     private func publishAcceptedShellAction(

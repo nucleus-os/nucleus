@@ -1,9 +1,9 @@
-import Foundation
 import Dispatch
+import Foundation
 import Glibc
+import NucleusControlClient
 import NucleusIPCTransport
 import NucleusSessionProtocol
-import NucleusControlClient
 
 private enum FixtureFailure: Error {
     case missingDirectory
@@ -25,7 +25,7 @@ private func argumentValue(
     in arguments: [String]
 ) -> String? {
     guard let index = arguments.firstIndex(of: argument),
-          arguments.indices.contains(index + 1)
+        arguments.indices.contains(index + 1)
     else { return nil }
     return arguments[index + 1]
 }
@@ -35,15 +35,16 @@ private func descriptor(
     in arguments: [String]
 ) throws -> Int32 {
     guard let index = arguments.firstIndex(of: argument),
-          arguments.indices.contains(index + 1),
-          let value = Int32(arguments[index + 1])
+        arguments.indices.contains(index + 1),
+        let value = Int32(arguments[index + 1])
     else { throw FixtureFailure.malformedDescriptor }
     return value
 }
 
 private func run() throws -> Int32 {
-    guard let directoryValue = unsafe getenv(
-        "NUCLEUS_SESSION_FIXTURE_DIRECTORY")
+    guard
+        let directoryValue = unsafe getenv(
+            "NUCLEUS_SESSION_FIXTURE_DIRECTORY")
     else { throw FixtureFailure.missingDirectory }
     let directory = unsafe String(cString: directoryValue)
     if let capabilityID = argumentValue(
@@ -56,13 +57,15 @@ private func run() throws -> Int32 {
     }
     let role = try SessionProcessRole.inherited()
     let roleName = role == .compositor ? "compositor" : "shell"
-    let waylandDisplay = unsafe getenv("WAYLAND_DISPLAY").map {
-        unsafe String(cString: $0)
-    } ?? "<missing>"
+    let waylandDisplay =
+        unsafe getenv("WAYLAND_DISPLAY").map {
+            unsafe String(cString: $0)
+        } ?? "<missing>"
     try writeText(
         waylandDisplay,
         to: directory + "/\(roleName)-wayland-display")
-    let modeName = "NUCLEUS_SESSION_FIXTURE_"
+    let modeName =
+        "NUCLEUS_SESSION_FIXTURE_"
         + roleName.uppercased() + "_MODE"
     let mode: String
     if let modeValue = unsafe getenv(modeName) {
@@ -72,7 +75,7 @@ private func run() throws -> Int32 {
     }
     let exitedOnceMarker = directory + "/\(roleName)-exited-once"
     if mode == "exit-after-session-ready-once-with-restart-delay",
-       unsafe access(exitedOnceMarker, F_OK) == 0
+        unsafe access(exitedOnceMarker, F_OK) == 0
     {
         usleep(250_000)
     }
@@ -80,9 +83,11 @@ private func run() throws -> Int32 {
     let configuration = try SessionConfiguration.inherited()
     let shellPolicyChannel: ShellPolicyChannel?
     let shellAttachmentChannel: ShellPolicyAttachmentChannel?
+    let shellWaylandDescriptor: Int32?
     switch role {
     case .compositor:
         shellPolicyChannel = nil
+        shellWaylandDescriptor = nil
         shellAttachmentChannel =
             try ShellPolicyAttachmentChannel.inherited()
         guard shellAttachmentChannel != nil else {
@@ -91,7 +96,8 @@ private func run() throws -> Int32 {
     case .shell:
         shellPolicyChannel = try ShellPolicyChannel.inherited()
         shellAttachmentChannel = nil
-        guard shellPolicyChannel != nil else {
+        shellWaylandDescriptor = try ShellWaylandConnection.inherited()
+        guard shellPolicyChannel != nil, shellWaylandDescriptor != nil else {
             throw FixtureFailure.malformedDescriptor
         }
         try writeText(
@@ -103,12 +109,17 @@ private func run() throws -> Int32 {
     defer {
         _ = shellPolicyChannel
         _ = shellAttachmentChannel
+        if let shellWaylandDescriptor {
+            _ = close(shellWaylandDescriptor)
+        }
     }
-    guard let configurationChannel =
+    guard
+        let configurationChannel =
             try ConfigurationClientChannel.inherited()
     else { throw FixtureFailure.malformedDescriptor }
-    try configurationChannel.send(.subscribe(
-        as: role == .compositor ? .shell : .renderServer))
+    try configurationChannel.send(
+        .subscribe(
+            as: role == .compositor ? .shell : .renderServer))
     guard try configurationChannel.receive().kind == .rejected else {
         throw ConfigurationChannelFailure.unexpectedPublication
     }
@@ -130,12 +141,13 @@ private func run() throws -> Int32 {
     if role == .compositor {
         let controlChannel = try RenderServerControlChannel.inherited()
         let ownerEpoch = RenderServerEpoch(high: 10, low: 20)
-        try controlChannel.send(RenderServerControlPublication(
-            result: .ready,
-            ownerEpoch: ownerEpoch,
-            configurationEpoch: publication.epoch,
-            appliedConfigurationGeneration: publication.generation,
-            version: "fixture-render-server 1"))
+        try controlChannel.send(
+            RenderServerControlPublication(
+                result: .ready,
+                ownerEpoch: ownerEpoch,
+                configurationEpoch: publication.epoch,
+                appliedConfigurationGeneration: publication.generation,
+                version: "fixture-render-server 1"))
         DispatchQueue.global().async {
             while true {
                 let request: RenderServerControlRequestEnvelope
@@ -168,16 +180,18 @@ private func run() throws -> Int32 {
                         configurationEpoch: publication.epoch,
                         appliedConfigurationGeneration:
                             publication.generation,
-                        outputs: [RenderServerOutputSnapshot(
-                            id: 1,
-                            name: "fixture-output",
-                            width: 1920,
-                            height: 1080,
-                            refreshMillihertz: 60_000,
-                            scale: 1,
-                            x: 0,
-                            y: 0,
-                            enabled: true)])
+                        outputs: [
+                            RenderServerOutputSnapshot(
+                                id: 1,
+                                name: "fixture-output",
+                                width: 1920,
+                                height: 1080,
+                                refreshMillihertz: 60_000,
+                                scale: 1,
+                                x: 0,
+                                y: 0,
+                                enabled: true)
+                        ])
                 case .activeBindings:
                     response = RenderServerControlPublication(
                         requestID: request.requestID,
@@ -234,8 +248,7 @@ private func run() throws -> Int32 {
     if let shellAttachmentChannel {
         DispatchQueue.global().async {
             var attachmentCount = 0
-            var activeAttachment:
-                NucleusIPCTransport.OwnedFileDescriptor?
+            var activeAttachment: ShellSessionAttachment?
             while true {
                 do {
                     activeAttachment =
@@ -257,9 +270,10 @@ private func run() throws -> Int32 {
             following:
                 ControlSocket.elevatedCapabilityDescriptorArgument,
             in: CommandLine.arguments)
-        let runtimeDirectory = unsafe getenv("XDG_RUNTIME_DIR").map {
-            unsafe String(cString: $0)
-        } ?? directory
+        let runtimeDirectory =
+            unsafe getenv("XDG_RUNTIME_DIR").map {
+                unsafe String(cString: $0)
+            } ?? directory
         let socket = runtimeDirectory + "/control.sock"
         let response = try ControlClient(path: socket).send(
             .replaceConfiguration("{}"),
@@ -295,8 +309,10 @@ private func runCapability(
     identifier: String,
     directory: String
 ) throws -> Int32 {
-    let mode = unsafe getenv(
-        "NUCLEUS_SESSION_FIXTURE_CAPABILITY_MODE").map {
+    let mode =
+        unsafe getenv(
+            "NUCLEUS_SESSION_FIXTURE_CAPABILITY_MODE"
+        ).map {
             unsafe String(cString: $0)
         } ?? "ready-wait"
     let pidPath = directory + "/capability-pid"
@@ -328,7 +344,7 @@ private func runCapability(
     defer { _ = shutdownSignal }
     try writeText("started", to: directory + "/capability-started")
     if mode == "exit-once-nonzero",
-       unsafe access(exitedOncePath, F_OK) != 0
+        unsafe access(exitedOncePath, F_OK) != 0
     {
         try writeText("exited", to: exitedOncePath)
         return 79

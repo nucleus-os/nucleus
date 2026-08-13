@@ -5,6 +5,29 @@ internal import NucleusCompositorWindowManager
 
 @MainActor
 extension InputDispatch {
+    func applySyntheticModifiers(
+        depressed: UInt32,
+        latched: UInt32,
+        locked: UInt32,
+        group: UInt32
+    ) {
+        xkb.updateMask(
+            depressed: depressed,
+            latched: latched,
+            locked: locked,
+            group: group)
+        streamFlags = xkb.flagsRaw()
+        let target = keyboardFocusID()
+        guard target != 0, !lockBlocks(target) else { return }
+        let modifiers = xkb.serializedModifiers()
+        seatDelivery.keyboardModifiers(
+            surfaceID: target,
+            depressed: modifiers.depressed,
+            latched: modifiers.latched,
+            locked: modifiers.locked,
+            group: modifiers.group)
+    }
+
     package func handleTouch(_ event: WireEventRecord) {
         let id = Int32(bitPattern: UInt32(truncatingIfNeeded: event.data0))
         switch event.kind {
