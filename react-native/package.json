@@ -23,14 +23,14 @@
     "@shopify/react-native-skia": "2.6.3-next.1",
     "react-native-gesture-handler": "3.0.0-nightly-20260410-9a6c6096e",
     "react-native-reanimated": "4.4.0-nightly-20260409-b9828e8a3",
-    "react-native-svg": "15.15.4",
+    "react-native-svg": "15.15.5",
     "react-native-wgpu": "0.5.8",
     "react-native-worklets": "0.9.0-nightly-20260409-b9828e8a3",
-    "zustand": "^5.0.12"
+    "zustand": "^5.0.15"
   },
   "overrides": {
     "hermes-compiler": "250829098.0.16",
-    "react": "19.2.3"
+    "react": "19.2.8"
   },
   "patchedDependencies": {
     "react-native-wgpu@0.5.8": "patches/react-native-wgpu.patch",
@@ -41,25 +41,25 @@
     "@babel/eslint-parser": "^7.28.5",
     "@babel/plugin-syntax-flow": "^7.27.1",
     "@babel/plugin-transform-flow-strip-types": "^7.27.1",
-    "@react-native/babel-preset": "0.87.0-rc.4",
+    "@react-native/babel-preset": "0.87.0",
+    "@react-native/metro-config": "0.87.0",
     "@rnx-kit/metro-config": "^2.2.1",
     "@rnx-kit/metro-resolver-symlinks": "^0.2.8",
-    "@types/node": "^25.0.0",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.1.1",
-    "@typescript-eslint/eslint-plugin": "^8.51.0",
-    "@typescript-eslint/parser": "^8.51.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^9.39.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "expo-blur": "15.0.8",
-    "metro": "^0.84.3",
+    "metro": "^0.87.0",
     "prettier": "^3.7.4",
-    "react": "19.2.3",
-    "react-native": "0.87.0-rc.4",
-    "tsx": "^4.21.0",
+    "react": "19.2.8",
+    "react-native": "0.87.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.0"
   }
 }
