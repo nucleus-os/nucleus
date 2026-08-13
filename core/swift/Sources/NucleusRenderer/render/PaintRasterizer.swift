@@ -78,7 +78,7 @@ internal import NucleusTypes
         // through the complete device transform and clip without changing the CTM.
         if command.kind == .clipPath {
             guard
-                let path = unsafe decodePath(
+                let path = decodePath(
                     command, payload: payload,
                     scaleX: command.transform == nil ? sx : 1,
                     scaleY: command.transform == nil ? sy : 1)
@@ -198,7 +198,7 @@ internal import NucleusTypes
         guard
             let regions = PaintPayload.decode(
                 payload, offset: command.payloadOffset, length: command.payloadLength),
-            let path = unsafe makeSkiaPath(
+            let path = makeSkiaPath(
                 regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
         else { return }
 
@@ -221,7 +221,7 @@ internal import NucleusTypes
             let regions = PaintPayload.decode(
                 payload, offset: command.payloadOffset, length: command.payloadLength)
         else { return nil }
-        return unsafe makeSkiaPath(
+        return makeSkiaPath(
             regions, evenOdd: command.evenOddFill, scaleX: sx, scaleY: sy)
     }
 
@@ -262,7 +262,7 @@ internal import NucleusTypes
                     pointBuffer.baseAddress, pointBuffer.count, evenOdd)
             }
         }
-        return unsafe path.isValid() ? path : nil
+        return path.isValid() ? path : nil
     }
 
     /// Build the shader for a command's shading, or nil for a plain color fill
@@ -321,7 +321,7 @@ internal import NucleusTypes
             }
         case .effect:
             guard command.effectHandle != 0,
-                let effect = unsafe resolveEffect(command.effectHandle)
+                let effect = resolveEffect(command.effectHandle)
             else { return nil }
             return scalars.withUnsafeBufferPointer { u in
                 unsafe effect.makeShader(u.baseAddress, u.count)

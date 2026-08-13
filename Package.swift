@@ -55,10 +55,13 @@ let products: [Product] = [
     .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidDeployment"]),
 ]
 let dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/swift-server/async-http-client.git", branch: "main"),
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
     .package(name: "swift-java", path: "third-party/swift-java"),
+    .package(url: "https://github.com/apple/swift-nio.git", branch: "main"),
+    .package(url: "https://github.com/apple/swift-nio-ssl.git", branch: "main"),
     .package(name: "swift-syntax", path: "third-party/swift-syntax"),
-    .package(name: "swift-system", path: "third-party/swift-system"),
+    .package(url: "https://github.com/nucleus-os/swift-system.git", branch: "nucleus"),
 ]
 
 let reactNativeSwiftSettings: [SwiftSetting] = [
@@ -1252,6 +1255,12 @@ let targets: [Target] = [
     .target(
         name: "NucleusReactRuntimeCxx",
         dependencies: [
+            .product(name: "AsyncHTTPClient", package: "async-http-client"),
+            .product(name: "NIOCore", package: "swift-nio"),
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "NIOPosix", package: "swift-nio"),
+            .product(name: "NIOWebSocket", package: "swift-nio"),
+            .product(name: "NIOSSL", package: "swift-nio-ssl"),
             "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextBackendNative",
@@ -1262,7 +1271,6 @@ let targets: [Target] = [
         swiftSettings: reactNativeSwiftSettings),
     .target(
         name: "NucleusReactRuntimeHostCxx",
-        dependencies: [],
         path: "react-native/swift/Sources/NucleusReactRuntime/cxx",
         publicHeadersPath: "empty-public",
         cxxSettings: reactNativeHostCxxSettings),

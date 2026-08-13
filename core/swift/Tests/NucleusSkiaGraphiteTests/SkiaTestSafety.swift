@@ -6,12 +6,12 @@ import NucleusSkiaGraphiteBridge
     private let image: nucleus.skia.RasterImage
 
     init(_ image: nucleus.skia.RasterImage) {
-        unsafe self.image = image
+        self.image = image
     }
 
-    var isValid: Bool { unsafe image.isValid() }
-    var width: Int32 { unsafe image.width() }
-    var height: Int32 { unsafe image.height() }
+    var isValid: Bool { image.isValid() }
+    var width: Int32 { image.width() }
+    var height: Int32 { image.height() }
 
     func readPixelsRGBA(into bytes: inout [UInt8], rowBytes: Int32) -> Bool {
         bytes.withUnsafeMutableBufferPointer {
@@ -24,15 +24,17 @@ import NucleusSkiaGraphiteBridge
         var bytes = [UInt8](
             repeating: 0,
             count: pixelWidth * Int(height) * 4)
-        precondition(readPixelsRGBA(
-            into: &bytes,
-            rowBytes: Int32(pixelWidth * 4)))
+        precondition(
+            readPixelsRGBA(
+                into: &bytes,
+                rowBytes: Int32(pixelWidth * 4)))
         let index = (y * pixelWidth + x) * 4
         return (
             bytes[index],
             bytes[index + 1],
             bytes[index + 2],
-            bytes[index + 3])
+            bytes[index + 3]
+        )
     }
 }
 
@@ -41,10 +43,10 @@ import NucleusSkiaGraphiteBridge
     fileprivate let value: nucleus.skia.Path
 
     init(_ value: nucleus.skia.Path) {
-        unsafe self.value = value
+        self.value = value
     }
 
-    func isValid() -> Bool { unsafe value.isValid() }
+    func isValid() -> Bool { value.isValid() }
 }
 
 /// Test-only owned shader; its C++ value is immutable after construction.
@@ -52,7 +54,7 @@ import NucleusSkiaGraphiteBridge
     fileprivate let value: nucleus.skia.Shader
 
     init(_ value: nucleus.skia.Shader) {
-        unsafe self.value = value
+        unsafe self.value = unsafe value
     }
 
     func isValid() -> Bool { unsafe value.isValid() }
@@ -66,7 +68,7 @@ import NucleusSkiaGraphiteBridge
         unsafe value = nucleus.skia.makeRuntimeEffect(source)
     }
 
-    func isValid() -> Bool { unsafe value.isValid() }
+    func isValid() -> Bool { value.isValid() }
 
     func makeShader(_ uniforms: [Float]) -> RasterFixtureShader {
         uniforms.withUnsafeBufferPointer {
@@ -123,12 +125,13 @@ func makeRasterFixturePath(
 ) -> RasterFixturePath {
     verbs.withUnsafeBufferPointer { verbs in
         points.withUnsafeBufferPointer { points in
-            unsafe RasterFixturePath(nucleus.skia.makePath(
-                verbs.baseAddress,
-                verbs.count,
-                points.baseAddress,
-                points.count,
-                evenOdd))
+            unsafe RasterFixturePath(
+                nucleus.skia.makePath(
+                    verbs.baseAddress,
+                    verbs.count,
+                    points.baseAddress,
+                    points.count,
+                    evenOdd))
         }
     }
 }
@@ -141,8 +144,9 @@ func makeLinearGradientFixture(
     y1: Float
 ) -> RasterFixtureShader {
     colors.withUnsafeBufferPointer {
-        unsafe RasterFixtureShader(nucleus.skia.makeLinearGradient(
-            x0, y0, x1, y1, $0.baseAddress, nil, $0.count, .clamp))
+        unsafe RasterFixtureShader(
+            nucleus.skia.makeLinearGradient(
+                x0, y0, x1, y1, $0.baseAddress, nil, $0.count, .clamp))
     }
 }
 
@@ -154,9 +158,10 @@ func makeSweepGradientFixture(
     end: Float
 ) -> RasterFixtureShader {
     colors.withUnsafeBufferPointer {
-        unsafe RasterFixtureShader(nucleus.skia.makeSweepGradient(
-            centerX, centerY, start, end,
-            $0.baseAddress, nil, $0.count, .clamp))
+        unsafe RasterFixtureShader(
+            nucleus.skia.makeSweepGradient(
+                centerX, centerY, start, end,
+                $0.baseAddress, nil, $0.count, .clamp))
     }
 }
 

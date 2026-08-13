@@ -67,22 +67,24 @@ enum GitSourceCheckoutHasher {
 
         var encoder = IdentityEncoder()
         encoder.append("git-source-checkout-closure")
-        let treeExpressions = scopes.map { scope in
-            scope.components.isEmpty
+        let baseTrees = scopes.map { scope -> String? in
+            let expression =
+                scope.components.isEmpty
                 ? "HEAD^{tree}"
                 : "HEAD:\(scope.string)"
-        }
-        let baseTrees = try git(
-            at: repository,
-            arguments: ["rev-parse"] + treeExpressions
-        ).textOutput.split(separator: "\n").map(String.init)
-        guard baseTrees.count == scopes.count else {
-            throw GitSourceCheckoutFailure(
-                "Git returned \(baseTrees.count) trees for \(scopes.count) source scopes")
+            return try? git(
+                at: repository,
+                arguments: ["rev-parse", "--verify", expression]
+            ).textOutput
         }
         encoder.appendSequence(Array(zip(scopes, baseTrees))) { entry, pair in
             entry.append(pair.0.string)
-            entry.append(pair.1)
+            if let baseTree = pair.1 {
+                entry.append("tracked")
+                entry.append(baseTree)
+            } else {
+                entry.append("untracked")
+            }
         }
         let records = try status.output.split(separator: 0).map { record -> DirtyPath in
             guard record.count >= 4, record[record.startIndex + 2] == 0x20 else {

@@ -20,8 +20,11 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <swift/bridging>
 
 namespace nucleus::skia {
+
+struct GraphiteInternalAccess;
 
 /// Borrowed Vulkan handles for Graphite context creation. Every pointer is
 /// borrowed: the façade never destroys the instance, device, or queue. The
@@ -191,7 +194,7 @@ class UploadTexture;
 
 /// An immutable CPU-decoded image. It cannot be passed to a canvas; callers
 /// must explicitly cross a recorder upload boundary to obtain an `Image`.
-class RasterImage {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED RasterImage {
 public:
     struct Impl;
     RasterImage();
@@ -201,10 +204,8 @@ public:
     int32_t height() const;
     bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
-    // Internal: Recorder::makeTextureImage reads the held raster SkImage.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -238,7 +239,9 @@ struct EncodedImageMetadata {
 };
 
 /// A canvas-sampleable image. Graphite render paths only receive this type;
-/// decoded CPU pixels use `RasterImage` until a recorder uploads them.
+/// decoded CPU pixels use `RasterImage` until a recorder uploads them. This
+/// remains lifetime-unsafe in Swift because it may wrap a Vulkan image whose
+/// device and memory are owned outside this façade.
 class Image {
 public:
     struct Impl;
@@ -247,10 +250,8 @@ public:
     int32_t width() const;
     int32_t height() const;
 
-    // Internal: the canvas draw path reads the held SkImage.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -272,17 +273,17 @@ private:
 };
 
 /// An SkSL runtime-effect shader (the foreground-vibrancy material). Holds an
-/// `sk_sp<SkShader>` privately; value-semantic and copyable for Swift.
+/// `sk_sp<SkShader>` privately; value-semantic and copyable for Swift. A shader
+/// may retain a child `Image`, so it inherits that image's external Vulkan
+/// lifetime contract and intentionally remains unsafe in Swift.
 class Shader {
 public:
     struct Impl;
     explicit Shader(std::shared_ptr<Impl> impl);
     bool isValid() const;
 
-    // Internal: the canvas shader-draw path reads the held SkShader.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -324,16 +325,14 @@ enum class PathVerb : uint8_t {
 
 /// An immutable geometry path. Holds an `SkPath` privately; value-semantic and
 /// copyable for Swift, following the `Shader` pattern.
-class Path {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED Path {
 public:
     struct Impl;
     explicit Path(std::shared_ptr<Impl> impl);
     bool isValid() const;
 
-    // Internal: the canvas path-draw path reads the held SkPath.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -350,7 +349,7 @@ Path makePath(
 /// runtime-effect shader and does not depend on uniform values, so it is split
 /// out and cached behind a handle: uniforms change every frame, the program
 /// does not. Holds an `sk_sp<SkRuntimeEffect>` privately.
-class RuntimeEffect {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED RuntimeEffect {
 public:
     struct Impl;
     explicit RuntimeEffect(std::shared_ptr<Impl> impl);
@@ -365,9 +364,8 @@ public:
     Shader makeShaderWithImage(
         const float *uniforms, size_t uniformFloatCount, const Image &child) const;
 
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -411,8 +409,10 @@ TextLayoutBorrowInstallStatus installTextLayoutBorrow(
     TextLayoutBorrow borrow);
 bool hasTextLayoutBorrow();
 
-/// A non-owning view of a surface's canvas. Drawing commands are recorded into
-/// the surface's recorder until the next recording snap.
+/// A surface-backed canvas. Drawing commands are recorded into the surface's
+/// recorder until the next recording snap. The shared surface keeps the Skia
+/// objects alive, but not the externally owned Vulkan device, so this type
+/// intentionally remains unsafe in Swift.
 class Canvas {
 public:
     struct Impl;
@@ -527,10 +527,8 @@ public:
     /// surface uses `GraphiteContext::beginSurfaceReadbackRGBA` instead.
     bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
 
-    // Internal: the context readback path reads the held SkSurface.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
@@ -546,10 +544,8 @@ public:
     explicit Recording(std::shared_ptr<Impl> impl);
     bool isValid() const;
 
-    // Internal: the context's submit path reads the held recording.
-    Impl *raw() const;
-
 private:
+    friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 

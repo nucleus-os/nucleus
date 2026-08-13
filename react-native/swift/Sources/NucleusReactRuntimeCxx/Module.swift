@@ -14,8 +14,17 @@ package struct RuntimeHostOperationError: Error, Sendable, Equatable, CustomStri
 
 private func requireSuccess(_ result: nucleus.react.RuntimeHostResult) throws {
     guard result.succeeded else {
-        throw RuntimeHostOperationError(message: String(result.error))
+        throw RuntimeHostOperationError(message: runtimeHostErrorMessage(result))
     }
+}
+
+package func runtimeHostErrorMessage(
+    _ result: nucleus.react.RuntimeHostResult
+) -> String {
+    String(
+        decoding: Array(result.errorStorage).prefix { $0 != 0 }
+            .map(UInt8.init(bitPattern:)),
+        as: UTF8.self)
 }
 
 private nonisolated func makeJSWorkWake(
@@ -39,6 +48,7 @@ private nonisolated func makeAnimationFrameCancel(
 @MainActor
 @safe package final class RuntimeHost {
     private var facade: nucleus.react.ReactRuntimeHostFacade
+    private let networkTransport: ReactNetworkTransport
     package let mountConsumer: MountConsumer
 
     package init() throws {
@@ -53,7 +63,10 @@ private nonisolated func makeAnimationFrameCancel(
         }
         let consumer = MountConsumer()
         mountConsumer = consumer
-        unsafe facade = nucleus.react.ReactRuntimeHostFacade()
+        let networkTransport = ReactNetworkTransport()
+        self.networkTransport = networkTransport
+        unsafe facade = nucleus.react.ReactRuntimeHostFacade(
+            networkTransport.makeFacade())
         try requireSuccess(unsafe facade.initializationResult())
         try requireSuccess(
             unsafe facade.setMountingObserver(

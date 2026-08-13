@@ -7,8 +7,8 @@ struct FabricMountReport {
   unsigned int mutationCount;
 };
 
-bool hermesCanCreateRuntime();
-unsigned int hermesBytecodeVersion();
-bool hermesIntlDateTimeFormatWorks();
+bool hermesCanCreateRuntime() noexcept;
+unsigned int hermesBytecodeVersion() noexcept;
+bool hermesIntlDateTimeFormatWorks() noexcept;
 
 } // namespace nucleus::react

@@ -253,6 +253,27 @@ import Testing
     #expect(try sourceCheckoutDigest(sources) != baseline)
 }
 
+@Test func sourceCheckoutDigestSupportsAnEntirelyNewSourceDirectory() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-checkout-new-scope-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    try Data("tracked\n".utf8).write(
+        to: repository.appendingPathComponent("README.md"))
+    try commitAll(repository)
+
+    let sources = repository.appendingPathComponent("Sources/NewTarget")
+    try FileManager.default.createDirectory(
+        at: sources,
+        withIntermediateDirectories: true)
+    let source = sources.appendingPathComponent("Value.swift")
+    try Data("let value = 1\n".utf8).write(to: source)
+    let initial = try sourceCheckoutDigest(sources)
+
+    try Data("let value = 2\n".utf8).write(to: source)
+    #expect(try sourceCheckoutDigest(sources) != initial)
+}
+
 @Test func sourceCheckoutClosureTracksOnlySelectedTargetDirectories() throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-closure-\(UUID().uuidString)")

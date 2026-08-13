@@ -27,9 +27,9 @@ package enum ImageDecodeFailure: Error, Sendable, Equatable, Hashable {
 @safe package struct DecodedImage: @unchecked Sendable {
     package var image: nucleus.skia.RasterImage
 
-    package var isValid: Bool { unsafe image.isValid() }
-    package var width: Int32 { unsafe image.width() }
-    package var height: Int32 { unsafe image.height() }
+    package var isValid: Bool { image.isValid() }
+    package var width: Int32 { image.width() }
+    package var height: Int32 { image.height() }
 }
 
 /// Sendability derives from `DecodedImage`'s immutable-pixel contract; failure
@@ -418,7 +418,7 @@ package final class ImageDecodeQueue {
                 return .failure(failure)
             case .success(let fileDescriptor):
                 defer { close(fileDescriptor) }
-                return unsafe mapDecode(
+                return mapDecode(
                     nucleus.skia.decodeEncodedImageFileDescriptor(
                         fileDescriptor,
                         bounds.width,
@@ -462,7 +462,7 @@ package final class ImageDecodeQueue {
                     $0.baseAddress,
                     $0.count)
             }
-            return unsafe image.isValid()
+            return image.isValid()
                 ? .success(DecodedImage(image: image))
                 : .failure(.decodeFailure)
         }
@@ -552,10 +552,10 @@ package final class ImageDecodeQueue {
     private static func mapDecode(
         _ decoded: nucleus.skia.RasterDecodeResult
     ) -> Result<DecodedImage, ImageDecodeFailure> {
-        guard unsafe decoded.isSuccess() else {
-            return unsafe .failure(mapFailure(decoded.status))
+        guard decoded.isSuccess() else {
+            return .failure(mapFailure(decoded.status))
         }
-        return unsafe .success(DecodedImage(image: decoded.image))
+        return .success(DecodedImage(image: decoded.image))
     }
 
     private static func mapFailure(

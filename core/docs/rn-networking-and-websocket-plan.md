@@ -17,22 +17,52 @@ shutdown ownership.
 
 ## Phase 1 — Admit the upstream portable modules
 
+Status: complete.
+
 Compile the selected RN `react/http`, `react/io`, and runtime-provider sources
 in the RN native SDK. Register `NetworkingModule` and `WebSocketModule` through
 the existing Nucleus TurboModule provider and `RuntimeJSCallInvoker`.
 
-Gate: upstream RN module tests and Nucleus registry/lifecycle tests instantiate,
-invoke, and destroy both modules without a platform network implementation.
+Gate: Nucleus registry and lifecycle tests instantiate, invoke, and destroy
+both upstream modules without a platform network implementation.
+
+Achieved state: the existing ReactCxxPlatform native target compiles RN 0.87's
+`react/http` and `react/io` sources, including the portable `NetworkingModule`
+and `WebSocketModule`; the minimal Folly archive includes the `IOBuf`
+implementation those sources require. The React runtime registers both
+upstream TurboModules through its existing registry and runtime-owned
+`CallInvoker`. Private unavailable client factories make pre-backend requests
+fail through RN's normal completion and socket event contracts instead of
+adding parallel request or event semantics.
+
+Gate evidence: the Fabric runtime contract test resolves both modules, invokes
+HTTP cancellation and WebSocket lifecycle methods, observes their asynchronous
+RN device events, and destroys the host cleanly under `collider test runtime`.
 
 ## Phase 2 — Supply production HTTP and WebSocket clients
 
-Implement the `IHttpClient` and `IWebSocketClient` factories with one portable
-production backend supporting TLS verification, redirects, cookies, headers,
-streaming request/response bodies, cancellation, binary frames, ping/pong,
-close handshakes, bounded buffering, and deterministic teardown.
+Status: active.
 
-Keep the backend behind RN's existing interfaces. Do not patch vendored React
-Native and do not expose backend types to Swift domain models.
+Implement `IHttpClient` with AsyncHTTPClient and `IWebSocketClient` with
+NIOWebSocket. Both clients share SwiftNIO's singleton event-loop group. Swift
+owns connections, TLS, redirects, cookies, streaming, cancellation, bounded
+buffers, and shutdown. Thin C++ adapters translate React Native's existing
+interfaces into one typed per-runtime C++ transport façade. Self-contained
+request values cross by value, `std::function` captures own Swift transport and
+callback lifetimes, and request/socket tokens own cancellation and teardown.
+No NIO or AsyncHTTPClient type, opaque context pointer, C vtable, or manual
+retain/release callback crosses that boundary.
+
+Support TLS verification, redirects, headers, text and base64 request bodies,
+streaming responses with backpressure, request cancellation, WebSocket text
+frames, ping/pong, close handshakes, and deterministic teardown. Phase 3 adds
+multipart, Blob, and WebSocket binary payloads because RN's portable client
+interfaces do not carry those types to a platform backend.
+
+Keep one runtime-owned cookie jar above AsyncHTTPClient, which parses cookies
+but intentionally does not store them. Apply domain, path, secure, expiration,
+and deletion rules before dispatch and after every response, including redirect
+responses.
 
 Gate: local HTTP/HTTPS and WebSocket fixtures cover success, malformed peers,
 redirects, cancellation, backpressure, disconnect, runtime shutdown, and

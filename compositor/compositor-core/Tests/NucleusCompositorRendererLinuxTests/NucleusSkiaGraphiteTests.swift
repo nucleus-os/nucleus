@@ -1,8 +1,9 @@
-import Testing
-@testable import NucleusRenderer
-import VulkanC
-import Vulkan
 import NucleusSkiaGraphiteBridge
+import Testing
+import Vulkan
+import VulkanC
+
+@testable import NucleusRenderer
 
 // Converted from NucleusSkiaGraphiteFixture: the C++ Swift-interop façade value
 // vocabulary, runtime-shader compilation, and raster readback are hardware-
@@ -19,12 +20,15 @@ import NucleusSkiaGraphiteBridge
 
         // Paint defaults + blend-mode raws + rrect radii.
         let defaultPaint = nucleus.skia.Paint()
-        #expect(defaultPaint.alpha == 1 && defaultPaint.saturation == 1 && defaultPaint.blurSigma == 0,
-                "paint-defaults")
-        #expect(nucleus.skia.BlendMode.srcOver.rawValue == 0
-            && nucleus.skia.BlendMode.dstOut.rawValue == 7, "blend-mode-raws")
+        #expect(
+            defaultPaint.alpha == 1 && defaultPaint.saturation == 1 && defaultPaint.blurSigma == 0,
+            "paint-defaults")
+        #expect(
+            nucleus.skia.BlendMode.srcOver.rawValue == 0
+                && nucleus.skia.BlendMode.dstOut.rawValue == 7, "blend-mode-raws")
         var radii = nucleus.skia.RRectRadii()
-        radii.topLeft = 4; radii.bottomRight = 8
+        radii.topLeft = 4
+        radii.bottomRight = 8
         #expect(radii.topLeft == 4 && radii.bottomRight == 8, "rrect-radii-fields")
     }
 
@@ -35,18 +39,19 @@ import NucleusSkiaGraphiteBridge
             let shaderIsValid = unsafe shader.isValid()
             #expect(shaderIsValid, "runtime-shader-no-uniform")
         }
-        "uniform half intensity; half4 main(float2 c) { return half4(intensity, 0, 0, 1); }".withCString { src in
-            let uniforms: [Float] = [0.5]
-            let shader = uniforms.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRuntimeShader(src, $0.baseAddress, 1)
+        "uniform half intensity; half4 main(float2 c) { return half4(intensity, 0, 0, 1); }"
+            .withCString { src in
+                let uniforms: [Float] = [0.5]
+                let shader = uniforms.withUnsafeBufferPointer {
+                    unsafe nucleus.skia.makeRuntimeShader(src, $0.baseAddress, 1)
+                }
+                let shaderIsValid = unsafe shader.isValid()
+                #expect(shaderIsValid, "runtime-shader-with-uniform")
+                // Wrong uniform count fails closed (byte-size mismatch).
+                let bad = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
+                let badIsValid = unsafe bad.isValid()
+                #expect(!badIsValid, "runtime-shader-uniform-mismatch")
             }
-            let shaderIsValid = unsafe shader.isValid()
-            #expect(shaderIsValid, "runtime-shader-with-uniform")
-            // Wrong uniform count fails closed (byte-size mismatch).
-            let bad = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
-            let badIsValid = unsafe bad.isValid()
-            #expect(!badIsValid, "runtime-shader-uniform-mismatch")
-        }
         "this is not valid sksl {{{".withCString { src in
             let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
             let shaderIsValid = unsafe shader.isValid()
@@ -63,7 +68,7 @@ import NucleusSkiaGraphiteBridge
             unsafe nucleus.skia.makeRasterImageRGBA(
                 2, 2, $0.baseAddress, $0.count)
         }
-        let rasterImageIsValid = unsafe rasterImage.isValid()
+        let rasterImageIsValid = rasterImage.isValid()
         #expect(rasterImageIsValid, "raster-image")
         var readback = [UInt8](repeating: 0, count: 16)
         let readOk = readback.withUnsafeMutableBufferPointer {
@@ -82,7 +87,8 @@ import NucleusSkiaGraphiteBridge
                 2, 2, $0.baseAddress, $0.count)
         }
         var radii = nucleus.skia.RRectRadii()
-        radii.topLeft = 4; radii.bottomRight = 8
+        radii.topLeft = 4
+        radii.bottomRight = 8
 
         try unsafe withRequiredVulkanGraphite(
             presentation: .headless,
@@ -125,12 +131,19 @@ import NucleusSkiaGraphiteBridge
 
             let canvas = unsafe surface.getCanvas()
             var clearColor = nucleus.skia.Color()
-            clearColor.r = 0.1; clearColor.g = 0.2; clearColor.b = 0.3; clearColor.a = 1
+            clearColor.r = 0.1
+            clearColor.g = 0.2
+            clearColor.b = 0.3
+            clearColor.a = 1
             unsafe canvas.clear(clearColor)
             var rect = nucleus.skia.RectF()
-            rect.x = 10; rect.y = 10; rect.width = 100; rect.height = 50
+            rect.x = 10
+            rect.y = 10
+            rect.width = 100
+            rect.height = 50
             var rectColor = nucleus.skia.Color()
-            rectColor.r = 1; rectColor.a = 1
+            rectColor.r = 1
+            rectColor.a = 1
             unsafe canvas.drawRect(rect, rectColor)
 
             // Draw vocabulary: save/clip stack + Paint-carrying draws + shader fill.
@@ -149,9 +162,15 @@ import NucleusSkiaGraphiteBridge
             blurred.alpha = 1
             blurred.blurSigma = 3
             var srcRect = nucleus.skia.RectF()
-            srcRect.x = 0; srcRect.y = 0; srcRect.width = 2; srcRect.height = 2
+            srcRect.x = 0
+            srcRect.y = 0
+            srcRect.width = 2
+            srcRect.height = 2
             var dstRect = nucleus.skia.RectF()
-            dstRect.x = 20; dstRect.y = 20; dstRect.width = 64; dstRect.height = 64
+            dstRect.x = 20
+            dstRect.y = 20
+            dstRect.width = 64
+            dstRect.height = 64
             unsafe canvas.drawImageRect(textureImage, srcRect, dstRect, blurred)
             unsafe canvas.restore()
 
@@ -193,10 +212,12 @@ import NucleusSkiaGraphiteBridge
                 let image = unsafe texture.image()
                 let targetIsValid = unsafe target.isValid()
                 let imageIsValid = unsafe image.isValid()
-                #expect(targetIsValid && imageIsValid,
-                        "upload-generation-valid-\(generation)")
+                #expect(
+                    targetIsValid && imageIsValid,
+                    "upload-generation-valid-\(generation)")
                 var uploadDst = nucleus.skia.RectF()
-                uploadDst.width = 8; uploadDst.height = 8
+                uploadDst.width = 8
+                uploadDst.height = 8
                 unsafe target.getCanvas().drawImage(image, uploadDst, 1)
                 let submission = unsafe recorder.snapRecording()
                 let generationSubmitted = unsafe submitGraphiteAndWait(
@@ -210,17 +231,18 @@ import NucleusSkiaGraphiteBridge
     }
 
     @Test func gpuHeadless_exactInsertStatusesAndCallbacks() throws {
-        let cases: [(
-            nucleus.skia.RecordingInsertStatus,
-            Bool
-        )] = [
-            (.success, true),
-            (.invalidRecording, true),
-            (.promiseImageInstantiationFailed, true),
-            (.addCommandsFailed, false),
-            (.asyncShaderCompilesFailed, false),
-            (.outOfOrderRecording, false),
-        ]
+        let cases:
+            [(
+                nucleus.skia.RecordingInsertStatus,
+                Bool
+            )] = [
+                (.success, true),
+                (.invalidRecording, true),
+                (.promiseImageInstantiationFailed, true),
+                (.addCommandsFailed, false),
+                (.asyncShaderCompilesFailed, false),
+                (.outOfOrderRecording, false),
+            ]
 
         for (simulated, expectedUsable) in cases {
             try unsafe withRequiredVulkanGraphite(

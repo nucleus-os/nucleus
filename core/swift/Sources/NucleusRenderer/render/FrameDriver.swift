@@ -146,7 +146,7 @@ package protocol FrameResourceResolver: AnyObject {
     /// Compiled SkSL programs keyed by runtime-effect handle. Compilation is
     /// the expensive half and is uniform-independent, so it is cached here
     /// while uniforms are re-bound per draw.
-    private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = unsafe [:]
+    private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = [:]
     private var recording = false
     private(set) var sawCallbackWhileRecording = false
 
@@ -217,7 +217,7 @@ package protocol FrameResourceResolver: AnyObject {
     func shutdown() {
         imageResources.shutdown()
         registry.clear()
-        unsafe compiledEffects.removeAll()
+        compiledEffects.removeAll()
         accumulators.removeAll()
     }
 
@@ -284,24 +284,24 @@ package protocol FrameResourceResolver: AnyObject {
     /// and caching on first use. Mirrors `resolvePaintImage`.
     func resolvePaintEffect(_ handle: UInt64) -> nucleus.skia.RuntimeEffect? {
         guard let source = resourceHost.runtimeEffects.source(handle) else { return nil }
-        return unsafe compiledEffect(handle: handle, source: source)
+        return compiledEffect(handle: handle, source: source)
     }
 
     func compiledEffect(handle: UInt64, source: RuntimeEffectSource) -> nucleus.skia.RuntimeEffect?
     {
-        if let existing = unsafe compiledEffects[handle], unsafe existing.isValid() {
-            return unsafe existing
+        if let existing = compiledEffects[handle], existing.isValid() {
+            return existing
         }
         let effect = unsafe nucleus.skia.makeRuntimeEffect(source.sksl)
-        guard unsafe effect.isValid() else { return nil }
-        unsafe compiledEffects[handle] = unsafe effect
-        return unsafe effect
+        guard effect.isValid() else { return nil }
+        compiledEffects[handle] = effect
+        return effect
     }
 
     /// Drop a compiled-program cache entry after the render owner drains its
     /// source store's eviction queue. No-op for an unknown handle.
     func evictCompiledEffect(_ handle: UInt64) {
-        unsafe compiledEffects[handle] = nil
+        compiledEffects[handle] = nil
     }
 
     /// Drop a decoded-image cache entry after the render owner drains its
@@ -413,7 +413,7 @@ package protocol FrameResourceResolver: AnyObject {
                 contentHeight: pixelExtent(content.height * Float(target.fractionalScale)),
                 localDamage: request.localDamage,
                 resolveImage: { unsafe paintImages[$0] },
-                resolveEffect: unsafe resolvePaintEffect)
+                resolveEffect: resolvePaintEffect)
             if let produced,
                 let image = unsafe registry.resolve(.renderer(produced))
             {

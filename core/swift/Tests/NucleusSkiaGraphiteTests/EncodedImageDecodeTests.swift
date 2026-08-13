@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import NucleusSkiaGraphiteBridge
+import Testing
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -27,7 +28,8 @@ import Darwin
     }
 
     private static func adler32(_ bytes: [UInt8]) -> UInt32 {
-        var a: UInt32 = 1, b: UInt32 = 0
+        var a: UInt32 = 1
+        var b: UInt32 = 0
         for byte in bytes {
             a = (a + UInt32(byte)) % 65521
             b = (b + a) % 65521
@@ -36,8 +38,10 @@ import Darwin
     }
 
     private static func beBytes(_ value: UInt32) -> [UInt8] {
-        [UInt8(value >> 24 & 0xFF), UInt8(value >> 16 & 0xFF),
-         UInt8(value >> 8 & 0xFF), UInt8(value & 0xFF)]
+        [
+            UInt8(value >> 24 & 0xFF), UInt8(value >> 16 & 0xFF),
+            UInt8(value >> 8 & 0xFF), UInt8(value & 0xFF),
+        ]
     }
 
     private static func chunk(_ type: String, _ payload: [UInt8]) -> [UInt8] {
@@ -69,7 +73,8 @@ import Darwin
         } while offset < raw.count
         zlib.append(contentsOf: beBytes(adler32(raw)))
 
-        let header = beBytes(UInt32(width)) + beBytes(UInt32(height))
+        let header =
+            beBytes(UInt32(width)) + beBytes(UInt32(height))
             + [8, 6, 0, 0, 0]  // 8-bit, RGBA, deflate, no filter, no interlace
         var png: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
         png += chunk("IHDR", header)
@@ -83,7 +88,8 @@ import Darwin
         let path: String
 
         init(width: Int, height: Int, rgba: [UInt8]) {
-            path = "\(NSTemporaryDirectory())nucleus-decode-"
+            path =
+                "\(NSTemporaryDirectory())nucleus-decode-"
                 + "\(UInt32.random(in: 0...UInt32.max)).png"
             try? encodePNG(width: width, height: height, rgba: rgba).write(
                 to: URL(fileURLWithPath: path))
@@ -92,8 +98,10 @@ import Darwin
         deinit { try? FileManager.default.removeItem(atPath: path) }
     }
 
-    private static func solid(width: Int, height: Int,
-                             _ r: UInt8, _ g: UInt8, _ b: UInt8) -> [UInt8] {
+    private static func solid(
+        width: Int, height: Int,
+        _ r: UInt8, _ g: UInt8, _ b: UInt8
+    ) -> [UInt8] {
         var pixels: [UInt8] = []
         pixels.reserveCapacity(width * height * 4)
         for _ in 0..<(width * height) { pixels.append(contentsOf: [r, g, b, 255]) }
@@ -117,11 +125,12 @@ import Darwin
         -> RasterFixtureImage
     {
         withFileDescriptor(fixture.path) {
-            unsafe RasterFixtureImage(
+            RasterFixtureImage(
                 nucleus.skia.decodeEncodedImageFileDescriptor(
                     $0,
                     maxWidth,
-                    maxHeight).image)
+                    maxHeight
+                ).image)
         }
     }
 
@@ -129,8 +138,9 @@ import Darwin
 
     /// The tests below only mean something if Skia agrees the PNGs are valid.
     @Test func theTestEncoderProducesADecodablePNG() {
-        let fixture = Fixture(width: 4, height: 3,
-                              rgba: Self.solid(width: 4, height: 3, 10, 200, 30))
+        let fixture = Fixture(
+            width: 4, height: 3,
+            rgba: Self.solid(width: 4, height: 3, 10, 200, 30))
         let image = decode(fixture, maxWidth: 4, maxHeight: 3)
         #expect(image.isValid)
         #expect(image.width == 4)
@@ -142,8 +152,9 @@ import Darwin
     /// The defect under test: bounds were stored, deduped on, and ignored,
     /// so a wallpaper and a tray icon decoded identically.
     @Test func aBoundedDecodeShrinksTheImage() {
-        let fixture = Fixture(width: 256, height: 256,
-                              rgba: Self.solid(width: 256, height: 256, 128, 128, 128))
+        let fixture = Fixture(
+            width: 256, height: 256,
+            rgba: Self.solid(width: 256, height: 256, 128, 128, 128))
         let image = decode(fixture, maxWidth: 32, maxHeight: 32)
         #expect(image.isValid)
         #expect(image.width == 32)
@@ -152,8 +163,9 @@ import Darwin
 
     /// The bound is a box the result fits inside, not the result's size.
     @Test func aBoundedDecodePreservesAspectRatio() {
-        let fixture = Fixture(width: 400, height: 100,
-                              rgba: Self.solid(width: 400, height: 100, 200, 50, 50))
+        let fixture = Fixture(
+            width: 400, height: 100,
+            rgba: Self.solid(width: 400, height: 100, 200, 50, 50))
         let image = decode(fixture, maxWidth: 100, maxHeight: 100)
         #expect(image.width == 100)
         #expect(image.height == 25, "the wide axis binds; the short axis follows it")
@@ -161,8 +173,9 @@ import Darwin
 
     /// Upscaling to fill the box would burn memory to blur.
     @Test func anImageInsideTheBoxIsNotEnlarged() {
-        let fixture = Fixture(width: 16, height: 16,
-                              rgba: Self.solid(width: 16, height: 16, 0, 0, 255))
+        let fixture = Fixture(
+            width: 16, height: 16,
+            rgba: Self.solid(width: 16, height: 16, 0, 0, 255))
         let image = decode(fixture, maxWidth: 512, maxHeight: 512)
         #expect(image.width == 16)
         #expect(image.height == 16)
@@ -170,8 +183,9 @@ import Darwin
 
     /// A full-size target preserves the source dimensions without deferring.
     @Test func aFullSizeDecodeIsEager() {
-        let fixture = Fixture(width: 64, height: 48,
-                              rgba: Self.solid(width: 64, height: 48, 1, 2, 3))
+        let fixture = Fixture(
+            width: 64, height: 48,
+            rgba: Self.solid(width: 64, height: 48, 1, 2, 3))
         let image = decode(fixture, maxWidth: 64, maxHeight: 48)
         #expect(image.width == 64)
         #expect(image.height == 48)
@@ -207,8 +221,9 @@ import Darwin
     }
 
     @Test func aBoundedDecodePreservesColour() {
-        let fixture = Fixture(width: 64, height: 64,
-                              rgba: Self.solid(width: 64, height: 64, 220, 40, 90))
+        let fixture = Fixture(
+            width: 64, height: 64,
+            rgba: Self.solid(width: 64, height: 64, 220, 40, 90))
         let image = decode(fixture, maxWidth: 8, maxHeight: 8)
         var pixels = [UInt8](repeating: 0, count: 8 * 8 * 4)
         let read = image.readPixelsRGBA(into: &pixels, rowBytes: 8 * 4)
@@ -243,8 +258,10 @@ import Darwin
             width: 8, height: 8, rgba: Self.solid(width: 8, height: 8, 30, 60, 90))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageMemory(
-                $0.baseAddress, $0.count, 8, 8).image)
+            unsafe RasterFixtureImage(
+                nucleus.skia.decodeEncodedImageMemory(
+                    $0.baseAddress, $0.count, 8, 8
+                ).image)
         }
         #expect(image.isValid)
         #expect(image.width == 8)
@@ -256,8 +273,10 @@ import Darwin
             width: 64, height: 64, rgba: Self.solid(width: 64, height: 64, 1, 2, 3))
         let bytes = [UInt8](png)
         let image = bytes.withUnsafeBufferPointer {
-            unsafe RasterFixtureImage(nucleus.skia.decodeEncodedImageMemory(
-                $0.baseAddress, $0.count, 16, 16).image)
+            unsafe RasterFixtureImage(
+                nucleus.skia.decodeEncodedImageMemory(
+                    $0.baseAddress, $0.count, 16, 16
+                ).image)
         }
         #expect(image.width == 16)
     }
@@ -268,8 +287,8 @@ import Darwin
             unsafe nucleus.skia.decodeEncodedImageMemory(
                 $0.baseAddress, $0.count, 16, 16)
         }
-        let succeeded = unsafe result.isSuccess()
-        let status = unsafe result.status
+        let succeeded = result.isSuccess()
+        let status = result.status
         #expect(!succeeded)
         #expect(status == .unreadableInput)
     }
@@ -285,9 +304,10 @@ import Darwin
     @Test func icoPreservesPerPixelAlpha() {
         let fixture = IcoFixture(alphas: [0, 64, 255, 128])
         let image = withFileDescriptor(fixture.path) {
-            unsafe RasterFixtureImage(
+            RasterFixtureImage(
                 nucleus.skia.decodeEncodedImageFileDescriptor(
-                    $0, 2, 2).image)
+                    $0, 2, 2
+                ).image)
         }
         #expect(image.isValid)
         #expect(image.width == 2)
@@ -295,8 +315,9 @@ import Darwin
         var px = [UInt8](repeating: 0, count: 2 * 2 * 4)
         let read = image.readPixelsRGBA(into: &px, rowBytes: 2 * 4)
         #expect(read)
-        #expect([px[3], px[7], px[11], px[15]] == [0, 64, 255, 128],
-                "every alpha survives; all-255 would mean the BMP path flattened them")
+        #expect(
+            [px[3], px[7], px[11], px[15]] == [0, 64, 255, 128],
+            "every alpha survives; all-255 would mean the BMP path flattened them")
     }
 
     /// A 2x2 32bpp ICO with per-pixel alpha, written by hand — the format is
@@ -307,7 +328,8 @@ import Darwin
 
         /// - Parameter alphas: top-left, top-right, bottom-left, bottom-right.
         init(alphas: [UInt8]) {
-            path = "\(NSTemporaryDirectory())nucleus-ico-"
+            path =
+                "\(NSTemporaryDirectory())nucleus-ico-"
                 + "\(UInt32.random(in: 0...UInt32.max)).ico"
 
             var dib = Data()
@@ -328,8 +350,17 @@ import Darwin
             }
 
             // BITMAPINFOHEADER: height is doubled to cover the (unused) AND mask.
-            u32(40); i32(2); i32(4); u16(1); u16(32)
-            u32(0); u32(16); i32(0); i32(0); u32(0); u32(0)
+            u32(40)
+            i32(2)
+            i32(4)
+            u16(1)
+            u16(32)
+            u32(0)
+            u32(16)
+            i32(0)
+            i32(0)
+            u32(0)
+            u32(0)
 
             // BGRA pixels, bottom-up: the last row is written first.
             let rows: [[UInt8]] = [[alphas[2], alphas[3]], [alphas[0], alphas[1]]]
@@ -351,10 +382,14 @@ import Darwin
                     unsafe ico.append(contentsOf: $0)
                 }
             }
-            h16(0); h16(1); h16(1)                      // reserved, type=icon, count
-            ico.append(contentsOf: [2, 2, 0, 0])        // width, height, palette, reserved
-            h16(1); h16(32)                             // planes, bit depth
-            h32(UInt32(dib.count)); h32(22)             // size, offset
+            h16(0)
+            h16(1)
+            h16(1)  // reserved, type=icon, count
+            ico.append(contentsOf: [2, 2, 0, 0])  // width, height, palette, reserved
+            h16(1)
+            h16(32)  // planes, bit depth
+            h32(UInt32(dib.count))
+            h32(22)  // size, offset
             ico.append(dib)
 
             try? ico.write(to: URL(fileURLWithPath: path))
@@ -366,30 +401,34 @@ import Darwin
     // MARK: - Failure
 
     @Test func aMissingFileDecodesToNothing() {
-        let result = unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+        let result = nucleus.skia.decodeEncodedImageFileDescriptor(
             -1, 32, 32)
-        let status = unsafe result.status
+        let status = result.status
         #expect(status == .unreadableInput)
     }
 
     @Test func anEmptyPathDecodesToNothing() {
-        let status = unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
-            -1, 32, 32).status
+        let status = nucleus.skia.decodeEncodedImageFileDescriptor(
+            -1, 32, 32
+        ).status
         #expect(status == .unreadableInput)
     }
 
     @Test func anUndecodableFileDecodesToNothing() {
-        let path = "\(NSTemporaryDirectory())nucleus-garbage-"
+        let path =
+            "\(NSTemporaryDirectory())nucleus-garbage-"
             + "\(UInt32.random(in: 0...UInt32.max)).png"
         try? Data([0xDE, 0xAD, 0xBE, 0xEF]).write(to: URL(fileURLWithPath: path))
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         let statuses = withFileDescriptor(path) { descriptor in
             (
-                unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
-                    descriptor, 16, 16).status,
-                unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
-                    descriptor, 0, 0).status
+                nucleus.skia.decodeEncodedImageFileDescriptor(
+                    descriptor, 16, 16
+                ).status,
+                nucleus.skia.decodeEncodedImageFileDescriptor(
+                    descriptor, 0, 0
+                ).status
             )
         }
         let (unsupported, invalidDimensions) = statuses

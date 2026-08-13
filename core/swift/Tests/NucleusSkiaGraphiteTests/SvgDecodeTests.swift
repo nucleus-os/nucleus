@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import NucleusSkiaGraphiteBridge
+import Testing
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -16,7 +17,8 @@ import Darwin
         let path: String
 
         init(_ svg: String, extension ext: String = "svg") {
-            path = "\(NSTemporaryDirectory())nucleus-svg-"
+            path =
+                "\(NSTemporaryDirectory())nucleus-svg-"
                 + "\(UInt32.random(in: 0...UInt32.max)).\(ext)"
             try? svg.write(toFile: path, atomically: true, encoding: .utf8)
         }
@@ -55,11 +57,12 @@ import Darwin
         -> RasterFixtureImage
     {
         withFileDescriptor(fixture.path) {
-            unsafe RasterFixtureImage(
+            RasterFixtureImage(
                 nucleus.skia.decodeEncodedImageFileDescriptor(
                     $0,
                     maxWidth,
-                    maxHeight).image)
+                    maxHeight
+                ).image)
         }
     }
 
@@ -107,7 +110,8 @@ import Darwin
     /// An icon is a shape over whatever is behind it, so the untouched area must
     /// be transparent rather than opaque black.
     @Test func theUncoveredAreaIsTransparent() {
-        let fixture = Fixture("""
+        let fixture = Fixture(
+            """
             <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
               <rect x="50" y="50" width="50" height="50" fill="#0000FF"/>
             </svg>
@@ -133,10 +137,11 @@ import Darwin
     @Test func anSvgWithIntrinsicSizeStillRequiresTargetBounds() {
         let fixture = Fixture(Self.wideRectangle)
         let status = withFileDescriptor(fixture.path) {
-            unsafe nucleus.skia.decodeEncodedImageFileDescriptor(
+            nucleus.skia.decodeEncodedImageFileDescriptor(
                 $0,
                 0,
-                0).status
+                0
+            ).status
         }
         #expect(status == .invalidDimensions)
     }
@@ -144,7 +149,8 @@ import Darwin
     /// A document sized in relative units has no intrinsic size, so bounds are
     /// all the information there is.
     @Test func aRelativelySizedDocumentTakesTheBounds() {
-        let fixture = Fixture("""
+        let fixture = Fixture(
+            """
             <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 10 10">
               <rect width="10" height="10" fill="#FF0000"/>
             </svg>
@@ -156,7 +162,8 @@ import Darwin
 
     /// A sizeless document rasterizes into its explicit target viewport.
     @Test func aSizelessDocumentUsesItsRequiredTargetSize() {
-        let fixture = Fixture("""
+        let fixture = Fixture(
+            """
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
               <rect width="10" height="10" fill="#FF0000"/>
             </svg>
@@ -180,7 +187,8 @@ import Darwin
     /// An XML declaration, doctype, or comment before the root element is
     /// ordinary, so detection searches rather than testing the prefix.
     @Test func aLeadingDeclarationDoesNotHideTheRoot() {
-        let fixture = Fixture("""
+        let fixture = Fixture(
+            """
             <?xml version="1.0" encoding="UTF-8"?>
             <!-- exported by a drawing program -->
             <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">

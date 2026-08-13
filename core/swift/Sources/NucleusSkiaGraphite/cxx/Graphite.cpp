@@ -506,6 +506,16 @@ struct Recording::Impl {
     std::unique_ptr<skgpu::graphite::Recording> recording;
 };
 
+struct GraphiteInternalAccess final {
+    static RasterImage::Impl *get(const RasterImage &value) { return value.impl_.get(); }
+    static Image::Impl *get(const Image &value) { return value.impl_.get(); }
+    static Shader::Impl *get(const Shader &value) { return value.impl_.get(); }
+    static Path::Impl *get(const Path &value) { return value.impl_.get(); }
+    static RuntimeEffect::Impl *get(const RuntimeEffect &value) { return value.impl_.get(); }
+    static Surface::Impl *get(const Surface &value) { return value.impl_.get(); }
+    static Recording::Impl *get(const Recording &value) { return value.impl_.get(); }
+};
+
 // MARK: - Image
 
 RasterImage::RasterImage() = default;
@@ -513,7 +523,6 @@ RasterImage::RasterImage(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool RasterImage::isValid() const { return impl_ && impl_->image != nullptr; }
 int32_t RasterImage::width() const { return isValid() ? impl_->image->width() : 0; }
 int32_t RasterImage::height() const { return isValid() ? impl_->image->height() : 0; }
-RasterImage::Impl *RasterImage::raw() const { return impl_.get(); }
 
 bool RasterImage::readPixelsRGBA(
     uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
@@ -531,7 +540,6 @@ Image::Image(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Image::isValid() const { return impl_ && impl_->image != nullptr; }
 int32_t Image::width() const { return isValid() ? impl_->image->width() : 0; }
 int32_t Image::height() const { return isValid() ? impl_->image->height() : 0; }
-Image::Impl *Image::raw() const { return impl_.get(); }
 
 // MARK: - UploadTexture
 
@@ -565,13 +573,11 @@ Image UploadTexture::image() const {
 
 Shader::Shader(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Shader::isValid() const { return impl_ && impl_->shader != nullptr; }
-Shader::Impl *Shader::raw() const { return impl_.get(); }
 
 // MARK: - Path
 
 Path::Path(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Path::isValid() const { return impl_ != nullptr; }
-Path::Impl *Path::raw() const { return impl_.get(); }
 
 Path makePath(
     const uint8_t *verbs, size_t verbCount,
@@ -699,7 +705,6 @@ Shader makeSweepGradient(
 
 RuntimeEffect::RuntimeEffect(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool RuntimeEffect::isValid() const { return impl_ && impl_->effect != nullptr; }
-RuntimeEffect::Impl *RuntimeEffect::raw() const { return impl_.get(); }
 
 RuntimeEffect makeRuntimeEffect(const char *sksl) {
     if (sksl == nullptr) return RuntimeEffect(nullptr);
@@ -737,7 +742,7 @@ Shader RuntimeEffect::makeShader(const float *uniforms, size_t uniformFloatCount
 Shader RuntimeEffect::makeShaderWithImage(
     const float *uniforms, size_t uniformFloatCount, const Image &child) const {
     if (!isValid()) return Shader(nullptr);
-    Image::Impl *childImpl = child.raw();
+    Image::Impl *childImpl = GraphiteInternalAccess::get(child);
     if (childImpl == nullptr || childImpl->image == nullptr) return Shader(nullptr);
     if (impl_->effect->children().size() != 1) return Shader(nullptr);
     sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms, uniformFloatCount);
@@ -1347,7 +1352,7 @@ void Canvas::drawStyledRRect(StyledRRect style, float alpha) const {
 
 void Canvas::drawImageRect(const Image &image, RectF src, RectF dst, Paint paint) const {
     if (!isValid()) return;
-    Image::Impl *im = image.raw();
+    Image::Impl *im = GraphiteInternalAccess::get(image);
     if (im == nullptr || im->image == nullptr) return;
     SkPaint sk = toSkPaint(paint);
     // The fill color is irrelevant for an image draw; carry only alpha/blend/filters.
@@ -1367,7 +1372,7 @@ void Canvas::drawImageRect(const Image &image, RectF src, RectF dst, Paint paint
 
 void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const {
     if (!isValid()) return;
-    Shader::Impl *sh = shader.raw();
+    Shader::Impl *sh = GraphiteInternalAccess::get(shader);
     if (sh == nullptr || sh->shader == nullptr) return;
     SkPaint sk = toSkPaint(paint);
     sk.setShader(sh->shader);
@@ -1377,15 +1382,15 @@ void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const
 
 void Canvas::drawPath(const Path &path, Paint paint) const {
     if (!isValid()) return;
-    Path::Impl *p = path.raw();
+    Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     impl_->canvas->drawPath(p->path, toSkPaint(paint));
 }
 
 void Canvas::drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const {
     if (!isValid()) return;
-    Path::Impl *p = path.raw();
-    Shader::Impl *sh = shader.raw();
+    Path::Impl *p = GraphiteInternalAccess::get(path);
+    Shader::Impl *sh = GraphiteInternalAccess::get(shader);
     if (p == nullptr || sh == nullptr || sh->shader == nullptr) return;
     SkPaint sk = toSkPaint(paint);
     sk.setShader(sh->shader);
@@ -1394,7 +1399,7 @@ void Canvas::drawPathWithShader(const Path &path, const Shader &shader, Paint pa
 
 void Canvas::clipPath(const Path &path, bool antialias) const {
     if (!isValid()) return;
-    Path::Impl *p = path.raw();
+    Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     impl_->canvas->clipPath(p->path, SkClipOp::kIntersect, antialias);
 }
@@ -1402,7 +1407,7 @@ void Canvas::clipPath(const Path &path, bool antialias) const {
 void Canvas::clipPathTransformed(
     const Path &path, const float matrix[9], bool antialias) const {
     if (!isValid() || matrix == nullptr) return;
-    Path::Impl *p = path.raw();
+    Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     const SkMatrix transform = SkMatrix::MakeAll(
         matrix[0], matrix[1], matrix[2],
@@ -1560,7 +1565,6 @@ Image Surface::snapshotImage() const {
     return Image(std::move(impl));
 }
 
-Surface::Impl *Surface::raw() const { return impl_.get(); }
 
 bool Surface::readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
     if (!isValid() || dst == nullptr) return false;
@@ -1586,7 +1590,6 @@ Surface makeRasterSurface(int32_t width, int32_t height) {
 
 Recording::Recording(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
 bool Recording::isValid() const { return impl_ && impl_->recording != nullptr; }
-Recording::Impl *Recording::raw() const { return impl_.get(); }
 
 // MARK: - Recorder
 
@@ -1606,7 +1609,7 @@ Surface Recorder::makeOffscreenSurface(int32_t width, int32_t height) const {
 
 Image Recorder::makeTextureImage(const RasterImage &image) const {
     if (!isValid()) return Image(nullptr);
-    RasterImage::Impl *source = image.raw();
+    RasterImage::Impl *source = GraphiteInternalAccess::get(image);
     if (source == nullptr || source->image == nullptr) return Image(nullptr);
     return wrapImage(SkImages::TextureFromImage(
         impl_->recorder.get(), source->image.get(), {/*fMipmapped=*/false}));
@@ -1773,7 +1776,7 @@ SubmissionResult GraphiteContext::submitAsync(
             Status::invalidArgument,
             "submitAsync requires a valid context and nonzero serial");
     }
-    Recording::Impl *rec = recording.raw();
+    Recording::Impl *rec = GraphiteInternalAccess::get(recording);
     if (!rec || !rec->recording) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -1803,7 +1806,7 @@ SubmissionResult GraphiteContext::submitAsyncSimulatingInsertStatus(
             Status::invalidArgument,
             "simulated submission requires a valid context, serial, and insert status");
     }
-    Recording::Impl *rec = recording.raw();
+    Recording::Impl *rec = GraphiteInternalAccess::get(recording);
     if (!rec || !rec->recording) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -1847,7 +1850,7 @@ SubmissionResult GraphiteContext::submitWithSemaphores(
             Status::invalidArgument,
             "semaphore submission requires a valid context");
     }
-    Recording::Impl *rec = recording.raw();
+    Recording::Impl *rec = GraphiteInternalAccess::get(recording);
     if (!rec || !rec->recording) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -1894,13 +1897,13 @@ SubmissionResult GraphiteContext::submitForPresent(
             Status::submitFailed,
             "present submission requires a valid context");
     }
-    Recording::Impl *rec = recording.raw();
+    Recording::Impl *rec = GraphiteInternalAccess::get(recording);
     if (!rec || !rec->recording) {
         return invalidSubmission(
             Status::invalidArgument,
             "present submission requires one valid recording");
     }
-    Surface::Impl *surf = targetSurface.raw();
+    Surface::Impl *surf = GraphiteInternalAccess::get(targetSurface);
     if (!surf || !surf->surface) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -2072,7 +2075,7 @@ SurfaceReadback beginSurfaceReadback(
     int32_t requestedWidth = 0,
     int32_t requestedHeight = 0) {
     if (context == nullptr) return SurfaceReadback(nullptr);
-    Surface::Impl *s = surface.raw();
+    Surface::Impl *s = GraphiteInternalAccess::get(surface);
     if (s == nullptr || !s->surface) return SurfaceReadback(nullptr);
 
     const int surfaceWidth = s->surface->width();

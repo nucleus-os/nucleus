@@ -59,7 +59,7 @@ private enum PaintFixtureResources {
             scaleX: scaleX, scaleY: scaleY,
             resolveImage: { _ in nil },
             resolveEffect: { candidate in
-                candidate == handle ? unsafe effect : nil
+                candidate == handle ? effect : nil
             })
     }
 

@@ -124,6 +124,7 @@ add_library(folly_runtime STATIC
     ${FOLLY_DIR}/folly/detail/SplitStringSimd.cpp
     ${FOLLY_DIR}/folly/detail/UniqueInstance.cpp
     ${FOLLY_DIR}/folly/hash/SpookyHashV2.cpp
+    ${FOLLY_DIR}/folly/io/IOBuf.cpp
     ${FOLLY_DIR}/folly/json/dynamic.cpp
     ${FOLLY_DIR}/folly/json/json_pointer.cpp
     ${FOLLY_DIR}/folly/json/json.cpp

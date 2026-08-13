@@ -1490,6 +1490,10 @@ private func fixtureReactNativeNodeModules(
         environment: environment
     ).active
     let dependencies = try fixtureReactNativeNodeModules(root: reactNativeRoot)
+    let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
+        root: reactNativeRoot,
+        dependencies: dependencies,
+        environment: environment)
     let armHermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
@@ -1548,6 +1552,7 @@ private func fixtureReactNativeNodeModules(
                 environment: environment,
                 target: arm64,
                 dependencies: dependencies,
+                codegen: codegen.output,
                 boost: boost,
                 hermes: armHermes,
                 support: armSupport,
@@ -1559,6 +1564,7 @@ private func fixtureReactNativeNodeModules(
                 environment: environment,
                 target: x8664,
                 dependencies: dependencies,
+                codegen: codegen.output,
                 boost: boost,
                 hermes: x86Hermes,
                 support: x86Support,
@@ -1607,6 +1613,10 @@ private func fixtureReactNativeNodeModules(
         environment: environment
     ).active
     let dependencies = try fixtureReactNativeNodeModules(root: root)
+    let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
+        root: root,
+        dependencies: dependencies,
+        environment: environment)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
@@ -1628,6 +1638,7 @@ private func fixtureReactNativeNodeModules(
         environment: environment,
         target: target,
         dependencies: dependencies,
+        codegen: codegen.output,
         boost: boost,
         hermes: hermes,
         support: support,
@@ -1640,42 +1651,45 @@ private func fixtureReactNativeNodeModules(
         #expect(action.kind == "rn.run-native-build")
         let nativeOperations = try await ociExecutions(in: task.action)
         #expect(!nativeOperations.isEmpty)
-        #expect(
-            nativeOperations.allSatisfy {
-                $0.command.first == "react-native"
-                    && $0.mounts.contains(
-                        OCIMount(
-                            source: root.appending("third-party"),
-                            target: "/src",
-                            access: .readOnly))
-                    && Set($0.persistentWorkspaceMounts.map(\.target))
-                        == ["/build", "/ccache"]
-            })
+        let usesExpectedMounts = nativeOperations.allSatisfy { operation in
+            let workspaceTargets = Set(
+                operation.persistentWorkspaceMounts.map { $0.target })
+            return operation.command.first == "react-native"
+                && operation.mounts.contains(
+                    OCIMount(
+                        source: root.appending("third-party"),
+                        target: "/src",
+                        access: .readOnly))
+                && workspaceTargets == ["/build", "/ccache"]
+        }
+        #expect(usesExpectedMounts)
         let exportsArtifacts = nativeOperations.contains { operation in
             operation.mounts.contains { mount in
                 mount.target == "/export" && mount.purpose == .boundedExport
             }
         }
         #expect(exportsArtifacts)
-        #expect(
-            Set(
-                nativeOperations.flatMap(\.persistentWorkspaceMounts).map {
-                    $0.workspace.identity.key
-                }) == ["rn-\(component)-intermediates", "rn-\(component)-ccache"])
-        #expect(
-            nativeOperations.allSatisfy {
-                $0.containerEnvironment["CCACHE_DIR"] == "/ccache"
-                    && $0.containerEnvironment["LD_LIBRARY_PATH"] == nil
-                    && $0.command.contains("-DCMAKE_C_COMPILER=/usr/bin/clang")
-                        == ($0.command.contains("cmake"))
-                    && $0.command.contains("-DCMAKE_CXX_COMPILER=/usr/bin/clang++")
-                        == ($0.command.contains("cmake"))
+        let workspaceKeys = Set(
+            nativeOperations.flatMap { $0.persistentWorkspaceMounts }.map {
+                $0.workspace.identity.key
             })
+        #expect(workspaceKeys == ["rn-\(component)-intermediates", "rn-\(component)-ccache"])
+        let configuresToolchain = nativeOperations.allSatisfy { operation in
+            let invokesCMake = operation.command.contains("cmake")
+            return operation.containerEnvironment["CCACHE_DIR"] == "/ccache"
+                && operation.containerEnvironment["LD_LIBRARY_PATH"] == nil
+                && operation.command.contains("-DCMAKE_C_COMPILER=/usr/bin/clang")
+                    == invokesCMake
+                && operation.command.contains("-DCMAKE_CXX_COMPILER=/usr/bin/clang++")
+                    == invokesCMake
+        }
+        #expect(configuresToolchain)
     }
     #expect(
         Set(runtime.task.dependencies) == [
             TaskID(rawValue: "native.builder"),
             TaskID(rawValue: "rn.support.linux-arm64"),
+            TaskID(rawValue: "rn.codegen"),
             TaskID(rawValue: "rn.boost"),
             TaskID(rawValue: "rn.hermes.linux-arm64"),
             TaskID(rawValue: "rn.javascript-dependencies"),
@@ -1876,6 +1890,10 @@ private func fixtureReactNativeNodeModules(
         environment: environment
     ).active
     let dependencies = try fixtureReactNativeNodeModules(root: root)
+    let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
+        root: root,
+        dependencies: dependencies,
+        environment: environment)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         sdkRoot: sdkRoot,
@@ -1897,6 +1915,7 @@ private func fixtureReactNativeNodeModules(
         environment: environment,
         target: target,
         dependencies: dependencies,
+        codegen: codegen.output,
         boost: boost,
         hermes: hermes,
         support: support,

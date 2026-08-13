@@ -7,6 +7,7 @@
 #include <NucleusReactRuntime/NucleusAppStateModule.hpp>
 #include <NucleusReactRuntime/NucleusAnimationFrameClock.hpp>
 #include <NucleusReactRuntime/NucleusAnimationModules.hpp>
+#include <NucleusReactRuntime/NucleusNetworkingModules.hpp>
 #include <NucleusReactRuntime/ReactRuntimeHost.hpp>
 #include <NucleusReactRuntime/ReactRuntimeHostFacade.hpp>
 #include <NucleusReactRuntime/RuntimeJSCallInvoker.hpp>
@@ -72,6 +73,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <fstream>
 #include <iterator>
@@ -138,39 +140,36 @@ void logRuntimeHostf(const char *format, Args... args) {
 }
 
 template <typename Fn>
-nucleus::react::RuntimeHostResult invokeRuntimeHostEntry(Fn &&fn) {
+nucleus::react::RuntimeHostResult invokeRuntimeHostEntry(Fn &&fn) noexcept {
   try {
     fn();
     return {};
   } catch (const std::exception &exception) {
-    return nucleus::react::RuntimeHostResult{.succeeded = false, .error = exception.what()};
+    return nucleus::react::RuntimeHostResult::failure(exception.what());
   } catch (...) {
-    return nucleus::react::RuntimeHostResult{
-        .succeeded = false, .error = "unknown C++ exception"};
+    return nucleus::react::RuntimeHostResult::failure("unknown C++ exception");
   }
 }
 
 template <typename Fn>
-nucleus::react::RuntimeHostResult invokeRuntimeHostStringEntry(Fn &&fn) {
+nucleus::react::RuntimeHostResult invokeRuntimeHostStringEntry(Fn &&fn) noexcept {
   try {
     return nucleus::react::RuntimeHostResult{.stringValue = fn()};
   } catch (const std::exception &exception) {
-    return nucleus::react::RuntimeHostResult{.succeeded = false, .error = exception.what()};
+    return nucleus::react::RuntimeHostResult::failure(exception.what());
   } catch (...) {
-    return nucleus::react::RuntimeHostResult{
-        .succeeded = false, .error = "unknown C++ exception"};
+    return nucleus::react::RuntimeHostResult::failure("unknown C++ exception");
   }
 }
 
 template <typename Fn>
-nucleus::react::RuntimeHostResult invokeRuntimeHostUnsignedEntry(Fn &&fn) {
+nucleus::react::RuntimeHostResult invokeRuntimeHostUnsignedEntry(Fn &&fn) noexcept {
   try {
     return nucleus::react::RuntimeHostResult{.unsignedValue = fn()};
   } catch (const std::exception &exception) {
-    return nucleus::react::RuntimeHostResult{.succeeded = false, .error = exception.what()};
+    return nucleus::react::RuntimeHostResult::failure(exception.what());
   } catch (...) {
-    return nucleus::react::RuntimeHostResult{
-        .succeeded = false, .error = "unknown C++ exception"};
+    return nucleus::react::RuntimeHostResult::failure("unknown C++ exception");
   }
 }
 
@@ -247,8 +246,9 @@ namespace nucleus::react {
 
 class ReactRuntimeHostImpl final {
  public:
-  ReactRuntimeHostImpl()
-      : runtime_(facebook::hermes::makeHermesRuntime(
+  explicit ReactRuntimeHostImpl(NetworkTransport networkTransport)
+      : networkTransport_(makeNetworkTransportOwner(std::move(networkTransport))),
+        runtime_(facebook::hermes::makeHermesRuntime(
             ::hermes::vm::RuntimeConfig::Builder()
                 .withMicrotaskQueue(true)
                 .withIntl(true)
@@ -1498,6 +1498,18 @@ class ReactRuntimeHostImpl final {
             std::shared_ptr<facebook::react::CallInvoker>) {
           return modules->reanimatedModule();
         });
+    turboModuleRegistry_.add(
+        "Networking",
+        [transport = networkTransport_](
+            std::shared_ptr<facebook::react::CallInvoker> invoker) {
+          return makeNetworkingModule(std::move(invoker), transport);
+        });
+    turboModuleRegistry_.add(
+        "WebSocketModule",
+        [transport = networkTransport_](
+            std::shared_ptr<facebook::react::CallInvoker> invoker) {
+          return makeWebSocketModule(std::move(invoker), transport);
+        });
     // `PlatformConstants` stays on the iOS-shape hand-rolled implementation:
     // the bundle's `Platform.nucleus.js` derives from `Platform.ios.js`, so
     // JS that drops into native-side constants (e.g. `Platform.constants`)
@@ -2088,6 +2100,7 @@ class ReactRuntimeHostImpl final {
   // TurboModuleBinding lambda installed on the runtime captures a raw
   // pointer to the registry; the registry must remain valid until that
   // lambda is destroyed (which happens when `runtime_` is destroyed).
+  std::shared_ptr<NetworkTransportOwner> networkTransport_;
   TurboModuleRegistry turboModuleRegistry_;
   std::unique_ptr<facebook::jsi::Runtime> runtime_;
   // Declared after `runtime_` so both registries destroy their live
@@ -2112,7 +2125,7 @@ class ReactRuntimeHostImpl final {
   nucleus::react::TextMeasureFunction textMeasure_;
 };
 
-bool hermesCanCreateRuntime() {
+bool hermesCanCreateRuntime() noexcept {
   try {
     return facebook::hermes::makeHermesRuntime(
         ::hermes::vm::RuntimeConfig::Builder()
@@ -2123,7 +2136,7 @@ bool hermesCanCreateRuntime() {
   }
 }
 
-unsigned int hermesBytecodeVersion() {
+unsigned int hermesBytecodeVersion() noexcept {
   try {
     auto *root = facebook::jsi::castInterface<facebook::hermes::IHermesRootAPI>(
         facebook::hermes::makeHermesRootAPI());
@@ -2136,7 +2149,7 @@ unsigned int hermesBytecodeVersion() {
   }
 }
 
-bool hermesIntlDateTimeFormatWorks() {
+bool hermesIntlDateTimeFormatWorks() noexcept {
   try {
     auto runtime = facebook::hermes::makeHermesRuntime(
         ::hermes::vm::RuntimeConfig::Builder()
@@ -2183,41 +2196,55 @@ bool hermesIntlDateTimeFormatWorks() {
   }
 }
 
-ReactRuntimeHostFacade::ReactRuntimeHostFacade() {
+RuntimeHostResult RuntimeHostResult::failure(const char *message) noexcept {
+  RuntimeHostResult result;
+  result.succeeded = false;
+  if (message == nullptr) message = "unknown C++ exception";
+  std::strncpy(result.errorStorage.data(), message,
+               result.errorStorage.size() - 1);
+  result.errorStorage.back() = '\0';
+  return result;
+}
+
+ReactRuntimeHostFacade::ReactRuntimeHostFacade(
+    NetworkTransport networkTransport) noexcept {
   try {
-    impl_ = std::make_unique<ReactRuntimeHostImpl>();
+    impl_ = std::make_unique<ReactRuntimeHostImpl>(std::move(networkTransport));
   } catch (const std::exception &exception) {
-    initializationError_ = exception.what();
+    initializationResult_ = RuntimeHostResult::failure(exception.what());
   } catch (...) {
-    initializationError_ = "unknown C++ exception";
+    initializationResult_ = RuntimeHostResult::failure("unknown C++ exception");
   }
 }
 
-ReactRuntimeHostFacade::~ReactRuntimeHostFacade() = default;
+ReactRuntimeHostFacade::~ReactRuntimeHostFacade() noexcept = default;
 
 ReactRuntimeHostFacade::ReactRuntimeHostFacade(ReactRuntimeHostFacade &&other) noexcept
     : impl_(std::move(other.impl_)),
-      initializationError_(std::move(other.initializationError_)) {}
+      initializationResult_(std::move(other.initializationResult_)) {}
 
 ReactRuntimeHostFacade &ReactRuntimeHostFacade::operator=(
     ReactRuntimeHostFacade &&other) noexcept {
   impl_ = std::move(other.impl_);
-  initializationError_ = std::move(other.initializationError_);
+  initializationResult_ = std::move(other.initializationResult_);
   return *this;
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::initializationResult() const {
+RuntimeHostResult ReactRuntimeHostFacade::initializationResult() const noexcept {
   if (impl_ != nullptr) {
     return {};
   }
-  return RuntimeHostResult{
-      .succeeded = false,
-      .error = initializationError_.empty()
-          ? "React runtime host facade is moved-from"
-          : initializationError_};
+  if (initializationResult_.succeeded) {
+    return RuntimeHostResult::failure("React runtime host facade is moved-from");
+  }
+  RuntimeHostResult result;
+  result.succeeded = false;
+  std::memcpy(result.errorStorage.data(), initializationResult_.errorStorage.data(),
+              result.errorStorage.size());
+  return result;
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::evaluateBytecode(const std::string &path) {
+RuntimeHostResult ReactRuntimeHostFacade::evaluateBytecode(const std::string &path) noexcept {
   return invokeRuntimeHostEntry([this, &path] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2228,7 +2255,7 @@ RuntimeHostResult ReactRuntimeHostFacade::evaluateBytecode(const std::string &pa
 
 RuntimeHostResult ReactRuntimeHostFacade::evaluateJavaScriptSource(
     const std::string &source,
-    const std::string &sourceUrl) {
+    const std::string &sourceUrl) noexcept {
   return invokeRuntimeHostEntry([this, &source, &sourceUrl] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2239,7 +2266,7 @@ RuntimeHostResult ReactRuntimeHostFacade::evaluateJavaScriptSource(
 
 RuntimeHostResult ReactRuntimeHostFacade::evaluateJavaScriptForString(
     const std::string &source,
-    const std::string &sourceUrl) {
+    const std::string &sourceUrl) noexcept {
   return invokeRuntimeHostStringEntry([this, &source, &sourceUrl] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2248,7 +2275,7 @@ RuntimeHostResult ReactRuntimeHostFacade::evaluateJavaScriptForString(
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::installFabric() {
+RuntimeHostResult ReactRuntimeHostFacade::installFabric() noexcept {
   return invokeRuntimeHostEntry([this] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2257,7 +2284,7 @@ RuntimeHostResult ReactRuntimeHostFacade::installFabric() {
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::registerSurface(int surfaceId) {
+RuntimeHostResult ReactRuntimeHostFacade::registerSurface(int surfaceId) noexcept {
   return invokeRuntimeHostEntry([this, surfaceId] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2269,7 +2296,7 @@ RuntimeHostResult ReactRuntimeHostFacade::registerSurface(int surfaceId) {
 RuntimeHostResult ReactRuntimeHostFacade::configureSurface(
     int surfaceId,
     double width,
-    double height) {
+    double height) noexcept {
   return invokeRuntimeHostEntry([this, surfaceId, width, height] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2278,7 +2305,7 @@ RuntimeHostResult ReactRuntimeHostFacade::configureSurface(
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::stopSurface(int surfaceId) {
+RuntimeHostResult ReactRuntimeHostFacade::stopSurface(int surfaceId) noexcept {
   return invokeRuntimeHostEntry([this, surfaceId] {
     if (impl_ == nullptr) {
       return;
@@ -2289,7 +2316,7 @@ RuntimeHostResult ReactRuntimeHostFacade::stopSurface(int surfaceId) {
 
 RuntimeHostResult ReactRuntimeHostFacade::runApplication(
     int surfaceId,
-    const std::string &appKey) {
+    const std::string &appKey) noexcept {
   return invokeRuntimeHostEntry([this, surfaceId, &appKey] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2298,7 +2325,7 @@ RuntimeHostResult ReactRuntimeHostFacade::runApplication(
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::drainPendingJSCalls() {
+RuntimeHostResult ReactRuntimeHostFacade::drainPendingJSCalls() noexcept {
   return invokeRuntimeHostUnsignedEntry([this] {
     if (impl_ == nullptr) {
       return 0u;
@@ -2307,7 +2334,7 @@ RuntimeHostResult ReactRuntimeHostFacade::drainPendingJSCalls() {
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(JSWorkWake wake) {
+RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(JSWorkWake wake) noexcept {
   return invokeRuntimeHostEntry([this, wake = std::move(wake)]() mutable {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2318,7 +2345,7 @@ RuntimeHostResult ReactRuntimeHostFacade::setJSWorkWakeHandler(JSWorkWake wake) 
 
 RuntimeHostResult ReactRuntimeHostFacade::setAnimationFrameScheduler(
     AnimationFrameRequest requestFrame,
-    AnimationFrameCancel cancelFrame) {
+    AnimationFrameCancel cancelFrame) noexcept {
   return invokeRuntimeHostEntry(
       [this,
        requestFrame = std::move(requestFrame),
@@ -2332,7 +2359,7 @@ RuntimeHostResult ReactRuntimeHostFacade::setAnimationFrameScheduler(
 }
 
 RuntimeHostResult ReactRuntimeHostFacade::deliverAnimationFrame(
-    unsigned long long timestampNanoseconds) {
+    unsigned long long timestampNanoseconds) noexcept {
   return invokeRuntimeHostEntry([this, timestampNanoseconds] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2344,18 +2371,18 @@ RuntimeHostResult ReactRuntimeHostFacade::deliverAnimationFrame(
 
 RuntimeHostResult ReactRuntimeHostFacade::emitDeviceEvent(
     const std::string &name,
-    const std::string &payloadJson) {
+    const std::string &payloadJson) noexcept {
   // emitDeviceEvent is intentionally callable from any thread; it does not
   // touch impl_'s JSI state directly.
   if (impl_ == nullptr) {
-    return RuntimeHostResult{.succeeded = false, .error = "React runtime host facade is moved-from"};
+    return RuntimeHostResult::failure("React runtime host facade is moved-from");
   }
   return invokeRuntimeHostEntry([this, &name, &payloadJson] {
     impl_->emitDeviceEvent(name.c_str(), payloadJson.c_str());
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setCommandHandler(HostCommand handler) {
+RuntimeHostResult ReactRuntimeHostFacade::setCommandHandler(HostCommand handler) noexcept {
   return invokeRuntimeHostEntry([this, handler = std::move(handler)]() mutable {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2364,7 +2391,7 @@ RuntimeHostResult ReactRuntimeHostFacade::setCommandHandler(HostCommand handler)
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setAppState(const std::string &state) {
+RuntimeHostResult ReactRuntimeHostFacade::setAppState(const std::string &state) noexcept {
   return invokeRuntimeHostEntry([this, &state] {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2373,7 +2400,7 @@ RuntimeHostResult ReactRuntimeHostFacade::setAppState(const std::string &state) 
   });
 }
 
-unsigned int ReactRuntimeHostFacade::surfaceCount() const {
+unsigned int ReactRuntimeHostFacade::surfaceCount() const noexcept {
   try {
     if (impl_ == nullptr) {
       return 0u;
@@ -2384,7 +2411,7 @@ unsigned int ReactRuntimeHostFacade::surfaceCount() const {
   }
 }
 
-FabricMountReport ReactRuntimeHostFacade::readFabricMountReport() const {
+FabricMountReport ReactRuntimeHostFacade::readFabricMountReport() const noexcept {
   try {
     if (impl_ == nullptr) {
       return FabricMountReport{};
@@ -2396,7 +2423,7 @@ FabricMountReport ReactRuntimeHostFacade::readFabricMountReport() const {
 }
 
 RuntimeHostResult ReactRuntimeHostFacade::setMountingObserver(
-    std::shared_ptr<MountingObserver> observer) {
+    std::shared_ptr<MountingObserver> observer) noexcept {
   return invokeRuntimeHostEntry([this, observer = std::move(observer)]() mutable {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2406,7 +2433,7 @@ RuntimeHostResult ReactRuntimeHostFacade::setMountingObserver(
 }
 
 RuntimeHostResult ReactRuntimeHostFacade::setTextMeasureFunction(
-    TextMeasureFunction measure) {
+    TextMeasureFunction measure) noexcept {
   return invokeRuntimeHostEntry([this, measure = std::move(measure)]() mutable {
     if (impl_ == nullptr) {
       throw std::runtime_error("React runtime host facade is moved-from");
@@ -2419,9 +2446,9 @@ RuntimeHostResult ReactRuntimeHostFacade::setDisplayMetrics(
     double width,
     double height,
     double scale,
-    double fontScale) {
+    double fontScale) noexcept {
   if (impl_ == nullptr) {
-    return RuntimeHostResult{.succeeded = false, .error = "React runtime host facade is moved-from"};
+    return RuntimeHostResult::failure("React runtime host facade is moved-from");
   }
   // Thread-safe: the impl's `displayMetricsState_` is mutex-protected
   // and the TurboModule reads it on demand. Safe to call from any
@@ -2432,20 +2459,16 @@ RuntimeHostResult ReactRuntimeHostFacade::setDisplayMetrics(
   });
 }
 
-bool ReactRuntimeHostFacade::hermesCanCreateRuntime() {
+bool ReactRuntimeHostFacade::hermesCanCreateRuntime() noexcept {
   return ::nucleus::react::hermesCanCreateRuntime();
 }
 
-unsigned int ReactRuntimeHostFacade::hermesBytecodeVersion() {
+unsigned int ReactRuntimeHostFacade::hermesBytecodeVersion() noexcept {
   return ::nucleus::react::hermesBytecodeVersion();
 }
 
-bool ReactRuntimeHostFacade::hermesIntlDateTimeFormatWorks() {
+bool ReactRuntimeHostFacade::hermesIntlDateTimeFormatWorks() noexcept {
   return ::nucleus::react::hermesIntlDateTimeFormatWorks();
-}
-
-std::shared_ptr<ReactRuntimeHostFacade> makeReactRuntimeHostFacade() {
-  return std::make_shared<ReactRuntimeHostFacade>();
 }
 
 } // namespace nucleus::react

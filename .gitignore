@@ -29,6 +29,9 @@ Desktop.ini
 # SwiftPM and generated Swift bindings
 **/.build/
 **/.swiftpm/
+!/.swiftpm/
+!/.swiftpm/configuration/
+!/.swiftpm/configuration/mirrors.json
 /collider/.nucleus/
 /collider/.sourcekit-lsp/
 /collider/engine/Package.resolved

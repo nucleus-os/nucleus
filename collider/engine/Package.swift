@@ -18,10 +18,12 @@ let package = Package(
     dependencies: [
         .package(path: "../../third-party/container"),
         .package(path: "../../third-party/containerization"),
-        .package(path: "../../third-party/swift-system"),
-        .package(path: "../../third-party/swift-subprocess"),
+        .package(url: "https://github.com/nucleus-os/swift-system.git", branch: "nucleus"),
+        .package(
+            url: "https://github.com/nucleus-os/swift-subprocess.git",
+            branch: "nucleus-local-swift-system"),
         .package(path: "../../third-party/swift-crypto"),
-        .package(path: "../../third-party/swift-log"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.6.4"),
     ],
     targets: [
         .target(

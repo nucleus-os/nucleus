@@ -1,6 +1,7 @@
 module NucleusReactRuntimeCxxBridge {
   requires cplusplus
   header "NucleusReactRuntime/ReactRuntimeHostFacade.hpp"
+  header "NucleusReactRuntime/NetworkTransport.hpp"
   header "NucleusReactRuntime/MountingObserver.hpp"
   header "NucleusReactRuntime/TextLayoutManager.hpp"
   // RuntimeJSCallInvoker, DeviceEventEmitter, and TurboModuleRegistry are

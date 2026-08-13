@@ -14,6 +14,8 @@ configure_package() {
       && grep -Fq "file://$root/third-party/swift-argument-parser" "$configuration" \
       && grep -Fq "file://$root/third-party/swift-crypto" "$configuration" \
       && grep -Fq "file://$root/third-party/swift-log" "$configuration" \
+      && grep -Fq '"original" : "https://github.com/nucleus-os/swift-subprocess.git"' "$configuration" \
+      && grep -Fq '"original" : "https://github.com/nucleus-os/swift-system.git"' "$configuration" \
       && grep -Fq "file://$root/third-party/swift-system" "$configuration" \
       ; then
     return
@@ -32,6 +34,8 @@ https://github.com/apple/swift-crypto.git|swift-crypto
 https://github.com/apple/swift-log.git|swift-log
 https://github.com/apple/swift-system|swift-system
 https://github.com/apple/swift-system.git|swift-system
+https://github.com/nucleus-os/swift-subprocess.git|swift-subprocess
+https://github.com/nucleus-os/swift-system.git|swift-system
 MIRRORS
 }
 
