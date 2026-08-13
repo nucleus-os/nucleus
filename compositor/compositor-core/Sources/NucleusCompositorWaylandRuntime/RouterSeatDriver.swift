@@ -71,7 +71,7 @@ final class RouterSeatDriver {
     func surfaceUnmapped(surfaceId: UInt32) {
         guard surfaceId != 0, focusedSurfaceId == surfaceId else { return }
         focusedSurfaceId = 0
-        seat.textInputManager?.focusedSurfaceDestroyed(
+        seat.textInputSeat?.focusedSurfaceDestroyed(
             surfaceID: surfaceId)
         server.seatFocus.clearKeyboardFocus()
     }

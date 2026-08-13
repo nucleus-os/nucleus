@@ -77,8 +77,9 @@ import WaylandServerDispatch
     // pointer-focused surface drives the constraint active/inactive transitions.
     var relativePointer: RelativePointerManager?
     var pointerConstraints: PointerConstraintsManager?
+    var pointerGestures: PointerGestureManager?
     weak var dataDeviceManager: WlDataDeviceManager?
-    weak var textInputManager: TextInputManagerV3?
+    weak var textInputSeat: TextInputSeat?
     private weak var pointerFocusSurface: WlSurface?
     private weak var keyboardFocusSurface: WlSurface?
     private let popupGrabs = PopupGrabState()
@@ -238,6 +239,7 @@ import WaylandServerDispatch
                 sendKeymap(to: resource)
             }
         }
+        textInputSeat?.refreshInputMethodKeymap()
     }
 
     /// Adopt new key repeat timing and push it to every bound keyboard.
@@ -257,6 +259,7 @@ import WaylandServerDispatch
                 resource.sendRepeatInfo(rate: clampedRate, delay: clampedDelay)
             }
         }
+        textInputSeat?.refreshInputMethodRepeatInfo()
     }
 
     fileprivate func sendKeymap(
@@ -268,6 +271,46 @@ import WaylandServerDispatch
                 fd: $0.rawValue,
                 size: keymapSize)
         }
+    }
+
+    func sendInputMethodKeymap(
+        to resource: WaylandResourceHandle<ZwpInputMethodKeyboardGrabV2Server>
+    ) {
+        keymapDescriptor?.withBorrowedDescriptor {
+            _ = resource.sendKeymap(
+                format: .xkbV1,
+                fd: $0.rawValue,
+                size: keymapSize)
+        }
+    }
+
+    var inputMethodRepeatInfo: (rate: Int32, delay: Int32) {
+        (repeatRate, repeatDelay)
+    }
+
+    func nextInputMethodSerial() -> UInt32 {
+        nextSerial()
+    }
+
+    var pointerGestureFocus:
+        (
+            clientID: WaylandClientID,
+            surface: WaylandResourceHandle<WlSurfaceServer>
+        )?
+    {
+        guard let pointerFocusSurface,
+            let resource = pointerFocusSurface.protocolResource,
+            let clientID = resource.clientID
+        else { return nil }
+        return (clientID, resource)
+    }
+
+    func nextPointerGestureSerial() -> UInt32 {
+        nextSerial()
+    }
+
+    func nextTabletSerial() -> UInt32 {
+        nextSerial()
     }
 
     /// Start a new serial-validity epoch. Session loss invalidates every user-intent
@@ -334,6 +377,9 @@ import WaylandServerDispatch
         guard let (key, sres) = client(of: surface),
             let resources = pointers[key], !resources.isEmpty
         else { return 0 }
+        if pointerFocusSurface !== surface {
+            pointerGestures?.pointerFocusChanged()
+        }
         let serial = nextSerial()
         serials.invalidate(kind: .pointerEnter)
         serials.record(
@@ -361,6 +407,7 @@ import WaylandServerDispatch
         // focus transition is what the constraint lifetime keys on.
         pointerConstraints?.notifyPointerFocus(old: surface, new: nil)
         if pointerFocusSurface === surface {
+            pointerGestures?.pointerFocusChanged()
             pointerFocusSurface = nil
             // Focus left this client: its enter serial no longer authorizes a cursor set.
             pointerFocusClientKey = nil
@@ -560,7 +607,7 @@ import WaylandServerDispatch
     // MARK: keyboard sends
 
     func keyboardEnter(_ surface: WlSurface) {
-        textInputManager?.keyboardEnter(surface)
+        textInputSeat?.keyboardEnter(surface)
         guard let (key, sres) = client(of: surface),
             let resources = keyboards[key], !resources.isEmpty
         else { return }
@@ -581,7 +628,7 @@ import WaylandServerDispatch
     }
 
     func keyboardLeave(_ surface: WlSurface) {
-        textInputManager?.keyboardLeave(surface)
+        textInputSeat?.keyboardLeave(surface)
         guard let (key, sres) = client(of: surface),
             let resources = keyboards[key]
         else { return }
@@ -598,6 +645,11 @@ import WaylandServerDispatch
     func keyboardKey(
         clientKey key: WaylandClientID, timeMsec: UInt32, keycode: UInt32, keyState: UInt32
     ) {
+        if textInputSeat?.sendInputMethodKey(
+            timeMsec: timeMsec, keycode: keycode, keyState: keyState) == true
+        {
+            return
+        }
         guard let resources = keyboards[key] else { return }
         let serial = nextSerial()
         if keyState != 0 {
@@ -619,6 +671,11 @@ import WaylandServerDispatch
         clientKey key: WaylandClientID, depressed: UInt32, latched: UInt32, locked: UInt32,
         group: UInt32
     ) {
+        if textInputSeat?.sendInputMethodModifiers(
+            depressed: depressed, latched: latched, locked: locked, group: group) == true
+        {
+            return
+        }
         guard let resources = keyboards[key] else { return }
         let serial = nextSerial()
         for keyboard in resources {
@@ -799,8 +856,8 @@ extension WlSeat: ZwpKeyboardShortcutsInhibitManagerV1Requests {
 /// stops delivering to a gone device.
 @MainActor
 @safe final class WlPointer {
-    private weak let seat: WlSeat?
-    private let clientKey: WaylandClientID
+    weak var seat: WlSeat?
+    let clientKey: WaylandClientID
     fileprivate let resource: WaylandResourceHandle<WlPointerServer>
 
     init(
@@ -819,6 +876,8 @@ extension WlSeat: ZwpKeyboardShortcutsInhibitManagerV1Requests {
         seat?.unregisterPointer(clientKey, resource)
     }
 }
+
+extension WlPointer: CursorShapeAuthorizationSource {}
 
 extension WlPointer: WlPointerRequests {
     /// The client sets its cursor: bind the given surface as the cursor image (its

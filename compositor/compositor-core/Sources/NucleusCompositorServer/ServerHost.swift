@@ -144,6 +144,7 @@ extension NucleusCompositorServer: ServerHost {
     package func displayRemove(id: UInt64) throws(HostCallError) {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard layout.display(id: id) != nil else { throw .failed }
+        policy?.gestureOutputWillRemove(id)
         let hasFallbackDisplay = layout.fallbackDisplayIDForRemoval(id) != nil
         inputControl?.displayWillRemove(hasFallbackDisplay: hasFallbackDisplay)
         _ = layout.removeDisplay(id: id)

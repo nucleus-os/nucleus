@@ -53,6 +53,81 @@ package enum WireEventKind: Swift.UInt32, Swift.Sendable {
     case touchFrame = 23
 }
 
+package struct NormalizedGestureDeviceID: Swift.Hashable, Swift.Comparable, Swift.Sendable {
+    package let rawValue: Swift.UInt64
+
+    package init(rawValue: Swift.UInt64) {
+        precondition(rawValue != 0, "zero is not a valid input-device identity")
+        self.rawValue = rawValue
+    }
+
+    package static func < (lhs: Self, rhs: Self) -> Swift.Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+package enum NormalizedGestureKind: Swift.Hashable, Swift.Sendable {
+    case swipe
+    case pinch
+    case hold
+}
+
+package struct NormalizedGestureSequence: Swift.Hashable, Swift.Sendable {
+    package let deviceID: NormalizedGestureDeviceID
+    package let kind: NormalizedGestureKind
+    package let fingerCount: Swift.UInt32
+
+    package init(
+        deviceID: NormalizedGestureDeviceID,
+        kind: NormalizedGestureKind,
+        fingerCount: Swift.UInt32
+    ) {
+        self.deviceID = deviceID
+        self.kind = kind
+        self.fingerCount = fingerCount
+    }
+}
+
+package enum NormalizedGestureEvent: Swift.Equatable, Swift.Sendable {
+    case began(sequence: NormalizedGestureSequence, timestampNs: Swift.UInt64)
+    case swipeUpdated(
+        sequence: NormalizedGestureSequence,
+        timestampNs: Swift.UInt64,
+        deltaX: Swift.Double,
+        deltaY: Swift.Double)
+    case pinchUpdated(
+        sequence: NormalizedGestureSequence,
+        timestampNs: Swift.UInt64,
+        deltaX: Swift.Double,
+        deltaY: Swift.Double,
+        scale: Swift.Double,
+        rotationDegrees: Swift.Double)
+    case ended(
+        sequence: NormalizedGestureSequence,
+        timestampNs: Swift.UInt64,
+        cancelled: Swift.Bool)
+
+    package var sequence: NormalizedGestureSequence {
+        switch self {
+        case .began(let sequence, _),
+            .swipeUpdated(let sequence, _, _, _),
+            .pinchUpdated(let sequence, _, _, _, _, _),
+            .ended(let sequence, _, _):
+            return sequence
+        }
+    }
+
+    package var timestampNs: Swift.UInt64 {
+        switch self {
+        case .began(_, let timestampNs),
+            .swipeUpdated(_, let timestampNs, _, _),
+            .pinchUpdated(_, let timestampNs, _, _, _, _),
+            .ended(_, let timestampNs, _):
+            return timestampNs
+        }
+    }
+}
+
 package let displayChangeEnabled: Swift.UInt64 = 1
 package let displayChangePrimary: Swift.UInt64 = 2
 package let displayChangeLogicalX: Swift.UInt64 = 4

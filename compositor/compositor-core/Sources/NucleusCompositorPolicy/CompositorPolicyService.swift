@@ -1,4 +1,5 @@
 package import NucleusCompositorServer
+package import NucleusCompositorServerTypes
 package import NucleusConfig
 package import NucleusSessionProtocol
 
@@ -23,22 +24,32 @@ package final class CompositorPolicyService: CompositorPolicy {
             _ capabilities: UInt32
         ) -> Void
 
+    package typealias OverviewSink =
+        @MainActor (_ outputID: DisplayID, _ state: CompositorOverviewState?) -> Void
+
     private let bindings: GlobalBindingResolver
     private let cursorTheme: ServerCursorThemeService
+    private let gestures: CompositorGesturePolicy
 
     package var acceptedActionSink: AcceptedActionSink?
     package var windowMenuSink: WindowMenuSink?
+    package var overviewSink: OverviewSink? {
+        get { gestures.overviewSink }
+        set { gestures.overviewSink = newValue }
+    }
     package private(set) var configurationEpoch: ConfigurationServiceEpoch
     package private(set) var configurationGeneration: ConfigurationGeneration
 
     init(
         bindings: GlobalBindingResolver,
         cursorTheme: ServerCursorThemeService,
+        gestures: CompositorGesturePolicy,
         configurationEpoch: ConfigurationServiceEpoch,
         configurationGeneration: ConfigurationGeneration
     ) {
         self.bindings = bindings
         self.cursorTheme = cursorTheme
+        self.gestures = gestures
         self.configurationEpoch = configurationEpoch
         self.configurationGeneration = configurationGeneration
     }
@@ -84,6 +95,21 @@ package final class CompositorPolicyService: CompositorPolicy {
                 configurationIndex: action.configurationIndex,
                 value: action.value)
         }
+    }
+
+    package func dispatchGesture(
+        _ event: NormalizedGestureEvent,
+        target: GesturePolicyTarget?
+    ) -> GesturePolicyOutcome {
+        gestures.dispatch(event, target: target)
+    }
+
+    package func cancelActiveGesture() {
+        gestures.cancelActiveGesture()
+    }
+
+    package func gestureOutputWillRemove(_ outputID: DisplayID) {
+        gestures.outputWillRemove(outputID)
     }
 
     package func cursorApplyDefault() {

@@ -30,6 +30,7 @@
 #define typename swift_wayland_wl_kw_typename
 #define register swift_wayland_wl_kw_register
 
+#include "input_method_unstable_v2-server-protocol.h"
 #include "blur-server-protocol.h"
 #include "appmenu-server-protocol.h"
 #include "wlr_foreign_toplevel_management_unstable_v1-server-protocol.h"
@@ -207,6 +208,10 @@ static inline const struct wl_interface *swift_wayland_iface_wl_region(void) { r
 static inline const struct wl_interface *swift_wayland_iface_wl_subcompositor(void) { return &wl_subcompositor_interface; }
 static inline const struct wl_interface *swift_wayland_iface_wl_subsurface(void) { return &wl_subsurface_interface; }
 static inline const struct wl_interface *swift_wayland_iface_wl_fixes(void) { return &wl_fixes_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_v2(void) { return &zwp_input_method_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_popup_surface_v2(void) { return &zwp_input_popup_surface_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_keyboard_grab_v2(void) { return &zwp_input_method_keyboard_grab_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_manager_v2(void) { return &zwp_input_method_manager_v2_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur_manager(void) { return &org_kde_kwin_blur_manager_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur(void) { return &org_kde_kwin_blur_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu_manager(void) { return &org_kde_kwin_appmenu_manager_interface; }
@@ -493,6 +498,29 @@ typedef struct swift_wayland_wl_fixes_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
     void (NUCLEUS_WL_MAIN_ACTOR *destroy_registry)(struct wl_client *, struct wl_resource *, struct wl_resource *);
 } swift_wayland_wl_fixes_requests;
+typedef struct swift_wayland_zwp_input_method_v2_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *commit_string)(struct wl_client *, struct wl_resource *, const char *);
+    void (NUCLEUS_WL_MAIN_ACTOR *set_preedit_string)(struct wl_client *, struct wl_resource *, const char *, int32_t, int32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *delete_surrounding_text)(struct wl_client *, struct wl_resource *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *commit)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *get_input_popup_surface)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *grab_keyboard)(struct wl_client *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwp_input_method_v2_requests;
+_Static_assert(sizeof(swift_wayland_zwp_input_method_v2_requests) == sizeof(struct zwp_input_method_v2_interface), "zwp_input_method_v2 request layout mismatch");
+typedef struct swift_wayland_zwp_input_popup_surface_v2_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwp_input_popup_surface_v2_requests;
+_Static_assert(sizeof(swift_wayland_zwp_input_popup_surface_v2_requests) == sizeof(struct zwp_input_popup_surface_v2_interface), "zwp_input_popup_surface_v2 request layout mismatch");
+typedef struct swift_wayland_zwp_input_method_keyboard_grab_v2_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *release)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwp_input_method_keyboard_grab_v2_requests;
+_Static_assert(sizeof(swift_wayland_zwp_input_method_keyboard_grab_v2_requests) == sizeof(struct zwp_input_method_keyboard_grab_v2_interface), "zwp_input_method_keyboard_grab_v2 request layout mismatch");
+typedef struct swift_wayland_zwp_input_method_manager_v2_requests {
+    void (NUCLEUS_WL_MAIN_ACTOR *get_input_method)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
+} swift_wayland_zwp_input_method_manager_v2_requests;
+_Static_assert(sizeof(swift_wayland_zwp_input_method_manager_v2_requests) == sizeof(struct zwp_input_method_manager_v2_interface), "zwp_input_method_manager_v2 request layout mismatch");
 typedef struct swift_wayland_org_kde_kwin_blur_manager_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *create)(struct wl_client *, struct wl_resource *, uint32_t, struct wl_resource *);
     void (NUCLEUS_WL_MAIN_ACTOR *unset)(struct wl_client *, struct wl_resource *, struct wl_resource *);

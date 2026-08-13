@@ -403,7 +403,8 @@ let targets: [Target] = [
     .target(
         name: "NucleusCompositorPolicy",
         dependencies: [
-            "NucleusCompositorServer", "NucleusCompositorWindowManager", "Nucleus", "NucleusApp",
+            "NucleusCompositorServer", "NucleusCompositorServerTypes",
+            "NucleusCompositorWindowManager", "Nucleus", "NucleusApp",
             "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusRenderer", "NucleusSkiaGraphiteBridge", "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "NucleusFoundation",
@@ -565,7 +566,8 @@ let targets: [Target] = [
         name: "NucleusCompositorWaylandRuntimeTests",
         dependencies: [
             "NucleusCompositorWaylandRuntime", "NucleusCompositorServer",
-            "NucleusCompositorWindowManager", "NucleusCompositorWindowScene", "NucleusConfig",
+            "NucleusCompositorServerTypes", "NucleusCompositorWindowManager",
+            "NucleusCompositorWindowScene", "NucleusConfig",
             "Nucleus",
             "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
@@ -597,7 +599,8 @@ let targets: [Target] = [
     .testTarget(
         name: "NucleusCompositorPolicyTests",
         dependencies: [
-            "NucleusCompositorPolicy", "NucleusConfig", "Nucleus", "NucleusApp",
+            "NucleusCompositorPolicy", "NucleusCompositorServer", "NucleusCompositorServerTypes",
+            "NucleusConfig", "Nucleus", "NucleusApp",
             "NucleusAppHostBundle",
             "NucleusLayers", "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge", "NucleusTextBackend", "NucleusTextRenderingBridge",
@@ -997,7 +1000,8 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorWaylandRuntime", "NucleusRenderServerTestSupport",
-            "NucleusCompositorWindowScene", "NucleusUITestSupport",
+            "NucleusCompositorWindowScene", "NucleusUITestSupport", "WaylandClient",
+            "WaylandClientDispatch", "WaylandProtocolTypes",
         ],
         path:
             "integration-tests/window-client-conformance/Tests/NucleusWindowClientInputIntegrationTests",

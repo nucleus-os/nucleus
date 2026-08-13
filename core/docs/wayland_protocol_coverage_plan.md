@@ -28,7 +28,7 @@ isolation, handler binding, and resource ownership follow
 - presentation time, Linux DMA-BUF, Linux DRM syncobj, gamma control, and output
   management;
 - blur, background effect, ext-workspace, ext-data-control, foreign-toplevel
-  management, screencopy, text-input-v3, and security context.
+  management, screencopy, text-input-v3, input-method-v2, and security context.
 
 This list supersedes the older inventory that described alpha modifier,
 security context, text-input-v3, ext-data-control, screencopy, and several shell
@@ -42,6 +42,8 @@ Keep that fixture synchronized with every registry change.
 
 ## Phase 1 — Complete the text-input pair
 
+Status: complete.
+
 Implement input-method-v2 mediation over the existing text-input-v3 runtime as
 specified by [`appkit-api-plan.md`](appkit-api-plan.md). Add content-type only
 with a current consumer and a complete compositor-to-client mapping.
@@ -49,15 +51,40 @@ with a current consumer and a complete compositor-to-client mapping.
 Gate: real IME behavior and hostile-client wire tests cover serials, focus,
 preedit, commit, surrounding text, cancellation, and teardown.
 
+Achieved state: the compositor registers input-method-v2 and mediates its
+activation, text state, serial-checked edits, popup role, keyboard grab, focus,
+and teardown against the per-seat text-input-v3 authority.
+
+Gate evidence: the typed client/server wire suite passes focus, surrounding
+text, preedit, commit, deletion, stale serial, secure-field, duplicate-method,
+popup, keyboard-grab, and destruction behavior in `collider test compositor`.
+Real-IME interaction remains the user-owned qualification handoff in the AppKit
+API plan and does not keep this implementation phase open.
+
 ## Phase 2 — Add physical gesture and tablet protocols
+
+Status: complete.
 
 Execute the gesture normalization, pointer-gestures-v1, and compositor policy
 sequence in [`compositor-trackpad-gestures.md`](compositor-trackpad-gestures.md).
 Then normalize libinput tablet tool and tablet pad events and implement
 tablet-v2 over that stream. Preserve per-seat focus and cancellation semantics.
 
+Gesture normalization, the complete pointer-gestures-v1 client projection,
+compositor gesture policy, typed libinput tablet tool and pad normalization, and
+the complete tablet-v2 client projection are implemented. Tablet focus follows
+surface hit testing independently of pointer focus; tool, pad, device, client,
+session, and compositor teardown retire their protocol state exactly once.
+
 Gate: event normalization and wire tests cover begin/update/end/cancel,
 multi-device seats, focus changes, device removal, and client teardown.
+
+Gate evidence: the gesture and tablet normalization suites, tablet-v2 inventory
+and wire lifecycle coverage, production global contract, multi-device
+cancellation, device removal, focus transition, and client teardown coverage all
+pass under `collider test compositor`. The complete command currently continues
+past those gates and fails in the independent session-supervisor acceptance suite
+because malformed readiness races the startup deadline.
 
 ## Phase 3 — Add trusted synthetic input
 

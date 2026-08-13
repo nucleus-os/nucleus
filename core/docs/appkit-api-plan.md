@@ -16,11 +16,13 @@ are implemented and behavior-tested. The desktop Wayland client and compositor
 implement text-input-v3. The native lock screen and isolated PAM helper are
 implemented with credential clearing and headless behavior coverage.
 
-The remaining scope is the compositor's input-method-v2 side and end-to-end IME
-qualification. Do not rebuild the editor, text-input-v3 client/server paths, or
-lock-screen architecture as part of this plan.
+The compositor now mediates input-method-v2 against its per-seat text-input-v3
+state, including serial-checked commits, popup roles, and keyboard grabs. The
+remaining scope is end-to-end IME qualification. Do not rebuild the editor,
+text-input-v3 client/server paths, or lock-screen architecture as part of this
+plan.
 
-## Phase 1 — Implement input-method-v2 mediation
+## Phase 1 — Implement input-method-v2 mediation — complete
 
 Vendor and generate the current input-method-v2 protocol, register its manager,
 and mediate it against the existing text-input-v3 state. Keep serial tracking,

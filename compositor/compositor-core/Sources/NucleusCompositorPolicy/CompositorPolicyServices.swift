@@ -23,9 +23,11 @@ package final class CompositorPolicyServices {
         bindings = GlobalBindingResolver(
             windowManager: windowManager,
             binds: binds)
+        let gestures = CompositorGesturePolicy(server: server)
         policy = CompositorPolicyService(
             bindings: bindings,
             cursorTheme: cursorTheme,
+            gestures: gestures,
             configurationEpoch: configurationEpoch,
             configurationGeneration: configurationGeneration)
     }

@@ -30,6 +30,7 @@
 #define typename swift_wayland_wl_kw_typename
 #define register swift_wayland_wl_kw_register
 
+#include "input_method_unstable_v2-client-protocol.h"
 #include "blur-client-protocol.h"
 #include "appmenu-client-protocol.h"
 #include "wlr_foreign_toplevel_management_unstable_v1-client-protocol.h"
@@ -761,6 +762,105 @@ swift_wayland_client_request_wl_fixes_destroy_registry(
     wl_proxy_marshal_flags(
         swift_wayland_proxy, 1, NULL,
         wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_registry);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_v2_commit_string(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_text
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_text);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_v2_set_preedit_string(
+    struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_text, int32_t swift_wayland_arg_cursor_begin, int32_t swift_wayland_arg_cursor_end
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_text, swift_wayland_arg_cursor_begin, swift_wayland_arg_cursor_end);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_v2_delete_surrounding_text(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_before_length, uint32_t swift_wayland_arg_after_length
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_before_length, swift_wayland_arg_after_length);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_v2_commit(
+    struct wl_proxy *swift_wayland_proxy, uint32_t swift_wayland_arg_serial
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 3, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_serial);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_method_v2_get_input_popup_surface(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_surface
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 4, &zwp_input_popup_surface_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL, swift_wayland_arg_surface);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_method_v2_grab_keyboard(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 5, &zwp_input_method_keyboard_grab_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 6, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_popup_surface_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_keyboard_grab_v2_release(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
+}
+
+static inline struct wl_proxy *
+swift_wayland_client_request_zwp_input_method_manager_v2_get_input_method(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_seat
+) {
+    return wl_proxy_marshal_flags(
+        swift_wayland_proxy, 0, &zwp_input_method_v2_interface,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_seat, NULL);
+}
+
+static inline void
+swift_wayland_client_request_zwp_input_method_manager_v2_destroy(
+    struct wl_proxy *swift_wayland_proxy
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 1, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), WL_MARSHAL_FLAG_DESTROY);
 }
 
 static inline struct wl_proxy *
@@ -4946,6 +5046,10 @@ static inline const struct wl_interface *swift_wayland_iface_wl_region(void) { r
 static inline const struct wl_interface *swift_wayland_iface_wl_subcompositor(void) { return &wl_subcompositor_interface; }
 static inline const struct wl_interface *swift_wayland_iface_wl_subsurface(void) { return &wl_subsurface_interface; }
 static inline const struct wl_interface *swift_wayland_iface_wl_fixes(void) { return &wl_fixes_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_v2(void) { return &zwp_input_method_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_popup_surface_v2(void) { return &zwp_input_popup_surface_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_keyboard_grab_v2(void) { return &zwp_input_method_keyboard_grab_v2_interface; }
+static inline const struct wl_interface *swift_wayland_iface_zwp_input_method_manager_v2(void) { return &zwp_input_method_manager_v2_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur_manager(void) { return &org_kde_kwin_blur_manager_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_blur(void) { return &org_kde_kwin_blur_interface; }
 static inline const struct wl_interface *swift_wayland_iface_org_kde_kwin_appmenu_manager(void) { return &org_kde_kwin_appmenu_manager_interface; }
@@ -5223,6 +5327,27 @@ struct swift_wayland_wl_output_events {
     void (NUCLEUS_WL_MAIN_ACTOR *description)(void *, struct wl_proxy *, const char *);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_output_events) == sizeof(struct wl_output_listener), "wl_output listener layout mismatch");
+struct swift_wayland_zwp_input_method_v2_events {
+    void (NUCLEUS_WL_MAIN_ACTOR *activate)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *deactivate)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *surrounding_text)(void *, struct wl_proxy *, const char *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *text_change_cause)(void *, struct wl_proxy *, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *content_type)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *done)(void *, struct wl_proxy *);
+    void (NUCLEUS_WL_MAIN_ACTOR *unavailable)(void *, struct wl_proxy *);
+};
+_Static_assert(sizeof(struct swift_wayland_zwp_input_method_v2_events) == sizeof(struct zwp_input_method_v2_listener), "zwp_input_method_v2 listener layout mismatch");
+struct swift_wayland_zwp_input_popup_surface_v2_events {
+    void (NUCLEUS_WL_MAIN_ACTOR *text_input_rectangle)(void *, struct wl_proxy *, int32_t, int32_t, int32_t, int32_t);
+};
+_Static_assert(sizeof(struct swift_wayland_zwp_input_popup_surface_v2_events) == sizeof(struct zwp_input_popup_surface_v2_listener), "zwp_input_popup_surface_v2 listener layout mismatch");
+struct swift_wayland_zwp_input_method_keyboard_grab_v2_events {
+    void (NUCLEUS_WL_MAIN_ACTOR *keymap)(void *, struct wl_proxy *, uint32_t, int32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *key)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *modifiers)(void *, struct wl_proxy *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *repeat_info)(void *, struct wl_proxy *, int32_t, int32_t);
+};
+_Static_assert(sizeof(struct swift_wayland_zwp_input_method_keyboard_grab_v2_events) == sizeof(struct zwp_input_method_keyboard_grab_v2_listener), "zwp_input_method_keyboard_grab_v2 listener layout mismatch");
 struct swift_wayland_zwlr_foreign_toplevel_manager_v1_events {
     void (NUCLEUS_WL_MAIN_ACTOR *toplevel)(void *, struct wl_proxy *, struct wl_proxy *);
     void (NUCLEUS_WL_MAIN_ACTOR *finished)(void *, struct wl_proxy *);

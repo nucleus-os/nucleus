@@ -15,17 +15,6 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 package import NucleusConfig
 
-/// Opaque identity for a live C-owned libinput device. It pairs inventory events
-/// and is never converted back into a pointer.
-private struct LibinputDeviceID: Hashable {
-    private let rawValue: UInt
-
-    @unsafe
-    init(_ device: OpaquePointer) {
-        rawValue = unsafe UInt(bitPattern: UnsafeRawPointer(device))
-    }
-}
-
 // The composition root owns process exit + VT session lifecycle. The area DAG
 // forbids the input host (`.nucleus_compositor_substrate`) from importing the runtime
 // (`.nucleus_compositor_runtime`), so it reaches them through the inverted
@@ -38,12 +27,16 @@ final class InputHost {
         var pointer = false
         var keyboard = false
         var touch = false
+        var tabletTool = false
+        var tabletPad = false
 
         static func | (lhs: Self, rhs: Self) -> Self {
             Self(
                 pointer: lhs.pointer || rhs.pointer,
                 keyboard: lhs.keyboard || rhs.keyboard,
-                touch: lhs.touch || rhs.touch)
+                touch: lhs.touch || rhs.touch,
+                tabletTool: lhs.tabletTool || rhs.tabletTool,
+                tabletPad: lhs.tabletPad || rhs.tabletPad)
         }
     }
 
@@ -68,7 +61,9 @@ final class InputHost {
     /// DRM connector-hotplug monitor over libinput's udev context. Released before
     /// the backend that owns that context (udev refcounting makes the order safe).
     private var drmHotplug: UdevMonitor?
-    private var devices: [LibinputDeviceID: DeviceRecord] = [:]
+    private var devices: [NormalizedGestureDeviceID: DeviceRecord] = [:]
+    private var gestureNormalizer = GestureSequenceNormalizer()
+    private var tabletNormalizer = TabletSequenceNormalizer()
     private var advertisedCapabilities = DeviceCapabilities()
     private(set) var active = false
     /// Settings applied to every device on arrival and on reload. Defaults hold
@@ -124,6 +119,8 @@ final class InputHost {
         }
         // Modifier keys, focus, or implicit grabs may have changed on the other VT.
         host.runtime?.seat.invalidateSerialsForSessionTransition()
+        cancelGestureSequences()
+        cancelTabletSequences()
         dispatch.resetSessionState()
         libinput?.resume()
         libinput?.dispatch()
@@ -132,6 +129,8 @@ final class InputHost {
     private func handleSeatDisable() -> Bool {
         active = false
         host.runtime?.seat.invalidateSerialsForSessionTransition()
+        cancelGestureSequences()
+        cancelTabletSequences()
         dispatch.resetSessionState()
         let canAcknowledge =
             host.server.sessionControl?.sessionPause()
@@ -247,6 +246,20 @@ final class InputHost {
                 unsafe libinput_event_destroy(event)
                 continue
             }
+            if let sample = unsafe InputGestureNormalize.translate(event) {
+                let events = gestureNormalizer.normalize(sample)
+                unsafe libinput_event_destroy(event)
+                events.forEach { dispatch.dispatch($0) }
+                continue
+            }
+            if let sample = unsafe InputTabletNormalize.translate(
+                event, coordinateSpace: tabletCoordinateSpace())
+            {
+                let events = tabletNormalizer.normalize(sample)
+                unsafe libinput_event_destroy(event)
+                events.forEach { host.runtime?.tablet.handle($0) }
+                continue
+            }
             let snapshot = dispatch.currentSnapshot()
             let scale = host.server.displayFractionalScaleAt(
                 x: snapshot.cursorX, y: snapshot.cursorY)
@@ -283,7 +296,8 @@ final class InputHost {
             let device = unsafe libinput_event_get_device(event)
         else { return false }
 
-        let key = unsafe LibinputDeviceID(device)
+        let key = unsafe NormalizedGestureDeviceID(
+            rawValue: UInt64(UInt(bitPattern: UnsafeRawPointer(device))))
         if type == LIBINPUT_EVENT_DEVICE_ADDED {
             // Configure before the device is announced, so its first event is
             // already produced under the user's settings.
@@ -297,10 +311,32 @@ final class InputHost {
                     keyboard: unsafe libinput_device_has_capability(
                         device, LIBINPUT_DEVICE_CAP_KEYBOARD) != 0,
                     touch: unsafe libinput_device_has_capability(
-                        device, LIBINPUT_DEVICE_CAP_TOUCH) != 0),
+                        device, LIBINPUT_DEVICE_CAP_TOUCH) != 0,
+                    tabletTool: unsafe libinput_device_has_capability(
+                        device, LIBINPUT_DEVICE_CAP_TABLET_TOOL) != 0,
+                    tabletPad: unsafe libinput_device_has_capability(
+                        device, LIBINPUT_DEVICE_CAP_TABLET_PAD) != 0),
                 device: device)
-        } else if let record = devices.removeValue(forKey: key) {
-            _ = unsafe libinput_device_unref(record.device)
+            let tabletDescriptor = unsafe InputTabletNormalize.deviceDescriptor(device)
+            if devices[key]?.capabilities.tabletTool == true {
+                host.runtime?.tablet.addTablet(tabletDescriptor)
+            }
+            if devices[key]?.capabilities.tabletPad == true {
+                host.runtime?.tablet.addPad(
+                    unsafe InputTabletNormalize.padDescriptor(device))
+            }
+        } else {
+            if let cancellation = gestureNormalizer.deviceRemoved(key) {
+                dispatch.dispatch(cancellation)
+            }
+            let tabletID = TabletDeviceID(rawValue: key.rawValue)
+            tabletNormalizer.deviceRemoved(tabletID).forEach {
+                host.runtime?.tablet.handle($0)
+            }
+            host.runtime?.tablet.removeDevice(tabletID)
+            if let record = devices.removeValue(forKey: key) {
+                _ = unsafe libinput_device_unref(record.device)
+            }
         }
 
         let next = devices.values.reduce(DeviceCapabilities()) {
@@ -319,6 +355,34 @@ final class InputHost {
         host.runtime?.seat.updateCapabilities(
             pointer: next.pointer, keyboard: next.keyboard, touch: next.touch)
         return true
+    }
+
+    fileprivate func cancelGestureSequences() {
+        gestureNormalizer.cancelAll().forEach { dispatch.dispatch($0) }
+    }
+
+    fileprivate func cancelTabletSequences() {
+        tabletNormalizer.cancelAll().forEach { host.runtime?.tablet.handle($0) }
+        host.runtime?.tablet.cancelAll()
+    }
+
+    private func tabletCoordinateSpace() -> TabletCoordinateSpace? {
+        let displays = host.server.layout.displays
+        guard let first = displays.first else { return nil }
+        var minX = first.logicalRect.x
+        var minY = first.logicalRect.y
+        var maxX = first.logicalRect.x + first.logicalRect.width
+        var maxY = first.logicalRect.y + first.logicalRect.height
+        for display in displays.dropFirst() {
+            minX = min(minX, display.logicalRect.x)
+            minY = min(minY, display.logicalRect.y)
+            maxX = max(maxX, display.logicalRect.x + display.logicalRect.width)
+            maxY = max(maxY, display.logicalRect.y + display.logicalRect.height)
+        }
+        return TabletCoordinateSpace(
+            x: minX, y: minY,
+            width: UInt32(max(1, (maxX - minX).rounded())),
+            height: UInt32(max(1, (maxY - minY).rounded())))
     }
 
     // Seat-mediated device opens for the DRM backend.
@@ -374,6 +438,8 @@ extension WaylandRuntime {
         if host.server.inputControl === host.inputHost?.dispatch {
             host.server.inputControl = nil
         }
+        host.inputHost?.cancelGestureSequences()
+        host.inputHost?.cancelTabletSequences()
         host.inputHost = nil
     }
 

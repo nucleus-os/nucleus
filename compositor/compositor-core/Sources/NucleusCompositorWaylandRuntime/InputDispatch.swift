@@ -145,6 +145,51 @@ final class InputDispatch {
         }
     }
 
+    /// Admit a normalized physical gesture to the central input stream. Policy
+    /// owns or forwards the complete sequence before pointer-gestures delivery,
+    /// so libinput is never decoded twice and ownership cannot change midway.
+    func dispatch(_ gesture: NormalizedGestureEvent) {
+        host.runtime?.idle.noteUserInput(
+            atMs: gesture.timestampNs / 1_000_000)
+        guard let policy = host.server.policy else {
+            seatDelivery.pointerGesture(gesture)
+            return
+        }
+        switch policy.dispatchGesture(gesture, target: gesturePolicyTarget()) {
+        case .client:
+            seatDelivery.pointerGesture(gesture)
+        case .compositor(let redrawOutputID):
+            if let redrawOutputID {
+                RenderBridge.requestFrame(
+                    server: host.server,
+                    outputId: redrawOutputID)
+            }
+        }
+    }
+
+    private func gesturePolicyTarget() -> GesturePolicyTarget? {
+        let focusedSurface = pointerFocusID()
+        let surfaceID =
+            focusedSurface == 0
+            ? nil
+            : WlSurfaceID(UInt32(truncatingIfNeeded: focusedSurface))
+        var outputID =
+            focusedSurface == 0
+            ? 0
+            : windowDriver?.windowOutput(
+                forSurfaceId: UInt32(truncatingIfNeeded: focusedSurface)) ?? 0
+        if outputID == 0 {
+            outputID = host.server.displayOutputForPoint(x: cursorX, y: cursorY)
+        }
+        if outputID == 0 {
+            outputID =
+                host.server.layout.primaryDisplayID()
+                ?? host.server.layout.displays.first?.id ?? 0
+        }
+        guard outputID != 0 else { return nil }
+        return GesturePolicyTarget(surfaceID: surfaceID, outputID: outputID)
+    }
+
     package func route(_ event: WireEventRecord) -> Result {
         switch event.kind {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:

@@ -8,6 +8,7 @@
 // All entries resolve through the injected runtime graph and no-op before it is
 // constructed. Single-threaded on the compositor main actor.
 
+import NucleusCompositorServerTypes
 import WaylandServer
 import WaylandServerC
 
@@ -43,6 +44,10 @@ final class SeatDelivery {
     func pointerLeave(surfaceID: UInt64) {
         guard let s = pointerDeliverySurface(surfaceID), let seat else { return }
         seat.pointerLeave(s)
+    }
+
+    func pointerGesture(_ event: NormalizedGestureEvent) {
+        seat?.pointerGestures?.handle(event)
     }
 
     /// One pointer-motion sample to the focused surface: the seat emits

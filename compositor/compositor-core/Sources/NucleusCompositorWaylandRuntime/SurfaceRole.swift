@@ -9,6 +9,7 @@ enum SurfaceRoleIdentity: Equatable {
     case sessionLock
     case cursor
     case dragIcon
+    case inputPopup
     case xwayland
 }
 

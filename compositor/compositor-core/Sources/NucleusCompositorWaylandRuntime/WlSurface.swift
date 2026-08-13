@@ -236,6 +236,7 @@ import WaylandServerDispatch
         case is XdgSurface: identity = .xdg
         case is ZwlrLayerSurface: identity = .layerShell
         case is ExtSessionLockSurface: identity = .sessionLock
+        case is InputPopupSurfaceV2: identity = .inputPopup
         case is XwaylandSurfaceRole: identity = .xwayland
         default: return false
         }

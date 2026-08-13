@@ -34,6 +34,7 @@ extension InputDispatch {
         if lockBlocks(surfaceID) { return }
         let old = pointerFocusID()
         if old == surfaceID { return }
+        host.server.policy?.cancelActiveGesture()
         seatFocus.setPointerFocus(surfaceID: surfaceID)
         if inputRouteDiagnosticsRemaining > 0 {
             inputRouteDiagnosticsRemaining -= 1
@@ -49,6 +50,7 @@ extension InputDispatch {
     package func clearPointerFocusSurface() {
         let old = pointerFocusID()
         if old == 0 { return }
+        host.server.policy?.cancelActiveGesture()
         seatFocus.clearPointerFocus()
         seatDelivery.pointerLeave(surfaceID: old)
     }

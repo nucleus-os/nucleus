@@ -67,6 +67,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         let bootstrapRoots: Set<TaskID> = [armSDK.task.id, x86SDK.task.id]
         let generation = try generate(
             root: root,
+            stagingRoot: context.cacheRoot.appending("generation/wayland"),
             environment: context.environment,
             swiftPM: context.swiftPM(.linux(.arm64)),
             builder: native.builder,
@@ -80,7 +81,15 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 storageClass: .source,
                 root: root,
                 safetyRoot: root.removingLastComponent(),
-                retentionPolicy: .protected)
+                retentionPolicy: .protected),
+            StorageDeclaration(
+                id: "wayland-generation-staging",
+                owner: descriptor.id,
+                producers: [.task(generation.task.id)],
+                storageClass: .cache,
+                root: context.cacheRoot.appending("generation/wayland"),
+                safetyRoot: context.cacheRoot.appending("generation"),
+                retentionPolicy: .singleWorkingSet),
         ]
         storage += PlatformArchitecture.allCases.flatMap { architecture in
             let target = NativeLinuxTarget(architecture: architecture)
@@ -243,6 +252,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
 
     package static func generate(
         root: FilePath,
+        stagingRoot: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
         builder: NativeOCIConfiguration,
@@ -266,12 +276,18 @@ public enum WaylandColliderRecipe: ColliderComponent {
         let generatedDirectories = [
             server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
         ]
-        let stagedServer = waylandGenerationCandidate(server)
-        let stagedClient = waylandGenerationCandidate(client)
-        let stagedProtocols = waylandGenerationCandidate(protocols)
-        let stagedProtocolTypes = waylandGenerationCandidate(protocolTypes)
-        let stagedServerDispatch = waylandGenerationCandidate(serverDispatch)
-        let stagedClientDispatch = waylandGenerationCandidate(clientDispatch)
+        let stagedServer = waylandGenerationCandidate(
+            "server-c", under: stagingRoot)
+        let stagedClient = waylandGenerationCandidate(
+            "client-c", under: stagingRoot)
+        let stagedProtocols = waylandGenerationCandidate(
+            "protocols-c", under: stagingRoot)
+        let stagedProtocolTypes = waylandGenerationCandidate(
+            "protocol-types", under: stagingRoot)
+        let stagedServerDispatch = waylandGenerationCandidate(
+            "server-dispatch", under: stagingRoot)
+        let stagedClientDispatch = waylandGenerationCandidate(
+            "client-dispatch", under: stagingRoot)
         let stagedDirectories = [
             stagedServer,
             stagedClient,
@@ -601,9 +617,11 @@ private enum WaylandGenerationFailure: Error {
     case emptyCandidate(FilePath)
 }
 
-private func waylandGenerationCandidate(_ destination: FilePath) -> FilePath {
-    destination.removingLastComponent().appending(
-        ".\(destination.lastComponent?.string ?? "generated").collider-candidate")
+private func waylandGenerationCandidate(
+    _ name: String,
+    under stagingRoot: FilePath
+) -> FilePath {
+    stagingRoot.appending(".\(name).collider-candidate")
 }
 
 private func waylandGenerationBackup(_ destination: FilePath) -> FilePath {
@@ -652,9 +670,7 @@ private func sourceGenerationExecution(
         processFilesystemPolicy: swiftOCI.processFilesystemPolicy,
         intelBinaryTranslationPolicy: swiftOCI.intelBinaryTranslationPolicy,
         resourceLimits: swiftOCI.resourceLimits,
-        containerEnvironment: [
-            "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux"
-        ],
+        containerEnvironment: swiftOCI.containerEnvironment,
         command: ["wayland-generate"] + command,
         environment: environment,
         output: .logged)

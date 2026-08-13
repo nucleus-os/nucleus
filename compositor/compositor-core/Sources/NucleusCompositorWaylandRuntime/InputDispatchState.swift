@@ -82,6 +82,7 @@ extension InputDispatch {
     /// Clear every focus and grab that was authorized by the departing session.
     /// No serial or implicit grab may survive a VT boundary.
     func resetSessionState() {
+        host.server.policy?.cancelActiveGesture()
         clearPointerFocus()
         clearKeyboardFocus()
         touchGrabs.removeAll(keepingCapacity: true)
@@ -138,6 +139,7 @@ extension InputDispatch {
 }
 extension InputDispatch: CompositorInputControl {
     func displayWillRemove(hasFallbackDisplay: Bool) {
+        host.server.policy?.cancelActiveGesture()
         clearPointerFocus()
         if !hasFallbackDisplay { clearKeyboardFocus() }
     }

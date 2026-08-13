@@ -79,11 +79,12 @@ struct TextInputServerEventBatch: Sendable {
 /// counter and double-buffered client state; the manager arbitrates the single
 /// enabled object and provides the input-method event projection.
 @MainActor
-@safe final class TextInputManagerV3 {
-    private unowned let seat: WlSeat
+@safe final class TextInputSeat {
+    unowned let seat: WlSeat
     private var inputs = WeakObjectList<TextInputV3>()
     private weak var enabledInput: TextInputV3?
     private weak var focusedSurface: WlSurface?
+    weak var inputMethod: InputMethodV2?
     private(set) var snapshots: [TextInputServerSnapshot] = []
 
     init(seat: WlSeat) {
@@ -150,6 +151,7 @@ struct TextInputServerEventBatch: Sendable {
     fileprivate func unregister(_ input: TextInputV3) {
         if enabledInput === input {
             enabledInput = nil
+            inputMethod?.apply(snapshot: nil)
         }
         inputs.remove(input)
     }
@@ -165,16 +167,18 @@ struct TextInputServerEventBatch: Sendable {
     fileprivate func disable(_ input: TextInputV3) {
         if enabledInput === input {
             enabledInput = nil
+            inputMethod?.apply(snapshot: nil)
         }
     }
 
     fileprivate func record(_ snapshot: TextInputServerSnapshot) {
         snapshots.append(snapshot)
+        inputMethod?.apply(snapshot: snapshot)
     }
 
 }
 
-extension TextInputManagerV3: ZwpTextInputManagerV3Requests {
+extension TextInputSeat: ZwpTextInputManagerV3Requests {
     func getTextInput(
         _ request: WaylandRequest<ZwpTextInputManagerV3Server>,
         id: WlNewId<ZwpTextInputV3Server>,
@@ -224,7 +228,7 @@ private struct PendingTextInputState {
 private final class TextInputV3: ZwpTextInputV3Requests,
     WlSurfaceCommitObserver
 {
-    private weak var manager: TextInputManagerV3?
+    private weak var manager: TextInputSeat?
     fileprivate let clientKey: WaylandClientID
     private let version: Int32
     private let resource: WaylandResourceHandle<ZwpTextInputV3Server>
@@ -241,7 +245,7 @@ private final class TextInputV3: ZwpTextInputV3Requests,
 
     init(
         resource: WaylandResourceHandle<ZwpTextInputV3Server>,
-        manager: TextInputManagerV3,
+        manager: TextInputSeat,
         clientKey: WaylandClientID,
         version: Int32
     ) {

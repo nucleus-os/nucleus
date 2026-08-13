@@ -17,6 +17,11 @@ protocol CursorShapeDelegate: AnyObject {
 }
 
 @MainActor
+protocol CursorShapeAuthorizationSource: AnyObject {
+    func authorizesCursor(serial: UInt32) -> Bool
+}
+
+@MainActor
 final class CursorShapeManager {
     weak var delegate: (any CursorShapeDelegate)?
 
@@ -31,12 +36,14 @@ extension CursorShapeManager: WpCursorShapeManagerV1Requests {
         cursor_shape_device: WlNewId<WpCursorShapeDeviceV1Server>,
         pointer: WaylandBorrowedObject<WlPointerServer>
     ) {
-        let pointerOwner = pointer.owner(as: WlPointer.self)
+        guard pointer.clientID == cursor_shape_device.clientID,
+            let pointerOwner = pointer.owner(as: WlPointer.self)
+        else { return }
         _ = cursor_shape_device.create { handle in
             CursorShapeDevice(
                 resource: handle,
                 manager: self,
-                pointer: pointerOwner)
+                authorizationSource: pointerOwner)
         }
     }
 
@@ -45,9 +52,12 @@ extension CursorShapeManager: WpCursorShapeManagerV1Requests {
         cursor_shape_device: WlNewId<WpCursorShapeDeviceV1Server>,
         tablet_tool: WaylandBorrowedObject<ZwpTabletToolV2Server>
     ) {
+        guard tablet_tool.clientID == cursor_shape_device.clientID,
+            let tool = tablet_tool.owner(as: TabletToolResource.self)
+        else { return }
         _ = cursor_shape_device.create { handle in
             CursorShapeDevice(
-                resource: handle, manager: self, pointer: nil)
+                resource: handle, manager: self, authorizationSource: tool)
         }
     }
 }
@@ -68,15 +78,15 @@ func cursorShapeName(_ shape: WpCursorShapeDeviceV1Shape) -> String? {
 final class CursorShapeDevice {
     private let resource: WaylandResourceHandle<WpCursorShapeDeviceV1Server>
     private unowned let manager: CursorShapeManager
-    private weak var pointer: WlPointer?
+    private weak var authorizationSource: (any CursorShapeAuthorizationSource)?
     init(
         resource: WaylandResourceHandle<WpCursorShapeDeviceV1Server>,
         manager: CursorShapeManager,
-        pointer: WlPointer?
+        authorizationSource: any CursorShapeAuthorizationSource
     ) {
         self.resource = resource
         self.manager = manager
-        self.pointer = pointer
+        self.authorizationSource = authorizationSource
     }
 }
 
@@ -85,7 +95,7 @@ extension CursorShapeDevice: WpCursorShapeDeviceV1Requests {
         _ request: WaylandRequest<WpCursorShapeDeviceV1Server>, serial: UInt32,
         shape: WpCursorShapeDeviceV1Shape
     ) {
-        guard pointer?.authorizesCursor(serial: serial) == true else { return }
+        guard authorizationSource?.authorizesCursor(serial: serial) == true else { return }
         let ok = manager.delegate?.applyCursorShape(shape) ?? false
         if !ok {
             request.postError(.invalidShape, message: "unknown cursor shape")

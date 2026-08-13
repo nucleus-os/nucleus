@@ -1117,6 +1117,58 @@
     case destroy = 0
     case destroyRegistry = 1
 }
+@frozen package enum ZwpInputMethodV2RequestOpcode: UInt16, WaylandRequestOpcode {
+    case commitString = 0
+    case setPreeditString = 1
+    case deleteSurroundingText = 2
+    case commit = 3
+    case getInputPopupSurface = 4
+    case grabKeyboard = 5
+    case destroy = 6
+}
+@frozen package enum ZwpInputMethodV2EventOpcode: UInt16, WaylandEventOpcode {
+    case activate = 0
+    case deactivate = 1
+    case surroundingText = 2
+    case textChangeCause = 3
+    case contentType = 4
+    case done = 5
+    case unavailable = 6
+}
+@frozen package struct ZwpInputMethodV2Error: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let role = Self(rawValue: 0)
+    package var knownName: String? {
+        switch self {
+        case .role:
+            "role"
+        default:
+            nil
+        }
+    }
+}
+@frozen package enum ZwpInputPopupSurfaceV2RequestOpcode: UInt16, WaylandRequestOpcode {
+    case destroy = 0
+}
+@frozen package enum ZwpInputPopupSurfaceV2EventOpcode: UInt16, WaylandEventOpcode {
+    case textInputRectangle = 0
+}
+@frozen package enum ZwpInputMethodKeyboardGrabV2RequestOpcode: UInt16, WaylandRequestOpcode {
+    case release = 0
+}
+@frozen package enum ZwpInputMethodKeyboardGrabV2EventOpcode: UInt16, WaylandEventOpcode {
+    case keymap = 0
+    case key = 1
+    case modifiers = 2
+    case repeatInfo = 3
+}
+@frozen package enum ZwpInputMethodManagerV2RequestOpcode: UInt16, WaylandRequestOpcode {
+    case getInputMethod = 0
+    case destroy = 1
+}
 @frozen package enum OrgKdeKwinBlurManagerRequestOpcode: UInt16, WaylandRequestOpcode {
     case create = 0
     case unset = 1

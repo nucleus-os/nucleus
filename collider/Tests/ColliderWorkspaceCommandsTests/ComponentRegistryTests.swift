@@ -1104,6 +1104,7 @@ private func fixtureReactNativeNodeModules(
     let scanner = try #require(nativeSDK.scanner)
     let generation = try WaylandColliderRecipe.generate(
         root: root,
+        stagingRoot: FilePath("/cache/generation/wayland"),
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
@@ -1149,6 +1150,11 @@ private func fixtureReactNativeNodeModules(
     #expect(
         generationContainers.allSatisfy {
             $0.command.first == "wayland-generate"
+        })
+    #expect(
+        generationContainers.allSatisfy { execution in
+            execution.mounts.filter { $0.purpose == .boundedExport }
+                .allSatisfy { !$0.source.overlaps(root) }
         })
     #expect(
         action.requirements.tools.map(\.role) == [.semantic, .semantic])
@@ -1201,6 +1207,8 @@ private func fixtureReactNativeNodeModules(
         builder: builder)
     let generation = try WaylandColliderRecipe.generate(
         root: root,
+        stagingRoot: root.removingLastComponent().appending(
+            "wayland-generation-candidates"),
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(

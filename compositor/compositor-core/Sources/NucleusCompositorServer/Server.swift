@@ -387,6 +387,21 @@ package struct KeybindOutcome: Sendable {
     }
 }
 
+package struct GesturePolicyTarget: Sendable, Equatable {
+    package let surfaceID: WlSurfaceID?
+    package let outputID: DisplayID
+
+    package init(surfaceID: WlSurfaceID?, outputID: DisplayID) {
+        self.surfaceID = surfaceID
+        self.outputID = outputID
+    }
+}
+
+package enum GesturePolicyOutcome: Sendable, Equatable {
+    case client
+    case compositor(redrawOutputID: DisplayID?)
+}
+
 /// The authoritative server-policy seam used by physical input dispatch.
 ///
 /// It owns chord matching and cursor image mechanism. Shell-owned effects leave
@@ -395,6 +410,12 @@ package struct KeybindOutcome: Sendable {
 @MainActor
 package protocol CompositorPolicy: AnyObject {
     func dispatchKeybind(keycode: UInt32, modifiers: UInt64, pressed: Bool) -> KeybindOutcome
+    func dispatchGesture(
+        _ event: NormalizedGestureEvent,
+        target: GesturePolicyTarget?
+    ) -> GesturePolicyOutcome
+    func cancelActiveGesture()
+    func gestureOutputWillRemove(_ outputID: DisplayID)
     func cursorApplyDefault()
     func cursorApplyNamed(_ name: String)
     func acceptedShellAction(

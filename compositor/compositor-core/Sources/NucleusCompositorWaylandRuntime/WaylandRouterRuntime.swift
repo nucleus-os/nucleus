@@ -50,7 +50,8 @@ package final class WaylandRouterRuntime {
     let sessionLock: SessionLockManager
     let idle: IdleManager
     let dataDevice: WlDataDeviceManager
-    let textInputManager: TextInputManagerV3
+    let textInputSeat: TextInputSeat
+    let tablet: TabletManager
     let screencopy: ScreencopyManager
     private let gamma: ZwlrGammaControlManager
     /// The input feed queries this by surface id to clamp/freeze the cursor under an
@@ -98,11 +99,13 @@ package final class WaylandRouterRuntime {
             dataExchange: host.server.dataExchange,
             display: router.display)
         seat.dataDeviceManager = dataDevice
-        let textInputManager = TextInputManagerV3(seat: seat)
-        seat.textInputManager = textInputManager
+        let textInputSeat = TextInputSeat(seat: seat)
+        seat.textInputSeat = textInputSeat
         let sessionLock = SessionLockManager(
             display: router.display)
         let relativePointer = RelativePointerManager()
+        let pointerGestures = PointerGestureManager(seat: seat)
+        let tablet = TabletManager(host: host, seat: seat)
         let pointerConstraints = PointerConstraintsManager()
         // Xwayland surface association. Dormant until Xwayland attaches to the
         // router at the socket handover; reports pairings to the Swift XWM directly.
@@ -156,6 +159,7 @@ package final class WaylandRouterRuntime {
         // The seat owns relative-pointer emission + pointer-constraint application on
         // the motion path; hand it the two managers (retained by the router globals).
         seat.relativePointer = relativePointer
+        seat.pointerGestures = pointerGestures
         seat.pointerConstraints = pointerConstraints
         // The feeder resolves router surfaces to push per-frame output membership.
         feeder.compositor = compositor
@@ -287,6 +291,12 @@ package final class WaylandRouterRuntime {
             ZwpRelativePointerManagerV1Server.global(
                 implementation: relativePointer))
         router.addGlobal(
+            ZwpPointerGesturesV1Server.global(
+                implementation: pointerGestures))
+        router.addGlobal(
+            ZwpTabletManagerV2Server.global(
+                implementation: tablet))
+        router.addGlobal(
             ZwpPointerConstraintsV1Server.global(
                 implementation: pointerConstraints))
         router.addGlobal(
@@ -313,7 +323,10 @@ package final class WaylandRouterRuntime {
         dataDevice.addSelectionObserver(extDataControl)
         router.addGlobal(
             ZwpTextInputManagerV3Server.global(
-                implementation: textInputManager, advertisedVersion: 2))
+                implementation: textInputSeat, advertisedVersion: 2))
+        router.addGlobal(
+            ZwpInputMethodManagerV2Server.global(
+                implementation: textInputSeat))
         let outputManagement = OutputManagement(compositor: compositor)
         router.addGlobal(
             ZwlrOutputManagerV1Server.global(
@@ -350,7 +363,8 @@ package final class WaylandRouterRuntime {
         self.sessionLock = sessionLock
         self.idle = idle
         self.dataDevice = dataDevice
-        self.textInputManager = textInputManager
+        self.textInputSeat = textInputSeat
+        self.tablet = tablet
         self.screencopy = screencopy
         self.gamma = gamma
         self.pointerConstraints = pointerConstraints
