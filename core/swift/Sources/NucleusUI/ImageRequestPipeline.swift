@@ -188,8 +188,6 @@ public final class ImageRequestPipeline {
         @MainActor (ImageRequestResult) -> Void
     public typealias Diagnostic =
         @MainActor (ImageRequestFailure, ImageRequest) -> Void
-    package typealias ResourceFactory =
-        @MainActor (String, Size, UInt64) -> ImageResource?
 
     private struct CacheKey: Hashable {
         var source: ImageRequestSource
@@ -239,11 +237,10 @@ public final class ImageRequestPipeline {
     private var nextSubscriptionID: UInt64 = 1
     private var resourceGeneration: UInt64 = 1
     private var isShutdown = false
-    package var resourceFactory: ResourceFactory
 
     public init(
         resourceHostHandle: UInt64,
-        runtimeHost: LayerRuntimeHost = .inMemory(),
+        runtimeHost: LayerRuntimeHost,
         clock: UIClock = .continuous,
         resolver: ImageSourceResolver = .directResourcesOnly,
         limits: ImageRequestCacheLimits = ImageRequestCacheLimits(),
@@ -255,13 +252,6 @@ public final class ImageRequestPipeline {
         self.resolver = resolver
         self.limits = limits
         self.diagnostic = diagnostic
-        self.resourceFactory = { [runtimeHost] source, size, resourceHostHandle in
-            ImageResource(
-                source: source,
-                decodeSize: size,
-                resourceHostHandle: resourceHostHandle,
-                runtimeHost: runtimeHost)
-        }
         cache.reserveCapacity(limits.maximumEntries)
         negativeCache.reserveCapacity(limits.maximumNegativeEntries)
         inFlight.reserveCapacity(limits.maximumInFlightRequests)
@@ -285,7 +275,7 @@ public final class ImageRequestPipeline {
         }
         let key = cacheKey(for: request)
         guard key.pixelWidth > 0, key.pixelHeight > 0,
-              resourceHostHandle != 0
+            resourceHostHandle != 0
         else {
             diagnostic(.invalidRequest, request)
             complete(
@@ -411,8 +401,9 @@ public final class ImageRequestPipeline {
     public var consumerCount: Int { keyBySubscription.count }
 
     package func cancel(subscriptionID: UInt64) {
-        guard let key = keyBySubscription.removeValue(
-            forKey: subscriptionID),
+        guard
+            let key = keyBySubscription.removeValue(
+                forKey: subscriptionID),
             var pending = inFlight[key]
         else { return }
         pending.subscribers[subscriptionID] = nil
@@ -438,13 +429,14 @@ public final class ImageRequestPipeline {
         guard !isShutdown else { return }
 
         let representative = pending.subscribers.values.first?.request
-        let resource = resolvedSource.flatMap {
-            resourceFactory(
-                $0,
-                Size(
+        let resource = resolvedSource.flatMap { source in
+            ImageResource(
+                source: source,
+                decodeSize: Size(
                     width: Double(key.pixelWidth),
                     height: Double(key.pixelHeight)),
-                resourceHostHandle)
+                resourceHostHandle: resourceHostHandle,
+                runtimeHost: runtimeHost)
         }
         if let resource {
             insert(resource, for: key)
@@ -478,14 +470,16 @@ public final class ImageRequestPipeline {
         completion: Completion
     ) {
         guard !source.isEmpty,
-              let resource = resourceFactory(
-                source,
-                Size(
+            let resource = ImageResource(
+                source: source,
+                decodeSize: Size(
                     width: Double(key.pixelWidth),
                     height: Double(key.pixelHeight)),
-                resourceHostHandle)
+                resourceHostHandle: resourceHostHandle,
+                runtimeHost: runtimeHost)
         else {
-            let failure: ImageRequestFailure = source.isEmpty
+            let failure: ImageRequestFailure =
+                source.isEmpty
                 ? .unresolved
                 : .registrationFailed
             insertNegative(failure, for: key)
@@ -546,9 +540,9 @@ public final class ImageRequestPipeline {
         for key: CacheKey
     ) {
         if negativeCache.count >= limits.maximumNegativeEntries,
-           let oldest = negativeCache.min(by: {
-               $0.value.access < $1.value.access
-           })?.key
+            let oldest = negativeCache.min(by: {
+                $0.value.access < $1.value.access
+            })?.key
         {
             negativeCache[oldest] = nil
         }
@@ -560,9 +554,11 @@ public final class ImageRequestPipeline {
     }
 
     private func evictLeastRecentlyUsed() -> Bool {
-        guard let oldest = cache.min(by: {
-            $0.value.access < $1.value.access
-        }) else { return false }
+        guard
+            let oldest = cache.min(by: {
+                $0.value.access < $1.value.access
+            })
+        else { return false }
         cachedCost -= oldest.value.cost
         cache[oldest.key] = nil
         return true
@@ -596,10 +592,11 @@ public final class ImageRequestPipeline {
         outcome: ImageRequestOutcome,
         with completion: Completion
     ) {
-        completion(ImageRequestResult(
-            requestID: request.id,
-            cancellationGeneration: request.cancellationGeneration,
-            outcome: outcome))
+        completion(
+            ImageRequestResult(
+                requestID: request.id,
+                cancellationGeneration: request.cancellationGeneration,
+                outcome: outcome))
     }
 
     private func takeAccess() -> UInt64 {

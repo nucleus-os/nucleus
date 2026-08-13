@@ -23,17 +23,14 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. Execute the
-   [runtime test seam consolidation plan](runtime-test-seam-consolidation-plan.md)
-   in order.
-2. Complete Phases 2 through 4 of
+1. Complete Phases 2 through 4 of
    [macOS remote development](macos-remote-development-plan.md).
-3. Execute the
+2. Execute the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    in order. Its Phase 2 satisfies Phase 5 of the remote-development plan;
    complete remote-development Phase 6 immediately afterward, then continue the
    package plan at Phase 3.
-4. Execute the
+3. Execute the
    [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md)
    in order. It adds an independent contributor workflow without replacing the
    M2 Ultra development, CI, or publication roles.
@@ -54,6 +51,10 @@ implementation inputs are available:
 
 ## Completed architecture consolidation
 
+- [Runtime test seam consolidation](runtime-test-seam-consolidation-plan.md)
+  removed alternate runtime invariants, silent in-memory defaults, production
+  test factories and hooks, injected native allocators, and test support from
+  production source trees.
 - [macOS host storage consolidation](macos-host-storage-consolidation-plan.md)
   established the conventional per-user host layout and removed custom APFS
   volume policy.

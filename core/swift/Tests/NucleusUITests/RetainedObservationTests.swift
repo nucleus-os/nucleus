@@ -247,8 +247,8 @@ struct NucleusFoundationLifecycleStressTests {
 
     @Test
     func sharedModelKeepsContextMutationAndTeardownIsolated() async {
-        let firstContext = UIContext(services: .inMemory())
-        let secondContext = UIContext(services: .inMemory())
+        let firstContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
+        let secondContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
         let firstParent = firstContext.construct { View() }
         let firstView = firstContext.construct { View() }
         let secondParent = secondContext.construct { View() }

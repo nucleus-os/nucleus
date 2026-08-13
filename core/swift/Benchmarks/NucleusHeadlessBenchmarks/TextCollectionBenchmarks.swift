@@ -26,11 +26,13 @@ private func textDocumentWorkload(paragraphCount: Int) -> BenchmarkWorkload {
             let backend = BenchmarkTextBackend()
             let textSystem = TextSystem()
             textSystem.installBackend(backend)
-            let uiContext = UIContext(services: UIHostServices(
-                textSystem: textSystem,
-                pasteboard: Pasteboard(adapter: InMemoryPasteboardAdapter()),
-                imageSourceResolver: .directResourcesOnly,
-                diagnosticSink: { _ in }))
+            let uiContext = UIContext(
+                services: UIHostServices(
+                    textSystem: textSystem,
+                    pasteboard: Pasteboard(adapter: InMemoryPasteboardAdapter()),
+                    imageSourceResolver: .directResourcesOnly,
+                    diagnosticSink: { _ in }),
+                runtimeHost: .inMemory())
             let document = (0..<paragraphCount).map {
                 "paragraph \($0): deterministic retained text content"
             }.joined(separator: "\n")
@@ -136,7 +138,7 @@ private func collectionWorkload(itemCount: Int) -> BenchmarkWorkload {
             .maximum("grid_measurement_cache", 4_096),
         ],
         body: {
-            let uiContext = UIContext(services: .inMemory())
+            let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
             return try uiContext.construct {
                 let items = (0..<itemCount).map {
                     CollectionItem(id: $0, revision: UInt64($0 & 3))
@@ -275,14 +277,16 @@ private final class BenchmarkTextBackend: TextLayoutBackend {
         return TextBackendLayout(
             handle: handle,
             usedRect: Rect(x: 0, y: 0, width: max(0, width), height: height),
-            lines: [TextLayoutLine(
-                text: text,
-                frame: Rect(x: 0, y: 0, width: max(0, width), height: height),
-                baselineOffsetFromTop: 12 * Double(scale),
-                sourceUTF16Range: 0..<text.utf16.count,
-                lineNumber: 0,
-                typographicAscent: 12 * Double(scale),
-                typographicDescent: 4 * Double(scale))])
+            lines: [
+                TextLayoutLine(
+                    text: text,
+                    frame: Rect(x: 0, y: 0, width: max(0, width), height: height),
+                    baselineOffsetFromTop: 12 * Double(scale),
+                    sourceUTF16Range: 0..<text.utf16.count,
+                    lineNumber: 0,
+                    typographicAscent: 12 * Double(scale),
+                    typographicDescent: 4 * Double(scale))
+            ])
     }
 
     func retainLayout(_ handle: TextLayoutHandle) {
@@ -324,10 +328,13 @@ private final class BenchmarkTextBackend: TextLayoutBackend {
         in handle: TextLayoutHandle
     ) -> [TextSelectionRect]? {
         guard references[handle] != nil else { return nil }
-        return [TextSelectionRect(rect: Rect(
-            x: Double(range.lowerBound) * 7,
-            y: 0,
-            width: Double(range.count) * 7,
-            height: 16))]
+        return [
+            TextSelectionRect(
+                rect: Rect(
+                    x: Double(range.lowerBound) * 7,
+                    y: 0,
+                    width: Double(range.count) * 7,
+                    height: 16))
+        ]
     }
 }

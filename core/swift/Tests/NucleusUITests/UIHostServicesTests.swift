@@ -1,6 +1,9 @@
 import NucleusUITestSupport
-@testable import NucleusUI
 import Testing
+
+import class NucleusLayers.LayerRuntimeHost
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext)
@@ -29,11 +32,25 @@ struct UIHostServicesTests {
     }
 
     @Test
+    func explicitInMemoryRuntimeAllocatesStableContextIdentities() {
+        let runtimeHost = LayerRuntimeHost.inMemory()
+        let context = UIContext(
+            services: .inMemory(),
+            runtimeHost: runtimeHost)
+        let first = context.construct { View() }
+        let second = context.construct { View() }
+
+        #expect(context.runtimeHost === runtimeHost)
+        #expect(first.id.rawValue != 0)
+        #expect(second.id.rawValue == first.id.rawValue + 1)
+    }
+
+    @Test
     func pasteboardsAreContextLocalAndNativeEmptyDoesNotRevealOldContent()
         async throws
     {
-        let first = UIContext(services: .inMemory())
-        let second = UIContext(services: .inMemory())
+        let first = UIContext(services: .inMemory(), runtimeHost: .inMemory())
+        let second = UIContext(services: .inMemory(), runtimeHost: .inMemory())
 
         try await first.services.pasteboard.writeString("first")
         try await second.services.pasteboard.writeString("second")
@@ -78,12 +95,13 @@ struct UIHostServicesTests {
             diagnosticSink: { diagnostics.append($0) })
 
         #expect(!services.validateForRetainedMaterialization())
-        #expect(diagnostics == [
-            UIHostDiagnostic(
-                service: .text,
-                operation: "materialize-retained-ui",
-                generation: 0,
-                failure: .text(.missingBackend)),
-        ])
+        #expect(
+            diagnostics == [
+                UIHostDiagnostic(
+                    service: .text,
+                    operation: "materialize-retained-ui",
+                    generation: 0,
+                    failure: .text(.missingBackend))
+            ])
     }
 }

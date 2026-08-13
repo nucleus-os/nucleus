@@ -381,6 +381,30 @@ private final class DamagePaintView: View {
         try publisher.invalidate()
     }
 
+    @Test func inMemorySinkCompletesAcceptedScopedTransaction() throws {
+        let sink = InMemoryCommitSink()
+        let context = try Context(
+            id: NucleusLayers.ContextID(rawValue: 8_113),
+            commitSink: sink)
+        try Application.withContext(context) {
+            let view = View()
+            let publisher = ViewLayerPublisher(context: context)
+            _ = try publisher.publish(roots: [view])
+            var outcomes: [TransactionOutcome] = []
+            let handle = try Transaction.run(
+                in: view,
+                completion: { outcomes.append($0) }
+            ) {
+                view.alphaValue = 0.5
+            }
+
+            _ = try publisher.publish(roots: [view])
+
+            #expect(handle.outcome == .completed)
+            #expect(outcomes == [.completed])
+        }
+    }
+
     @Test func standaloneAndEmbedderPublicationUseTheSameTopology() throws {
         let standaloneSink = ApplyingCommitSink()
         let embedderSink = ApplyingCommitSink()

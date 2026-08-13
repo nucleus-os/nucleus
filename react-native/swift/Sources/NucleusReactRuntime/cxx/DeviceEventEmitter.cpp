@@ -66,12 +66,6 @@ facebook::jsi::Function *DeviceEventEmitter::resolveEmitFn() {
     return &emitFn_.value();
   }
   auto global = runtime_.global();
-  auto custom = global.getProperty(runtime_, "__nucleusEmitDeviceEvent");
-  if (custom.isObject() &&
-      custom.getObject(runtime_).isFunction(runtime_)) {
-    emitFn_ = custom.getObject(runtime_).getFunction(runtime_);
-    return &emitFn_.value();
-  }
   auto emitter = global.getProperty(runtime_, "RCTDeviceEventEmitter");
   if (!emitter.isObject()) {
     return nullptr;

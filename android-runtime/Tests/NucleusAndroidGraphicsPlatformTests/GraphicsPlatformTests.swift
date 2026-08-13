@@ -1,6 +1,5 @@
 import Glibc
 import NucleusAndroidDrmC
-import NucleusAndroidDrmCTestSupport
 internal import NucleusAndroidGraphicsContract
 import Testing
 
@@ -86,16 +85,6 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         guard unsafe nucleus_android_gpu_collect(handle) == 0 else {
             throw RawGraphicsTestError(description: "GPU collection failed")
         }
-    }
-
-    func forceFencesPending(_ enabled: Bool) {
-        unsafe nucleus_android_test_gpu_force_fences_pending(
-            handle,
-            enabled ? 1 : 0)
-    }
-
-    func failNextPostSubmitStep() {
-        unsafe nucleus_android_test_gpu_fail_next_post_submit(handle)
     }
 
     private static func errorString(_ error: [CChar]) -> String {
@@ -219,15 +208,6 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         unsafe nucleus_android_gpu_buffer_destroy(handle)
     }
 
-    func lastUseSerial() -> UInt64 {
-        guard let handle = unsafe handle else { return 0 }
-        return unsafe nucleus_android_test_gpu_buffer_last_use_serial(handle)
-    }
-
-    func hasGeneralLayout() -> Bool {
-        guard let handle = unsafe handle else { return false }
-        return unsafe nucleus_android_test_gpu_buffer_has_general_layout(handle) == 1
-    }
 }
 
 @Test func gpuDRM_drmDiscoveryReturnsStableNodeAndPciIdentity() throws {
@@ -528,28 +508,18 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
 }
 
-@Test func gpuDRM_inFlightBufferIsReclaimedOnlyAfterItsFenceSignals() throws {
+@Test func gpuDRM_submittedBufferIsReclaimedAfterItsRealFenceSignals() throws {
     let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let acquire = try RawGraphicsTestTimeline(gpu: gpu)
     let baseline = try gpu.diagnostic()
     let buffer = try RawGraphicsTestBuffer(gpu: gpu)
-    gpu.forceFencesPending(true)
-    defer { gpu.forceFencesPending(false) }
-
     try buffer.render(
         frame: 1,
         acquire: acquire,
         acquirePoint: 40)
     buffer.release()
 
-    let retired = try gpu.diagnostic()
-    #expect(retired.live_buffer_count == baseline.live_buffer_count + 1)
-    #expect(retired.retired_buffer_count == baseline.retired_buffer_count + 1)
-    #expect(retired.submitted_serial == baseline.submitted_serial + 1)
-    #expect(retired.completed_serial == baseline.completed_serial)
-
-    gpu.forceFencesPending(false)
     var acquireSignaled = acquire.isSignaled(40)
     for _ in 0..<2_000 where !acquireSignaled {
         _ = usleep(100)
@@ -568,47 +538,6 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
     #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
     #expect(reclaimed.terminal_submission_result == 0)
-}
-
-@Test func gpuDRM_postSubmitFailurePreservesSubmittedBufferState() throws {
-    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
-    let gpu = try RawGraphicsTestGPU(candidate: candidate)
-    let acquire = try RawGraphicsTestTimeline(gpu: gpu)
-    let baseline = try gpu.diagnostic()
-    let buffer = try RawGraphicsTestBuffer(gpu: gpu)
-    gpu.forceFencesPending(true)
-    defer { gpu.forceFencesPending(false) }
-    gpu.failNextPostSubmitStep()
-
-    #expect(throws: RawGraphicsTestError.self) {
-        try buffer.render(
-            frame: 1,
-            acquire: acquire,
-            acquirePoint: 1)
-    }
-
-    let submitted = try gpu.diagnostic()
-    #expect(submitted.submitted_serial == baseline.submitted_serial + 1)
-    #expect(submitted.completed_serial == baseline.completed_serial)
-    #expect(buffer.lastUseSerial() == submitted.submitted_serial)
-    #expect(buffer.hasGeneralLayout())
-
-    buffer.release()
-    let retired = try gpu.diagnostic()
-    #expect(retired.live_buffer_count == baseline.live_buffer_count + 1)
-    #expect(retired.retired_buffer_count == baseline.retired_buffer_count + 1)
-
-    gpu.forceFencesPending(false)
-    var reclaimed = try gpu.diagnostic()
-    for _ in 0..<2_000 where reclaimed.live_buffer_count != baseline.live_buffer_count {
-        try gpu.collect()
-        _ = usleep(100)
-        reclaimed = try gpu.diagnostic()
-    }
-    #expect(reclaimed.live_buffer_count == baseline.live_buffer_count)
-    #expect(reclaimed.retired_buffer_count == baseline.retired_buffer_count)
-    #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
-    #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
 }
 
 @Test func gpuDRM_repeatedRenderReleaseCyclesReturnLiveBuffersToBaseline() throws {

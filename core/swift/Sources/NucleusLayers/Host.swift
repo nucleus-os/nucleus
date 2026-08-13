@@ -98,14 +98,14 @@ public final class LayerResourceLifetime: Sendable {
     }
 }
 
-// MARK: - Test stubs
+// MARK: - In-memory host
 
-/// Stub layers-host conformers for tests that need to exercise
+/// In-memory layers-host conformers for tools and tests that need to exercise
 /// `PaintContent.register`, `IOSurfaceContent.bind`, `Context`
 /// reserve/release, or `Context.queryDisplayLink()` without wiring a
 /// real `RenderServer`. Tests opt in by calling
 /// `LayerRuntimeHost.inMemory()` in their setup.
-private final class StubIdentityAllocator: Sendable {
+private final class InMemoryIdentityAllocator: Sendable {
     private let identifiers = Mutex((nextHandle: UInt64(1), nextContextID: UInt32(2)))
 
     func nextHandleValue() -> UInt64 {
@@ -127,10 +127,10 @@ private final class StubIdentityAllocator: Sendable {
     }
 }
 
-private final class StubImageRegistrar: ImageRegistrar {
-    private let identities: StubIdentityAllocator
+private final class InMemoryImageRegistrar: ImageRegistrar {
+    private let identities: InMemoryIdentityAllocator
 
-    init(identities: StubIdentityAllocator) {
+    init(identities: InMemoryIdentityAllocator) {
         self.identities = identities
     }
 
@@ -154,10 +154,10 @@ private final class StubImageRegistrar: ImageRegistrar {
     }
 }
 
-private final class StubPaintContentRegistrar: PaintContentRegistrar {
-    private let identities: StubIdentityAllocator
+private final class InMemoryPaintContentRegistrar: PaintContentRegistrar {
+    private let identities: InMemoryIdentityAllocator
 
-    init(identities: StubIdentityAllocator) {
+    init(identities: InMemoryIdentityAllocator) {
         self.identities = identities
     }
 
@@ -172,10 +172,10 @@ private final class StubPaintContentRegistrar: PaintContentRegistrar {
     }
 }
 
-private final class StubRuntimeEffectRegistrar: RuntimeEffectRegistrar {
-    private let identities: StubIdentityAllocator
+private final class InMemoryRuntimeEffectRegistrar: RuntimeEffectRegistrar {
+    private let identities: InMemoryIdentityAllocator
 
-    init(identities: StubIdentityAllocator) {
+    init(identities: InMemoryIdentityAllocator) {
         self.identities = identities
     }
 
@@ -185,17 +185,17 @@ private final class StubRuntimeEffectRegistrar: RuntimeEffectRegistrar {
     }
 }
 
-private final class StubIOSurfaceBinder: IOSurfaceBinder {
+private final class InMemoryIOSurfaceBinder: IOSurfaceBinder {
     func bind(iosurfaceID: UInt64) throws(IOSurfaceBindError) -> UInt64 {
         if iosurfaceID == 0 { throw .invalidArgument }
         return iosurfaceID
     }
 }
 
-private final class StubContextIDAllocator: ContextIDAllocator {
-    private let identities: StubIdentityAllocator
+private final class InMemoryContextIDAllocator: ContextIDAllocator {
+    private let identities: InMemoryIdentityAllocator
 
-    init(identities: StubIdentityAllocator) {
+    init(identities: InMemoryIdentityAllocator) {
         self.identities = identities
     }
 
@@ -206,41 +206,41 @@ private final class StubContextIDAllocator: ContextIDAllocator {
     func release(_ id: UInt32) {}
 }
 
-private final class StubDisplayLinkSource: DisplayLinkSource {
+private final class InMemoryDisplayLinkSource: DisplayLinkSource {
     func query(contextID: UInt32) throws(DisplayLinkError) -> NucleusTypes.PresentReport {
         return NucleusTypes.PresentReport(
-            predictedPresentationNanoseconds: 1,
-            targetPresentationNanoseconds: 2,
+            predictedPresentationNanoseconds: 1_000_000_000,
+            targetPresentationNanoseconds: 1_016_666_667,
             nextPresentID: 1
         )
     }
 }
 
-private final class StubImplicitActionRegistrar: ImplicitActionRegistrar {
+private final class InMemoryImplicitActionRegistrar: ImplicitActionRegistrar {
     func register(rows: Span<NucleusTypes.ImplicitActionRow>) {}
 }
 
-private final class StubImageLifecycle: ImageLifecycle {
+private final class InMemoryImageLifecycle: ImageLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {}
     func release(resourceHostHandle: UInt64, handle: UInt64) {}
 }
 
-private final class StubRuntimeEffectLifecycle: RuntimeEffectLifecycle {
+private final class InMemoryRuntimeEffectLifecycle: RuntimeEffectLifecycle {
     func retain(handle: UInt64) {}
     func release(handle: UInt64) {}
 }
 
-private final class StubPaintContentLifecycle: PaintContentLifecycle {
+private final class InMemoryPaintContentLifecycle: PaintContentLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {}
     func release(resourceHostHandle: UInt64, handle: UInt64) {}
 }
 
-private final class StubSnapshotLifecycle: SnapshotLifecycle {
+private final class InMemorySnapshotLifecycle: SnapshotLifecycle {
     func retain(resourceHostHandle: UInt64, handle: UInt64) {}
     func release(resourceHostHandle: UInt64, handle: UInt64) {}
 }
 
-private final class StubIOSurfaceLifecycle: IOSurfaceLifecycle {
+private final class InMemoryIOSurfaceLifecycle: IOSurfaceLifecycle {
     func retain(handle: UInt64) {}
     func release(handle: UInt64) {}
 }
@@ -248,25 +248,25 @@ private final class StubIOSurfaceLifecycle: IOSurfaceLifecycle {
 @MainActor
 extension LayerRuntimeHost {
     public static func inMemory() -> LayerRuntimeHost {
-        let identities = StubIdentityAllocator()
-        let allocator = StubContextIDAllocator(identities: identities)
+        let identities = InMemoryIdentityAllocator()
+        let allocator = InMemoryContextIDAllocator(identities: identities)
         return LayerRuntimeHost(
             operations: Host(
-                imageRegistrar: StubImageRegistrar(identities: identities),
-                paintContentRegistrar: StubPaintContentRegistrar(
+                imageRegistrar: InMemoryImageRegistrar(identities: identities),
+                paintContentRegistrar: InMemoryPaintContentRegistrar(
                     identities: identities),
-                runtimeEffectRegistrar: StubRuntimeEffectRegistrar(
+                runtimeEffectRegistrar: InMemoryRuntimeEffectRegistrar(
                     identities: identities),
-                iosurfaceBinder: StubIOSurfaceBinder(),
+                iosurfaceBinder: InMemoryIOSurfaceBinder(),
                 contextIDAllocator: allocator,
-                displayLinkSource: StubDisplayLinkSource(),
-                implicitActionRegistrar: StubImplicitActionRegistrar()),
+                displayLinkSource: InMemoryDisplayLinkSource(),
+                implicitActionRegistrar: InMemoryImplicitActionRegistrar()),
             lifecycle: LifecycleHost(
-                imageLifecycle: StubImageLifecycle(),
-                paintContentLifecycle: StubPaintContentLifecycle(),
-                runtimeEffectLifecycle: StubRuntimeEffectLifecycle(),
-                snapshotLifecycle: StubSnapshotLifecycle(),
-                iosurfaceLifecycle: StubIOSurfaceLifecycle(),
+                imageLifecycle: InMemoryImageLifecycle(),
+                paintContentLifecycle: InMemoryPaintContentLifecycle(),
+                runtimeEffectLifecycle: InMemoryRuntimeEffectLifecycle(),
+                snapshotLifecycle: InMemorySnapshotLifecycle(),
+                iosurfaceLifecycle: InMemoryIOSurfaceLifecycle(),
                 contextIDAllocator: allocator))
     }
 }

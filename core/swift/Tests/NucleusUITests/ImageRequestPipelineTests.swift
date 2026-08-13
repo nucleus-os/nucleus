@@ -1,14 +1,28 @@
+import NucleusAppHostProtocols
+import NucleusLayers
 import NucleusUITestSupport
-import class NucleusLayers.LayerRuntimeHost
+import Synchronization
 import Testing
+
 @testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext, .serialized)
 struct ImageRequestPipelineTests {
     @MainActor
-    private final class Registrar {
-        let runtimeHost = LayerRuntimeHost.inMemory()
+    private final class RecordingLifecycle: ImageLifecycle, @unchecked Sendable {
+        private nonisolated let releases = Mutex<[UInt64]>([])
+
+        nonisolated func retain(resourceHostHandle: UInt64, handle: UInt64) {}
+
+        nonisolated func release(resourceHostHandle: UInt64, handle: UInt64) {
+            releases.withLock { $0.append(handle) }
+        }
+
+        nonisolated var releaseCount: Int { releases.withLock { $0.count } }
+    }
+
+    private final class Registrar: ImageRegistrar {
         struct Registration: Equatable {
             var path: String
             var width: UInt32
@@ -17,30 +31,66 @@ struct ImageRequestPipelineTests {
 
         var registrations: [Registration] = []
         var nextHandle: UInt64 = 1
+        let lifecycle = RecordingLifecycle()
+        lazy var runtimeHost: LayerRuntimeHost = {
+            let inMemory = LayerRuntimeHost.inMemory()
+            return LayerRuntimeHost(
+                operations: Host(
+                    imageRegistrar: self,
+                    paintContentRegistrar: inMemory.operations.paintContentRegistrar,
+                    runtimeEffectRegistrar: inMemory.operations.runtimeEffectRegistrar,
+                    iosurfaceBinder: inMemory.operations.iosurfaceBinder,
+                    contextIDAllocator: inMemory.operations.contextIDAllocator,
+                    displayLinkSource: inMemory.operations.displayLinkSource,
+                    implicitActionRegistrar: inMemory.operations.implicitActionRegistrar),
+                lifecycle: LifecycleHost(
+                    imageLifecycle: lifecycle,
+                    paintContentLifecycle: inMemory.lifecycle.paintContentLifecycle,
+                    runtimeEffectLifecycle: inMemory.lifecycle.runtimeEffectLifecycle,
+                    snapshotLifecycle: inMemory.lifecycle.snapshotLifecycle,
+                    iosurfaceLifecycle: inMemory.lifecycle.iosurfaceLifecycle,
+                    contextIDAllocator: inMemory.lifecycle.contextIDAllocator))
+        }()
 
-        func makeResource(
-            source: String,
-            size: Size,
-            resourceHostHandle: UInt64
-        ) -> ImageResource {
-            registrations.append(Registration(
-                path: source,
-                width: ImageResource.pixelBound(size.width),
-                height: ImageResource.pixelBound(size.height)))
+        func register(
+            path: String,
+            maxWidth: UInt32,
+            maxHeight: UInt32
+        ) throws(ImageRegistrationError) -> UInt64 {
+            registrations.append(
+                Registration(
+                    path: path,
+                    width: maxWidth,
+                    height: maxHeight))
             defer { nextHandle &+= 1 }
-            return ImageResource(
-                registeredHandle: nextHandle,
-                source: source,
-                decodeSize: size,
-                resourceHostHandle: resourceHostHandle,
-                runtimeHost: runtimeHost)
+            return nextHandle
+        }
+
+        func register(
+            encoded: Span<UInt8>,
+            maxWidth: UInt32,
+            maxHeight: UInt32
+        ) throws(ImageRegistrationError) -> UInt64 {
+            defer { nextHandle &+= 1 }
+            return nextHandle
+        }
+
+        func register(
+            pixels: Span<UInt8>,
+            width: UInt32,
+            height: UInt32,
+            rowStride: UInt32,
+            channelOrder: UInt8,
+            isPremultiplied: Bool
+        ) throws(ImageRegistrationError) -> UInt64 {
+            defer { nextHandle &+= 1 }
+            return nextHandle
         }
     }
 
     private actor ResolverGate {
         private(set) var calls: [ImageSourceQuery] = []
-        private var continuations:
-            [CheckedContinuation<String?, Never>] = []
+        private var continuations: [CheckedContinuation<String?, Never>] = []
 
         func resolve(_ query: ImageSourceQuery) async -> String? {
             calls.append(query)
@@ -72,18 +122,6 @@ struct ImageRequestPipelineTests {
         return registrar
     }
 
-    private func attach(
-        _ registrar: Registrar,
-        to pipeline: ImageRequestPipeline
-    ) {
-        pipeline.resourceFactory = { [registrar] source, size, host in
-            registrar.makeResource(
-                source: source,
-                size: size,
-                resourceHostHandle: host)
-        }
-    }
-
     private func request(
         id: UInt64,
         source: ImageRequestSource = .resource("/image.png"),
@@ -104,7 +142,8 @@ struct ImageRequestPipelineTests {
     }
 
     private func hostedContext(
-        resolver: ImageSourceResolver = .directResourcesOnly
+        resolver: ImageSourceResolver = .directResourcesOnly,
+        runtimeHost: LayerRuntimeHost = .inMemory()
     ) -> UIContext {
         UIContext(
             services: UIHostServices(
@@ -114,7 +153,8 @@ struct ImageRequestPipelineTests {
                 imageSourceResolver: resolver,
                 requiresTextBackend: false,
                 diagnosticSink: { _ in }),
-            resourceHostHandle: 7)
+            resourceHostHandle: 7,
+            runtimeHost: runtimeHost)
     }
 
     private func wait(
@@ -130,10 +170,10 @@ struct ImageRequestPipelineTests {
         let gate = ResolverGate()
         let pipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost,
             resolver: ImageSourceResolver {
                 await gate.resolve($0)
             })
-        attach(registrar, to: pipeline)
         let source = ImageRequestSource.icon(
             name: "browser",
             theme: "Adwaita")
@@ -157,9 +197,10 @@ struct ImageRequestPipelineTests {
         await wait { handles.count == 2 }
 
         #expect(handles[0] == handles[1])
-        #expect(registrar.registrations == [
-            .init(path: "/icons/browser.svg", width: 16, height: 16)
-        ])
+        #expect(
+            registrar.registrations == [
+                .init(path: "/icons/browser.svg", width: 16, height: 16)
+            ])
         #expect(pipeline.inFlightRequestCount == 0)
         #expect(pipeline.cachedEntryCount == 1)
     }
@@ -169,10 +210,10 @@ struct ImageRequestPipelineTests {
         let gate = ResolverGate()
         let pipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost,
             resolver: ImageSourceResolver {
                 await gate.resolve($0)
             })
-        attach(registrar, to: pipeline)
         let source = ImageRequestSource.icon(
             name: "terminal",
             theme: "Adwaita")
@@ -197,8 +238,8 @@ struct ImageRequestPipelineTests {
         let registrar = installRegistrar()
         let pipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost,
             resolver: ImageSourceResolver { _ in "/icon.svg" })
-        attach(registrar, to: pipeline)
         let icon = ImageRequestSource.icon(
             name: "app",
             theme: "test")
@@ -214,19 +255,22 @@ struct ImageRequestPipelineTests {
             request(id: 4, source: icon, themeGeneration: 1),
         ] {
             let expected = completions + 1
-            tokens.append(pipeline.request(value) { _ in
-                completions += 1
-            })
+            tokens.append(
+                pipeline.request(value) { _ in
+                    completions += 1
+                })
             await wait { completions == expected }
         }
-        #expect(registrar.registrations.map {
-            ($0.width, $0.height)
-        }.elementsEqual([
-            (16, 16),
-            (32, 32),
-            (16, 16),
-            (16, 16),
-        ], by: ==))
+        #expect(
+            registrar.registrations.map {
+                ($0.width, $0.height)
+            }.elementsEqual(
+                [
+                    (16, 16),
+                    (32, 32),
+                    (16, 16),
+                    (16, 16),
+                ], by: ==))
         #expect(pipeline.cachedEntryCount == 4)
     }
 
@@ -234,21 +278,24 @@ struct ImageRequestPipelineTests {
         let registrar = installRegistrar()
         let pipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost,
             limits: ImageRequestCacheLimits(
                 maximumEntries: 2,
                 maximumDecodedBytes: 2 * 16 * 16 * 4,
                 maximumNegativeEntries: 2,
                 maximumInFlightRequests: 2,
                 negativeResultLifetime: .seconds(5)))
-        attach(registrar, to: pipeline)
         var completions = 0
         var tokens: [ImageRequestToken] = []
         for index in 0..<10 {
             let expected = completions + 1
-            tokens.append(pipeline.request(request(
-                id: UInt64(index + 1),
-                source: .resource("/\(index).png")
-            )) { _ in completions += 1 })
+            tokens.append(
+                pipeline.request(
+                    request(
+                        id: UInt64(index + 1),
+                        source: .resource("/\(index).png")
+                    )
+                ) { _ in completions += 1 })
             await wait { completions == expected }
         }
         #expect(registrar.registrations.count == 10)
@@ -257,6 +304,7 @@ struct ImageRequestPipelineTests {
 
         let missPipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: .inMemory(),
             resolver: ImageSourceResolver { _ in nil },
             limits: ImageRequestCacheLimits(
                 maximumEntries: 2,
@@ -266,20 +314,23 @@ struct ImageRequestPipelineTests {
                 negativeResultLifetime: .seconds(5)))
         var misses = 0
         for index in 0..<10 {
-            tokens.append(missPipeline.request(request(
-                id: UInt64(index + 100),
-                source: .icon(name: "\(index)", theme: "test")
-            )) { _ in misses += 1 })
+            tokens.append(
+                missPipeline.request(
+                    request(
+                        id: UInt64(index + 100),
+                        source: .icon(name: "\(index)", theme: "test")
+                    )
+                ) { _ in misses += 1 })
             await wait { misses == index + 1 }
         }
         #expect(missPipeline.negativeEntryCount == 2)
     }
 
     @Test func negativeResultsSuppressRepeatedWorkThenRetry() async {
-        _ = installRegistrar()
         let missing = MissingResolver()
         let pipeline = ImageRequestPipeline(
             resourceHostHandle: 7,
+            runtimeHost: .inMemory(),
             clock: testUIContext().clock,
             resolver: ImageSourceResolver {
                 await missing.resolve($0)
@@ -295,31 +346,43 @@ struct ImageRequestPipelineTests {
             theme: "test")
         var completed = 0
         var tokens: [ImageRequestToken] = []
-        tokens.append(pipeline.request(request(
-            id: 1,
-            source: source
-        )) { _ in completed += 1 })
+        tokens.append(
+            pipeline.request(
+                request(
+                    id: 1,
+                    source: source
+                )
+            ) { _ in completed += 1 })
         await wait { completed == 1 }
-        tokens.append(pipeline.request(request(
-            id: 2,
-            source: source
-        )) { _ in completed += 1 })
+        tokens.append(
+            pipeline.request(
+                request(
+                    id: 2,
+                    source: source
+                )
+            ) { _ in completed += 1 })
         #expect(completed == 2)
         #expect(await missing.callCount == 1)
 
         testUIClock().advance(by: .nanoseconds(4_999_999))
-        tokens.append(pipeline.request(request(
-            id: 3,
-            source: source
-        )) { _ in completed += 1 })
+        tokens.append(
+            pipeline.request(
+                request(
+                    id: 3,
+                    source: source
+                )
+            ) { _ in completed += 1 })
         await wait { completed == 3 }
         #expect(await missing.callCount == 1)
 
         testUIClock().advance(by: .nanoseconds(1))
-        tokens.append(pipeline.request(request(
-            id: 4,
-            source: source
-        )) { _ in completed += 1 })
+        tokens.append(
+            pipeline.request(
+                request(
+                    id: 4,
+                    source: source
+                )
+            ) { _ in completed += 1 })
         await wait { completed == 4 }
         #expect(await missing.callCount == 2)
         _ = tokens
@@ -327,8 +390,9 @@ struct ImageRequestPipelineTests {
 
     @Test func directResourcesIgnoreAppearanceAndIconThemeChanges() async {
         let registrar = installRegistrar()
-        let pipeline = ImageRequestPipeline(resourceHostHandle: 7)
-        attach(registrar, to: pipeline)
+        let pipeline = ImageRequestPipeline(
+            resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost)
         var completed = 0
         var tokens: [ImageRequestToken] = []
         for value in [
@@ -358,8 +422,8 @@ struct ImageRequestPipelineTests {
             diagnosticSink: { _ in })
         let context = UIContext(
             services: services,
-            resourceHostHandle: 7)
-        attach(registrar, to: context.imageRequests)
+            resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost)
         let view = context.construct {
             let view = ImageView()
             view.frame = Rect(x: 0, y: 0, width: 16, height: 16)
@@ -414,8 +478,7 @@ struct ImageRequestPipelineTests {
         }
         #expect(failed.image == ImageHandle(id: 91))
 
-        let directContext = hostedContext()
-        attach(registrar, to: directContext.imageRequests)
+        let directContext = hostedContext(runtimeHost: registrar.runtimeHost)
         let direct = directContext.construct {
             let view = ImageView()
             view.frame = Rect(x: 0, y: 0, width: 12, height: 10)
@@ -424,10 +487,12 @@ struct ImageRequestPipelineTests {
             return view
         }
         await wait { direct.loadState == .loaded }
-        #expect(registrar.registrations.last == .init(
-            path: "/scale.png",
-            width: 12,
-            height: 10))
+        #expect(
+            registrar.registrations.last
+                == .init(
+                    path: "/scale.png",
+                    width: 12,
+                    height: 10))
         direct.requestBackingScaleFactor =
             BackingScaleFactor(Double(2))
         await wait {
@@ -435,16 +500,19 @@ struct ImageRequestPipelineTests {
                 && direct.resource?.decodeSize
                     == Size(width: 24, height: 20)
         }
-        #expect(registrar.registrations.last == .init(
-            path: "/scale.png",
-            width: 24,
-            height: 20))
+        #expect(
+            registrar.registrations.last
+                == .init(
+                    path: "/scale.png",
+                    width: 24,
+                    height: 20))
     }
 
     @Test func memoryPressureAndShutdownHaveExplicitTerminalState() async {
         let registrar = installRegistrar()
-        let pipeline = ImageRequestPipeline(resourceHostHandle: 7)
-        attach(registrar, to: pipeline)
+        let pipeline = ImageRequestPipeline(
+            resourceHostHandle: 7,
+            runtimeHost: registrar.runtimeHost)
         var completed = 0
         let token = pipeline.request(request(id: 1)) { _ in completed += 1 }
         _ = token
@@ -452,6 +520,7 @@ struct ImageRequestPipelineTests {
         #expect(pipeline.cachedEntryCount == 1)
         pipeline.handleMemoryPressure()
         #expect(pipeline.cachedEntryCount == 0)
+        #expect(registrar.lifecycle.releaseCount == 1)
 
         pipeline.shutdown()
         var failure: ImageRequestFailure?
@@ -465,8 +534,7 @@ struct ImageRequestPipelineTests {
 
     @Test func continuousImageListScrollingStaysWithinEveryUIBound() async {
         let registrar = installRegistrar()
-        let context = hostedContext()
-        attach(registrar, to: context.imageRequests)
+        let context = hostedContext(runtimeHost: registrar.runtimeHost)
         let list = context.construct {
             let list = ListView()
             list.frame = Rect(x: 0, y: 0, width: 120, height: 96)

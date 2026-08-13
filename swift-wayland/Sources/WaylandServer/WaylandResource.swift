@@ -8,13 +8,6 @@ package import WaylandServerC
 
 @MainActor
 package enum WaylandResource {
-    typealias ResourceFactory = (
-        OpaquePointer,
-        UnsafePointer<wl_interface>?,
-        Int32,
-        UInt32
-    ) -> UnsafeMutablePointer<wl_resource>?
-
     /// Create a resource and bind an owner that conforms to the generated
     /// request contract. Conformance is resolved once before native allocation;
     /// a non-conforming owner fails creation rather than silently dropping every
@@ -26,13 +19,14 @@ package enum WaylandResource {
         id: UInt32,
         owner: AnyObject
     ) -> UnsafeMutablePointer<wl_resource>? {
-        unsafe create(
-            client: client,
+        guard let handler = owner as? Interface.Requests else { return nil }
+        let resource = unsafe wl_resource_create(
+            client, Interface.descriptor.nativeInterface, version, id)
+        return unsafe installCreatedResource(
+            resource,
             interface: Interface.self,
-            version: version,
-            id: id,
             owner: owner,
-            using: wl_resource_create)
+            handler: handler)
     }
 
     /// Create, construct, install, and publish a typed resource owner as one
@@ -49,15 +43,13 @@ package enum WaylandResource {
         handler bindHandler: (Owner) -> Interface.Requests?,
         installed: (Owner) -> Void
     ) -> Owner? {
-        unsafe create(
-            client: client,
-            interface: Interface.self,
-            version: version,
-            id: id,
+        let resource = unsafe wl_resource_create(
+            client, Interface.descriptor.nativeInterface, version, id)
+        return unsafe installCreatedResource(
+            resource,
             owner: makeOwner,
             handler: bindHandler,
-            installed: installed,
-            using: wl_resource_create)
+            installed: installed)
     }
 
     /// Allocate and publish a server-created child from its live parent as one
@@ -76,91 +68,38 @@ package enum WaylandResource {
         installed: (Owner) -> Void,
         publish: (WaylandResourceHandle<Child>) -> Bool
     ) -> Owner? {
-        unsafe createChild(
-            parent: parent,
-            interface: Child.self,
-            version: version,
-            owner: makeOwner,
-            handler: bindHandler,
-            installed: installed,
-            publish: publish,
-            using: wl_resource_create)
-    }
-
-    /// Internal allocation injection point for the complete parent/child
-    /// transaction, including allocation, owner, publication, and rollback
-    /// failure coverage.
-    static func createChild<
-        Parent: WaylandServerInterface,
-        Child: WaylandServerInterface,
-        Owner: AnyObject
-    >(
-        parent: WaylandResourceHandle<Parent>,
-        interface _: Child.Type,
-        version: Int32,
-        owner makeOwner: (WaylandResourceHandle<Child>) -> Owner?,
-        handler bindHandler: (Owner) -> Child.Requests?,
-        installed: (Owner) -> Void,
-        publish: (WaylandResourceHandle<Child>) -> Bool,
-        using createResource: ResourceFactory
-    ) -> Owner? {
         guard let parentResource = unsafe parent.resource,
             let client = unsafe wl_resource_get_client(parentResource)
         else { return nil }
-
-        var childHandle: WaylandResourceHandle<Child>?
-        var published = false
-        let created: Owner? = unsafe create(
-            client: client,
+        let resource = unsafe wl_resource_create(
+            client,
+            Child.descriptor.nativeInterface,
+            Swift.min(version, Child.maximumVersion),
+            0)
+        return unsafe installCreatedChild(
+            resource,
+            parent: parent,
             interface: Child.self,
-            version: Swift.min(version, Child.maximumVersion),
-            id: 0,
             owner: { handle in
-                childHandle = handle
                 return makeOwner(handle)
             },
             handler: bindHandler,
-            installed: { childOwner in
-                guard let childHandle, publish(childHandle) else {
-                    childHandle?.destroy()
-                    return
-                }
-                published = true
-                installed(childOwner)
-            },
-            using: createResource)
-
-        guard let created else {
-            if childHandle == nil {
-                parent.postNoMemory()
-            }
-            return nil
-        }
-        guard published else {
-            childHandle?.destroy()
-            return nil
-        }
-        return created
+            installed: installed,
+            publish: publish)
     }
 
-    /// Internal injection point for typed allocation and rollback coverage.
-    static func create<
+    /// Complete owner installation for a native allocation result. Tests pass
+    /// `nil` to cover allocation failure without replacing the allocator used by
+    /// production creation paths.
+    static func installCreatedResource<
         Interface: WaylandServerInterface, Owner: AnyObject
     >(
-        client: OpaquePointer,
-        interface _: Interface.Type,
-        version: Int32,
-        id: UInt32,
+        _ resource: UnsafeMutablePointer<wl_resource>?,
         owner makeOwner: (WaylandResourceHandle<Interface>) -> Owner?,
         handler bindHandler: (Owner) -> Interface.Requests?,
-        installed: (Owner) -> Void,
-        using createResource: ResourceFactory
+        installed: (Owner) -> Void
     ) -> Owner? {
-        guard
-            let resource = unsafe createResource(
-                client, Interface.descriptor.nativeInterface, version, id)
-        else { return nil }
-
+        guard let resource = unsafe resource else { return nil }
         guard
             let reference =
                 unsafe WaylandResourceReference<Interface>(resource)
@@ -186,27 +125,68 @@ package enum WaylandResource {
         return owner
     }
 
-    /// Internal injection point for deterministic allocation-failure coverage.
-    /// The generic path resolves the request conformance before allocating.
-    static func create<Interface: WaylandServerInterface>(
-        client: OpaquePointer,
+    static func installCreatedResource<Interface: WaylandServerInterface>(
+        _ resource: UnsafeMutablePointer<wl_resource>?,
         interface _: Interface.Type,
-        version: Int32,
-        id: UInt32,
         owner: AnyObject,
-        using createResource: ResourceFactory
+        handler: Interface.Requests
     ) -> UnsafeMutablePointer<wl_resource>? {
-        guard let handler = owner as? Interface.Requests else { return nil }
-        guard
-            let resource = unsafe createResource(
-                client, Interface.descriptor.nativeInterface, version, id)
-        else { return nil }
+        guard let resource = unsafe resource else { return nil }
         let box = WaylandDispatchBox<Interface>(owner: owner, handler: handler)
         let retained = unsafe Unmanaged.passRetained(box).toOpaque()
         unsafe wl_resource_set_implementation(
             resource, Interface.descriptor.nativeRequestVtable, retained,
             swiftWaylandResourceDestroy)
         return unsafe resource
+    }
+
+    /// Complete a server-created child transaction from the native allocation
+    /// result. A missing allocation reports no-memory on the still-live parent;
+    /// later owner or publication failures destroy the allocated child.
+    static func installCreatedChild<
+        Parent: WaylandServerInterface,
+        Child: WaylandServerInterface,
+        Owner: AnyObject
+    >(
+        _ resource: UnsafeMutablePointer<wl_resource>?,
+        parent: WaylandResourceHandle<Parent>,
+        interface _: Child.Type,
+        owner makeOwner: (WaylandResourceHandle<Child>) -> Owner?,
+        handler bindHandler: (Owner) -> Child.Requests?,
+        installed: (Owner) -> Void,
+        publish: (WaylandResourceHandle<Child>) -> Bool
+    ) -> Owner? {
+        guard let resource = unsafe resource else {
+            parent.postNoMemory()
+            return nil
+        }
+        guard
+            let reference = unsafe WaylandResourceReference<Child>(resource)
+        else {
+            unsafe wl_resource_destroy(resource)
+            return nil
+        }
+        let handle = WaylandResourceHandle<Child>(reference: reference)
+        guard let owner = makeOwner(handle) else {
+            unsafe wl_resource_destroy(resource)
+            return nil
+        }
+
+        let box = WaylandDispatchBox<Child>(
+            owner: owner,
+            handler: bindHandler(owner))
+        let retained = unsafe Unmanaged.passRetained(box).toOpaque()
+        unsafe wl_resource_set_implementation(
+            resource,
+            Child.descriptor.nativeRequestVtable,
+            retained,
+            swiftWaylandResourceDestroy)
+        guard publish(handle) else {
+            unsafe wl_resource_destroy(resource)
+            return nil
+        }
+        installed(owner)
+        return owner
     }
 
     /// Explicit binding seam for destroy-only resources whose owner may choose

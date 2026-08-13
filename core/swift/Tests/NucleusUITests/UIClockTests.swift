@@ -1,4 +1,6 @@
+import NucleusUITestSupport
 import Testing
+
 @testable import NucleusUI
 
 @MainActor
@@ -59,8 +61,10 @@ import Testing
     @Test func durationConversionAndDeadlineAdditionSaturate() {
         #expect(UIClock.saturatingNanoseconds(.nanoseconds(-1)) == 0)
         #expect(UIClock.saturatingNanoseconds(.milliseconds(700)) == 700_000_000)
-        #expect(UIClock.Instant(rawValue: .max - 1).advanced(
-            by: .nanoseconds(2)).rawValue == .max)
+        #expect(
+            UIClock.Instant(rawValue: .max - 1).advanced(
+                by: .nanoseconds(2)
+            ).rawValue == .max)
     }
 
     private func waitForWaiters(

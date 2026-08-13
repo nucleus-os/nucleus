@@ -2,7 +2,7 @@ import Nucleus
 
 @MainActor
 public func makePortableViewHierarchy() -> View {
-    let context = UIContext(services: .inMemory())
+    let context = UIContext(services: .inMemory(), runtimeHost: .inMemory())
     return context.construct {
         let root = View()
         root.addSubview(View())

@@ -1,7 +1,44 @@
+import CxxStdlib
 import Foundation
 import NucleusReactRuntimeCxx
+import NucleusReactRuntimeCxxBridge
 import Synchronization
 import Testing
+
+@safe private final class CrossThreadRuntimeFacade: @unchecked Sendable {
+    nonisolated(unsafe) private var facade: nucleus.react.ReactRuntimeHostFacade
+
+    init() throws {
+        unsafe facade = nucleus.react.ReactRuntimeHostFacade()
+        let result = unsafe facade.initializationResult()
+        guard result.succeeded else {
+            throw Self.operationError(result)
+        }
+    }
+
+    @MainActor
+    func evaluateJavaScriptSource(_ source: String) throws {
+        let result = unsafe facade.evaluateJavaScriptSource(
+            std.string(source),
+            std.string("queued-device-event.js"))
+        guard result.succeeded else {
+            throw Self.operationError(result)
+        }
+    }
+
+    nonisolated func emitDeviceEvent(name: String) -> Bool {
+        unsafe facade.emitDeviceEvent(std.string(name), std.string("")).succeeded
+    }
+
+    private static func operationError(
+        _ result: nucleus.react.RuntimeHostResult
+    ) -> NSError {
+        NSError(
+            domain: "CrossThreadRuntimeFacade",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: String(result.error)])
+    }
+}
 
 @MainActor
 @Suite struct FabricRuntimeTests {
@@ -145,6 +182,71 @@ import Testing
         }
         #expect(firstCalls.withLock { $0 } == 0)
         #expect(secondCalls.withLock { $0 } == 1)
+    }
+
+    @Test func deviceEventsUseTheInstalledReactNativeEmitterAndCacheIt() async throws {
+        let hbc = try Self.makeTinyBytecode(
+            source:
+                """
+                global.RCTDeviceEventEmitter = {
+                  emit: function (name, payload) {
+                    global.__turboModuleProxy('NucleusHostCommand')
+                      .invoke(name, JSON.stringify(payload));
+                  }
+                };
+                """)
+        let deliveries = Mutex<[(String, String)]>([])
+        let host = try RuntimeHost()
+        try host.setCommandHandler { name, payload in
+            deliveries.withLock { $0.append((name, payload)) }
+        }
+        try host.evaluateBytecode(at: hbc)
+
+        try host.emitDeviceEvent(
+            name: "first",
+            payloadJson: #"{"sequence":1}"#)
+        try host.evaluateJavaScriptSource(
+            """
+            global.RCTDeviceEventEmitter.emit = function (name, payload) {
+              global.__turboModuleProxy('NucleusHostCommand')
+                .invoke('replacement-' + name, JSON.stringify(payload));
+            };
+            """,
+            sourceUrl: "device-emitter-replacement.js")
+        try host.emitDeviceEvent(
+            name: "second",
+            payloadJson: #"{"sequence":2}"#)
+        _ = try host.drainPendingJSCalls()
+        for _ in 0..<100 where deliveries.withLock({ $0.count }) != 2 {
+            await Task.yield()
+        }
+
+        #expect(deliveries.withLock { $0.map(\.0) } == ["first", "second"])
+        #expect(
+            deliveries.withLock { $0.map(\.1) }
+                == [#"{"sequence":1}"#, #"{"sequence":2}"#])
+    }
+
+    @Test func missingDeviceEmitterDropsWithoutFailingTheRuntime() throws {
+        let hbc = try Self.makeTinyBytecode()
+        let host = try RuntimeHost()
+        try host.evaluateBytecode(at: hbc)
+        try host.emitDeviceEvent(name: "unhandled")
+        _ = try host.drainPendingJSCalls()
+    }
+
+    @Test func shutdownDiscardsAQueuedDeviceEvent() async throws {
+        var host: CrossThreadRuntimeFacade? = try CrossThreadRuntimeFacade()
+        try host?.evaluateJavaScriptSource(
+            """
+            global.RCTDeviceEventEmitter = { emit: function () {} };
+            """)
+        let accepted = await Task.detached { [host] in
+            host?.emitDeviceEvent(name: "queued-before-shutdown") ?? false
+        }.value
+        #expect(accepted)
+
+        host = nil
     }
 
     /// `dirname $(clang++ -print-file-name=libc++.so.1)` — the toolchain libc++.

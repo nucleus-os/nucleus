@@ -69,22 +69,15 @@ struct WaylandResourceOwnershipTests {
 
     @Test
     func nonconformingOwnerFailsBeforeNativeAllocation() {
-        var attemptedNativeAllocation = false
-
         let resourceWasCreated =
             unsafe WaylandResource.create(
                 client: OpaquePointer(bitPattern: 1)!,
                 interface: TestDispatchingCallbackServer.self,
                 version: 1,
                 id: 1,
-                owner: Owner(),
-                using: { _, _, _, _ in
-                    attemptedNativeAllocation = true
-                    return nil
-                }) != nil
+                owner: Owner()) != nil
 
         #expect(!resourceWasCreated)
-        #expect(!attemptedNativeAllocation)
     }
 
     @Test
@@ -145,13 +138,11 @@ struct WaylandResourceOwnershipTests {
         weak let observedOwner = owner
 
         let resourceWasCreated =
-            unsafe WaylandResource.create(
-                client: OpaquePointer(bitPattern: 1)!,
+            unsafe WaylandResource.installCreatedResource(
+                nil,
                 interface: TestCallbackServer.self,
-                version: 1,
-                id: 1,
                 owner: owner!,
-                using: { _, _, _, _ in nil }) != nil
+                handler: owner!) != nil
 
         #expect(!resourceWasCreated)
         #expect(observedOwner === owner)
@@ -164,18 +155,14 @@ struct WaylandResourceOwnershipTests {
         var constructed = false
         var installed = false
 
-        let owner: TypedOwner? = unsafe WaylandResource.create(
-            client: OpaquePointer(bitPattern: 1)!,
-            interface: TestCallbackServer.self,
-            version: 1,
-            id: 1,
+        let owner: TypedOwner? = unsafe WaylandResource.installCreatedResource(
+            nil,
             owner: { handle in
                 constructed = true
                 return TypedOwner(resource: handle)
             },
             handler: { $0 },
-            installed: { _ in installed = true },
-            using: { _, _, _, _ in nil })
+            installed: { _ in installed = true })
 
         #expect(owner == nil)
         #expect(!constructed)
@@ -207,8 +194,7 @@ struct WaylandResourceOwnershipTests {
                 return nil
             },
             handler: { $0 },
-            installed: { _ in installed = true },
-            using: wl_resource_create)
+            installed: { _ in installed = true })
 
         #expect(owner == nil)
         #expect(!installed)
@@ -239,8 +225,7 @@ struct WaylandResourceOwnershipTests {
                 return TypedOwner(resource: resource)
             },
             handler: { $0 },
-            installed: { _ in installed = true },
-            using: wl_resource_create)
+            installed: { _ in installed = true })
         weak let observedOwner = owner
         let createdResource = unsafe handle?.resource
         try #require(unsafe createdResource != nil, "wl_resource_create")
@@ -368,7 +353,7 @@ struct WaylandResourceOwnershipTests {
                 createdParent))
 
         var order: [String] = []
-        let child: ChildOwner? = unsafe WaylandResource.createChild(
+        let child: ChildOwner? = WaylandResource.createChild(
             parent: parent,
             interface: TestCallbackServer.self,
             version: 99,
@@ -382,8 +367,7 @@ struct WaylandResourceOwnershipTests {
                 order.append("publish")
                 #expect($0.clientID == parent.clientID)
                 return true
-            },
-            using: wl_resource_create)
+            })
         let liveChild = try #require(child)
         #expect(order == ["owner", "publish", "installed"])
         #expect(liveChild.resource.version == 1)
@@ -393,7 +377,7 @@ struct WaylandResourceOwnershipTests {
 
         var ownerFailureHandle: WaylandResourceHandle<TestCallbackServer>?
         let ownerFailure: ChildOwner? =
-            unsafe WaylandResource.createChild(
+            WaylandResource.createChild(
                 parent: parent,
                 interface: TestCallbackServer.self,
                 version: 1,
@@ -408,8 +392,7 @@ struct WaylandResourceOwnershipTests {
                 publish: { _ in
                     Issue.record("owner failure published a child")
                     return true
-                },
-                using: wl_resource_create)
+                })
         #expect(ownerFailure == nil)
         #expect(ownerFailureHandle?.isLive == false)
 
@@ -417,7 +400,7 @@ struct WaylandResourceOwnershipTests {
         weak var publicationFailureOwner: ChildOwner?
         var publicationFailureInstalled = false
         let publicationFailure: ChildOwner? =
-            unsafe WaylandResource.createChild(
+            WaylandResource.createChild(
                 parent: parent,
                 interface: TestCallbackServer.self,
                 version: 1,
@@ -431,8 +414,7 @@ struct WaylandResourceOwnershipTests {
                 installed: { _ in
                     publicationFailureInstalled = true
                 },
-                publish: { _ in false },
-                using: wl_resource_create)
+                publish: { _ in false })
         #expect(publicationFailure == nil)
         #expect(publicationFailureHandle?.isLive == false)
         #expect(publicationFailureOwner == nil)
@@ -440,37 +422,30 @@ struct WaylandResourceOwnershipTests {
 
         var allocationConstructedOwner = false
         let allocationFailure: ChildOwner? =
-            unsafe WaylandResource.createChild(
+            unsafe WaylandResource.installCreatedChild(
+                nil,
                 parent: parent,
                 interface: TestCallbackServer.self,
-                version: 1,
                 owner: {
                     allocationConstructedOwner = true
                     return ChildOwner(resource: $0)
                 },
                 handler: { $0 },
                 installed: { _ in },
-                publish: { _ in true },
-                using: { _, _, _, _ in nil })
+                publish: { _ in true })
         #expect(allocationFailure == nil)
         #expect(!allocationConstructedOwner)
 
         #expect(parent.destroy())
-        var calledFactoryAfterParentDestruction = false
         let afterParentDestruction: ChildOwner? =
-            unsafe WaylandResource.createChild(
+            WaylandResource.createChild(
                 parent: parent,
                 interface: TestCallbackServer.self,
                 version: 1,
                 owner: { ChildOwner(resource: $0) },
                 handler: { $0 },
                 installed: { _ in },
-                publish: { _ in true },
-                using: { _, _, _, _ in
-                    calledFactoryAfterParentDestruction = true
-                    return nil
-                })
+                publish: { _ in true })
         #expect(afterParentDestruction == nil)
-        #expect(!calledFactoryAfterParentDestruction)
     }
 }

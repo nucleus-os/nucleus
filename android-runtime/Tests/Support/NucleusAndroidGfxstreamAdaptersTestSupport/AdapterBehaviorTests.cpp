@@ -21,9 +21,30 @@
 
 namespace {
 
+nucleus_android_test_result success() {
+    return {
+        .check_name = nullptr,
+        .source_file = nullptr,
+        .source_line = 0,
+        .diagnostic = nullptr,
+    };
+}
+
+nucleus_android_test_result failure(
+    const char *checkName,
+    const char *sourceFile,
+    int sourceLine) {
+    return {
+        .check_name = checkName,
+        .source_file = sourceFile,
+        .source_line = sourceLine,
+        .diagnostic = "check evaluated false",
+    };
+}
+
 #define CHECK_OR_RETURN(condition) \
     do { \
-        if (!(condition)) return __LINE__; \
+        if (!(condition)) return failure(#condition, __FILE__, __LINE__); \
     } while (false)
 
 struct RingPair {
@@ -345,7 +366,8 @@ int provideEndpoint(
 
 }  // namespace
 
-extern "C" int nucleus_android_test_guest_ring_stream(void) {
+extern "C" nucleus_android_test_result
+nucleus_android_test_guest_ring_stream(void) {
     RingPair commands = makeRingPair(2, 64);
     RingPair responses = makeRingPair(2, 64);
     CHECK_OR_RETURN(
@@ -390,10 +412,11 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
     responseProducer.join();
     CHECK_OR_RETURN(responseWritten);
     CHECK_OR_RETURN(receivedResponse == response);
-    return 0;
+    return success();
 }
 
-extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
+extern "C" nucleus_android_test_result
+nucleus_android_test_guest_ring_factory_registration(void) {
     FactoryProviderContext provider;
     auto *registration =
         nucleus_android_gfxstream_factory_registration_create_with_setter(
@@ -444,10 +467,11 @@ extern "C" int nucleus_android_test_guest_ring_factory_registration(void) {
     nucleus_android_gfxstream_factory_registration_destroy(registration);
     CHECK_OR_RETURN(capturedFactory == nullptr);
     CHECK_OR_RETURN(capturedFactoryContext == nullptr);
-    return 0;
+    return success();
 }
 
-extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
+extern "C" nucleus_android_test_result
+nucleus_android_test_host_ring_channel_pump(void) {
     RingPair commands = makeRingPair(2, 64);
     RingPair responses = makeRingPair(2, 64);
     CHECK_OR_RETURN(
@@ -519,10 +543,11 @@ extern "C" int nucleus_android_test_host_ring_channel_pump(void) {
         pump.pumpOnce() ==
         nucleus::android::gfxstream::HostRingPumpResult::progress);
     CHECK_OR_RETURN(pump.hasPendingResponse());
-    return 0;
+    return success();
 }
 
-extern "C" int nucleus_android_test_ring_peer_closure(void) {
+extern "C" nucleus_android_test_result
+nucleus_android_test_ring_peer_closure(void) {
     {
         RingPair commands = makeRingPair(2, 64);
         RingPair responses = makeRingPair(2, 64);
@@ -570,5 +595,5 @@ extern "C" int nucleus_android_test_ring_peer_closure(void) {
     CHECK_OR_RETURN(
         pump.pumpOnce() ==
         nucleus::android::gfxstream::HostRingPumpResult::peerClosed);
-    return 0;
+    return success();
 }

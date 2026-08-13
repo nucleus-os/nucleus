@@ -16,9 +16,9 @@ class RuntimeJSCallInvoker;
 // `emit`; the dispatch hops to the JS thread via the supplied invoker.
 //
 // The emitter resolves the JS-side emit function lazily on the first call.
-// It looks up `globalThis.__nucleusEmitDeviceEvent` first (a hook for tests
-// or future runtime shims) and falls back to `globalThis.RCTDeviceEventEmitter.emit`.
-// If neither is present at emit time, the event is logged and dropped.
+// It uses the React Native runtime contract at
+// `globalThis.RCTDeviceEventEmitter.emit`. If the emitter is absent at emit
+// time, the event is logged and dropped.
 class DeviceEventEmitter final {
  public:
   DeviceEventEmitter(

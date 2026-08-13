@@ -1,4 +1,5 @@
 public import NucleusLayers
+
 internal import protocol NucleusAppHostProtocols.ContextIDAllocator
 
 /// Stable semantic identity for a `View`.
@@ -103,13 +104,11 @@ public final class UIContext: ~Sendable {
     private var pendingTransactionCompletions: [TransactionCompletionHandle] = []
     package var valueAnimationRecords: [UInt64: ValueAnimationRecord] = [:]
     package var valueAnimationSlots: [ValueAnimationSlot: UInt64] = [:]
-    package var valueAnimationFrameRequest:
-        (@MainActor () -> Void)?
+    package var valueAnimationFrameRequest: (@MainActor () -> Void)?
     package var valueAnimationFrameRequestPending = false
     package var valueAnimationLastPresentationNanoseconds: UInt64?
 
-    package var pendingAccessibilityNotifications:
-        [AccessibilityNotification] = []
+    package var pendingAccessibilityNotifications: [AccessibilityNotification] = []
 
     private final class WeakEnvironmentConsumer {
         weak var view: View?
@@ -119,8 +118,7 @@ public final class UIContext: ~Sendable {
         }
     }
 
-    private var environmentConsumers:
-        [ViewID: WeakEnvironmentConsumer] = [:]
+    private var environmentConsumers: [ViewID: WeakEnvironmentConsumer] = [:]
     private var glyphConsumers: [ViewID: WeakGlyphConsumer] = [:]
 
     public let services: UIHostServices
@@ -165,7 +163,7 @@ public final class UIContext: ~Sendable {
         services: UIHostServices,
         environment: UIEnvironment = UIEnvironment(),
         resourceHostHandle: UInt64 = 0,
-        runtimeHost: LayerRuntimeHost = .inMemory(),
+        runtimeHost: LayerRuntimeHost,
         glyphCatalog: GlyphCatalog? = nil,
         clock: UIClock = .continuous
     ) {
@@ -184,12 +182,13 @@ public final class UIContext: ~Sendable {
             clock: clock,
             resolver: services.imageSourceResolver,
             diagnostic: { failure, request in
-                services.report(UIHostDiagnostic(
-                    service: .image,
-                    operation: "request-resource",
-                    resourceIdentity: request.id.rawValue,
-                    generation: request.cancellationGeneration,
-                    failure: .image(failure)))
+                services.report(
+                    UIHostDiagnostic(
+                        service: .image,
+                        operation: "request-resource",
+                        resourceIdentity: request.id.rawValue,
+                        generation: request.cancellationGeneration,
+                        failure: .image(failure)))
             })
         self.environment = environment
         self.glyphCatalog = glyphCatalog
@@ -248,8 +247,7 @@ public final class UIContext: ~Sendable {
             nextWindowOrdinal != 0 && nextWindowOrdinal < 0x8000_0000,
             "UIContext window identity namespace exhausted")
         return WindowID(
-            rawValue: (UInt64(namespace) << 32) |
-                UInt64(0x8000_0000 | ordinal)
+            rawValue: (UInt64(namespace) << 32) | UInt64(0x8000_0000 | ordinal)
         )
     }
 

@@ -1,3 +1,4 @@
+@_exported import NucleusResourceTestSupport
 import NucleusTextBackend
 import NucleusUI
 import Testing
@@ -36,6 +37,7 @@ package struct UIContextTrait: SuiteTrait, TestScoping {
                 imageSourceResolver: .directResourcesOnly,
                 diagnosticSink: { _ in }
             ),
+            runtimeHost: .inMemory(),
             clock: clock.clock
         )
         try await TestUIClockScope.$current.withValue(clock) {

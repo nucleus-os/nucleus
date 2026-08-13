@@ -1,8 +1,8 @@
-import Testing
-import NucleusUI
-import NucleusUIEmbedder
 import NucleusLayers
 import NucleusTypes
+import NucleusUI
+import NucleusUIEmbedder
+import Testing
 
 /// `NucleusUIEmbedder` is almost entirely forwarders over `package` members of
 /// NucleusUI, which makes it vulnerable to one specific failure: a public
@@ -56,7 +56,7 @@ import NucleusTypes
         let scene = publication.makeWindowScene(windows: [window])
 
         let published = try scene.publish(placing: [
-            ScenePlacement(id: 77, rootLayerID: 770, level: .overlay),
+            ScenePlacement(id: 77, rootLayerID: 770, level: .overlay)
         ])
         #expect(published.visualContent.count == 2)
         #expect(published.visualContent.map(\.orderIndex) == [0, 1])
@@ -99,7 +99,8 @@ import NucleusTypes
         let (context, _) = try makeContext(904)
         let uiContext = UIContext(
             services: makeServices(),
-            resourceHostHandle: context.commitSink.resourceHostHandle)
+            resourceHostHandle: context.commitSink.resourceHostHandle,
+            runtimeHost: context.runtimeHost)
 
         let graphics = GraphicsContext.makeEmbedderContext(in: uiContext)
         graphics.fillColor = Color(1, 0, 0, 1)

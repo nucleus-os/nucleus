@@ -52,31 +52,13 @@ extension ViewLayerPublisher {
             transaction.mutations.contains(where: {
                 if case .animationAdded = $0 { return true }
                 return false
-            }), !(context.commitSink is InMemoryCommitSink)
+            })
         else { return }
         let report = try context.queryDisplayLink()
         transaction.predictedPresentationNanoseconds =
             report.predictedPresentationNanoseconds
         transaction.targetPresentationNanoseconds =
             report.targetPresentationNanoseconds
-    }
-
-    func resolveAcceptedInMemoryCompletions(
-        transaction: borrowing LayerTransaction,
-        transactionToken: PresentationCompletionToken?
-    ) {
-        guard context.commitSink is InMemoryCommitSink else { return }
-        if let transactionToken {
-            context.runtimeHost.presentationCompletions.resolve(
-                transactionToken,
-                result: .completed)
-        }
-        for token in animationCompletionTokens(in: transaction)
-        where token != 0 {
-            context.runtimeHost.presentationCompletions.resolve(
-                rawToken: token,
-                result: .completed)
-        }
     }
 
     func resolveRejectedCompletions(

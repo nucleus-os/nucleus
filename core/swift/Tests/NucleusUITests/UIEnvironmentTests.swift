@@ -151,7 +151,8 @@ import Testing
             environment: UIEnvironment(
                 reducesMotion: true,
                 appearance: .light,
-                textScale: 1.5))
+                textScale: 1.5),
+            runtimeHost: .inMemory())
 
         let view = context.construct { Label("Initial") }
 
@@ -161,8 +162,8 @@ import Testing
     }
 
     @Test func nestedConstructionScopesRestoreTheirOwningContext() {
-        let outer = UIContext(services: .inMemory())
-        let inner = UIContext(services: .inMemory())
+        let outer = UIContext(services: .inMemory(), runtimeHost: .inMemory())
+        let inner = UIContext(services: .inMemory(), runtimeHost: .inMemory())
         outer.updateEnvironment(UIEnvironment(appearance: .light))
         inner.updateEnvironment(UIEnvironment(appearance: .dark))
 

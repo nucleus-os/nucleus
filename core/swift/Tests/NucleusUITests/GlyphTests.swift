@@ -1,5 +1,6 @@
 import NucleusUITestSupport
 import Testing
+
 @testable import NucleusUI
 
 /// Icon glyphs. Icons are font glyphs rather than bitmaps, so an icon
@@ -89,7 +90,7 @@ import Testing
     }
 
     @Test func withoutACatalogNothingResolves() {
-        let context = UIContext(services: .inMemory())
+        let context = UIContext(services: .inMemory(), runtimeHost: .inMemory())
         let view = context.construct { GlyphView(name: "battery") }
         #expect(view.resolvedCharacter == nil)
     }
@@ -99,6 +100,7 @@ import Testing
     @Test func theOwningContextCatalogIsTheDefault() {
         let context = UIContext(
             services: .inMemory(),
+            runtimeHost: .inMemory(),
             glyphCatalog: makeCatalog())
         let view = context.construct { GlyphView(name: "wifi") }
         #expect(view.resolvedCharacter == "\u{e901}")
@@ -110,6 +112,7 @@ import Testing
 
         let context = UIContext(
             services: .inMemory(),
+            runtimeHost: .inMemory(),
             glyphCatalog: makeCatalog())
         let view = context.construct { GlyphView(name: "wifi") }
         view.catalog = other
@@ -124,9 +127,11 @@ import Testing
 
         let firstContext = UIContext(
             services: .inMemory(),
+            runtimeHost: .inMemory(),
             glyphCatalog: firstCatalog)
         let secondContext = UIContext(
             services: .inMemory(),
+            runtimeHost: .inMemory(),
             glyphCatalog: secondCatalog)
         let firstView = firstContext.construct { GlyphView(name: "wifi") }
         let secondView = secondContext.construct { GlyphView(name: "wifi") }

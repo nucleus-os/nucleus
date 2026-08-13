@@ -132,7 +132,9 @@ let targets: [Target] = [
     .target(
         name: "NucleusAndroidGfxstreamAdaptersTestSupport",
         dependencies: ["NucleusAndroidGfxstreamAdaptersCxx", "NucleusAndroidSharedRingC"],
-        path: "android-runtime/Sources/NucleusAndroidGfxstreamAdaptersTestSupport"),
+        path: "android-runtime/Tests/Support",
+        sources: ["NucleusAndroidGfxstreamAdaptersTestSupport/AdapterBehaviorTests.cpp"],
+        publicHeadersPath: "NucleusAndroidGfxstreamAdaptersTestSupport/include"),
     .target(
         name: "NucleusAndroidGfxstreamHostC",
         dependencies: ["NucleusAndroidGfxstreamAdaptersCxx", "NucleusAndroidSharedRingC"],
@@ -141,7 +143,8 @@ let targets: [Target] = [
             .linkedLibrary("gfxstream_backend"), .linkedLibrary("dl"), .linkedLibrary("rt"),
         ]),
     .target(
-        name: "NucleusAndroidDrmC", dependencies: ["NucleusCompositorDrmC", "VulkanC"],
+        name: "NucleusAndroidDrmC",
+        dependencies: ["NucleusCompositorDrmC", "VulkanC"],
         path: "android-runtime/Sources/NucleusAndroidDrmC"),
     .target(
         name: "NucleusAndroidGraphicsContract",
@@ -310,11 +313,13 @@ let targets: [Target] = [
     .testTarget(
         name: "NucleusAndroidGraphicsPlatformTests",
         dependencies: [
-            "NucleusAndroidDrmC", "NucleusAndroidDrmCTestSupport", "NucleusAndroidGraphicsContract",
+            "NucleusAndroidDrmC", "NucleusAndroidDrmCTestSupport",
+            "NucleusAndroidGraphicsContract",
             "NucleusAndroidGraphicsPlatform",
         ], path: "android-runtime/Tests/NucleusAndroidGraphicsPlatformTests"),
     .target(
-        name: "NucleusAndroidDrmCTestSupport", dependencies: ["NucleusAndroidDrmC"],
+        name: "NucleusAndroidDrmCTestSupport",
+        dependencies: ["NucleusAndroidDrmC"],
         path: "android-runtime/Tests/Support/NucleusAndroidDrmCTestSupport"),
     .executableTarget(
         name: "NucleusAndroidThreadSanitizerHarness",
@@ -429,7 +434,21 @@ let targets: [Target] = [
             "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusRenderer", "NucleusSkiaGraphiteBridge", "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ], path: "compositor/compositor-core/Sources/NucleusRenderServerTestSupport",
+        ], path: "compositor/compositor-core/Tests",
+        exclude: [
+            "NucleusCompositorPolicyTests",
+            "NucleusCompositorRenderRuntimeTests",
+            "NucleusCompositorRenderSessionTests",
+            "NucleusCompositorRendererLinuxTests",
+            "NucleusCompositorServerTests",
+            "NucleusCompositorWaylandCTests",
+            "NucleusCompositorWaylandRuntimeTests",
+            "NucleusCompositorWindowManagerTests",
+            "NucleusCompositorWindowSceneTests",
+            "NucleusRenderServerRuntimeTests",
+            "WaylandWireTestC",
+        ],
+        sources: ["Support/NucleusRenderServerTestSupport/WaylandRouterTestFixture.swift"],
         swiftSettings: [
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
@@ -833,14 +852,15 @@ let targets: [Target] = [
         name: "NucleusPresentationBackendContractTestSupport",
         path: "core/swift/Tests/Support/PresentationBackendContract"),
     .target(
-        name: "NucleusResourceTestSupport", path: "core/swift/Tests/Support/Resources"),
+        name: "NucleusResourceTestSupport", dependencies: ["NucleusUI"],
+        path: "core/swift/Tests/Support/Resources"),
     .target(
         name: "NucleusTextRenderingTestSupport",
         dependencies: ["NucleusSkiaGraphiteBridge", "NucleusTextRenderingBridge"],
         path: "core/swift/Tests/Support/TextRendering"),
     .target(
         name: "NucleusUITestSupport",
-        dependencies: ["NucleusTextBackend", "NucleusUI"],
+        dependencies: ["NucleusResourceTestSupport", "NucleusTextBackend", "NucleusUI"],
         path: "core/swift/Tests/Support/UIContext"),
     .testTarget(
         name: "NucleusUmbrellaTests", dependencies: ["Nucleus"],
@@ -883,7 +903,7 @@ let targets: [Target] = [
         name: "NucleusHeadlessBenchmarks",
         dependencies: [
             "NucleusBenchmarkSupport", "NucleusLayers", "NucleusUI", "NucleusRenderModel",
-            "NucleusFoundation",
+            "NucleusFoundation", "NucleusResourceTestSupport",
         ], path: "core/swift/Benchmarks/NucleusHeadlessBenchmarks"),
     .target(
         name: "NucleusBenchmarkSupport", dependencies: ["NucleusBenchmarkMetricsC"],

@@ -10,22 +10,22 @@ import Synchronization
     let handle: OpaquePointer
 
     init?() {
-        guard let handle = unsafe nucleus_android_test_gpu_lifetime_domain_create() else {
+        guard let handle = unsafe nucleus_android_gpu_lifetime_domain_create() else {
             return nil
         }
         unsafe self.handle = handle
     }
 
     deinit {
-        unsafe nucleus_android_test_gpu_lifetime_domain_destroy(handle)
+        unsafe nucleus_android_gpu_lifetime_domain_destroy(handle)
     }
 
-    var diagnostic: nucleus_android_gpu_diagnostic? {
-        var diagnostic = nucleus_android_gpu_diagnostic()
-        guard unsafe nucleus_android_gpu_get_diagnostic(handle, &diagnostic) == 0 else {
-            return nil
-        }
-        return diagnostic
+    var snapshot: nucleus_android_gpu_lifetime_snapshot {
+        var snapshot = nucleus_android_gpu_lifetime_snapshot()
+        unsafe nucleus_android_gpu_lifetime_domain_get_snapshot(
+            handle,
+            &snapshot)
+        return snapshot
     }
 }
 
@@ -34,8 +34,9 @@ import Synchronization
     private var handle: OpaquePointer?
 
     init?(domain: SendableLifetimeDomain) {
-        guard let handle =
-            unsafe nucleus_android_test_gpu_buffer_lifetime_domain_create(domain.handle)
+        guard
+            let handle =
+                unsafe nucleus_android_test_lifetime_resource_create(domain.handle)
         else {
             return nil
         }
@@ -49,13 +50,14 @@ import Synchronization
 
     func recordSubmission() -> UInt64 {
         guard let handle = unsafe handle else { return 0 }
-        return unsafe nucleus_android_test_gpu_buffer_record_submission(handle)
+        return unsafe nucleus_android_gpu_lifetime_record_submission(
+            handle)
     }
 
     func release() {
         guard let handle = unsafe handle else { return }
         unsafe self.handle = nil
-        unsafe nucleus_android_gpu_buffer_destroy(handle)
+        unsafe nucleus_android_gpu_lifetime_resource_retire(handle)
     }
 }
 
@@ -86,7 +88,7 @@ enum NucleusAndroidThreadSanitizerHarness {
         queue.async {
             defer { group.leave() }
             while seen.withLock({ $0.count }) < expectedCount,
-                  failures.withLock({ $0 }) == 0
+                failures.withLock({ $0 }) == 0
             {
                 do {
                     let packet = try consumer.read()
@@ -132,11 +134,10 @@ enum NucleusAndroidThreadSanitizerHarness {
         }
         group.wait()
         guard failures.withLock({ $0 }) == 0,
-              seen.withLock({ $0.count }) == expectedCount,
-              seen.withLock({ $0 }) ==
-                Set(0..<UInt64(expectedCount)),
-              let diagnostic = try? producer.diagnostic,
-              diagnostic.maximumOccupancy <= producer.slotCount
+            seen.withLock({ $0.count }) == expectedCount,
+            seen.withLock({ $0 }) == Set(0..<UInt64(expectedCount)),
+            let diagnostic = try? producer.diagnostic,
+            diagnostic.maximumOccupancy <= producer.slotCount
         else {
             return false
         }
@@ -160,24 +161,25 @@ enum NucleusAndroidThreadSanitizerHarness {
         }
 
         guard failures.withLock({ $0 }) == 0,
-              let retired = domain.diagnostic,
-              retired.live_buffer_count == UInt64(bufferCount),
-              retired.retired_buffer_count == UInt64(bufferCount),
-              retired.reclaimed_buffer_count == 0,
-              retired.submitted_serial == UInt64(bufferCount),
-              retired.completed_serial == 0
+            domain.snapshot.live_resource_count == UInt64(bufferCount),
+            domain.snapshot.retired_resource_count == UInt64(bufferCount),
+            domain.snapshot.reclaimed_resource_count == 0,
+            domain.snapshot.submitted_serial == UInt64(bufferCount),
+            domain.snapshot.completed_serial == 0
         else {
             exit(3)
         }
-
-        unsafe nucleus_android_test_gpu_complete_through(
+        let retired = domain.snapshot
+        unsafe nucleus_android_gpu_lifetime_domain_complete_through(
             domain.handle,
-            retired.submitted_serial)
-        guard let reclaimed = domain.diagnostic,
-              reclaimed.live_buffer_count == 0,
-              reclaimed.retired_buffer_count == 0,
-              reclaimed.reclaimed_buffer_count == UInt64(bufferCount),
-              reclaimed.completed_serial == reclaimed.submitted_serial
+            retired.submitted_serial,
+            0)
+        let reclaimed = domain.snapshot
+        guard reclaimed.live_resource_count == 0,
+            reclaimed.retired_resource_count == 0,
+            reclaimed.reclaimed_resource_count == UInt64(bufferCount),
+            retired.submitted_serial == UInt64(bufferCount),
+            reclaimed.completed_serial == reclaimed.submitted_serial
         else {
             exit(4)
         }

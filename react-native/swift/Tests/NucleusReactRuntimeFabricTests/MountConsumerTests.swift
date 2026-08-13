@@ -57,7 +57,7 @@ private func mountTestContext(
 
 @MainActor
 private func verifyMountTransactionBatching() -> Int32 {
-    let uiContext = UIContext(services: .inMemory())
+    let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
     return uiContext.construct {
         let scheduler = MountTestDrainScheduler()
         let consumer = MountConsumer(
@@ -153,7 +153,7 @@ private func verifyMountTransactionBatching() -> Int32 {
 
 @MainActor
 private func verifyMountLifecycle() -> Int32 {
-    let uiContext = UIContext(services: .inMemory())
+    let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
     return uiContext.construct {
         let scheduler = MountTestDrainScheduler()
         let consumer = MountConsumer(
@@ -503,7 +503,7 @@ private func verifyMountEventPayload() -> Int32 {
 
 @MainActor
 private func verifyMountEventPayloadRetention() -> Int32 {
-    let uiContext = UIContext(services: .inMemory())
+    let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
     return uiContext.construct {
         verifyMountEventPayload()
     }

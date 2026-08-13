@@ -1,4 +1,4 @@
-import Foundation // FileHandle.standardError reports benchmark failures.
+import Foundation  // FileHandle.standardError reports benchmark failures.
 import NucleusBenchmarkSupport
 import NucleusReactRuntimeCxx
 import NucleusUI
@@ -83,7 +83,7 @@ private func mountWorkload(
             .exact("in_flight_after_teardown", 0),
         ],
         body: {
-            let uiContext = UIContext(services: .inMemory())
+            let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
             return try uiContext.construct {
                 let surfaceID = 1
                 let scheduler = BenchmarkMountScheduler()
@@ -104,24 +104,26 @@ private func mountWorkload(
                 phases.measure("initial_enqueue") {
                     for index in 0..<componentCount {
                         let tag = index + 2
-                        consumer.enqueue(.create(
-                            surfaceID: surfaceID,
-                            tag: tag,
-                            componentName: "View",
-                            component: .view(
-                                MountViewSnapshot(
-                                    nativeID: "node-\(index)",
-                                    frame: Rect(
-                                        x: 0,
-                                        y: Double(index),
-                                        width: 100,
-                                        height: 1)),
-                                backgroundColor: nil)))
-                        consumer.enqueue(.insert(
-                            surfaceID: surfaceID,
-                            parentTag: surfaceID,
-                            childTag: tag,
-                            index: index))
+                        consumer.enqueue(
+                            .create(
+                                surfaceID: surfaceID,
+                                tag: tag,
+                                componentName: "View",
+                                component: .view(
+                                    MountViewSnapshot(
+                                        nativeID: "node-\(index)",
+                                        frame: Rect(
+                                            x: 0,
+                                            y: Double(index),
+                                            width: 100,
+                                            height: 1)),
+                                    backgroundColor: nil)))
+                        consumer.enqueue(
+                            .insert(
+                                surfaceID: surfaceID,
+                                parentTag: surfaceID,
+                                childTag: tag,
+                                index: index))
                     }
                     consumer.didFinishTransaction(
                         surfaceID: Int32(surfaceID))
@@ -138,18 +140,19 @@ private func mountWorkload(
 
                 phases.measure("update_enqueue") {
                     for index in 0..<componentCount {
-                        consumer.enqueue(.update(
-                            surfaceID: surfaceID,
-                            tag: index + 2,
-                            component: .view(
-                                MountViewSnapshot(
-                                    nativeID: "updated-\(index)",
-                                    frame: Rect(
-                                        x: 1,
-                                        y: Double(index),
-                                        width: 101,
-                                        height: 1)),
-                                backgroundColor: nil)))
+                        consumer.enqueue(
+                            .update(
+                                surfaceID: surfaceID,
+                                tag: index + 2,
+                                component: .view(
+                                    MountViewSnapshot(
+                                        nativeID: "updated-\(index)",
+                                        frame: Rect(
+                                            x: 1,
+                                            y: Double(index),
+                                            width: 101,
+                                            height: 1)),
+                                    backgroundColor: nil)))
                     }
                     consumer.didFinishTransaction(
                         surfaceID: Int32(surfaceID))
@@ -166,12 +169,14 @@ private func mountWorkload(
                 phases.measure("delete_enqueue") {
                     for index in 0..<componentCount {
                         let tag = index + 2
-                        consumer.enqueue(.remove(
-                            surfaceID: surfaceID,
-                            childTag: tag))
-                        consumer.enqueue(.delete(
-                            surfaceID: surfaceID,
-                            tag: tag))
+                        consumer.enqueue(
+                            .remove(
+                                surfaceID: surfaceID,
+                                childTag: tag))
+                        consumer.enqueue(
+                            .delete(
+                                surfaceID: surfaceID,
+                                tag: tag))
                     }
                     consumer.didFinishTransaction(
                         surfaceID: Int32(surfaceID))
@@ -196,7 +201,8 @@ private func mountWorkload(
                 checksum.mix(UInt64(updatedComponents))
                 checksum.mix(UInt64(remainingComponents))
                 checksum.mix(metrics.mutationsMaterialized)
-                let copiedBytes = metrics.copiedComponentNameBytes
+                let copiedBytes =
+                    metrics.copiedComponentNameBytes
                     + metrics.copiedTextBytes
                     + metrics.copiedNativeIDBytes
                     + metrics.copiedImageBytes

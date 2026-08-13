@@ -1,6 +1,7 @@
-import Observation
 import NucleusBenchmarkSupport
+import NucleusResourceTestSupport
 import NucleusUI
+import Observation
 
 @MainActor
 func resourceBenchmarks() -> [BenchmarkWorkload] {
@@ -35,6 +36,7 @@ private func imagePipelineWorkload() -> BenchmarkWorkload {
             }
             let pipeline = ImageRequestPipeline(
                 resourceHostHandle: 1,
+                runtimeHost: .inMemory(),
                 clock: clock.clock,
                 resolver: resolver,
                 limits: ImageRequestCacheLimits(
@@ -83,31 +85,34 @@ private func imagePipelineWorkload() -> BenchmarkWorkload {
 
             var missingFailures: UInt64 = 0
             var missingTokens: [ImageRequestToken] = []
-            missingTokens.append(pipeline.request(request(4, icon: "missing")) {
-                if case .failure(.unresolved) = $0.outcome {
-                    missingFailures &+= 1
-                }
-            })
+            missingTokens.append(
+                pipeline.request(request(4, icon: "missing")) {
+                    if case .failure(.unresolved) = $0.outcome {
+                        missingFailures &+= 1
+                    }
+                })
             try await waitUntil("first negative image completion") {
                 missingFailures == 1
             }
             let negativeBeforeExpiry = pipeline.negativeEntryCount
 
-            missingTokens.append(pipeline.request(request(5, icon: "missing")) {
-                if case .failure(.unresolved) = $0.outcome {
-                    missingFailures &+= 1
-                }
-            })
+            missingTokens.append(
+                pipeline.request(request(5, icon: "missing")) {
+                    if case .failure(.unresolved) = $0.outcome {
+                        missingFailures &+= 1
+                    }
+                })
             guard missingFailures == 2 else {
                 throw BenchmarkFailure.semantic(
                     "negative image cache did not complete synchronously")
             }
             clock.advance(by: .milliseconds(5))
-            missingTokens.append(pipeline.request(request(6, icon: "missing")) {
-                if case .failure(.unresolved) = $0.outcome {
-                    missingFailures &+= 1
-                }
-            })
+            missingTokens.append(
+                pipeline.request(request(6, icon: "missing")) {
+                    if case .failure(.unresolved) = $0.outcome {
+                        missingFailures &+= 1
+                    }
+                })
             try await waitUntil("expired negative image completion") {
                 missingFailures == 3
             }
@@ -117,14 +122,16 @@ private func imagePipelineWorkload() -> BenchmarkWorkload {
             let cancellationResolver = BenchmarkImageResolver(suspends: true)
             let cancellationPipeline = ImageRequestPipeline(
                 resourceHostHandle: 1,
+                runtimeHost: .inMemory(),
                 resolver: ImageSourceResolver { query in
                     await cancellationResolver.resolve(query)
                 })
             var cancellationCompletions: UInt64 = 0
             let cancellationToken = cancellationPipeline.request(
-                request(7, icon: "cancelled")) { _ in
-                    cancellationCompletions &+= 1
-                }
+                request(7, icon: "cancelled")
+            ) { _ in
+                cancellationCompletions &+= 1
+            }
             cancellationToken.cancel()
             try await waitUntil("image cancellation drain") {
                 cancellationPipeline.inFlightRequestCount == 0
@@ -141,7 +148,8 @@ private func imagePipelineWorkload() -> BenchmarkWorkload {
                     "image negative-cache expiry used the wrong resolver count")
             }
             pipeline.shutdown()
-            let retained = pipeline.cachedEntryCount
+            let retained =
+                pipeline.cachedEntryCount
                 + pipeline.negativeEntryCount
                 + pipeline.inFlightRequestCount
                 + pipeline.consumerCount
@@ -189,7 +197,7 @@ private func observationWorkload(changeCount: Int) -> BenchmarkWorkload {
         ],
         body: {
             let tokenBaseline = RetainedObservationToken.liveCount
-            let uiContext = UIContext(services: .inMemory())
+            let uiContext = UIContext(services: .inMemory(), runtimeHost: .inMemory())
             let model = BenchmarkObservableModel()
             var updateCount: UInt64 = 0
             var view: View?
@@ -199,10 +207,11 @@ private func observationWorkload(changeCount: Int) -> BenchmarkWorkload {
                 view = retainedView
                 token = retainedView.observe(
                     model,
-                    capturePolicy: .strong) { view, model in
-                        updateCount &+= 1
-                        view.alphaValue = Double(model.value % 100) / 100
-                    }
+                    capturePolicy: .strong
+                ) { view, model in
+                    updateCount &+= 1
+                    view.alphaValue = Double(model.value % 100) / 100
+                }
             }
             guard updateCount == 1 else {
                 throw BenchmarkFailure.semantic(
@@ -223,7 +232,8 @@ private func observationWorkload(changeCount: Int) -> BenchmarkWorkload {
             let afterCancellation = updateCount
             consume(view)
             view = nil
-            let liveAfterCancellation = RetainedObservationToken.liveCount
+            let liveAfterCancellation =
+                RetainedObservationToken.liveCount
                 - tokenBaseline
             var checksum = updateCount
             checksum.mix(UInt64(model.value))
@@ -271,7 +281,7 @@ private actor BenchmarkImageResolver {
             await Task.yield()
         }
         guard case .icon(let name, _) = query.source,
-              name != "missing"
+            name != "missing"
         else { return nil }
         return "/benchmark/\(name).png"
     }

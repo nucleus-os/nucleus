@@ -660,9 +660,6 @@ package final class ViewLayerPublisher: ~Sendable {
             try transaction.commit()
             metrics.commits &+= 1
             applyAcceptedMutations(transaction.mutations)
-            resolveAcceptedInMemoryCompletions(
-                transaction: transaction,
-                transactionToken: transactionCompletionToken)
             apply(cacheDelta: cacheDelta)
             rootCreated = true
             rootAttached = true

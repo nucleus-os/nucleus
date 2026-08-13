@@ -57,6 +57,14 @@ import Testing
             #expect(added[0].animation.keyPath == .opacity)
             #expect(added[0].animation.duration == 0.20)
             #expect(handle.outcome == .completed)
+            let transaction = try #require(
+                sink.transactions.first { !$0.animationsAdded.isEmpty })
+            #expect(
+                transaction.predictedPresentationNanoseconds
+                    == 1_000_000_000)
+            #expect(
+                transaction.targetPresentationNanoseconds
+                    == 1_016_666_667)
         }
     }
 
@@ -129,7 +137,7 @@ import Testing
     }
 
     @Test func invalidSceneSpeedCanonicalizesToOne() {
-        let context = UIContext(services: .inMemory())
+        let context = UIContext(services: .inMemory(), runtimeHost: .inMemory())
         context.animationSpeed = 0
         #expect(context.animationSpeed == 1)
         context.animationSpeed = -3

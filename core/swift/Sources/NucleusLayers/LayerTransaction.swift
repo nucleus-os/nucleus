@@ -38,6 +38,14 @@ public final class InMemoryCommitSink: CommitSink, ~Sendable {
 
     public func commit(_ transaction: LayerTransactionBatch) throws(LayerError) {
         transactions.append(transaction)
+        runtimeHost.presentationCompletions.resolve(
+            rawToken: transaction.completionToken,
+            result: .completed)
+        for (_, animation) in transaction.animationsAdded {
+            runtimeHost.presentationCompletions.resolve(
+                rawToken: animation.completionToken,
+                result: .completed)
+        }
     }
 }
 

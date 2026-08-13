@@ -122,15 +122,14 @@ struct WaylandProtocolErrorTests {
                 createdParent))
 
         let child: NoMemoryChildOwner? =
-            unsafe WaylandResource.createChild(
+            unsafe WaylandResource.installCreatedChild(
+                nil,
                 parent: parent,
                 interface: WlCallbackServer.self,
-                version: 1,
                 owner: { _ in NoMemoryChildOwner() },
                 handler: { $0 },
                 installed: { _ in },
-                publish: { _ in true },
-                using: { _, _, _, _ in nil })
+                publish: { _ in true })
         #expect(child == nil)
 
         display.flushClients()
