@@ -270,6 +270,9 @@ package struct ComponentRegistry {
                 requestedEntrypoint: .bootstrap,
                 destinations: [
                     ComponentEntrypointReference(
+                        component: AndroidRuntimeColliderRecipe.descriptor.id,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
                         component: core,
                         entrypoint: .bootstrap),
                     ComponentEntrypointReference(

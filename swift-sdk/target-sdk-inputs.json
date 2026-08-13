@@ -253,6 +253,22 @@
         {
           "sha256": "678a611d3181c6bb72a9cd003d55e46a2491763f897c32e7712032635b62cc48",
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcb/libxcb-shape0_1.15-1ubuntu2_arm64.deb"
+        },
+        {
+          "sha256": "ad9f9b9116442096cf217286c14622b8c9ff4968bb8e71686121a6ebb167cf91",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/e/expat/libexpat1-dev_2.6.1-2build1_arm64.deb"
+        },
+        {
+          "sha256": "f6cea0cbe617519480ab3501166eab7092a9a75332cb186c30eee8107da381b9",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/e/expat/libexpat1_2.6.1-2build1_arm64.deb"
+        },
+        {
+          "sha256": "cb826718811b0385601404298c62430d08b8225f6b815f055fc6a5003c16b227",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd-dev_1.5.5+dfsg2-2build1_arm64.deb"
+        },
+        {
+          "sha256": "98568129024af1a71702d5a13f2e01c53afd5e2c3f71b2ee97fdd9a19cd97eda",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1_arm64.deb"
         }
       ]
     },
@@ -496,7 +512,23 @@
         {
           "sha256": "ad57fed687ec9c2a4808b8e30ab1753d57daeddc9ad7fb883bfa0701f6da57c8",
           "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-shape0_1.15-1ubuntu2_amd64.deb"
-    }
+        },
+        {
+          "sha256": "2a0596d085e0e49688de2279430a27b719ef50ed01e74f896e84d110463197ad",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/e/expat/libexpat1-dev_2.6.1-2build1_amd64.deb"
+        },
+        {
+          "sha256": "730b29497212289cda8a3139e693a3538af0cb57846c24f807d1bb293a591c5e",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/e/expat/libexpat1_2.6.1-2build1_amd64.deb"
+        },
+        {
+          "sha256": "2692254b78b0beeb284cda9bd34883ba470881475bc7c0eefbef479404bcfd23",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libz/libzstd/libzstd-dev_1.5.5+dfsg2-2build1_amd64.deb"
+        },
+        {
+          "sha256": "4dcc3ba9606a5837a55248d08162a5b426dd621f75c0eb24d86409e0d0e71d52",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1_amd64.deb"
+        }
       ]
     }
   ]

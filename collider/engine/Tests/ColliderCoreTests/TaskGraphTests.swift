@@ -108,6 +108,47 @@ import Testing
     }
 }
 
+@Test func storageCatalogFindsParentInsertedAfterChildAmongUnrelatedSiblings() throws {
+    let cache = FilePath("/cache")
+    var declarations = (0..<64).map { index in
+        StorageDeclaration(
+            id: "sibling-\(index)",
+            owner: ComponentID(rawValue: "runtime"),
+            producers: [.runtime("fixture")],
+            storageClass: .cache,
+            root: cache.appending("siblings/\(index)"),
+            safetyRoot: cache,
+            retentionPolicy: .protected)
+    }
+    declarations.insert(
+        StorageDeclaration(
+            id: "child",
+            owner: ComponentID(rawValue: "runtime"),
+            producers: [.runtime("fixture")],
+            storageClass: .cache,
+            root: cache.appending("generated/child"),
+            safetyRoot: cache,
+            retentionPolicy: .singleWorkingSet),
+        at: 0)
+    declarations.append(
+        StorageDeclaration(
+            id: "parent",
+            owner: ComponentID(rawValue: "runtime"),
+            producers: [.runtime("fixture")],
+            storageClass: .cache,
+            root: cache.appending("generated"),
+            safetyRoot: cache,
+            retentionPolicy: .singleWorkingSet))
+
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validate(declarations, forbiddenRemovalRoots: [cache])
+    }
+
+    try StorageCatalog.validate(
+        declarations.filter { $0.id != "parent" },
+        forbiddenRemovalRoots: [cache])
+}
+
 @Test func storageCatalogProtectsSourceAndIdentityBoundaries() throws {
     let scope = FilePath("/scope")
     let workspace = scope.appending("workspace")

@@ -112,13 +112,36 @@ public struct StorageDeclaration: Hashable, Sendable {
     }
 }
 
+private struct IndexedStorageRoot {
+    let declaration: StorageDeclaration
+    let filesystemRoot: FilePath.Root
+    let components: [FilePath.Component]
+    let ordinal: Int
+
+    init(
+        declaration: StorageDeclaration,
+        normalizedRoot: FilePath,
+        ordinal: Int
+    ) {
+        self.declaration = declaration
+        filesystemRoot = normalizedRoot.root!
+        components = Array(normalizedRoot.components)
+        self.ordinal = ordinal
+    }
+}
+
+private final class StoragePathNode {
+    var declarations: [StorageDeclaration] = []
+    var children: [FilePath.Component: StoragePathNode] = [:]
+}
+
 public enum StorageCatalog {
     public static func validate(
         _ declarations: [StorageDeclaration],
         forbiddenRemovalRoots: [FilePath]
     ) throws {
         var identifiers = Set<String>()
-        var roots: [(StorageDeclaration, FilePath)] = []
+        var roots: [IndexedStorageRoot] = []
         let forbidden = Set(forbiddenRemovalRoots.map { $0.normalizedForComparison() })
 
         for declaration in declarations {
@@ -246,31 +269,60 @@ public enum StorageCatalog {
                     "only generation storage may declare interrupted candidate naming: "
                         + declaration.id)
             }
-            roots.append((declaration, root))
+            roots.append(
+                IndexedStorageRoot(
+                    declaration: declaration,
+                    normalizedRoot: root,
+                    ordinal: roots.count))
         }
 
-        for leftIndex in roots.indices {
-            for rightIndex in roots.indices where rightIndex > leftIndex {
-                let left = roots[leftIndex]
-                let right = roots[rightIndex]
-                guard left.1.overlaps(right.1) else { continue }
-                let leftProtectsContent =
-                    left.0.storageClass == .source || left.0.storageClass == .identity
-                let rightProtectsContent =
-                    right.0.storageClass == .source || right.0.storageClass == .identity
-                if (leftProtectsContent && !right.0.retentionPolicy.isProtected)
-                    || (rightProtectsContent && !left.0.retentionPolicy.isProtected)
-                {
-                    throw StorageCatalogFailure.invalid(
-                        "removable storage overlaps source or identity storage: "
-                            + "\(left.0.id), \(right.0.id)")
-                }
-                if !left.0.retentionPolicy.isProtected,
-                    !right.0.retentionPolicy.isProtected
-                {
-                    throw StorageCatalogFailure.invalid(
-                        "removable storage declarations overlap: \(left.0.id), \(right.0.id)")
-                }
+        // Parents precede descendants, so inserting a path only needs to inspect
+        // declarations on its trie walk. Unrelated sibling roots are never
+        // compared.
+        roots.sort {
+            if $0.components.count != $1.components.count {
+                return $0.components.count < $1.components.count
+            }
+            return $0.ordinal < $1.ordinal
+        }
+        var pathRoots: [FilePath.Root: StoragePathNode] = [:]
+        for root in roots {
+            let pathRoot = pathRoots[root.filesystemRoot] ?? StoragePathNode()
+            pathRoots[root.filesystemRoot] = pathRoot
+            var node = pathRoot
+            try validateOverlaps(root.declaration, with: node.declarations)
+            for component in root.components {
+                let child = node.children[component] ?? StoragePathNode()
+                node.children[component] = child
+                node = child
+                try validateOverlaps(root.declaration, with: node.declarations)
+            }
+            node.declarations.append(root.declaration)
+        }
+    }
+
+    private static func validateOverlaps(
+        _ declaration: StorageDeclaration,
+        with ancestors: [StorageDeclaration]
+    ) throws {
+        for ancestor in ancestors {
+            let ancestorProtectsContent =
+                ancestor.storageClass == .source || ancestor.storageClass == .identity
+            let declarationProtectsContent =
+                declaration.storageClass == .source || declaration.storageClass == .identity
+            if (ancestorProtectsContent && !declaration.retentionPolicy.isProtected)
+                || (declarationProtectsContent && !ancestor.retentionPolicy.isProtected)
+            {
+                throw StorageCatalogFailure.invalid(
+                    "removable storage overlaps source or identity storage: "
+                        + "\(ancestor.id), \(declaration.id)")
+            }
+            if !ancestor.retentionPolicy.isProtected,
+                !declaration.retentionPolicy.isProtected
+            {
+                throw StorageCatalogFailure.invalid(
+                    "removable storage declarations overlap: "
+                        + "\(ancestor.id), \(declaration.id)")
             }
         }
     }

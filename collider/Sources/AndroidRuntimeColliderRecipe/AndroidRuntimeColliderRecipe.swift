@@ -1172,7 +1172,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                         + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
                                         + crossOption
                                         + targetCXXOptions
-                                        + " && meson compile -C \(hostBuild) gfxstream_backend"
+                                        + " || { status=$?; cat"
+                                        + " \(hostBuild)/meson-logs/meson-log.txt; exit $status; };"
+                                        + " meson compile -C \(hostBuild) gfxstream_backend"
                                         + " && mkdir -p /export/lib"
                                         + " && install -m 0644"
                                         + " \(hostBuild)/host/libgfxstream_backend.a"
@@ -1204,7 +1206,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                         + " -Dvideo-codecs=[]"
                                         + crossOption
                                         + targetCXXOptions
-                                        + " && meson compile -C \(guestBuild) vulkan_gfxstream"
+                                        + " || { status=$?; cat"
+                                        + " \(guestBuild)/meson-logs/meson-log.txt; exit $status; };"
+                                        + " meson compile -C \(guestBuild) vulkan_gfxstream"
                                         + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
                                         + " && mkdir -p /export/lib"
                                         + " && install -m 0755"
@@ -1306,8 +1310,9 @@ private func gfxstreamExecution(
             "CXX": "/usr/bin/clang++",
             "CXXFLAGS":
                 "-stdlib=libc++ -nostdinc++ -isystem\(target.containerLibCXXIncludeRoot)",
-            "LDFLAGS":
-                "-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
+            "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
+            "LD_LIBRARY_PATH":
+                "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
             "PKG_CONFIG_LIBDIR":
                 "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
         ],

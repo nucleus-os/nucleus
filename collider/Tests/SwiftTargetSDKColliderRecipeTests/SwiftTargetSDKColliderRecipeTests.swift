@@ -296,7 +296,7 @@ import Testing
     #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
     for target in inputs.linuxTargets {
         #expect(target.runtimeUbuntuPackages.count == 16)
-        #expect(target.sdkUbuntuPackages.count == 43)
+        #expect(target.sdkUbuntuPackages.count == 47)
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libicu") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
@@ -313,6 +313,8 @@ import Testing
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd-dev_") })
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd0_") })
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("x11proto-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libexpat1-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libzstd-dev_") })
         #expect(
             target.allUbuntuPackages.allSatisfy {
                 $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")

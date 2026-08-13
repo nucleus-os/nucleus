@@ -101,6 +101,16 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
                 in: catalog,
                 entrypoint: ComponentEntrypointID(rawValue: "aosp.image"),
                 selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName))
+    let androidRuntimeBootstrap = try selectedTasks(
+        in: catalog,
+        entrypoint: .bootstrap,
+        selection: "android-runtime")
+    #expect(
+        androidRuntimeBootstrap.contains(
+            TaskID(rawValue: "android-runtime.gfxstream.linux-arm64")))
+    #expect(
+        androidRuntimeBootstrap.contains(
+            TaskID(rawValue: "android-runtime.gfxstream.linux-x86_64")))
 }
 
 @Test func macOSCacheOwnershipIgnoresProcessWideXDGOverrides() throws {
@@ -759,7 +769,8 @@ private func fixtureReactNativeNodeModules(
                     && !execution.command.contains("gfxstream")
                     && execution.containerEnvironment["CC"] == "/usr/bin/clang"
                     && execution.containerEnvironment["CXX"] == "/usr/bin/clang++"
-                    && execution.containerEnvironment["LD_LIBRARY_PATH"] == nil
+                    && execution.containerEnvironment["LD_LIBRARY_PATH"]
+                        == "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64"
                     && execution.mounts.contains {
                         $0.target == "/export" && $0.purpose == .boundedExport
                     }
