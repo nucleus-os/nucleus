@@ -38,7 +38,9 @@ and `wayland` ownership. Linux/amd64 and Android/arm64 use sibling target roots.
 
 ## Setup and verification
 
-Clone with submodules, then install Collider once:
+On the supported macOS development host, clone with submodules, then install
+Collider once. Linux host setup is not implemented yet; Linux products are
+built as targets through Collider's offline Apple-container execution:
 
 ```sh
 git clone --recurse-submodules git@github.com:nucleus-os/nucleus.git

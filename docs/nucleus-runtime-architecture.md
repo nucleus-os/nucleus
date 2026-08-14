@@ -63,13 +63,12 @@ the user cache.
 
 Collider owns declared task graphs, planning, execution, artifact identity, locks, and records. Underlying build systems retain their own incremental state. Source submodules are validated pinned inputs and are never mutated by Collider.
 
-Collider installs one executable on macOS and Linux. `ColliderCLI` owns the
-single root grammar and process lifecycle, `ColliderWorkspaceCommands` owns
-checkout-oriented commands and catalog construction, and
-`ColliderLinuxOperations` owns installed-session and Android add-on operations.
-The CLI composes the Linux module only in Linux builds; workspace commands do
-not import runtime products or expose installed-host behavior conditionally.
-Recipe modules continue to own Linux-native artifact actions.
+Collider currently installs one executable on macOS. `ColliderCLI` owns the
+single root grammar and process lifecycle, and `ColliderWorkspaceCommands` owns
+checkout-oriented commands and catalog construction. The source graph retains
+`ColliderLinuxOperations` for installed-session and Android add-on operations,
+but no supported setup, launcher, or OCI backend currently exposes a Linux-host
+Collider build. Recipe modules continue to own Linux-target artifact actions.
 
 ```text
 Collider executable
@@ -80,9 +79,9 @@ Collider executable
 ```
 
 There is no reverse dependency, runtime command registration, or second
-platform-specific executable. macOS exposes only checkout operations. Linux
-adds `run`, session and Android add-on installation, and Android add-on
-packaging through the compile-time `ColliderCLI` composition.
+platform-specific executable. The supported macOS command exposes only
+checkout operations. Linux-host command composition remains inactive until the
+rootless Linux backend and setup contract land together.
 
 On macOS, Collider talks to Apple container services in process through the
 upstream Swift APIs for health, networks, image build/inspection/pruning, disk

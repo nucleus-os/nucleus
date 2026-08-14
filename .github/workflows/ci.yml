@@ -2,9 +2,6 @@ name: monorepo-ci
 
 on:
   pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,39 +26,3 @@ jobs:
         run: git diff --check "$BASE_REVISION" HEAD
       - name: Validate submodule declarations
         run: git config --file .gitmodules --get-regexp '^submodule\..*\.path$'
-
-  required:
-    if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, Linux, X64, nucleus]
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: Install Collider
-        run: |
-          ./collider-setup.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Validate host contract
-        run: collider doctor
-      - name: Test required repository lanes
-        run: collider test all
-
-  gpu-drm:
-    if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, Linux, X64, nucleus, render-node]
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: Install Collider
-        run: |
-          ./collider-setup.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Validate host contract
-        run: collider doctor
-      - name: Test the DRM render-node lane
-        run: collider test gpu-drm

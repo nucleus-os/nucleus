@@ -2,11 +2,11 @@
 
 Status: active
 
-Execution position: Phase 1 runs first to remove unsupported Linux-host claims.
-Phases 2 through 10 follow the production artifact, package, CI, publication,
-distribution-qualification, and development-deployment sequence in the root
-documentation inventory. The contributor workflow reuses portable identity
-primitives without becoming a production artifact, release path, or CI cache.
+Execution position: Phase 1 is complete. Phases 2 through 10 follow the
+production artifact, package, CI, publication, distribution-qualification, and
+development-deployment sequence in the root documentation inventory. The
+contributor workflow reuses portable identity primitives without becoming a
+production artifact, release path, or CI cache.
 
 ## Invariant
 
@@ -74,16 +74,15 @@ a prerequisite for native x86_64 Linux development.
 
 Collider currently builds only on macOS arm64:
 
+- setup and host-environment resolution reject Linux before submodule,
+  toolchain, workspace, or repository-controlled execution;
 - `ColliderCLI` installs `AppleContainerRuntimeBackend` only on macOS and uses
   `UnsupportedOCIRuntimeBackend` elsewhere;
 - Doctor deliberately rejects every Linux OCI runner and includes `xcrun` and
   `pkgutil` in the Swift SDK prerequisite set;
-- build recipes and `SwiftPMOCIExecution` assume an arm64 Linux guest;
-- `tools/host-env.sh` names a Linux host toolchain path that no producer writes;
-- the Linux branch of `collider-setup.sh` invokes a removed `swift-sdk rebuild`
-  command; and
-- the current self-hosted Linux workflow invokes build and test commands that
-  cannot pass with the available backend.
+- build recipes and `SwiftPMOCIExecution` assume an arm64 Linux guest; and
+- the only current GitHub workflow performs pull-request metadata checks on a
+  GitHub-hosted worker and never invokes Collider.
 
 Most x86_64 C and C++ work is already a conventional cross-compile in the
 arm64 guest. Skia, Wayland, gfxstream guest libraries, and the React Native C++
@@ -105,20 +104,21 @@ executor requirements.
 
 ## Phase 1: Make Current Platform Claims Truthful
 
-Remove the dead Linux toolchain-selection branch from `tools/host-env.sh` and
-the nonfunctional Linux bootstrap path from `collider-setup.sh`. Until Phase 8
-lands, setup rejects Linux immediately with one accurate unsupported-host error.
+Status: complete.
 
-Remove workflow jobs that invoke unsupported Linux build or test paths. The
-active self-hosted CI plan replaces them only after its main-only M2 Ultra
-builder account, shared persistent cache, and protection gates are complete; a
-contributor host is not a CI runner or gateway. Update current documentation to
-distinguish the supported M2 Ultra main pipeline, the future Linux contributor
-workflow, Linux presentation targets, unsupported branch and pull-request CI,
-and protected delivery identities.
+`tools/host-env.sh`, `tools/collider-launcher.sh`, and `collider-setup.sh` now
+expose only the supported macOS host path. Setup rejects Linux before it can
+initialize source or execute repository setup. The nonfunctional self-hosted
+Linux build and GPU/DRM workflow jobs are absent; the remaining pull-request
+metadata check never invokes Collider. Current setup and architecture documents
+distinguish macOS host execution from Linux target artifacts and the future
+Linux contributor workflow.
 
-Gate: no executable path, workflow, generated skill, or current-state document
-claims that Collider can build on Linux before a Linux backend exists.
+Gate evidence: shell syntax validation passes; mocked Linux setup and
+host-environment invocations return the single unsupported-host diagnostic;
+workflow inspection finds no Linux runner, Collider setup, build, or test step;
+and the generated Collider skill and current-state documents make no supported
+Linux-host claim.
 
 ## Phase 2: Define Portable Published-Input Identity
 

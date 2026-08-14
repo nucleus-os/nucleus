@@ -79,10 +79,6 @@ collider_source_fingerprint() {
     tools/host-env.sh
     tools/host-platform-env.sh
   )
-  if [[ "$(uname -s)" != Darwin ]]; then
-    # Linux Collider links the supported root-package protocol products.
-    root_paths=(.)
-  fi
   {
     swiftc --version 2>&1
     append_repository_state "$root" . "${root_paths[@]}"

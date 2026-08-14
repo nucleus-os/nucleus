@@ -3,11 +3,16 @@
 #
 #   ./collider-setup.sh
 #
-# It selects Xcode on macOS or provisions the generated host toolchain on Linux,
-# builds the optimized `collider` binary, and installs the `collider` launcher
-# on your PATH. Re-run it any time to repair the tool installation. Workspace
-# readiness and build artifacts belong to Collider itself.
+# It validates Xcode on the supported macOS host, builds the optimized
+# `collider` binary, and installs the `collider` launcher on your PATH. Re-run
+# it any time to repair the tool installation. Workspace readiness and build
+# artifacts belong to Collider itself.
 set -euo pipefail
+
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "error: Collider setup currently requires macOS; Linux host support is not implemented" >&2
+  exit 69
+fi
 
 case "${1:-}" in
   "" | --repair | --force) ;;
@@ -47,27 +52,15 @@ initialize_missing_submodules() {
 }
 initialize_missing_submodules
 
-# True when the native host compiler resolves. macOS uses the selected Xcode;
-# Linux host execution uses the active generated toolchain for that host.
+# True when the selected Xcode compiler resolves.
 toolchain_present() { ( source "$host_env" ) >/dev/null 2>&1; }
 
-# 1. Provision the generated Linux toolchain when setup itself runs on Linux.
-#    macOS builds Collider and native products with the selected Xcode toolchain;
-#    `collider build swift-sdk --rebuild` separately creates Linux/Android artifacts in
-#    the pinned native Linux/arm64 builder image.
+# 1. Validate the macOS host compiler. `collider build swift-sdk --rebuild`
+#    separately creates Linux and Android target artifacts in the pinned native
+#    Linux/arm64 builder image.
 if ! toolchain_present; then
-  if [[ "$(uname -s)" == Darwin ]]; then
-    echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
-    exit 127
-  fi
-  if ! command -v swift >/dev/null 2>&1; then
-    echo "error: Swift 6.4 must be on PATH to create the first Nucleus toolchain generation." >&2
-    exit 127
-  fi
-  echo "collider-setup: building collider with the bootstrap compiler..." >&2
-  "$root/tools/configure-swiftpm-mirrors.sh"
-  swift build --package-path "$pkg" -c release >&2
-  COLLIDER_ENTRYPOINT=setup-bootstrap "$bin" swift-sdk rebuild
+  echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
+  exit 127
 fi
 
 # 2. Build the optimized collider binary with the native host compiler. The

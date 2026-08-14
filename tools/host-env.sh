@@ -8,6 +8,11 @@ else
 fi
 nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "error: Collider currently requires a macOS host; Linux host support is not implemented" >&2
+  return 69 2>/dev/null || exit 69
+fi
+
 source "$nucleus_workspace_root/tools/host-platform-env.sh"
 
 nucleus_toolchain=""
@@ -40,34 +45,20 @@ if [[ -z "$nucleus_generator_source_id" ]]; then
   return 127 2>/dev/null || exit 127
 fi
 export NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID="$nucleus_generator_source_id"
-nucleus_platform_id="$nucleus_source_id-linux-amd64"
-if [[ "$(uname -s)" == Darwin ]]; then
-  nucleus_swiftc="$(xcrun --find swiftc 2>/dev/null)" || {
-    echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
-    return 127 2>/dev/null || exit 127
-  }
-  if ! "$nucleus_swiftc" --version 2>/dev/null \
-      | grep -Fq "Apple Swift version 6.4"; then
-    echo "error: the selected Xcode does not provide Apple Swift 6.4" >&2
-    return 127 2>/dev/null || exit 127
-  fi
-  nucleus_toolchain="$(cd "$(dirname "$nucleus_swiftc")/.." && pwd)"
-elif [[ -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ]]; then
-  nucleus_toolchain="$NUCLEUS_SWIFT_TOOLCHAIN"
-elif [[ -x "${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr/bin/swift-build" ]]; then
-  nucleus_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr"
-else
-  echo "error: the Nucleus Linux amd64 Swift 6.4 toolchain is not installed" >&2
-  echo "       run ./collider-setup.sh or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
+nucleus_swiftc="$(xcrun --find swiftc 2>/dev/null)" || {
+  echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
+  return 127 2>/dev/null || exit 127
+}
+if ! "$nucleus_swiftc" --version 2>/dev/null \
+    | grep -Fq "Apple Swift version 6.4"; then
+  echo "error: the selected Xcode does not provide Apple Swift 6.4" >&2
   return 127 2>/dev/null || exit 127
 fi
+nucleus_toolchain="$(cd "$(dirname "$nucleus_swiftc")/.." && pwd)"
 
 export SWIFT_TOOLCHAIN="$nucleus_toolchain"
 export SWIFT="$nucleus_toolchain/bin/swift"
 export SWIFTC="$nucleus_toolchain/bin/swiftc"
-if [[ "$(uname -s)" != Darwin ]]; then
-  export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
-fi
 export PATH="$nucleus_toolchain/bin:$PATH"
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
@@ -77,4 +68,3 @@ export NUCLEUS_NATIVE_SDK_ROOT
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment nucleus_source_index nucleus_source_digest
 unset nucleus_generator_source_id nucleus_toolchain nucleus_swiftc nucleus_source_id
-unset nucleus_platform_id

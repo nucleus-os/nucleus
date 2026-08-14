@@ -49,11 +49,10 @@ remote-execution protocol.
 
 ## Current State
 
-The current `pull_request` job runs whitespace and submodule-declaration checks
-on a GitHub-hosted Ubuntu worker. The current self-hosted Linux jobs run only for
-`main` pushes and manual dispatches even though Collider cannot yet execute the
-declared Linux-host build path. The workflow therefore does not satisfy the
-main-only, self-hosted, M2 Ultra execution contract.
+The only current workflow runs whitespace and submodule-declaration checks for
+pull requests on a GitHub-hosted Ubuntu worker. It does not invoke Collider.
+There is no automated `main` build until this plan establishes the main-only,
+self-hosted M2 Ultra execution contract.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
@@ -436,10 +435,9 @@ publishes or signs; and delivery performs no compilation or package assembly.
 
 ## Phase 7: Cut Over Main CI/CD
 
-Remove the GitHub-hosted pull-request job and the unsupported Linux-host build
-jobs. Install the protected main-only workflow, M2 Ultra runner, native
-qualification routing, successful-run artifact retention, and protected
-delivery consumers.
+Remove the GitHub-hosted pull-request job. Install the protected main-only
+workflow, M2 Ultra runner, native qualification routing, successful-run
+artifact retention, and protected delivery consumers.
 
 Workflow YAML owns only supported event selection, preflight validation,
 checkout, runner capability, Collider setup, command invocation, timeout,
