@@ -15,19 +15,19 @@
 ## Active plans, in dependency order
 
 1. [AppKit API completion](appkit-api-plan.md)
-2. [Trackpad gestures](compositor-trackpad-gestures.md)
-3. [Wayland protocol coverage](wayland_protocol_coverage_plan.md)
-4. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
-5. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
-6. [Android render stack](android-render-stack-plan.md)
-7. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
-8. [Screen capture and recording](screen_recording_plan.md)
-9. [View pixel alignment](view-pixel-alignment-plan.md)
-10. [Glyph dilation](text-glyph-dilation-plan.md)
+2. [Wayland protocol coverage](wayland_protocol_coverage_plan.md)
+3. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
+4. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
+5. [Android render stack](android-render-stack-plan.md)
+6. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
+7. [Screen capture and recording](screen_recording_plan.md)
+8. [View pixel alignment](view-pixel-alignment-plan.md)
+9. [Glyph dilation](text-glyph-dilation-plan.md)
 
 ## Superseded and completed plans
 
 - [Bar-first shell work](bar-first-port-order.md) is superseded by the native shell completion plan.
+- [Trackpad gestures](compositor-trackpad-gestures.md) are complete.
 - [RN animation backend](rn-animation-backend-plan.md) is complete.
 
 ## Research inventories

@@ -1,6 +1,6 @@
 # Linux Distribution Portability Plan
 
-Status: deferred
+Status: active
 
 ## Invariant
 
@@ -232,7 +232,8 @@ update plan.
 
 ## Phase 6: Qualify One Artifact Across Distributions
 
-Status: deferred
+Activation gate: the Linux package distribution and update plan has emitted the
+native packages and local repository snapshots consumed by this phase.
 
 Current progress: the ARM64 Linux product and test graph passes in the canonical
 builder. `collider build linux-runtime` now publishes the staged runtime as a
@@ -279,8 +280,6 @@ Gate: the same artifact digest passes the complete runtime matrix for its
 architecture.
 
 ## Phase 7: Complete Hardware Qualification
-
-Status: pending
 
 Run the already-qualified artifacts on physical arm64 and x86_64 Linux hardware.
 Validate DRM master acquisition and release, input discovery, seat pause and

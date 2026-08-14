@@ -1,6 +1,6 @@
 # GitHub Actions Self-Hosted CI Plan
 
-Status: deferred
+Status: active
 
 ## Invariant
 
@@ -77,7 +77,55 @@ access only to the package-object R2 bucket. Worker deployment uses a separate
 infrastructure identity. No build, qualification, approval, signing,
 publication, or deployment job receives more than one of these authorities.
 
-## Phase 1: Establish the Trusted Workflow Boundary
+## Phase 1: Define Portable Product Artifacts and Qualification Evidence
+
+Define one content-addressed product-artifact envelope in Collider before a CI
+workflow, package publisher, or development transport consumes it. Every
+transferable product bundle carries a manifest containing:
+
+- source and submodule closure identities;
+- producing task identity;
+- runner, executor, and artifact platforms;
+- toolchain, Swift SDK, native SDK, and builder-image identities;
+- build configuration and semantic build arguments;
+- archive, file-tree, and individual file digests;
+- executable metadata and dynamic-library closure;
+- producer trust domain; and
+- required qualification roles.
+
+Canonicalize placement-only checkout, cache, home, workspace, and output roots
+before encoding identity. Retain semantic relative paths and file contents.
+Reject an artifact identity containing an unrecognized absolute host path
+instead of producing a bundle that another runner or qualifier cannot validate.
+
+Use the same canonical identity and digest primitives for domain-specific
+contracts without making those contracts interchangeable. A CI product bundle,
+digest-bound qualification record, package release index, allowlisted GHCR
+contributor input, and unsigned dirty development generation remain distinct
+types with distinct authorities and storage boundaries. There is no generic
+remote artifact cache, generic publication operation, or implicit conversion
+from an untrusted artifact into a qualified or releasable one.
+
+Qualification consumes only an immutable product bundle and its manifest. A
+native Linux or physical GPU/DRM qualifier emits a separate record bound to the
+artifact digest and its declared capability. Cross-build inspection and
+Apple-translated execution cannot satisfy native kernel, performance, GPU, DRM,
+or release gates.
+
+Use a local filesystem artifact store for build and qualification. Do not
+upload reconstructible Chromium, AOSP, Swift, native-SDK, compiler-cache,
+incremental-workspace, or pre-package artifact state to GitHub Actions caches or
+release assets. The package plan alone defines the final release index and
+immutable package-object publication boundary.
+
+Gate: planning the same representative products under different checkout,
+cache, home, workspace, and output roots produces the same portable artifact
+identity; changing source, toolchain, configuration, target, or a semantic
+input changes it; a clean qualifier validates a bundle without builder cache or
+source; corruption and substitution fail; and no domain-specific artifact can
+be consumed through another domain's authority.
+
+## Phase 2: Establish the Trusted Workflow Boundary
 
 Create one reusable verification workflow whose definition is loaded only from
 the protected `main` branch. Restrict the Nucleus CI runner groups to jobs
@@ -100,7 +148,7 @@ Gate: only the protected reusable workflow can address a Nucleus runner, a
 pull request cannot alter its runner-side steps, and the executed checkout is
 the exact event revision reported by the resulting check.
 
-## Phase 2: Enforce Owner-Controlled Pull-Request Admission
+## Phase 3: Enforce Owner-Controlled Pull-Request Admission
 
 Configure one repository variable with the owner's exact GitHub login. The
 trusted reusable workflow routes owner-authored pull requests directly to the
@@ -123,7 +171,7 @@ Gate: the owner's pull request can queue automatically, every non-owner pull
 request remains undispatched until the owner approves its current run, and an
 approval of one SHA cannot start or authorize another SHA.
 
-## Phase 3: Provision Separate PR and Trusted Runner Identities
+## Phase 4: Provision Separate PR and Trusted Runner Identities
 
 Provision dedicated macOS runner identities on the M2 Ultra for pull-request
 and trusted-branch work. Neither identity has access to the interactive
@@ -147,7 +195,31 @@ Gate: PR code cannot read or modify trusted build state, development data, or
 credentials; a fresh registration reaches Collider without interaction; and
 runner replacement leaves no undeclared executable state.
 
-## Phase 4: Define One Complete Verification Graph
+## Phase 5: Complete Cross-Identity Admission and Storage Isolation
+
+Place the Collider host-execution lease in one explicitly provisioned
+cross-account location whose ownership and POSIX permissions allow both CI
+identities and the development account to lock it without reading one
+another's state. Every mutating Collider command acquires that lease before
+using Apple containers, build volumes, or host-intensive native tools.
+Inspection remains available while another run holds admission.
+
+Keep trusted and pull-request writable storage in separate roots and separate
+Apple-container volume namespaces. Main verification never consumes a PR
+compiler cache, incremental workspace, generated output, artifact, run record,
+or mutable checkout. Share only immutable content-addressed downloads, exact
+source objects, signed toolchains, and pinned OCI images, mounted read-only.
+
+Allocate PR storage per pull request and retain it only while that pull request
+is active. A new revision may reuse its own PR namespace, but no other PR or
+trusted build may consume it. Closing a pull request makes its complete mutable
+namespace reclaimable through declared Collider storage ownership.
+
+Gate: interactive, PR, and trusted runs cannot overlap host execution; a PR
+cannot poison a later `main` build through writable state; and deleting all PR
+state leaves trusted incrementality and authoritative inputs intact.
+
+## Phase 6: Define One Complete Verification Graph
 
 Define the required verification graph once as a sequence of existing Collider
 commands. Both pull-request and `main` events invoke that exact sequence. Do
@@ -177,63 +249,6 @@ qualification records without rebuilding them.
 Gate: the same source revision produces the same task graph and artifact
 coordinates in PR and `main` verification, while no pull-request event can
 reach a publication or signing operation.
-
-## Phase 5: Complete Cross-Identity Admission and Storage Isolation
-
-Place the Collider host-execution lease in one explicitly provisioned
-cross-account location whose ownership and POSIX permissions allow both CI
-identities and the development account to lock it without reading one
-another's state. Every mutating Collider command acquires that lease before
-using Apple containers, build volumes, or host-intensive native tools.
-Inspection remains available while another run holds admission.
-
-Keep trusted and pull-request writable storage in separate roots and separate
-Apple-container volume namespaces. Main verification never consumes a PR
-compiler cache, incremental workspace, generated output, artifact, run record,
-or mutable checkout. Share only immutable content-addressed downloads, exact
-source objects, signed toolchains, and pinned OCI images, mounted read-only.
-
-Allocate PR storage per pull request and retain it only while that pull request
-is active. A new revision may reuse its own PR namespace, but no other PR or
-trusted build may consume it. Closing a pull request makes its complete mutable
-namespace reclaimable through declared Collider storage ownership.
-
-Gate: interactive, PR, and trusted runs cannot overlap host execution; a PR
-cannot poison a later `main` build through writable state; and deleting all PR
-state leaves trusted incrementality and authoritative inputs intact.
-
-## Phase 6: Bind Build and Qualification Evidence
-
-Make every transferable product an immutable artifact bundle with a manifest
-containing source and submodule identities, runner, executor, and artifact
-platforms, toolchain and SDK identities, build arguments, file digests,
-executable metadata, dynamic-library closure, trust domain, and required
-qualification roles.
-
-Qualification consumes only the immutable bundle and manifest. Native Linux
-and physical GPU/DRM workers emit separate records bound to the artifact digest
-and their declared capabilities. Cross-build inspection and Apple-translated
-execution cannot satisfy native kernel, performance, GPU, DRM, or release
-gates.
-
-Use a local filesystem artifact store for build and qualification. After all
-required qualification records bind to a package cohort, the protected
-release-object publisher may upload only its final native package objects and
-release index to the immutable GitHub Release governed by the
-[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
-It returns the immutable release identity and remote digests without retaining
-publication authority in a later job. The separately authorized metadata
-publisher consumes that evidence and publishes the signed R2 snapshot and final
-channel object. The package plan owns the equivalent separated R2 object path
-after its hard backend cutover.
-
-Do not upload reconstructible Chromium, AOSP, Swift, native-SDK, compiler-cache,
-incremental-workspace, or pre-package artifact state to GitHub Actions caches or
-release assets.
-
-Gate: a clean qualifier validates an artifact without builder cache or source,
-modifying any file invalidates its evidence, and publication rejects PR-owned,
-missing, stale, translated, or wrong-platform qualification.
 
 ## Phase 7: Cut Over Pull-Request and Main CI
 

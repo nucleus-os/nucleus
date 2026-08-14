@@ -231,22 +231,188 @@ content-addressed reuse, runtime validation, profiling, sanitizer selection, and
 Gate: every developer launch uses a validated private generation and no
 developer workflow invokes `collider install session`.
 
-## Phase 2: Add Non-Installed Remote Development Generations
+## Phase 2: Make the Browser a Package Input
 
-Add `collider dev-deploy linux-runtime` on macOS. It selects one target architecture
-and one existing runtime build selection, including debug, release, Tracy, or a
-sanitizer, then builds or reuses the matching validated development generation.
-The generation identity includes the complete Git working-copy identity,
-toolchain and native dependency identities, architecture, optimization, and
-instrumentation selection. Deploying uncommitted work therefore cannot be
-mistaken for a repository release.
+Make both browser architectures ordinary immutable outputs of `collider build
+browser`. Remove the special x86_64 installation task and its checkout prefix.
+The common Linux package graph consumes the selected browser artifact by digest
+and places it in `nucleus-browser` without rebuilding it.
+
+Browser qualification consumes the package-installed generation. Development
+diagnostics consume the build publication directly and do not simulate a system
+installation on macOS.
+
+Gate: the browser has no install entrypoint in the Collider component graph, and
+arm64 and x86_64 package inputs come from their corresponding qualified build
+publications.
+
+## Phase 3: Emit Native Distribution Packages
+
+Add the root `collider package linux-runtime` operation. It consumes the common
+runtime, session integration, browser, and optional Android artifacts and emits
+real `.deb`, `.rpm`, and `.pkg.tar.zst` packages for both architectures.
+
+Each package and complete cohort is an immutable product artifact using the
+portable manifest and digest primitives established by Phase 1 of the
+[GitHub Actions self-hosted CI
+plan](github-actions-self-hosted-runner-plan.md). Package-family metadata remains
+a typed package contract; it is not encoded as a generic CI artifact or remote
+cache entry.
+
+The existing distribution manifests become typed inputs to native package
+assembly rather than user-facing results. Every adapter declares only runtime
+dependencies, exact cohort relationships, owned paths, configuration-file
+semantics, lifecycle hooks, and removal behavior. No adapter contains source
+build logic.
+
+Generate family-specific repository enrollment and keyring packages alongside
+the product packages. Validate archive metadata, ownership, permissions,
+dependency closure, maintainer scripts, installed paths, and clean removal
+without modifying the build host.
+
+Gate: a local package-manager root can install, upgrade, downgrade, and remove
+the complete cohort using only the emitted native packages.
+
+## Phase 4: Move Android Add-on Activation into Nucleus
+
+Install the signed Android artifact through `nucleus-android-addon`. Add an
+installed Nucleus add-on manager that validates compatibility and signatures,
+activates one immutable generation atomically, preserves persistent Android
+state across package changes, rolls back failed activation, and deactivates a
+removed capability.
+
+Package lifecycle hooks communicate with that installed boundary; they do not
+reimplement its state machine. The installed `nucleus` administration CLI owns
+manual installation of an offline signed artifact when that workflow is needed.
+Collider only assembles and tests the artifact.
+
+Gate: package-manager installation and removal exercise the same product-owned
+activation contract as an offline artifact, and Collider does not mutate the
+installed add-on store.
+
+## Phase 5: Assemble Signed Repository Snapshots
+
+Add deterministic repository assembly after native package production. Produce:
+
+- APT `Packages`, `Release`, and `InRelease` metadata;
+- RPM `repodata` plus package and metadata signatures;
+- pacman database, files database, package signatures, and database signature;
+- enrollment packages, public key material, checksums, and provenance; and
+- a machine-readable release index tying every file to the source, toolchain,
+  architecture artifact, package cohort, and channel.
+
+Repository assembly accepts explicit signing identities and an immutable package
+set. It performs no upload and no source or package download. Unsigned local test
+snapshots are a distinct test fixture and cannot satisfy a release gate.
+
+Gate: each package manager resolves and verifies the complete signed cohort from
+a local copy of the generated snapshot; independently repeated assembly over the
+same package set and signing inputs produces the same release index and
+repository contents; and assembly performs no network access or publication.
+
+## Phase 6: Remove Collider Product Installation
+
+Move every remaining caller to development staging, native packaging, or the
+installed Nucleus add-on boundary. Then delete, in one cutover:
+
+- `collider install session`;
+- `collider install browser`;
+- `collider install android-addon` and its lifecycle children;
+- the root `collider install` command group;
+- component install entrypoints and checkout installation-prefix policy; and
+- obsolete parser, capability, action, and installation tests.
+
+Regenerate the repository-scoped Collider skill from the reduced grammar.
+Collider help and documentation describe only build, test, development run,
+package, and inspection responsibilities.
+
+Gate: no public Collider grammar, component entrypoint, workspace path, or test
+models product installation, and the macOS and Linux Collider command trees
+share that invariant.
+
+## Phase 7: Publish Qualified Repository Cohorts
+
+Protected publication consumes only trusted-`main` package bundles and
+digest-bound qualification records accepted by the self-hosted CI contract. It
+rejects PR-owned, missing, stale, translated, wrong-platform, or
+wrong-capability evidence and performs no compilation, package assembly, or
+artifact substitution.
+
+Before the hard object-store cutover, release automation creates one draft
+GitHub Release for the versioned cohort, uploads every package object, verifies
+the remote asset sizes and digests against the release index, and publishes the
+immutable release. After the cutover, the corresponding publisher instead
+writes and verifies the complete cohort under absent content-addressed keys in
+the package-object R2 bucket.
+
+The repository-metadata publisher uploads the complete signed snapshot beneath
+its digest in the metadata R2 bucket, reads it back for verification, and writes
+the family/channel/architecture channel object last. That final atomic object
+write is the visibility point. The publisher has no package-object or Worker
+deployment credential. A published package version is never replaced.
+
+Retain prior cohorts needed for supported rollback. Prune nightly snapshots and
+package objects only after they leave the bounded rollback retention set and no
+retained channel snapshot references them. Before object-store cutover, pruning
+deletes the whole eligible nightly GitHub Release; it never edits an immutable
+release or removes an individual asset. After cutover, a separate retention
+identity removes unreferenced immutable snapshot prefixes and content-addressed
+R2 objects. Stable and retained rollback cohorts are not prunable.
+
+Gate: an interruption before package-object publication exposes no cohort; an
+interruption before the final channel-object write leaves the previous snapshot
+active; a completed channel write cannot reference a missing or unverified
+package object; and the Worker origin serves the exact qualified cohort named by
+the trusted release index.
+
+## Phase 8: Publish and Qualify Native Update Lifecycles
+
+Publish nightly repository snapshots first, then beta. Enroll clean Debian/Ubuntu,
+Fedora/RHEL-family, and Arch-family systems through their native repository
+package or documented trust bootstrap. Qualify on arm64 and x86_64:
+
+1. clean repository enrollment and installation;
+2. ordinary package-manager upgrade to a newer complete cohort;
+3. interrupted download and interrupted transaction recovery;
+4. explicit downgrade to a retained prior cohort;
+5. signing-key transition through an earlier keyring update;
+6. Android add-on installation, update, deactivation, and persistent-state
+   preservation;
+7. removal without deleting user-authored or persistent product state; and
+8. reinstallation after removal.
+
+Promote exact qualified package cohorts from nightly to beta and from beta to
+stable without rebuilding or copying package payloads. Promotion publishes new
+channel metadata that references the same immutable GitHub release assets and
+package-object digests.
+Nucleus OS images carry their selected repository configuration and keyring at
+image creation, so their first update uses the ordinary package manager without
+a bootstrap step.
+
+Gate: an enrolled system remains current through ordinary `apt upgrade`, `dnf
+upgrade`, or `pacman -Syu`; no Nucleus updater or Collider command participates.
+
+## Phase 9: Add Non-Installed Remote Development Generations
+
+Add `collider dev-deploy linux-runtime` on macOS after the production artifact,
+qualification, package, and update contracts are complete. It selects one target
+architecture and one existing runtime build selection, including debug, release,
+Tracy, or a sanitizer, then builds or reuses the matching validated development
+generation. The generation identity includes the complete Git working-copy
+identity, toolchain and native dependency identities, architecture,
+optimization, and instrumentation selection. Deploying uncommitted work
+therefore cannot be mistaken for a qualified product artifact or repository
+release.
 
 Development generation assembly belongs to the platform-neutral Linux artifact
-graph, not `ColliderLinuxOperations`. macOS composes it from cross-built Linux
-outputs without executing a target ELF binary. The task graph rebuilds only
-invalidated inputs: a compositor edit does not rebuild Chromium, AOSP, a target
-SDK, or an unchanged native dependency. `--no-build` republishes an already
-validated matching generation when only transfer must be repeated.
+graph, not `ColliderLinuxOperations`. It reuses the portable product-artifact
+identity, file-tree digest, executable metadata, and local validation primitives
+from the self-hosted CI plan while remaining a distinct unsigned artifact type
+with no qualification or publication authority. macOS composes it from
+cross-built Linux outputs without executing a target ELF binary. The task graph
+rebuilds only invalidated inputs: a compositor edit does not rebuild Chromium,
+AOSP, a target SDK, or an unchanged native dependency. `--no-build` republishes
+an already validated matching generation when only transfer must be repeated.
 
 The intended inner-loop command is:
 
@@ -257,8 +423,9 @@ collider dev-deploy linux-runtime \
   --optimize <debug|release>
 ```
 
-This path requires neither CI, release signing, native package assembly,
-repository publication, nor a package-manager refresh.
+This path invokes no CI job, release signer, native package assembly,
+repository publication, or package-manager refresh. It consumes the established
+artifact contract without entering the production pipeline.
 
 Use the host's standard SSH configuration and `rsync` transport. Do not add a
 Collider daemon, worker, remote scheduler, source checkout, source upload, or
@@ -317,144 +484,3 @@ a local dirty debug or release generation directly from the M2 Ultra, run that
 generation on another VT, switch between them through normal seat handling, and
 remove every development generation without changing package-manager state or
 installed Nucleus state.
-
-## Phase 3: Make the Browser a Package Input
-
-Make both browser architectures ordinary immutable outputs of `collider build
-browser`. Remove the special x86_64 installation task and its checkout prefix.
-The common Linux package graph consumes the selected browser artifact by digest
-and places it in `nucleus-browser` without rebuilding it.
-
-Browser qualification consumes the package-installed generation. Development
-diagnostics consume the build publication directly and do not simulate a system
-installation on macOS.
-
-Gate: the browser has no install entrypoint in the Collider component graph, and
-arm64 and x86_64 package inputs come from their corresponding qualified build
-publications.
-
-## Phase 4: Emit Native Distribution Packages
-
-Add the root `collider package linux-runtime` operation. It consumes the common
-runtime, session integration, browser, and optional Android artifacts and emits
-real `.deb`, `.rpm`, and `.pkg.tar.zst` packages for both architectures.
-
-The existing distribution manifests become typed inputs to native package
-assembly rather than user-facing results. Every adapter declares only runtime
-dependencies, exact cohort relationships, owned paths, configuration-file
-semantics, lifecycle hooks, and removal behavior. No adapter contains source
-build logic.
-
-Generate family-specific repository enrollment and keyring packages alongside
-the product packages. Validate archive metadata, ownership, permissions,
-dependency closure, maintainer scripts, installed paths, and clean removal
-without modifying the build host.
-
-Gate: a local package-manager root can install, upgrade, downgrade, and remove
-the complete cohort using only the emitted native packages.
-
-## Phase 5: Move Android Add-on Activation into Nucleus
-
-Install the signed Android artifact through `nucleus-android-addon`. Add an
-installed Nucleus add-on manager that validates compatibility and signatures,
-activates one immutable generation atomically, preserves persistent Android
-state across package changes, rolls back failed activation, and deactivates a
-removed capability.
-
-Package lifecycle hooks communicate with that installed boundary; they do not
-reimplement its state machine. The installed `nucleus` administration CLI owns
-manual installation of an offline signed artifact when that workflow is needed.
-Collider only assembles and tests the artifact.
-
-Gate: package-manager installation and removal exercise the same product-owned
-activation contract as an offline artifact, and Collider does not mutate the
-installed add-on store.
-
-## Phase 6: Assemble Signed Repository Snapshots
-
-Add deterministic repository assembly after native package production. Produce:
-
-- APT `Packages`, `Release`, and `InRelease` metadata;
-- RPM `repodata` plus package and metadata signatures;
-- pacman database, files database, package signatures, and database signature;
-- enrollment packages, public key material, checksums, and provenance; and
-- a machine-readable release index tying every file to the source, toolchain,
-  architecture artifact, package cohort, and channel.
-
-Repository assembly accepts explicit signing identities and an immutable package
-set. It performs no upload and no source or package download. Unsigned local test
-snapshots are a distinct test fixture and cannot satisfy a release gate.
-
-Before the hard object-store cutover, release automation creates one draft
-GitHub Release for the versioned cohort, uploads every package object, verifies
-the remote asset sizes and digests against the release index, and publishes the
-immutable release. After the cutover, the corresponding publisher instead
-writes and verifies the complete cohort under absent content-addressed keys in
-the package-object R2 bucket.
-
-The repository-metadata publisher uploads the complete signed snapshot beneath
-its digest in the metadata R2 bucket, reads it back for verification, and writes
-the family/channel/architecture channel object last. That final atomic object
-write is the visibility point. The publisher has no package-object or Worker
-deployment credential. A published package version is never replaced.
-
-Retain prior cohorts needed for supported rollback. Prune nightly snapshots and
-package objects only after they leave the bounded rollback retention set and no
-retained channel snapshot references them. Before object-store cutover, pruning
-deletes the whole eligible nightly GitHub Release; it never edits an immutable
-release or removes an individual asset. After cutover, a separate retention
-identity removes unreferenced immutable snapshot prefixes and content-addressed
-R2 objects. Stable and retained rollback cohorts are not prunable.
-
-Gate: each package manager resolves a complete signed cohort from a local copy
-of the generated snapshot and through the Worker origin; an interruption before
-package-object publication exposes no cohort; an interruption before the final
-channel-object write leaves the previous snapshot active; and a completed
-channel write cannot reference a missing or unverified package object.
-
-## Phase 7: Remove Collider Product Installation
-
-Move every remaining caller to development staging, native packaging, or the
-installed Nucleus add-on boundary. Then delete, in one cutover:
-
-- `collider install session`;
-- `collider install browser`;
-- `collider install android-addon` and its lifecycle children;
-- the root `collider install` command group;
-- component install entrypoints and checkout installation-prefix policy; and
-- obsolete parser, capability, action, and installation tests.
-
-Regenerate the repository-scoped Collider skill from the reduced grammar.
-Collider help and documentation describe only build, test, development run,
-package, and inspection responsibilities.
-
-Gate: no public Collider grammar, component entrypoint, workspace path, or test
-models product installation, and the macOS and Linux Collider command trees
-share that invariant.
-
-## Phase 8: Publish and Qualify Native Update Lifecycles
-
-Publish nightly repository snapshots first, then beta. Enroll clean Debian/Ubuntu,
-Fedora/RHEL-family, and Arch-family systems through their native repository
-package or documented trust bootstrap. Qualify on arm64 and x86_64:
-
-1. clean repository enrollment and installation;
-2. ordinary package-manager upgrade to a newer complete cohort;
-3. interrupted download and interrupted transaction recovery;
-4. explicit downgrade to a retained prior cohort;
-5. signing-key transition through an earlier keyring update;
-6. Android add-on installation, update, deactivation, and persistent-state
-   preservation;
-7. removal without deleting user-authored or persistent product state; and
-8. reinstallation after removal.
-
-Promote exact qualified package cohorts from nightly to beta and from beta to
-stable without rebuilding or copying package payloads. Promotion publishes new
-channel metadata that references the same immutable GitHub release assets and
-package-object digests.
-Nucleus OS images carry their selected repository configuration and keyring at
-image creation, so their first update uses the ordinary package manager without
-a bootstrap step.
-
-Gate: an enrolled system remains current through ordinary `apt upgrade`, `dnf
-upgrade`, or `pacman -Syu`; no Nucleus updater or Collider command participates.

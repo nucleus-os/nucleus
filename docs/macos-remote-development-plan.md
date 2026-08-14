@@ -2,6 +2,12 @@
 
 Status: active
 
+Execution position: Phases 2 through 6 follow the production package, CI,
+publication, distribution-qualification, and development-generation phases in
+the root documentation inventory. The production artifact contract defines the
+generation that this plan deploys; remote development does not define a second
+artifact model.
+
 ## Invariant
 
 The M2 Ultra is the Nucleus development and build host. The authoritative Git
@@ -127,8 +133,8 @@ run resumes without repeating clean tasks.
 
 ## Phase 4: Add Host-Wide Collider Admission
 
-Status: active. The implementation is complete; the cross-checkout operational
-gate remains.
+The implementation is complete; the cross-checkout operational gate remains
+and executes when this plan resumes after the production delivery sequence.
 
 Add one cross-process execution lock in a host-owned path outside every
 checkout. Every task-executing Collider command acquires it before execution and
@@ -160,7 +166,8 @@ unchanged, and interruption leaves the lock reusable.
 ## Phase 5: Add the Linux Presentation Target
 
 Implement the non-installed development-generation deployment defined by the
-[Linux package distribution and update plan](linux-package-distribution-and-update-plan.md).
+[Linux package distribution and update
+plan](linux-package-distribution-and-update-plan.md) Phase 9.
 Collider builds and validates the selected Linux runtime on macOS, transfers it
 through standard SSH and rsync, and atomically publishes it below the remote
 user's development state root. The Linux target has no checkout, build

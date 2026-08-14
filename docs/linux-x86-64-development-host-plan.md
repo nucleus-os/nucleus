@@ -2,6 +2,12 @@
 
 Status: active
 
+Execution position: Phase 1 runs first to remove unsupported Linux-host claims.
+Phases 2 through 10 follow the production artifact, package, CI, publication,
+distribution-qualification, and development-deployment sequence in the root
+documentation inventory. The contributor workflow reuses portable identity
+primitives without becoming a production artifact, release path, or CI cache.
+
 ## Invariant
 
 Nucleus supports two complementary development workflows. The M2 Ultra remains
@@ -110,8 +116,12 @@ claims that Collider can build on Linux before a Linux backend exists.
 
 ## Phase 2: Define Portable Published-Input Identity
 
+Reuse the canonical identity, platform, and digest primitives established by
+Phase 1 of the
+[GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md).
 Introduce a typed `PublishedBuildInput` contract for only the allowlisted inputs
-in this plan. Its manifest records:
+in this plan. It remains distinct from a CI product bundle, package release
+index, qualification record, and development generation. Its manifest records:
 
 - artifact kind and producing task identity;
 - source and submodule closure identity;
