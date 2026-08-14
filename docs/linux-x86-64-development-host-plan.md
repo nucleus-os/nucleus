@@ -11,10 +11,13 @@ primitives without becoming a production artifact, release path, or CI cache.
 ## Invariant
 
 Nucleus supports two complementary development workflows. The M2 Ultra remains
-the primary development host, full arm64 and x86_64 builder, CI executor, and
-artifact publisher. An x86_64 Linux contributor host independently clones,
-provisions, builds, tests, and runs the supported x86_64 first-party graph
-without access to that Mac.
+the primary development host, full arm64 and x86_64 builder, main-only CI
+executor, and artifact publisher. Automated `main` and locally initiated clean,
+branch, dirty, debug, and release builds run through its dedicated
+`nucleus-builder` account and reuse one persistent Collider cache. Remote branch
+and pull-request CI are unsupported. An x86_64 Linux contributor host
+independently clones, provisions, builds, tests, and runs the supported x86_64
+first-party graph without access to the M2 Ultra builder identity or cache.
 
 The Linux workflow is containerized and distribution-independent. Collider
 acquires all network inputs on the host, verifies them, and mounts them read-only
@@ -29,9 +32,10 @@ no build profile, prebuilt-selection flag, generic remote task cache, or fallbac
 to a merely similar version.
 
 Linux x86_64 contributors build and execute x86_64 products and tests. The M2
-Ultra continues to own arm64 products, arm64 tests, dual-architecture release
-cohorts, signing, and publication. Linux arm64 development hosts and foreign-
-architecture test execution on Linux are outside this plan.
+Ultra continues to own trusted arm64 products, arm64 tests, dual-architecture
+release cohorts, signing, and publication. Only qualified protected-`main`
+artifacts create release evidence. Linux arm64 development hosts and
+foreign-architecture test execution on Linux are outside this plan.
 
 ## Boundaries
 
@@ -105,11 +109,13 @@ Remove the dead Linux toolchain-selection branch from `tools/host-env.sh` and
 the nonfunctional Linux bootstrap path from `collider-setup.sh`. Until Phase 8
 lands, setup rejects Linux immediately with one accurate unsupported-host error.
 
-Remove workflow jobs that invoke unsupported Linux build or test paths. Keep the
-self-hosted CI plan deferred; a contributor host is not a trusted runner or
-gateway. Update current documentation to distinguish the supported M2 Ultra
-workflow, the future Linux contributor workflow, Linux presentation targets,
-and trusted CI identities.
+Remove workflow jobs that invoke unsupported Linux build or test paths. The
+active self-hosted CI plan replaces them only after its main-only M2 Ultra
+builder account, shared persistent cache, and protection gates are complete; a
+contributor host is not a CI runner or gateway. Update current documentation to
+distinguish the supported M2 Ultra main pipeline, the future Linux contributor
+workflow, Linux presentation targets, unsupported branch and pull-request CI,
+and protected delivery identities.
 
 Gate: no executable path, workflow, generated skill, or current-state document
 claims that Collider can build on Linux before a Linux backend exists.

@@ -23,6 +23,22 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 - Do not write tests that inspect source-code shape or declaration presence/absence, such as `@hasDecl` assertions for APIs that should not exist. Test behavior and runtime contracts instead.
 - Avoid full cache wipes (`rm -rf .build`) except as a last resort after source/build causes are ruled out, or if disk space is full.
 - Do not launch the compositor/app, start manual interactive sessions, or run long-lived foreground processes without explicit user request.
+- Remote CI/CD supports only exact revisions on protected `main`. Branch
+  pushes, pull requests, forks, and pull-request-associated dispatches do not
+  schedule Nucleus compute; any unsupported remote context that reaches a
+  shared entrypoint fails before checkout or repository-controlled execution.
+  Automated `main` builds and locally initiated clean, branch, dirty, debug, and
+  release builds run on the personal M2 Ultra through the dedicated non-admin
+  `nucleus-builder` account and reuse that account's one persistent Collider
+  cache, Apple-container application root, images, SDKs, compiler caches, and
+  workspaces. Local execution receives read-only access only to the
+  authoritative Nucleus checkout; the interactive `maddy` account runs no
+  Actions service and shares no home, credentials, checkout write access,
+  signing, or publication state with the builder. Locally dirty or non-`main`
+  artifacts never qualify for delivery. Routine builds never wipe valid
+  incremental state or force a clean rebuild. The same physical host remains a
+  declared residual boundary against kernel, firmware, hypervisor, and
+  privileged-service escapes.
 - A goal may be marked complete when implementation and every agent-runnable verification gate are complete and the only remaining step is the user's own validation or interactive run. State that handoff explicitly; user-owned validation does not keep the goal open.
 - React 19 and React Compiler are enabled. Do not use `useMemo`, `useCallback`, etc.
 - Do not patch the vendored React Native tree. Public RN compatibility is required; pnpm patches against dependencies are allowed.

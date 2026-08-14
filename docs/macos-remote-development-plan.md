@@ -20,6 +20,17 @@ declared Linux presentation target may receive an immutable user-owned
 development generation for local VT testing, but it never receives source or
 becomes a build host.
 
+The interactive development account runs no GitHub Actions service. Automated
+CI/CD supports only protected `main` and uses the separate non-admin
+`nucleus-builder` account. Remote branch and pull-request activity never
+schedules M2 Ultra compute. A locally initiated Collider build may execute the
+authoritative checkout's committed, branch, or dirty source as
+`nucleus-builder` through read-only checkout access. Automated and local builds
+therefore reuse the builder account's one Apple-container service, cache, SDKs,
+compiler caches, and persistent workspaces without exposing personal
+credentials, unrelated interactive state, signing identities, or publication
+identities.
+
 This plan governs the M2 Ultra remote-development topology, not every supported
 contributor platform. The independent
 [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md)
@@ -48,10 +59,11 @@ loss crosses the signed repository publication boundary into the immutable
 GitHub Release package-object store instead of becoming protected local build
 state.
 
-Host-loss recovery is a fresh clone followed by AOSP synchronization and
-rebuilding all SDKs, container images, compiler caches, and persistent
-workspaces. The accepted current recovery cost is roughly 900 GB of
-reconstructible state. No source snapshot or build-cache backup service exists.
+Host-loss recovery is a fresh authoritative clone and clean builder checkout
+followed by AOSP synchronization and rebuilding all SDKs, container images,
+compiler caches, and persistent workspaces. The accepted current recovery cost
+is roughly 900 GB of reconstructible state. No source snapshot or build-cache
+backup service exists.
 
 ## Current State
 
@@ -67,12 +79,14 @@ failed or interrupted run when its resolved task identities still match.
 Persistent Linux build and compiler-cache state is separate from source and
 survives individual build-container lifetimes.
 
-Task-executing and state-mutating commands acquire one host-wide kernel lease
-below the conventional Collider Developer state root. The lease coordinates
-local terminals, remote SSH sessions, alternate checkouts, and the future
-trusted runner while leaving inspection and dry-run commands lock-free.
-Contended runs publish wait events, and cancellation releases admission after
-normal runtime shutdown and run finalization.
+Task-executing and state-mutating commands currently acquire a per-user kernel
+lease below the conventional Collider Developer state root. It coordinates
+local terminals, remote SSH sessions, and alternate checkouts for one user but
+cannot yet serialize the interactive and future `nucleus-builder` accounts. The
+main-only CI plan replaces it with machine-wide admission while leaving
+inspection and dry-run commands lock-free. Contended runs publish wait events,
+and cancellation releases admission after normal runtime shutdown and run
+finalization.
 
 The authoritative checkout already lives at `~/Developer/nucleus`. The
 [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
@@ -133,16 +147,22 @@ run resumes without repeating clean tasks.
 
 ## Phase 4: Add Host-Wide Collider Admission
 
-The implementation is complete; the cross-checkout operational gate remains
-and executes when this plan resumes after the production delivery sequence.
+The single-account implementation is complete. Phase 4 of the
+[GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
+replaces its per-user location with machine-wide admission before this plan
+resumes. This phase completes the remote-development integration and
+operational gate.
 
 Add one cross-process execution lock in a host-owned path outside every
-checkout. Every task-executing Collider command acquires it before execution and
-holds it through shutdown and cancellation. Inspection commands do not acquire
-the lock.
+checkout and user home. Both `maddy` and `nucleus-builder` can acquire it without
+reading one another's private state. Every task-executing Collider command,
+local account-switching build, CI run, and mutating cache operation acquires it
+before execution and holds it through shutdown and cancellation. Inspection
+commands do not acquire the lock.
 
 The lock admits one Collider run at a time across local terminals, remote SSH
-sessions, alternate checkouts, and the future trusted self-hosted runner. Task
+sessions, the authoritative checkout, the clean builder checkout, automated
+`main`, and locally initiated branch, dirty, debug, and release builds. Task
 parallelism remains internal to the admitted run, so arm64 and x86_64 lanes,
 independent OCI tasks, and lightweight prerequisites retain their declared
 concurrency. Do not replace the lock with a worker daemon, queue service,
@@ -152,16 +172,20 @@ Record lock ownership and wait state using the existing run and lock evidence.
 Cancellation releases the lock only after child processes and managed
 containers have completed their normal cleanup transaction.
 
-Collider stores the macOS lease at
-`~/Library/Developer/Nucleus/Collider/build/state/locks/host-execution.lock`,
-records the owning run beside it, and uses the existing cancellable file-lock
-acquisition path. Mutating commands and non-dry task commands acquire it.
-Doctor, status, run, log, task, graph, cache-status, and dry-run commands remain
-available without it.
+Move the lease from
+`~/Library/Developer/Nucleus/Collider/build/state/locks/host-execution.lock` to
+one root-provisioned Nucleus admission directory under `/Library/Application
+Support`. Record the owning account, checkout, source identity, configuration,
+and run beside it using the existing cancellable file-lock acquisition path.
+Mutating commands and non-dry task commands acquire it. Doctor, status, run,
+log, task, graph, cache-status, and dry-run commands remain available without
+it.
 
-Gate: two checkouts cannot execute task graphs concurrently, inspection remains
-available while a build owns admission, internal architecture concurrency is
-unchanged, and interruption leaves the lock reusable.
+Gate: the interactive and builder accounts cannot execute task graphs
+concurrently; a developer-initiated dirty build reads the authoritative checkout
+without modifying it and reuses the same builder cache as CI; inspection
+remains available while a build owns admission; internal architecture
+concurrency is unchanged; and interruption leaves the lock reusable.
 
 ## Phase 5: Add the Linux Presentation Target
 
@@ -198,11 +222,12 @@ target.
 
 Gate: remote development from a clean client succeeds through standard SSH;
 client replacement leaves the authoritative host checkout untouched;
-one heavy build can use the M2 Ultra's internal parallelism without competing
-with another Collider process; a Linux presentation target receives no source;
-and deleting every reconstructible build workspace and deployed development
-generation leaves pushed source history, installed packages, and user state
-intact.
+locally initiated committed, branch, and dirty builds execute as
+`nucleus-builder` against the read-only authoritative checkout; one heavy build
+can use the M2 Ultra's internal parallelism without competing with another
+Collider process; a Linux presentation target receives no source; and deleting
+every reconstructible build workspace and deployed development generation
+leaves pushed source history, installed packages, and user state intact.
 
 ## Explicit Non-Goals
 

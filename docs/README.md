@@ -40,8 +40,11 @@ reuse.
    cohorts, and move Android add-on activation into the installed product.
 4. Complete Phases 2 through 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
-   establish the protected workflow and admission boundaries, provision
-   isolated runner identities, and enforce cross-identity storage isolation.
+   establish the protected main-only workflow boundary, provision the
+   `nucleus-builder` account on the M2 Ultra, move automated `main` and locally
+   initiated clean, branch, dirty, debug, and release builds onto its shared
+   persistent Collider cache, and enforce source, account, credential, network,
+   and recovery boundaries.
 5. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
@@ -56,7 +59,7 @@ reuse.
 8. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    to bind the complete verification graph to immutable artifacts and cut over
-   PR and `main` verification.
+   main-only verification and delivery inputs.
 9. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
