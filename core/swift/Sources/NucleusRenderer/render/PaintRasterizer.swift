@@ -85,9 +85,7 @@ internal import NucleusTypes
             else { return }
             if let transform = command.transform {
                 let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
-                matrix.withUnsafeBufferPointer {
-                    unsafe canvas.clipPathTransformed(path, $0.baseAddress, command.antialias)
-                }
+                unsafe canvas.clipPathTransformed(path, matrix.span, command.antialias)
             } else {
                 unsafe canvas.clipPath(path, command.antialias)
             }
@@ -101,7 +99,7 @@ internal import NucleusTypes
         if let transform = command.transform {
             unsafe canvas.save()
             let matrix = deviceMatrix(transform, scaleX: sx, scaleY: sy)
-            matrix.withUnsafeBufferPointer { unsafe canvas.concat($0.baseAddress) }
+            unsafe canvas.concat(matrix.span)
         }
         defer { if command.transform != nil { unsafe canvas.restore() } }
 
@@ -255,13 +253,7 @@ internal import NucleusTypes
             cursor += verb.floatCount
         }
 
-        let path = verbs.withUnsafeBufferPointer { verbBuffer in
-            points.withUnsafeBufferPointer { pointBuffer in
-                unsafe nucleus.skia.makePath(
-                    verbBuffer.baseAddress, verbBuffer.count,
-                    pointBuffer.baseAddress, pointBuffer.count, evenOdd)
-            }
-        }
+        let path = nucleus.skia.makePath(verbs.span, points.span, evenOdd)
         return path.isValid() ? path : nil
     }
 
@@ -292,49 +284,29 @@ internal import NucleusTypes
         case .linearGradient:
             guard scalars.count >= 4, colors.count >= 2 else { return nil }
             let positions = stops(after: 4)
-            return colors.withUnsafeBufferPointer { c in
-                unsafe withStops(positions, count: colors.count) { p in
-                    unsafe nucleus.skia.makeLinearGradient(
-                        scalars[0] * sx, scalars[1] * sy, scalars[2] * sx, scalars[3] * sy,
-                        c.baseAddress, p, c.count, .clamp)
-                }
-            }
+            let validPositions = positions.count == colors.count ? positions : []
+            return unsafe nucleus.skia.makeLinearGradient(
+                scalars[0] * sx, scalars[1] * sy, scalars[2] * sx, scalars[3] * sy,
+                colors.span, validPositions.span, .clamp)
         case .radialGradient:
             guard scalars.count >= 3, colors.count >= 2 else { return nil }
             let positions = stops(after: 3)
-            return colors.withUnsafeBufferPointer { c in
-                unsafe withStops(positions, count: colors.count) { p in
-                    unsafe nucleus.skia.makeRadialGradient(
-                        scalars[0] * sx, scalars[1] * sy, scalars[2] * min(sx, sy),
-                        c.baseAddress, p, c.count, .clamp)
-                }
-            }
+            let validPositions = positions.count == colors.count ? positions : []
+            return unsafe nucleus.skia.makeRadialGradient(
+                scalars[0] * sx, scalars[1] * sy, scalars[2] * min(sx, sy),
+                colors.span, validPositions.span, .clamp)
         case .sweepGradient:
             guard scalars.count >= 4, colors.count >= 2 else { return nil }
             let positions = stops(after: 4)
-            return colors.withUnsafeBufferPointer { c in
-                unsafe withStops(positions, count: colors.count) { p in
-                    unsafe nucleus.skia.makeSweepGradient(
-                        scalars[0] * sx, scalars[1] * sy, scalars[2], scalars[3],
-                        c.baseAddress, p, c.count, .clamp)
-                }
-            }
+            let validPositions = positions.count == colors.count ? positions : []
+            return unsafe nucleus.skia.makeSweepGradient(
+                scalars[0] * sx, scalars[1] * sy, scalars[2], scalars[3],
+                colors.span, validPositions.span, .clamp)
         case .effect:
             guard command.effectHandle != 0,
                 let effect = resolveEffect(command.effectHandle)
             else { return nil }
-            return scalars.withUnsafeBufferPointer { u in
-                unsafe effect.makeShader(u.baseAddress, u.count)
-            }
+            return unsafe effect.makeShader(scalars.span)
         }
-    }
-
-    /// Gradient stops are optional: a count mismatch means "distribute evenly",
-    /// which Skia expresses as a null positions pointer.
-    static func withStops<T>(
-        _ positions: [Float], count: Int, _ body: (UnsafePointer<Float>?) -> T
-    ) -> T {
-        guard positions.count == count else { return body(nil) }
-        return positions.withUnsafeBufferPointer { unsafe body($0.baseAddress) }
     }
 }

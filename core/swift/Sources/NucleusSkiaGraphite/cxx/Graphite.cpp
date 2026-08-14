@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <sys/stat.h>
+#include <utility>
 #include <vector>
 
 #include <vulkan/vulkan_core.h>
@@ -82,6 +83,23 @@
 namespace nucleus::skia {
 
 namespace {
+
+template <typename Result, typename Body>
+Result interopOr(Result fallback, Body &&body) noexcept {
+    try {
+        return body();
+    } catch (...) {
+        return std::move(fallback);
+    }
+}
+
+template <typename Body>
+void interopVoid(Body &&body) noexcept {
+    try {
+        body();
+    } catch (...) {
+    }
+}
 
 struct SubmissionCompletionState {
     struct TimingSample {
@@ -162,22 +180,26 @@ void attachSubmissionCompletion(
         info.fGpuStatsFlags = skgpu::GpuStatsFlags::kElapsedTime;
         info.fFinishedWithStatsProc = [](
             skgpu::graphite::GpuFinishedContext context,
-            skgpu::CallbackResult result, const skgpu::GpuStats &stats) {
-            finishSubmission(
-                std::unique_ptr<SubmissionCompletionToken>(
-                    static_cast<SubmissionCompletionToken *>(context)),
-                result,
-                stats.elapsedTime);
+            skgpu::CallbackResult result, const skgpu::GpuStats &stats) noexcept {
+            interopVoid([&] {
+                finishSubmission(
+                    std::unique_ptr<SubmissionCompletionToken>(
+                        static_cast<SubmissionCompletionToken *>(context)),
+                    result,
+                    stats.elapsedTime);
+            });
         };
     } else {
         info.fFinishedProc = [](
             skgpu::graphite::GpuFinishedContext context,
-            skgpu::CallbackResult result) {
-            finishSubmission(
-                std::unique_ptr<SubmissionCompletionToken>(
-                    static_cast<SubmissionCompletionToken *>(context)),
-                result,
-                0);
+            skgpu::CallbackResult result) noexcept {
+            interopVoid([&] {
+                finishSubmission(
+                    std::unique_ptr<SubmissionCompletionToken>(
+                        static_cast<SubmissionCompletionToken *>(context)),
+                    result,
+                    0);
+            });
         };
     }
 }
@@ -374,21 +396,22 @@ SkTileMode toSkTileMode(TileMode tile) {
 /// is also what `SkGradient::Colors` requires (it silently drops a mismatched
 /// position span, so the check is enforced here where it can fail visibly).
 bool gradientColors(
-    const Color *colors, size_t count, std::vector<SkColor4f> &out) {
-    if (colors == nullptr || count < 2) return false;
-    out.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        out.push_back(SkColor4f{colors[i].r, colors[i].g, colors[i].b, colors[i].a});
+    std::span<const Color> colors, std::vector<SkColor4f> &out) {
+    if (colors.size() < 2) return false;
+    out.reserve(colors.size());
+    for (const Color &color : colors) {
+        out.push_back(SkColor4f{color.r, color.g, color.b, color.a});
     }
     return true;
 }
 
 SkGradient makeSkGradient(
-    const std::vector<SkColor4f> &colors, const float *stops, size_t count, TileMode tile) {
+    const std::vector<SkColor4f> &colors, std::span<const float> stops, TileMode tile) {
     SkSpan<const SkColor4f> colorSpan(colors.data(), colors.size());
-    if (stops != nullptr) {
+    if (!stops.empty()) {
         return SkGradient(
-            SkGradient::Colors(colorSpan, SkSpan<const float>(stops, count), toSkTileMode(tile)),
+            SkGradient::Colors(
+                colorSpan, SkSpan<const float>(stops.data(), stops.size()), toSkTileMode(tile)),
             SkGradient::Interpolation{});
     }
     return SkGradient(
@@ -397,7 +420,7 @@ SkGradient makeSkGradient(
 
 }  // namespace
 
-bool setPaintBlend(Paint &paint, int32_t raw) {
+bool setPaintBlend(Paint &paint, int32_t raw) noexcept {
     switch (raw) {
         case 0: paint.blend = BlendMode::srcOver; return true;
         case 1: paint.blend = BlendMode::src; return true;
@@ -411,7 +434,7 @@ bool setPaintBlend(Paint &paint, int32_t raw) {
     }
 }
 
-bool setPaintStyle(Paint &paint, int32_t raw) {
+bool setPaintStyle(Paint &paint, int32_t raw) noexcept {
     switch (raw) {
         case 0: paint.style = PaintStyle::fill; return true;
         case 1: paint.style = PaintStyle::stroke; return true;
@@ -420,7 +443,7 @@ bool setPaintStyle(Paint &paint, int32_t raw) {
     }
 }
 
-bool setPaintStrokeCap(Paint &paint, int32_t raw) {
+bool setPaintStrokeCap(Paint &paint, int32_t raw) noexcept {
     switch (raw) {
         case 0: paint.strokeCap = StrokeCap::butt; return true;
         case 1: paint.strokeCap = StrokeCap::round; return true;
@@ -429,7 +452,7 @@ bool setPaintStrokeCap(Paint &paint, int32_t raw) {
     }
 }
 
-bool setPaintStrokeJoin(Paint &paint, int32_t raw) {
+bool setPaintStrokeJoin(Paint &paint, int32_t raw) noexcept {
     switch (raw) {
         case 0: paint.strokeJoin = StrokeJoin::miter; return true;
         case 1: paint.strokeJoin = StrokeJoin::round; return true;
@@ -518,74 +541,80 @@ struct GraphiteInternalAccess final {
 
 // MARK: - Image
 
-RasterImage::RasterImage() = default;
-RasterImage::RasterImage(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool RasterImage::isValid() const { return impl_ && impl_->image != nullptr; }
-int32_t RasterImage::width() const { return isValid() ? impl_->image->width() : 0; }
-int32_t RasterImage::height() const { return isValid() ? impl_->image->height() : 0; }
+RasterImage::RasterImage() noexcept = default;
+RasterImage::RasterImage(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool RasterImage::isValid() const noexcept { return impl_ && impl_->image != nullptr; }
+int32_t RasterImage::width() const noexcept { return isValid() ? impl_->image->width() : 0; }
+int32_t RasterImage::height() const noexcept { return isValid() ? impl_->image->height() : 0; }
 
 bool RasterImage::readPixelsRGBA(
-    uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
-    if (!isValid() || dst == nullptr) return false;
-    SkImageInfo info = SkImageInfo::Make(
-        impl_->image->width(), impl_->image->height(),
-        kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    const size_t stride =
-        rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
-    if (byteLength < stride * static_cast<size_t>(info.height())) return false;
-    return impl_->image->readPixels(nullptr, info, dst, stride, 0, 0);
+    std::span<uint8_t> destination [[clang::noescape]],
+    int32_t rowBytes) const noexcept {
+    return interopOr(false, [&] {
+        if (!isValid() || destination.empty()) return false;
+        SkImageInfo info = SkImageInfo::Make(
+            impl_->image->width(), impl_->image->height(),
+            kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        const size_t stride =
+            rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
+        if (destination.size() < stride * static_cast<size_t>(info.height())) return false;
+        return impl_->image->readPixels(
+            nullptr, info, destination.data(), stride, 0, 0);
+    });
 }
 
-Image::Image(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Image::isValid() const { return impl_ && impl_->image != nullptr; }
-int32_t Image::width() const { return isValid() ? impl_->image->width() : 0; }
-int32_t Image::height() const { return isValid() ? impl_->image->height() : 0; }
+Image::Image(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Image::isValid() const noexcept { return impl_ && impl_->image != nullptr; }
+int32_t Image::width() const noexcept { return isValid() ? impl_->image->width() : 0; }
+int32_t Image::height() const noexcept { return isValid() ? impl_->image->height() : 0; }
 
 // MARK: - UploadTexture
 
-UploadTexture::UploadTexture(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool UploadTexture::isValid() const {
+UploadTexture::UploadTexture(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool UploadTexture::isValid() const noexcept {
     return impl_ && impl_->texture.isValid() && impl_->image != nullptr;
 }
-int32_t UploadTexture::width() const { return isValid() ? impl_->width : 0; }
-int32_t UploadTexture::height() const { return isValid() ? impl_->height : 0; }
+int32_t UploadTexture::width() const noexcept { return isValid() ? impl_->width : 0; }
+int32_t UploadTexture::height() const noexcept { return isValid() ? impl_->height : 0; }
 
-bool UploadTexture::updateRGBA(const uint8_t *pixels, size_t byteLength) const {
-    if (!isValid() || pixels == nullptr || !impl_->recorder || !impl_->recorder->recorder) {
-        return false;
-    }
-    const SkImageInfo info = SkImageInfo::Make(
-        impl_->width, impl_->height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    if (byteLength < info.computeMinByteSize()) return false;
-    const SkPixmap pixmap(info, pixels, info.minRowBytes());
-    return impl_->recorder->recorder->updateBackendTexture(impl_->texture, &pixmap, 1);
+bool UploadTexture::updateRGBA(
+    std::span<const uint8_t> pixels [[clang::noescape]]) const noexcept {
+    return interopOr(false, [&] {
+        if (!isValid() || pixels.empty() || !impl_->recorder || !impl_->recorder->recorder) {
+            return false;
+        }
+        const SkImageInfo info = SkImageInfo::Make(
+            impl_->width, impl_->height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        if (pixels.size() < info.computeMinByteSize()) return false;
+        const SkPixmap pixmap(info, pixels.data(), info.minRowBytes());
+        return impl_->recorder->recorder->updateBackendTexture(impl_->texture, &pixmap, 1);
+    });
 }
 
-Image UploadTexture::image() const {
-    if (!isValid()) return Image(nullptr);
-    auto image = std::make_shared<Image::Impl>();
-    image->image = impl_->image;
-    image->owner = impl_;
-    return Image(std::move(image));
+Image UploadTexture::image() const noexcept {
+    return interopOr(Image(nullptr), [&] {
+        if (!isValid()) return Image(nullptr);
+        auto image = std::make_shared<Image::Impl>();
+        image->image = impl_->image;
+        image->owner = impl_;
+        return Image(std::move(image));
+    });
 }
 
 // MARK: - Shader
 
-Shader::Shader(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Shader::isValid() const { return impl_ && impl_->shader != nullptr; }
+Shader::Shader(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Shader::isValid() const noexcept { return impl_ && impl_->shader != nullptr; }
 
 // MARK: - Path
 
-Path::Path(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Path::isValid() const { return impl_ != nullptr; }
+Path::Path(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Path::isValid() const noexcept { return impl_ != nullptr; }
 
 Path makePath(
-    const uint8_t *verbs, size_t verbCount,
-    const float *points, size_t pointCount, bool evenOdd) {
-    if ((verbs == nullptr && verbCount > 0) ||
-        (points == nullptr && pointCount > 0)) {
-        return Path(nullptr);
-    }
+    std::span<const uint8_t> verbs [[clang::noescape]],
+    std::span<const float> points [[clang::noescape]], bool evenOdd) noexcept {
+    return interopOr(Path(nullptr), [&] {
 
     SkPathBuilder builder;
     builder.setFillType(evenOdd ? SkPathFillType::kEvenOdd : SkPathFillType::kWinding);
@@ -595,14 +624,14 @@ Path makePath(
     // points means the encoding is malformed, so fail rather than emit partial
     // geometry that would silently render wrong.
     auto take = [&](size_t floats) -> const float * {
-        if (f + floats > pointCount) return nullptr;
-        const float *p = points + f;
+        if (f + floats > points.size()) return nullptr;
+        const float *p = points.data() + f;
         f += floats;
         return p;
     };
 
-    for (size_t i = 0; i < verbCount; ++i) {
-        switch (static_cast<PathVerb>(verbs[i])) {
+    for (uint8_t verb : verbs) {
+        switch (static_cast<PathVerb>(verb)) {
             case PathVerb::move: {
                 const float *p = take(2);
                 if (!p) return Path(nullptr);
@@ -657,70 +686,90 @@ Path makePath(
     auto impl = std::make_shared<Path::Impl>();
     impl->path = builder.detach();
     return Path(std::move(impl));
+    });
 }
 
 // MARK: - Gradients
 
 Shader makeLinearGradient(
     float x0, float y0, float x1, float y1,
-    const Color *colors, const float *stops, size_t count, TileMode tile) {
-    std::vector<SkColor4f> cs;
-    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
-    const SkPoint pts[2] = {{x0, y0}, {x1, y1}};
-    auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = SkShaders::LinearGradient(pts, makeSkGradient(cs, stops, count, tile));
-    if (!impl->shader) return Shader(nullptr);
-    return Shader(std::move(impl));
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept {
+    return interopOr(Shader(nullptr), [&] {
+        std::vector<SkColor4f> cs;
+        if (!gradientColors(colors, cs) || (!stops.empty() && stops.size() != colors.size())) {
+            return Shader(nullptr);
+        }
+        const SkPoint pts[2] = {{x0, y0}, {x1, y1}};
+        auto impl = std::make_shared<Shader::Impl>();
+        impl->shader = SkShaders::LinearGradient(pts, makeSkGradient(cs, stops, tile));
+        if (!impl->shader) return Shader(nullptr);
+        return Shader(std::move(impl));
+    });
 }
 
 Shader makeRadialGradient(
     float centerX, float centerY, float radius,
-    const Color *colors, const float *stops, size_t count, TileMode tile) {
-    std::vector<SkColor4f> cs;
-    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
-    if (!(radius > 0)) return Shader(nullptr);
-    auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = SkShaders::RadialGradient(
-        SkPoint{centerX, centerY}, radius, makeSkGradient(cs, stops, count, tile));
-    if (!impl->shader) return Shader(nullptr);
-    return Shader(std::move(impl));
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept {
+    return interopOr(Shader(nullptr), [&] {
+        std::vector<SkColor4f> cs;
+        if (!gradientColors(colors, cs) || (!stops.empty() && stops.size() != colors.size())) {
+            return Shader(nullptr);
+        }
+        if (!(radius > 0)) return Shader(nullptr);
+        auto impl = std::make_shared<Shader::Impl>();
+        impl->shader = SkShaders::RadialGradient(
+            SkPoint{centerX, centerY}, radius, makeSkGradient(cs, stops, tile));
+        if (!impl->shader) return Shader(nullptr);
+        return Shader(std::move(impl));
+    });
 }
 
 Shader makeSweepGradient(
     float centerX, float centerY, float startAngle, float endAngle,
-    const Color *colors, const float *stops, size_t count, TileMode tile) {
-    std::vector<SkColor4f> cs;
-    if (!gradientColors(colors, count, cs)) return Shader(nullptr);
-    // SkShaders::SweepGradient returns null unless startAngle < endAngle.
-    if (!(startAngle < endAngle)) return Shader(nullptr);
-    auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = SkShaders::SweepGradient(
-        SkPoint{centerX, centerY}, startAngle, endAngle,
-        makeSkGradient(cs, stops, count, tile));
-    if (!impl->shader) return Shader(nullptr);
-    return Shader(std::move(impl));
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept {
+    return interopOr(Shader(nullptr), [&] {
+        std::vector<SkColor4f> cs;
+        if (!gradientColors(colors, cs) || (!stops.empty() && stops.size() != colors.size())) {
+            return Shader(nullptr);
+        }
+        // SkShaders::SweepGradient returns null unless startAngle < endAngle.
+        if (!(startAngle < endAngle)) return Shader(nullptr);
+        auto impl = std::make_shared<Shader::Impl>();
+        impl->shader = SkShaders::SweepGradient(
+            SkPoint{centerX, centerY}, startAngle, endAngle,
+            makeSkGradient(cs, stops, tile));
+        if (!impl->shader) return Shader(nullptr);
+        return Shader(std::move(impl));
+    });
 }
 
 // MARK: - RuntimeEffect
 
-RuntimeEffect::RuntimeEffect(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool RuntimeEffect::isValid() const { return impl_ && impl_->effect != nullptr; }
+RuntimeEffect::RuntimeEffect(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool RuntimeEffect::isValid() const noexcept { return impl_ && impl_->effect != nullptr; }
 
-RuntimeEffect makeRuntimeEffect(const char *sksl) {
-    if (sksl == nullptr) return RuntimeEffect(nullptr);
-    auto result = SkRuntimeEffect::MakeForShader(SkString(sksl));
-    if (!result.effect) return RuntimeEffect(nullptr);
-    auto impl = std::make_shared<RuntimeEffect::Impl>();
-    impl->effect = result.effect;
-    return RuntimeEffect(std::move(impl));
+RuntimeEffect makeRuntimeEffect(
+    std::span<const uint8_t> sksl [[clang::noescape]]) noexcept {
+    return interopOr(RuntimeEffect(nullptr), [&] {
+        const auto *source = reinterpret_cast<const char *>(sksl.data());
+        auto result = SkRuntimeEffect::MakeForShader(
+            sksl.empty() ? SkString() : SkString(source, sksl.size()));
+        if (!result.effect) return RuntimeEffect(nullptr);
+        auto impl = std::make_shared<RuntimeEffect::Impl>();
+        impl->effect = result.effect;
+        return RuntimeEffect(std::move(impl));
+    });
 }
 
 namespace {
 sk_sp<SkData> uniformDataFor(
-    const SkRuntimeEffect &effect, const float *uniforms, size_t uniformFloatCount) {
+    const SkRuntimeEffect &effect, std::span<const float> uniforms) {
     sk_sp<SkData> data;
-    if (uniformFloatCount > 0 && uniforms != nullptr) {
-        data = SkData::MakeWithCopy(uniforms, uniformFloatCount * sizeof(float));
+    if (!uniforms.empty()) {
+        data = SkData::MakeWithCopy(uniforms.data(), uniforms.size_bytes());
     } else {
         data = SkData::MakeEmpty();
     }
@@ -729,45 +778,55 @@ sk_sp<SkData> uniformDataFor(
 }
 }  // namespace
 
-Shader RuntimeEffect::makeShader(const float *uniforms, size_t uniformFloatCount) const {
-    if (!isValid()) return Shader(nullptr);
-    sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms, uniformFloatCount);
-    if (!data) return Shader(nullptr);
-    auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = impl_->effect->makeShader(std::move(data), {});
-    if (!impl->shader) return Shader(nullptr);
-    return Shader(std::move(impl));
+Shader RuntimeEffect::makeShader(
+    std::span<const float> uniforms [[clang::noescape]]) const noexcept {
+    return interopOr(Shader(nullptr), [&] {
+        if (!isValid()) return Shader(nullptr);
+        sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms);
+        if (!data) return Shader(nullptr);
+        auto impl = std::make_shared<Shader::Impl>();
+        impl->shader = impl_->effect->makeShader(std::move(data), {});
+        if (!impl->shader) return Shader(nullptr);
+        return Shader(std::move(impl));
+    });
 }
 
 Shader RuntimeEffect::makeShaderWithImage(
-    const float *uniforms, size_t uniformFloatCount, const Image &child) const {
-    if (!isValid()) return Shader(nullptr);
-    Image::Impl *childImpl = GraphiteInternalAccess::get(child);
-    if (childImpl == nullptr || childImpl->image == nullptr) return Shader(nullptr);
-    if (impl_->effect->children().size() != 1) return Shader(nullptr);
-    sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms, uniformFloatCount);
-    if (!data) return Shader(nullptr);
-    sk_sp<SkShader> childShader = childImpl->image->makeShader(
-        SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions(SkFilterMode::kLinear));
-    if (!childShader) return Shader(nullptr);
-    SkRuntimeEffect::ChildPtr children[] = {SkRuntimeEffect::ChildPtr(childShader)};
-    auto impl = std::make_shared<Shader::Impl>();
-    impl->shader = impl_->effect->makeShader(std::move(data), SkSpan(children));
-    if (!impl->shader) return Shader(nullptr);
-    return Shader(std::move(impl));
+    std::span<const float> uniforms [[clang::noescape]],
+    const Image &child) const noexcept {
+    return interopOr(Shader(nullptr), [&] {
+        if (!isValid()) return Shader(nullptr);
+        Image::Impl *childImpl = GraphiteInternalAccess::get(child);
+        if (childImpl == nullptr || childImpl->image == nullptr) return Shader(nullptr);
+        if (impl_->effect->children().size() != 1) return Shader(nullptr);
+        sk_sp<SkData> data = uniformDataFor(*impl_->effect, uniforms);
+        if (!data) return Shader(nullptr);
+        sk_sp<SkShader> childShader = childImpl->image->makeShader(
+            SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions(SkFilterMode::kLinear));
+        if (!childShader) return Shader(nullptr);
+        SkRuntimeEffect::ChildPtr children[] = {SkRuntimeEffect::ChildPtr(childShader)};
+        auto impl = std::make_shared<Shader::Impl>();
+        impl->shader = impl_->effect->makeShader(std::move(data), SkSpan(children));
+        if (!impl->shader) return Shader(nullptr);
+        return Shader(std::move(impl));
+    });
 }
 
 // Retained for `Backdrop.swift`, which compiles and binds in one step because
 // it holds no handle. Expressed through the split so there is one code path.
-Shader makeRuntimeShader(const char *sksl, const float *uniforms, size_t uniformFloatCount) {
-    return makeRuntimeEffect(sksl).makeShader(uniforms, uniformFloatCount);
+Shader makeRuntimeShader(
+    std::span<const uint8_t> sksl [[clang::noescape]],
+    std::span<const float> uniforms [[clang::noescape]]) noexcept {
+    return makeRuntimeEffect(sksl).makeShader(uniforms);
 }
 
 // Retained for `Backdrop.swift`. Expressed through the compile/bind split so
 // there is one code path.
 Shader makeRuntimeShaderWithImage(
-    const char *sksl, const float *uniforms, size_t uniformFloatCount, const Image &child) {
-    return makeRuntimeEffect(sksl).makeShaderWithImage(uniforms, uniformFloatCount, child);
+    std::span<const uint8_t> sksl [[clang::noescape]],
+    std::span<const float> uniforms [[clang::noescape]],
+    const Image &child) noexcept {
+    return makeRuntimeEffect(sksl).makeShaderWithImage(uniforms, child);
 }
 
 namespace {
@@ -809,18 +868,22 @@ RasterDecodeResult decodeResult(
 } // namespace
 
 RasterImage makeRasterImageRGBA(
-    int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength) {
-    if (validateRasterDimensions(width, height)
-            != RasterDecodeStatus::success
-        || pixels == nullptr) {
-        return RasterImage(nullptr);
-    }
-    SkImageInfo info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    if (byteLength < info.computeMinByteSize()) return RasterImage(nullptr);
-    SkPixmap pixmap(info, pixels, info.minRowBytes());
-    auto impl = std::make_shared<RasterImage::Impl>();
-    impl->image = SkImages::RasterFromPixmapCopy(pixmap);
-    return RasterImage(std::move(impl));
+    int32_t width, int32_t height,
+    std::span<const uint8_t> pixels [[clang::noescape]]) noexcept {
+    return interopOr(RasterImage(nullptr), [&] {
+        if (validateRasterDimensions(width, height)
+                != RasterDecodeStatus::success
+            || pixels.empty()) {
+            return RasterImage(nullptr);
+        }
+        SkImageInfo info = SkImageInfo::Make(
+            width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        if (pixels.size() < info.computeMinByteSize()) return RasterImage(nullptr);
+        SkPixmap pixmap(info, pixels.data(), info.minRowBytes());
+        auto impl = std::make_shared<RasterImage::Impl>();
+        impl->image = SkImages::RasterFromPixmapCopy(pixmap);
+        return RasterImage(std::move(impl));
+    });
 }
 
 namespace {
@@ -1162,127 +1225,152 @@ RasterDecodeResult decodeEncodedData(
 }  // namespace
 
 EncodedImageMetadata probeEncodedImageFileDescriptor(
-    int32_t fileDescriptor) {
-    struct stat metadata {};
-    if (fileDescriptor < 0
-        || fstat(fileDescriptor, &metadata) != 0
-        || metadata.st_size <= 0) {
-        return EncodedImageMetadata{
-            .status = RasterDecodeStatus::unreadableInput,
-        };
-    }
-    if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
-        return EncodedImageMetadata{
-            .status = RasterDecodeStatus::limitExceeded,
-        };
-    }
-    return probeEncodedData(SkData::MakeFromFD(fileDescriptor));
+    int32_t fileDescriptor) noexcept {
+    return interopOr(EncodedImageMetadata{}, [&] {
+        struct stat metadata {};
+        if (fileDescriptor < 0
+            || fstat(fileDescriptor, &metadata) != 0
+            || metadata.st_size <= 0) {
+            return EncodedImageMetadata{
+                .status = RasterDecodeStatus::unreadableInput,
+            };
+        }
+        if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
+            return EncodedImageMetadata{
+                .status = RasterDecodeStatus::limitExceeded,
+            };
+        }
+        return probeEncodedData(SkData::MakeFromFD(fileDescriptor));
+    });
 }
 
 EncodedImageMetadata probeEncodedImageMemory(
-    const uint8_t *bytes,
-    size_t byteLength) {
-    if (bytes == nullptr || byteLength == 0) {
-        return EncodedImageMetadata{
-            .status = RasterDecodeStatus::unreadableInput,
-        };
-    }
-    if (byteLength > kMaximumEncodedBytes) {
-        return EncodedImageMetadata{
-            .status = RasterDecodeStatus::limitExceeded,
-        };
-    }
-    return probeEncodedData(SkData::MakeWithCopy(bytes, byteLength));
+    std::span<const uint8_t> bytes [[clang::noescape]]) noexcept {
+    return interopOr(EncodedImageMetadata{}, [&] {
+        if (bytes.empty()) {
+            return EncodedImageMetadata{
+                .status = RasterDecodeStatus::unreadableInput,
+            };
+        }
+        if (bytes.size() > kMaximumEncodedBytes) {
+            return EncodedImageMetadata{
+                .status = RasterDecodeStatus::limitExceeded,
+            };
+        }
+        return probeEncodedData(SkData::MakeWithCopy(bytes.data(), bytes.size()));
+    });
 }
 
 RasterDecodeResult decodeEncodedImageFileDescriptor(
-    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight) {
-    struct stat metadata {};
-    if (fileDescriptor < 0
-        || fstat(fileDescriptor, &metadata) != 0
-        || metadata.st_size <= 0) {
-        return decodeResult(RasterDecodeStatus::unreadableInput);
-    }
-    if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
-        return decodeResult(RasterDecodeStatus::limitExceeded);
-    }
-    return decodeEncodedData(
-        SkData::MakeFromFD(fileDescriptor), maxWidth, maxHeight);
+    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight) noexcept {
+    return interopOr(decodeResult(RasterDecodeStatus::decodeFailure), [&] {
+        struct stat metadata {};
+        if (fileDescriptor < 0
+            || fstat(fileDescriptor, &metadata) != 0
+            || metadata.st_size <= 0) {
+            return decodeResult(RasterDecodeStatus::unreadableInput);
+        }
+        if (static_cast<uint64_t>(metadata.st_size) > kMaximumEncodedBytes) {
+            return decodeResult(RasterDecodeStatus::limitExceeded);
+        }
+        return decodeEncodedData(
+            SkData::MakeFromFD(fileDescriptor), maxWidth, maxHeight);
+    });
 }
 
 RasterDecodeResult decodeEncodedImageMemory(
-    const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight) {
-    if (bytes == nullptr || byteLength == 0) {
-        return decodeResult(RasterDecodeStatus::unreadableInput);
-    }
-    if (byteLength > kMaximumEncodedBytes) {
-        return decodeResult(RasterDecodeStatus::limitExceeded);
-    }
-    return decodeEncodedData(
-        SkData::MakeWithCopy(bytes, byteLength), maxWidth, maxHeight);
+    std::span<const uint8_t> bytes [[clang::noescape]],
+    int32_t maxWidth, int32_t maxHeight) noexcept {
+    return interopOr(decodeResult(RasterDecodeStatus::decodeFailure), [&] {
+        if (bytes.empty()) {
+            return decodeResult(RasterDecodeStatus::unreadableInput);
+        }
+        if (bytes.size() > kMaximumEncodedBytes) {
+            return decodeResult(RasterDecodeStatus::limitExceeded);
+        }
+        return decodeEncodedData(
+            SkData::MakeWithCopy(bytes.data(), bytes.size()), maxWidth, maxHeight);
+    });
 }
 
 // MARK: - Canvas
 
-Canvas::Canvas(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Canvas::isValid() const { return impl_ && impl_->canvas != nullptr; }
+Canvas::Canvas(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Canvas::isValid() const noexcept { return impl_ && impl_->canvas != nullptr; }
 
-void Canvas::clear(Color color) const {
-    if (!isValid()) return;
-    SkPaint paint;
-    paint.setColor(SkColor4f{color.r, color.g, color.b, color.a}, nullptr);
-    paint.setBlendMode(SkBlendMode::kSrc);
-    impl_->canvas->drawPaint(paint);
+void Canvas::clear(Color color) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        SkPaint paint;
+        paint.setColor(SkColor4f{color.r, color.g, color.b, color.a}, nullptr);
+        paint.setBlendMode(SkBlendMode::kSrc);
+        impl_->canvas->drawPaint(paint);
+    });
 }
 
 // --- Save / clip stack ---
 
-void Canvas::save() const {
-    if (!isValid()) return;
-    impl_->canvas->save();
+void Canvas::save() const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->save();
+    });
 }
 
-void Canvas::restore() const {
-    if (!isValid()) return;
-    impl_->canvas->restore();
+void Canvas::restore() const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->restore();
+    });
 }
 
-void Canvas::saveLayerAlpha(RectF bounds, float alpha) const {
-    if (!isValid()) return;
-    const uint8_t a = static_cast<uint8_t>(SkTPin(alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
-    if (bounds.width > 0 && bounds.height > 0) {
-        const SkRect r = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
-        impl_->canvas->saveLayerAlpha(&r, a);
-    } else {
-        impl_->canvas->saveLayerAlpha(nullptr, a);
-    }
+void Canvas::saveLayerAlpha(RectF bounds, float alpha) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        const uint8_t a = static_cast<uint8_t>(SkTPin(alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
+        if (bounds.width > 0 && bounds.height > 0) {
+            const SkRect r = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+            impl_->canvas->saveLayerAlpha(&r, a);
+        } else {
+            impl_->canvas->saveLayerAlpha(nullptr, a);
+        }
+    });
 }
 
-void Canvas::clipRect(RectF rect, bool antialias) const {
-    if (!isValid()) return;
-    impl_->canvas->clipRect(
-        SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), antialias);
+void Canvas::clipRect(RectF rect, bool antialias) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->clipRect(
+            SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), antialias);
+    });
 }
 
-void Canvas::clipRRect(RectF rect, RRectRadii radii, bool antialias) const {
-    if (!isValid()) return;
-    impl_->canvas->clipRRect(toSkRRect(rect, radii), antialias);
+void Canvas::clipRRect(RectF rect, RRectRadii radii, bool antialias) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->clipRRect(toSkRRect(rect, radii), antialias);
+    });
 }
 
 // --- Draws (Paint-carrying) ---
 
-void Canvas::drawRect(RectF rect, Paint paint) const {
-    if (!isValid()) return;
-    impl_->canvas->drawRect(
-        SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), toSkPaint(paint));
+void Canvas::drawRect(RectF rect, Paint paint) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->drawRect(
+            SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), toSkPaint(paint));
+    });
 }
 
-void Canvas::drawRRect(RectF rect, RRectRadii radii, Paint paint) const {
-    if (!isValid()) return;
-    impl_->canvas->drawRRect(toSkRRect(rect, radii), toSkPaint(paint));
+void Canvas::drawRRect(RectF rect, RRectRadii radii, Paint paint) const noexcept {
+    interopVoid([&] {
+        if (!isValid()) return;
+        impl_->canvas->drawRRect(toSkRRect(rect, radii), toSkPaint(paint));
+    });
 }
 
-void Canvas::drawStyledRRect(StyledRRect style, float alpha) const {
+void Canvas::drawStyledRRect(StyledRRect style, float alpha) const noexcept {
+    interopVoid([&] {
     if (!isValid() || style.rect.width <= 0 || style.rect.height <= 0 || alpha <= 0) return;
 
     const SkRect outerRect = SkRect::MakeXYWH(
@@ -1348,9 +1436,12 @@ void Canvas::drawStyledRRect(StyledRRect style, float alpha) const {
         {outerRect.left(), outerRect.bottom()}, {outerRect.left(), outerRect.top()},
         {midLeft, midTop}, {midLeft, midBottom}});
     impl_->canvas->restore();
+    });
 }
 
-void Canvas::drawImageRect(const Image &image, RectF src, RectF dst, Paint paint) const {
+void Canvas::drawImageRect(
+    const Image &image, RectF src, RectF dst, Paint paint) const noexcept {
+    interopVoid([&] {
     if (!isValid()) return;
     Image::Impl *im = GraphiteInternalAccess::get(image);
     if (im == nullptr || im->image == nullptr) return;
@@ -1368,9 +1459,11 @@ void Canvas::drawImageRect(const Image &image, RectF src, RectF dst, Paint paint
     } else {
         impl_->canvas->drawImageRect(im->image, dstRect, sampling, &sk);
     }
+    });
 }
 
-void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const {
+void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const noexcept {
+    interopVoid([&] {
     if (!isValid()) return;
     Shader::Impl *sh = GraphiteInternalAccess::get(shader);
     if (sh == nullptr || sh->shader == nullptr) return;
@@ -1378,16 +1471,21 @@ void Canvas::drawShaderRect(RectF rect, const Shader &shader, Paint paint) const
     sk.setShader(sh->shader);
     impl_->canvas->drawRect(
         SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), sk);
+    });
 }
 
-void Canvas::drawPath(const Path &path, Paint paint) const {
+void Canvas::drawPath(const Path &path, Paint paint) const noexcept {
+    interopVoid([&] {
     if (!isValid()) return;
     Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     impl_->canvas->drawPath(p->path, toSkPaint(paint));
+    });
 }
 
-void Canvas::drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const {
+void Canvas::drawPathWithShader(
+    const Path &path, const Shader &shader, Paint paint) const noexcept {
+    interopVoid([&] {
     if (!isValid()) return;
     Path::Impl *p = GraphiteInternalAccess::get(path);
     Shader::Impl *sh = GraphiteInternalAccess::get(shader);
@@ -1395,18 +1493,24 @@ void Canvas::drawPathWithShader(const Path &path, const Shader &shader, Paint pa
     SkPaint sk = toSkPaint(paint);
     sk.setShader(sh->shader);
     impl_->canvas->drawPath(p->path, sk);
+    });
 }
 
-void Canvas::clipPath(const Path &path, bool antialias) const {
+void Canvas::clipPath(const Path &path, bool antialias) const noexcept {
+    interopVoid([&] {
     if (!isValid()) return;
     Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     impl_->canvas->clipPath(p->path, SkClipOp::kIntersect, antialias);
+    });
 }
 
 void Canvas::clipPathTransformed(
-    const Path &path, const float matrix[9], bool antialias) const {
-    if (!isValid() || matrix == nullptr) return;
+    const Path &path,
+    std::span<const float> matrix [[clang::noescape]],
+    bool antialias) const noexcept {
+    interopVoid([&] {
+    if (!isValid() || matrix.size() != 9) return;
     Path::Impl *p = GraphiteInternalAccess::get(path);
     if (p == nullptr) return;
     const SkMatrix transform = SkMatrix::MakeAll(
@@ -1415,16 +1519,21 @@ void Canvas::clipPathTransformed(
         matrix[6], matrix[7], matrix[8]);
     const SkPath mapped = p->path.makeTransform(transform);
     impl_->canvas->clipPath(mapped, SkClipOp::kIntersect, antialias);
+    });
 }
 
-void Canvas::concat(const float m[9]) const {
-    if (!isValid() || m == nullptr) return;
-    impl_->canvas->concat(
-        SkMatrix::MakeAll(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]));
+void Canvas::concat(
+    std::span<const float> matrix [[clang::noescape]]) const noexcept {
+    interopVoid([&] {
+        if (!isValid() || matrix.size() != 9) return;
+        impl_->canvas->concat(SkMatrix::MakeAll(
+            matrix[0], matrix[1], matrix[2], matrix[3], matrix[4],
+            matrix[5], matrix[6], matrix[7], matrix[8]));
+    });
 }
 
 TextLayoutBorrowInstallStatus installTextLayoutBorrow(
-    TextLayoutBorrow borrow) {
+    TextLayoutBorrow borrow) noexcept {
     if (borrow == nullptr) {
         return TextLayoutBorrowInstallStatus::missingProvider;
     }
@@ -1441,12 +1550,12 @@ TextLayoutBorrowInstallStatus installTextLayoutBorrow(
         : TextLayoutBorrowInstallStatus::conflictingProvider;
 }
 
-bool hasTextLayoutBorrow() {
+bool hasTextLayoutBorrow() noexcept {
     return g_textLayoutBorrow.load(std::memory_order_acquire) != nullptr;
 }
 
 extern "C" bool nucleus_skia_install_text_layout_borrow(
-    TextLayoutBorrow borrow) {
+    TextLayoutBorrow borrow) noexcept {
     const TextLayoutBorrowInstallStatus status =
         installTextLayoutBorrow(borrow);
     return status == TextLayoutBorrowInstallStatus::installed
@@ -1456,7 +1565,7 @@ extern "C" bool nucleus_skia_install_text_layout_borrow(
 
 extern "C" uint8_t
 nucleus_skia_install_text_layout_borrow_status(
-    TextLayoutBorrow borrow) {
+    TextLayoutBorrow borrow) noexcept {
     return static_cast<uint8_t>(
         installTextLayoutBorrow(borrow));
 }
@@ -1464,12 +1573,14 @@ nucleus_skia_install_text_layout_borrow_status(
 extern "C" bool nucleus_skia_borrow_text_layout(
     uint64_t handle,
     void *bodyContext,
-    TextLayoutBorrowBody body) {
-    TextLayoutBorrow borrow =
-        g_textLayoutBorrow.load(std::memory_order_acquire);
-    return borrow != nullptr
-        && body != nullptr
-        && borrow(handle, bodyContext, body);
+    TextLayoutBorrowBody body) noexcept {
+    return interopOr(false, [&] {
+        TextLayoutBorrow borrow =
+            g_textLayoutBorrow.load(std::memory_order_acquire);
+        return borrow != nullptr
+            && body != nullptr
+            && borrow(handle, bodyContext, body);
+    });
 }
 
 namespace {
@@ -1481,7 +1592,8 @@ struct TextLayoutPaintContext final {
 
 void paintBorrowedTextLayout(
     uintptr_t borrowedParagraph,
-    void *rawContext) {
+    void *rawContext) noexcept {
+    interopVoid([&] {
     auto *paragraph =
         reinterpret_cast<::skia::textlayout::Paragraph *>(
             borrowedParagraph);
@@ -1512,110 +1624,131 @@ void paintBorrowedTextLayout(
         context->canvas->restore();
     }
     context->canvas->restore();
+    });
 }
 } // namespace
 
 void Canvas::drawTextLayout(
     uint64_t handle,
     RectF dst,
-    float alpha) const {
-    if (!isValid() || handle == 0) {
-        return;
-    }
-    TextLayoutPaintContext context{impl_->canvas, dst, alpha};
-    (void)nucleus_skia_borrow_text_layout(
-        handle,
-        &context,
-        &paintBorrowedTextLayout);
+    float alpha) const noexcept {
+    interopVoid([&] {
+        if (!isValid() || handle == 0) {
+            return;
+        }
+        TextLayoutPaintContext context{impl_->canvas, dst, alpha};
+        (void)nucleus_skia_borrow_text_layout(
+            handle,
+            &context,
+            &paintBorrowedTextLayout);
+    });
 }
 
 
-void Canvas::drawRect(RectF rect, Color color) const {
+void Canvas::drawRect(RectF rect, Color color) const noexcept {
     drawRect(rect, Paint{color, 1, BlendMode::srcOver, true, 0, 1});
 }
 
-void Canvas::drawImage(const Image &image, RectF dst, float alpha) const {
+void Canvas::drawImage(const Image &image, RectF dst, float alpha) const noexcept {
     drawImageRect(image, RectF{0, 0, 0, 0}, dst, Paint{Color{}, alpha, BlendMode::srcOver, true, 0, 1});
 }
 
-void Canvas::drawRoundRect(RectF rect, float radius, Color color) const {
+void Canvas::drawRoundRect(RectF rect, float radius, Color color) const noexcept {
     drawRRect(rect, RRectRadii{radius, radius, radius, radius},
               Paint{color, 1, BlendMode::srcOver, true, 0, 1});
 }
 
 // MARK: - Surface
 
-Surface::Surface(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Surface::isValid() const { return impl_ && impl_->surface != nullptr; }
-int32_t Surface::width() const { return isValid() ? impl_->surface->width() : 0; }
-int32_t Surface::height() const { return isValid() ? impl_->surface->height() : 0; }
+Surface::Surface(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Surface::isValid() const noexcept { return impl_ && impl_->surface != nullptr; }
+int32_t Surface::width() const noexcept { return isValid() ? impl_->surface->width() : 0; }
+int32_t Surface::height() const noexcept { return isValid() ? impl_->surface->height() : 0; }
 
-Canvas Surface::getCanvas() const {
-    if (!isValid()) return Canvas(nullptr);
-    auto impl = std::make_shared<Canvas::Impl>();
-    impl->surface = impl_;
-    impl->canvas = impl_->surface->getCanvas();
-    return Canvas(std::move(impl));
+Canvas Surface::getCanvas() const noexcept {
+    return interopOr(Canvas(nullptr), [&] {
+        if (!isValid()) return Canvas(nullptr);
+        auto impl = std::make_shared<Canvas::Impl>();
+        impl->surface = impl_;
+        impl->canvas = impl_->surface->getCanvas();
+        return Canvas(std::move(impl));
+    });
 }
 
-Image Surface::snapshotImage() const {
-    if (!isValid()) return Image(nullptr);
-    auto impl = std::make_shared<Image::Impl>();
-    impl->image = impl_->surface->makeImageSnapshot();
-    return Image(std::move(impl));
+Image Surface::snapshotImage() const noexcept {
+    return interopOr(Image(nullptr), [&] {
+        if (!isValid()) return Image(nullptr);
+        auto impl = std::make_shared<Image::Impl>();
+        impl->image = impl_->surface->makeImageSnapshot();
+        return Image(std::move(impl));
+    });
 }
 
 
-bool Surface::readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
-    if (!isValid() || dst == nullptr) return false;
-    const SkImageInfo info = SkImageInfo::Make(
-        impl_->surface->width(), impl_->surface->height(),
-        kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    const size_t stride = rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
-    if (byteLength < stride * static_cast<size_t>(info.height())) return false;
-    return impl_->surface->readPixels(info, dst, stride, 0, 0);
+bool Surface::readPixelsRGBA(
+    std::span<uint8_t> destination [[clang::noescape]],
+    int32_t rowBytes) const noexcept {
+    return interopOr(false, [&] {
+        if (!isValid() || destination.empty()) return false;
+        const SkImageInfo info = SkImageInfo::Make(
+            impl_->surface->width(), impl_->surface->height(),
+            kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        const size_t stride = rowBytes > 0 ? static_cast<size_t>(rowBytes) : info.minRowBytes();
+        if (destination.size() < stride * static_cast<size_t>(info.height())) return false;
+        return impl_->surface->readPixels(
+            info, destination.data(), stride, 0, 0);
+    });
 }
 
-Surface makeRasterSurface(int32_t width, int32_t height) {
-    if (width <= 0 || height <= 0) return Surface(nullptr);
-    const SkImageInfo info = SkImageInfo::Make(
-        width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto impl = std::make_shared<Surface::Impl>();
-    impl->surface = SkSurfaces::Raster(info);
-    if (!impl->surface) return Surface(nullptr);
-    return Surface(std::move(impl));
+Surface makeRasterSurface(int32_t width, int32_t height) noexcept {
+    return interopOr(Surface(nullptr), [&] {
+        if (width <= 0 || height <= 0) return Surface(nullptr);
+        const SkImageInfo info = SkImageInfo::Make(
+            width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        auto impl = std::make_shared<Surface::Impl>();
+        impl->surface = SkSurfaces::Raster(info);
+        if (!impl->surface) return Surface(nullptr);
+        return Surface(std::move(impl));
+    });
 }
 
 // MARK: - Recording
 
-Recording::Recording(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Recording::isValid() const { return impl_ && impl_->recording != nullptr; }
+Recording::Recording(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Recording::isValid() const noexcept { return impl_ && impl_->recording != nullptr; }
 
 // MARK: - Recorder
 
-Recorder::Recorder(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool Recorder::isValid() const { return impl_ && impl_->recorder != nullptr; }
+Recorder::Recorder(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool Recorder::isValid() const noexcept { return impl_ && impl_->recorder != nullptr; }
 
-Surface Recorder::makeOffscreenSurface(int32_t width, int32_t height) const {
-    if (!isValid() || width <= 0 || height <= 0) return Surface(nullptr);
-    SkImageInfo info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(impl_->recorder.get(), info);
-    if (!surface) return Surface(nullptr);
-    auto impl = std::make_shared<Surface::Impl>();
-    impl->recorder = impl_;
-    impl->surface = std::move(surface);
-    return Surface(std::move(impl));
+Surface Recorder::makeOffscreenSurface(int32_t width, int32_t height) const noexcept {
+    return interopOr(Surface(nullptr), [&] {
+        if (!isValid() || width <= 0 || height <= 0) return Surface(nullptr);
+        SkImageInfo info = SkImageInfo::Make(
+            width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(impl_->recorder.get(), info);
+        if (!surface) return Surface(nullptr);
+        auto impl = std::make_shared<Surface::Impl>();
+        impl->recorder = impl_;
+        impl->surface = std::move(surface);
+        return Surface(std::move(impl));
+    });
 }
 
-Image Recorder::makeTextureImage(const RasterImage &image) const {
-    if (!isValid()) return Image(nullptr);
-    RasterImage::Impl *source = GraphiteInternalAccess::get(image);
-    if (source == nullptr || source->image == nullptr) return Image(nullptr);
-    return wrapImage(SkImages::TextureFromImage(
-        impl_->recorder.get(), source->image.get(), {/*fMipmapped=*/false}));
+Image Recorder::makeTextureImage(const RasterImage &image) const noexcept {
+    return interopOr(Image(nullptr), [&] {
+        if (!isValid()) return Image(nullptr);
+        RasterImage::Impl *source = GraphiteInternalAccess::get(image);
+        if (source == nullptr || source->image == nullptr) return Image(nullptr);
+        return wrapImage(SkImages::TextureFromImage(
+            impl_->recorder.get(), source->image.get(), {/*fMipmapped=*/false}));
+    });
 }
 
-UploadTexture Recorder::makeUploadTextureRGBA(int32_t width, int32_t height) const {
+UploadTexture Recorder::makeUploadTextureRGBA(
+    int32_t width, int32_t height) const noexcept {
+    return interopOr(UploadTexture(nullptr), [&] {
     if (!isValid() || width <= 0 || height <= 0) return UploadTexture(nullptr);
     skgpu::graphite::VulkanTextureInfo info;
     info.fSampleCount = skgpu::graphite::SampleCount::k1;
@@ -1642,6 +1775,7 @@ UploadTexture Recorder::makeUploadTextureRGBA(int32_t width, int32_t height) con
     upload->width = width;
     upload->height = height;
     return UploadTexture(std::move(upload));
+    });
 }
 
 // Graphite currently models Vulkan tiling as a binary optimal/linear choice.
@@ -1657,7 +1791,8 @@ static VkImageTiling graphiteImageTiling(uint32_t tiling) {
         : vkTiling;
 }
 
-Image Recorder::wrapBackendImage(const VulkanImageDescriptor &desc) const {
+Image Recorder::wrapBackendImage(const VulkanImageDescriptor &desc) const noexcept {
+    return interopOr(Image(nullptr), [&] {
     if (!isValid() || desc.image == nullptr || desc.width <= 0 || desc.height <= 0) {
         return Image(nullptr);
     }
@@ -1688,6 +1823,7 @@ Image Recorder::wrapBackendImage(const VulkanImageDescriptor &desc) const {
     impl->image = SkImages::WrapTexture(impl_->recorder.get(), backend, alphaType, nullptr);
     if (!impl->image) return Image(nullptr);
     return Image(std::move(impl));
+    });
 }
 
 // The Skia color type a wrapped scanout image is composited/read as. Mirrors the
@@ -1710,7 +1846,8 @@ static SkColorType skColorTypeForVkFormat(uint32_t format) {
     }
 }
 
-Surface Recorder::wrapBackendSurface(const VulkanImageDescriptor &desc) const {
+Surface Recorder::wrapBackendSurface(const VulkanImageDescriptor &desc) const noexcept {
+    return interopOr(Surface(nullptr), [&] {
     if (!isValid() || desc.image == nullptr || desc.width <= 0 || desc.height <= 0) {
         return Surface(nullptr);
     }
@@ -1743,34 +1880,43 @@ Surface Recorder::wrapBackendSurface(const VulkanImageDescriptor &desc) const {
         impl_->recorder.get(), backend, colorType, /*colorSpace=*/nullptr, /*props=*/nullptr);
     if (!impl->surface) return Surface(nullptr);
     return Surface(std::move(impl));
+    });
 }
 
-Recording Recorder::snapRecording() const {
-    if (!isValid()) return Recording(nullptr);
-    auto impl = std::make_shared<Recording::Impl>();
-    impl->recording = impl_->recorder->snap();
-    return Recording(std::move(impl));
+Recording Recorder::snapRecording() const noexcept {
+    return interopOr(Recording(nullptr), [&] {
+        if (!isValid()) return Recording(nullptr);
+        auto impl = std::make_shared<Recording::Impl>();
+        impl->recording = impl_->recorder->snap();
+        return Recording(std::move(impl));
+    });
 }
 
 // MARK: - GraphiteContext
 
-GraphiteContext::GraphiteContext(std::shared_ptr<Impl> impl) : impl_(std::move(impl)) {}
-bool GraphiteContext::isValid() const { return impl_ && impl_->context != nullptr; }
-void GraphiteContext::reset() { impl_.reset(); }
+GraphiteContext::GraphiteContext(std::shared_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+bool GraphiteContext::isValid() const noexcept { return impl_ && impl_->context != nullptr; }
+void GraphiteContext::reset() noexcept { impl_.reset(); }
 
-Recorder GraphiteContext::makeRecorder() const {
-    if (!isValid()) return Recorder(nullptr);
-    skgpu::graphite::RecorderOptions options;
-    auto recorder = impl_->context->makeRecorder(options);
-    if (!recorder) return Recorder(nullptr);
-    auto impl = std::make_shared<Recorder::Impl>();
-    impl->context = impl_;
-    impl->recorder = std::move(recorder);
-    return Recorder(std::move(impl));
+Recorder GraphiteContext::makeRecorder() const noexcept {
+    return interopOr(Recorder(nullptr), [&] {
+        if (!isValid()) return Recorder(nullptr);
+        skgpu::graphite::RecorderOptions options;
+        auto recorder = impl_->context->makeRecorder(options);
+        if (!recorder) return Recorder(nullptr);
+        auto impl = std::make_shared<Recorder::Impl>();
+        impl->context = impl_;
+        impl->recorder = std::move(recorder);
+        return Recorder(std::move(impl));
+    });
 }
 
 SubmissionResult GraphiteContext::submitAsync(
-    const Recording &recording, uint64_t submissionSerial) const {
+    const Recording &recording, uint64_t submissionSerial) const noexcept {
+    return interopOr(SubmissionResult{
+        .status = Status::submitFailed,
+        .contextUsable = false,
+    }, [&] {
     if (!isValid() || submissionSerial == 0) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -1795,11 +1941,16 @@ SubmissionResult GraphiteContext::submitAsync(
             "Graphite rejected the queued asynchronous submission");
     }
     return result;
+    });
 }
 
 SubmissionResult GraphiteContext::submitAsyncSimulatingInsertStatus(
     const Recording &recording, uint64_t submissionSerial,
-    RecordingInsertStatus simulatedStatus) const {
+    RecordingInsertStatus simulatedStatus) const noexcept {
+    return interopOr(SubmissionResult{
+        .status = Status::submitFailed,
+        .contextUsable = false,
+    }, [&] {
     if (!isValid() || submissionSerial == 0
         || simulatedStatus == RecordingInsertStatus::notAttempted) {
         return invalidSubmission(
@@ -1839,12 +1990,18 @@ SubmissionResult GraphiteContext::submitAsyncSimulatingInsertStatus(
             "Graphite rejected the simulated asynchronous submission");
     }
     return result;
+    });
 }
 
 SubmissionResult GraphiteContext::submitWithSemaphores(
-    const Recording &recording, void *const *waitSemaphores,
-    size_t waitSemaphoreCount, void *signalSemaphore,
-    uint64_t submissionSerial, bool requestGpuTiming) const {
+    const Recording &recording,
+    std::span<const uintptr_t> waitSemaphores [[clang::noescape]],
+    uintptr_t signalSemaphore,
+    uint64_t submissionSerial, bool requestGpuTiming) const noexcept {
+    return interopOr(SubmissionResult{
+        .status = Status::submitFailed,
+        .contextUsable = false,
+    }, [&] {
     if (!isValid()) {
         return invalidSubmission(
             Status::invalidArgument,
@@ -1858,20 +2015,20 @@ SubmissionResult GraphiteContext::submitWithSemaphores(
     }
 
     std::vector<skgpu::graphite::BackendSemaphore> waits;
-    waits.reserve(waitSemaphoreCount);
-    for (size_t i = 0; i < waitSemaphoreCount; ++i) {
-        if (waitSemaphores[i] != nullptr) waits.push_back(
+    waits.reserve(waitSemaphores.size());
+    for (uintptr_t waitSemaphore : waitSemaphores) {
+        if (waitSemaphore != 0) waits.push_back(
             skgpu::graphite::BackendSemaphores::MakeVulkan(
-                static_cast<VkSemaphore>(waitSemaphores[i])));
+                reinterpret_cast<VkSemaphore>(waitSemaphore)));
     }
     skgpu::graphite::InsertRecordingInfo info;
     info.fRecording = rec->recording.get();
     info.fNumWaitSemaphores = waits.size();
     info.fWaitSemaphores = waits.data();
     skgpu::graphite::BackendSemaphore signal;
-    if (signalSemaphore != nullptr) {
+    if (signalSemaphore != 0) {
         signal = skgpu::graphite::BackendSemaphores::MakeVulkan(
-            static_cast<VkSemaphore>(signalSemaphore));
+            reinterpret_cast<VkSemaphore>(signalSemaphore));
         info.fNumSignalSemaphores = 1;
         info.fSignalSemaphores = &signal;
     }
@@ -1885,13 +2042,18 @@ SubmissionResult GraphiteContext::submitWithSemaphores(
             "Graphite rejected the queued semaphore submission");
     }
     return result;
+    });
 }
 
 SubmissionResult GraphiteContext::submitForPresent(
     const Surface &targetSurface, const Recording &recording,
-    void *const *waitSemaphores, size_t waitSemaphoreCount,
-    void *signalSemaphore, uint32_t presentQueueFamily,
-    uint64_t submissionSerial, bool requestGpuTiming) const {
+    std::span<const uintptr_t> waitSemaphores [[clang::noescape]],
+    uintptr_t signalSemaphore, uint32_t presentQueueFamily,
+    uint64_t submissionSerial, bool requestGpuTiming) const noexcept {
+    return interopOr(SubmissionResult{
+        .status = Status::submitFailed,
+        .contextUsable = false,
+    }, [&] {
     if (!isValid()) {
         return invalidSubmission(
             Status::submitFailed,
@@ -1918,17 +2080,17 @@ SubmissionResult GraphiteContext::submitForPresent(
     // VkSemaphore handles (Skia never owns them).
     std::vector<skgpu::graphite::BackendSemaphore> waits;
     skgpu::graphite::BackendSemaphore signalSem;
-    waits.reserve(waitSemaphoreCount);
-    for (size_t i = 0; i < waitSemaphoreCount; ++i) {
-        if (waitSemaphores[i] != nullptr) waits.push_back(
+    waits.reserve(waitSemaphores.size());
+    for (uintptr_t waitSemaphore : waitSemaphores) {
+        if (waitSemaphore != 0) waits.push_back(
             skgpu::graphite::BackendSemaphores::MakeVulkan(
-                static_cast<VkSemaphore>(waitSemaphores[i])));
+                reinterpret_cast<VkSemaphore>(waitSemaphore)));
     }
     info.fNumWaitSemaphores = waits.size();
     info.fWaitSemaphores = waits.data();
-    if (signalSemaphore != nullptr) {
+    if (signalSemaphore != 0) {
         signalSem = skgpu::graphite::BackendSemaphores::MakeVulkan(
-            static_cast<VkSemaphore>(signalSemaphore));
+            reinterpret_cast<VkSemaphore>(signalSemaphore));
         info.fNumSignalSemaphores = 1;
         info.fSignalSemaphores = &signalSem;
     }
@@ -1952,17 +2114,21 @@ SubmissionResult GraphiteContext::submitForPresent(
             "Graphite rejected the queued present submission");
     }
     return result;
+    });
 }
 
-uint64_t GraphiteContext::pollCompletedSubmissionSerial() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    return impl_->submissionCompletion->completedSerial.load(std::memory_order_acquire);
+uint64_t GraphiteContext::pollCompletedSubmissionSerial() const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+        if (!isValid()) return uint64_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        return impl_->submissionCompletion->completedSerial.load(std::memory_order_acquire);
+    });
 }
 
 uint64_t GraphiteContext::takeCompletedSubmissionGpuElapsedNs(
-    uint64_t submissionSerial) const {
-    if (!isValid() || submissionSerial == 0) return 0;
+    uint64_t submissionSerial) const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+    if (!isValid() || submissionSerial == 0) return uint64_t{0};
     impl_->context->checkAsyncWorkCompletion();
     auto &state = *impl_->submissionCompletion;
     std::lock_guard<std::mutex> lock(state.mutex);
@@ -1973,44 +2139,55 @@ uint64_t GraphiteContext::takeCompletedSubmissionGpuElapsedNs(
         --state.timingCount;
         return elapsed;
     }
-    return 0;
+    return uint64_t{0};
+    });
 }
 
-size_t GraphiteContext::completedSubmissionTimingCount() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    auto &state = *impl_->submissionCompletion;
-    std::lock_guard<std::mutex> lock(state.mutex);
-    return state.timingCount;
+size_t GraphiteContext::completedSubmissionTimingCount() const noexcept {
+    return interopOr(size_t{0}, [&] {
+        if (!isValid()) return size_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        auto &state = *impl_->submissionCompletion;
+        std::lock_guard<std::mutex> lock(state.mutex);
+        return state.timingCount;
+    });
 }
 
-uint64_t GraphiteContext::droppedSubmissionTimingCount() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    auto &state = *impl_->submissionCompletion;
-    std::lock_guard<std::mutex> lock(state.mutex);
-    return state.droppedTimingCount;
+uint64_t GraphiteContext::droppedSubmissionTimingCount() const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+        if (!isValid()) return uint64_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        auto &state = *impl_->submissionCompletion;
+        std::lock_guard<std::mutex> lock(state.mutex);
+        return state.droppedTimingCount;
+    });
 }
 
-uint64_t GraphiteContext::submissionCallbackCount() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    return impl_->submissionCompletion->callbackCount.load(
-        std::memory_order_relaxed);
+uint64_t GraphiteContext::submissionCallbackCount() const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+        if (!isValid()) return uint64_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        return impl_->submissionCompletion->callbackCount.load(
+            std::memory_order_relaxed);
+    });
 }
 
-uint64_t GraphiteContext::successfulSubmissionCallbackCount() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    return impl_->submissionCompletion->successfulCallbackCount.load(
-        std::memory_order_relaxed);
+uint64_t GraphiteContext::successfulSubmissionCallbackCount() const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+        if (!isValid()) return uint64_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        return impl_->submissionCompletion->successfulCallbackCount.load(
+            std::memory_order_relaxed);
+    });
 }
 
-uint64_t GraphiteContext::failedSubmissionCallbackCount() const {
-    if (!isValid()) return 0;
-    impl_->context->checkAsyncWorkCompletion();
-    return impl_->submissionCompletion->failedCallbackCount.load(
-        std::memory_order_relaxed);
+uint64_t GraphiteContext::failedSubmissionCallbackCount() const noexcept {
+    return interopOr(uint64_t{0}, [&] {
+        if (!isValid()) return uint64_t{0};
+        impl_->context->checkAsyncWorkCompletion();
+        return impl_->submissionCompletion->failedCallbackCount.load(
+            std::memory_order_relaxed);
+    });
 }
 
 struct SurfaceReadback::Impl {
@@ -2021,18 +2198,20 @@ struct SurfaceReadback::Impl {
     std::unique_ptr<const SkImage::AsyncReadResult> result;
 };
 
-SurfaceReadback::SurfaceReadback(std::shared_ptr<Impl> impl)
+SurfaceReadback::SurfaceReadback(std::shared_ptr<Impl> impl) noexcept
     : impl_(std::move(impl)) {}
 
-bool SurfaceReadback::isValid() const { return impl_ != nullptr; }
+bool SurfaceReadback::isValid() const noexcept { return impl_ != nullptr; }
 
-bool SurfaceReadback::isComplete() const {
+bool SurfaceReadback::isComplete() const noexcept {
     return impl_ && impl_->done.load(std::memory_order_acquire);
 }
 
 Status SurfaceReadback::copyPixels(
-    uint8_t *dst, size_t byteLength, int32_t rowBytes) const {
-    if (!isComplete() || dst == nullptr) return Status::invalidArgument;
+    std::span<uint8_t> destination [[clang::noescape]],
+    int32_t rowBytes) const noexcept {
+    return interopOr(Status::submitFailed, [&] {
+    if (!isComplete() || destination.empty()) return Status::invalidArgument;
     if (impl_->width <= 0 || impl_->height <= 0) {
         return Status::invalidArgument;
     }
@@ -2045,7 +2224,7 @@ Status SurfaceReadback::copyPixels(
     const size_t stride = rowBytes > 0
         ? static_cast<size_t>(rowBytes) : tightStride;
     if (stride < tightStride || height > std::numeric_limits<size_t>::max() / stride ||
-        byteLength < stride * height) {
+        destination.size() < stride * height) {
         return Status::invalidArgument;
     }
     std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -2058,11 +2237,12 @@ Status SurfaceReadback::copyPixels(
         return Status::submitFailed;
     }
     for (int y = 0; y < impl_->height; ++y) {
-        std::memcpy(dst + static_cast<size_t>(y) * stride,
+        std::memcpy(destination.data() + static_cast<size_t>(y) * stride,
                     src + static_cast<size_t>(y) * srcStride,
                     tightStride);
     }
     return Status::ok;
+    });
 }
 
 namespace {
@@ -2093,14 +2273,16 @@ SurfaceReadback beginSurfaceReadback(
     state->height = h;
     auto *box = new std::shared_ptr<SurfaceReadback::Impl>(state);
     auto callback = [](SkImage::ReadPixelsContext context,
-                       std::unique_ptr<const SkImage::AsyncReadResult> result) {
-        std::unique_ptr<std::shared_ptr<SurfaceReadback::Impl>> owner(
-            static_cast<std::shared_ptr<SurfaceReadback::Impl> *>(context));
-        {
-            std::lock_guard<std::mutex> lock((*owner)->mutex);
-            (*owner)->result = std::move(result);
-        }
-        (*owner)->done.store(true, std::memory_order_release);
+                       std::unique_ptr<const SkImage::AsyncReadResult> result) noexcept {
+        interopVoid([&] {
+            std::unique_ptr<std::shared_ptr<SurfaceReadback::Impl>> owner(
+                static_cast<std::shared_ptr<SurfaceReadback::Impl> *>(context));
+            {
+                std::lock_guard<std::mutex> lock((*owner)->mutex);
+                (*owner)->result = std::move(result);
+            }
+            (*owner)->done.store(true, std::memory_order_release);
+        });
     };
     context->asyncRescaleAndReadPixels(
         s->surface.get(), info, SkIRect::MakeXYWH(x, y, w, h),
@@ -2114,35 +2296,43 @@ SurfaceReadback beginSurfaceReadback(
 }  // namespace
 
 SurfaceReadback GraphiteContext::beginSurfaceReadbackRGBA(
-    const Surface &surface) const {
-    return beginSurfaceReadback(
-        isValid() ? impl_->context.get() : nullptr,
-        surface,
-        kRGBA_8888_SkColorType);
+    const Surface &surface) const noexcept {
+    return interopOr(SurfaceReadback(nullptr), [&] {
+        return beginSurfaceReadback(
+            isValid() ? impl_->context.get() : nullptr,
+            surface,
+            kRGBA_8888_SkColorType);
+    });
 }
 
 SurfaceReadback GraphiteContext::beginSurfaceReadbackBGRA(
-    const Surface &surface) const {
-    return beginSurfaceReadback(
-        isValid() ? impl_->context.get() : nullptr,
-        surface,
-        kBGRA_8888_SkColorType);
+    const Surface &surface) const noexcept {
+    return interopOr(SurfaceReadback(nullptr), [&] {
+        return beginSurfaceReadback(
+            isValid() ? impl_->context.get() : nullptr,
+            surface,
+            kBGRA_8888_SkColorType);
+    });
 }
 
 SurfaceReadback GraphiteContext::beginSurfaceReadbackBGRARegion(
     const Surface &surface, int32_t x, int32_t y,
-    int32_t width, int32_t height) const {
-    return beginSurfaceReadback(
-        isValid() ? impl_->context.get() : nullptr,
-        surface,
-        kBGRA_8888_SkColorType,
-        x, y, width, height);
+    int32_t width, int32_t height) const noexcept {
+    return interopOr(SurfaceReadback(nullptr), [&] {
+        return beginSurfaceReadback(
+            isValid() ? impl_->context.get() : nullptr,
+            surface,
+            kBGRA_8888_SkColorType,
+            x, y, width, height);
+    });
 }
 
 // MARK: - Context factory
 
-GraphiteContext makeGraphiteVulkanContext(const VulkanContextDescriptor &descriptor) {
-    auto impl = std::make_shared<GraphiteContext::Impl>();
+GraphiteContext makeGraphiteVulkanContext(
+    const VulkanContextDescriptor &descriptor) noexcept {
+    return interopOr(GraphiteContext(nullptr), [&] {
+        auto impl = std::make_shared<GraphiteContext::Impl>();
 
     auto getProc = makeVulkanGetProc();
     auto instance = static_cast<VkInstance>(descriptor.instance);
@@ -2187,7 +2377,8 @@ GraphiteContext makeGraphiteVulkanContext(const VulkanContextDescriptor &descrip
         return GraphiteContext(nullptr);
     }
 
-    return GraphiteContext(std::move(impl));
+        return GraphiteContext(std::move(impl));
+    });
 }
 
 }  // namespace nucleus::skia

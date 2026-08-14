@@ -13,19 +13,23 @@ using TextLayoutBorrow =
 extern "C" bool nucleus_text_borrow_paragraph(
     uint64_t handle,
     void *bodyContext,
-    TextLayoutBorrowBody body);
+    TextLayoutBorrowBody body) noexcept;
 extern "C" bool nucleus_skia_install_text_layout_borrow(
-    TextLayoutBorrow borrow);
+    TextLayoutBorrow borrow) noexcept;
 
 } // namespace
 
 namespace nucleus::text {
 
-TextRenderingBridgeInstallStatus installTextRenderingBridge() {
-  return nucleus_skia_install_text_layout_borrow(
-      &nucleus_text_borrow_paragraph)
-      ? TextRenderingBridgeInstallStatus::ready
-      : TextRenderingBridgeInstallStatus::conflictingProvider;
+TextRenderingBridgeInstallStatus installTextRenderingBridge() noexcept {
+  try {
+    return nucleus_skia_install_text_layout_borrow(
+        &nucleus_text_borrow_paragraph)
+        ? TextRenderingBridgeInstallStatus::ready
+        : TextRenderingBridgeInstallStatus::conflictingProvider;
+  } catch (...) {
+    return TextRenderingBridgeInstallStatus::conflictingProvider;
+  }
 }
 
 } // namespace nucleus::text

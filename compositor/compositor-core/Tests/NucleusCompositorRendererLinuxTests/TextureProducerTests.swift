@@ -1,9 +1,10 @@
-import Testing
-import VulkanC
-import Vulkan
-import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 import NucleusTypes
+import Testing
+import Vulkan
+import VulkanC
+
 @testable import NucleusRenderer
 
 // accumulation + the same-content suppression decision (hardware-independent),
@@ -29,19 +30,25 @@ import NucleusTypes
         let key = ProducerCacheKey(
             layerId: 5, revision: 1, width: 2, height: 2, kind: .paint)
         #expect(producer.handle(for: key) == nil, "producer-cache-starts-empty")
-        #expect(key != ProducerCacheKey(
-            layerId: 5, revision: 1, width: 3, height: 2, kind: .paint),
+        #expect(
+            key
+                != ProducerCacheKey(
+                    layerId: 5, revision: 1, width: 3, height: 2, kind: .paint),
             "raster-width-is-cache-identity")
-        #expect(key != ProducerCacheKey(
-            layerId: 5, revision: 1, width: 2, height: 3, kind: .paint),
+        #expect(
+            key
+                != ProducerCacheKey(
+                    layerId: 5, revision: 1, width: 2, height: 3, kind: .paint),
             "raster-height-is-cache-identity")
-        #expect(key != ProducerCacheKey(
-            layerId: 5, revision: 1,
-            imageDependencies: PaintImageDependencies(versions: [
-                ImageDependencyVersion(
-                    handle: 9, version: 1, phase: .ready(generation: 1))
-            ]),
-            width: 2, height: 2, kind: .paint),
+        #expect(
+            key
+                != ProducerCacheKey(
+                    layerId: 5, revision: 1,
+                    imageDependencies: PaintImageDependencies(versions: [
+                        ImageDependencyVersion(
+                            handle: 9, version: 1, phase: .ready(generation: 1))
+                    ]),
+                    width: 2, height: 2, kind: .paint),
             "resolved-image-generation-is-cache-identity")
         let trafficLightsAtOnePointFive = ProducerCacheKey(
             layerId: 5, revision: 1,
@@ -56,9 +63,10 @@ import NucleusTypes
             layerId: 5, revision: 1, width: 144, height: 56, kind: .paint)
         let current = ProducerCacheKey(
             layerId: 5, revision: 2, width: 108, height: 42, kind: .paint)
-        #expect(TextureProducer.supersededKeys(
-            in: [oldAtOnePointFive, oldAtTwo, current],
-            replacing: current) == [oldAtOnePointFive, oldAtTwo])
+        #expect(
+            TextureProducer.supersededKeys(
+                in: [oldAtOnePointFive, oldAtTwo, current],
+                replacing: current) == [oldAtOnePointFive, oldAtTwo])
 
         let decoded = ProducerCacheKey(
             layerId: 5, revision: 2,
@@ -67,8 +75,9 @@ import NucleusTypes
                     handle: 9, version: 1, phase: .ready(generation: 1))
             ]),
             width: 108, height: 42, kind: .paint)
-        #expect(TextureProducer.supersededKeys(
-            in: [current, decoded], replacing: decoded) == [current])
+        #expect(
+            TextureProducer.supersededKeys(
+                in: [current, decoded], replacing: decoded) == [current])
 
         let shadow = ProducerCacheKey(
             layerId: 5, revision: 1, width: 108, height: 42, kind: .shadow)
@@ -123,18 +132,22 @@ import NucleusTypes
                 to: &linePayload, verbs: [.move, .line], points: [0, 17, 24, 17])
 
             let paintCommands = [
-                PaintCommand(kind: .rect, x: 0, y: 0, w: 24, h: 18, color: Color(r: 1, g: 0, b: 0, a: 1)),
-                PaintCommand(kind: .roundedRect, x: 4, y: 4, w: 12, h: 8, radius: 3, color: Color(r: 0, g: 1, b: 0, a: 0.8)),
                 PaintCommand(
-                    kind: .path, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2, color: Color(r: 0, g: 0, b: 1, a: 1),
+                    kind: .rect, x: 0, y: 0, w: 24, h: 18, color: Color(r: 1, g: 0, b: 0, a: 1)),
+                PaintCommand(
+                    kind: .roundedRect, x: 4, y: 4, w: 12, h: 8, radius: 3,
+                    color: Color(r: 0, g: 1, b: 0, a: 0.8)),
+                PaintCommand(
+                    kind: .path, x: 0, y: 17, w: 24, h: 0, strokeWidth: 2,
+                    color: Color(r: 0, g: 0, b: 1, a: 1),
                     payloadOffset: 0, payloadLength: UInt32(linePayload.count), stroke: true),
                 PaintCommand(kind: .image, x: 2, y: 2, w: 8, h: 8, imageHandle: 77),
-                PaintCommand(kind: .textLayout, x: 1, y: 1, w: 20, h: 10, color: Color(r: 1, g: 1, b: 1, a: 1), textLayoutHandle: 123),
+                PaintCommand(
+                    kind: .textLayout, x: 1, y: 1, w: 20, h: 10,
+                    color: Color(r: 1, g: 1, b: 1, a: 1), textLayoutHandle: 123),
             ]
-            let decodedPaintImage = pixels.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRasterImageRGBA(
-                    2, 2, $0.baseAddress, $0.count)
-            }
+            let decodedPaintImage = nucleus.skia.makeRasterImageRGBA(
+                2, 2, pixels.span)
             let paintImage = unsafe recorder.makeTextureImage(decodedPaintImage)
             let paintHandle = unsafe producer.producePaintCommands(
                 recorder: recorder, layerId: 12, revision: 1,

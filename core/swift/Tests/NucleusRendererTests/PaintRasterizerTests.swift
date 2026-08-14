@@ -53,7 +53,8 @@ private enum PaintFixtureResources {
             },
             resolveEffect: { _ in nil })
     case .runtimeEffect(let handle, let source):
-        let effect = unsafe nucleus.skia.makeRuntimeEffect(source)
+        let sourceBytes = Array(source.utf8)
+        let effect = nucleus.skia.makeRuntimeEffect(sourceBytes.span)
         unsafe PaintRasterizer.draw(
             commands: commands, payload: payload, onto: canvas,
             scaleX: scaleX, scaleY: scaleY,
@@ -64,10 +65,8 @@ private enum PaintFixtureResources {
     }
 
     var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
-    let copied = pixels.withUnsafeMutableBufferPointer {
-        unsafe surface.readPixelsRGBA(
-            $0.baseAddress, $0.count, Int32(width * 4))
-    }
+    var pixelSpan = pixels.mutableSpan
+    let copied = unsafe surface.readPixelsRGBA(&pixelSpan, Int32(width * 4))
     return copied ? pixels : []
 }
 

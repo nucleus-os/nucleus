@@ -19,6 +19,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <ptrcheck.h>
+#include <span>
 #include <string>
 #include <swift/bridging>
 
@@ -36,10 +38,12 @@ struct VulkanContextDescriptor {
     void *queue = nullptr;           // VkQueue
     uint32_t graphicsQueueIndex = 0;
     uint32_t maxApiVersion = 0;
-    const char *const *instanceExtensions = nullptr;
     uint32_t instanceExtensionCount = 0;
-    const char *const *deviceExtensions = nullptr;
+    const char *const * __counted_by_or_null(instanceExtensionCount)
+        instanceExtensions = nullptr;
     uint32_t deviceExtensionCount = 0;
+    const char *const * __counted_by_or_null(deviceExtensionCount)
+        deviceExtensions = nullptr;
 };
 
 /// Typed result of a fallible façade operation.
@@ -72,7 +76,7 @@ struct SubmissionResult {
     bool contextUsable = true;
     std::string diagnostic;
 
-    bool isOk() const { return status == Status::ok; }
+    bool isOk() const noexcept { return status == Status::ok; }
 };
 
 enum class SubmissionCallbackResult : int32_t {
@@ -179,10 +183,10 @@ struct Paint {
 /// Validate stable Nucleus wire values before forming façade enums. These are
 /// the only entry points paint-command rasterization uses for enum lowering;
 /// an unknown value leaves `paint` unchanged and returns false.
-bool setPaintBlend(Paint &paint, int32_t raw);
-bool setPaintStyle(Paint &paint, int32_t raw);
-bool setPaintStrokeCap(Paint &paint, int32_t raw);
-bool setPaintStrokeJoin(Paint &paint, int32_t raw);
+bool setPaintBlend(Paint &paint, int32_t raw) noexcept;
+bool setPaintStyle(Paint &paint, int32_t raw) noexcept;
+bool setPaintStrokeCap(Paint &paint, int32_t raw) noexcept;
+bool setPaintStrokeJoin(Paint &paint, int32_t raw) noexcept;
 
 class Recorder;
 class Recording;
@@ -197,12 +201,13 @@ class UploadTexture;
 class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED RasterImage {
 public:
     struct Impl;
-    RasterImage();
-    explicit RasterImage(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    int32_t width() const;
-    int32_t height() const;
-    bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
+    RasterImage() noexcept;
+    explicit RasterImage(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    int32_t width() const noexcept;
+    int32_t height() const noexcept;
+    bool readPixelsRGBA(
+        std::span<uint8_t> destination [[clang::noescape]], int32_t rowBytes) const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -222,7 +227,7 @@ struct RasterDecodeResult {
     RasterImage image;
     RasterDecodeStatus status = RasterDecodeStatus::decodeFailure;
 
-    bool isSuccess() const {
+    bool isSuccess() const noexcept {
         return status == RasterDecodeStatus::success && image.isValid();
     }
 };
@@ -233,7 +238,7 @@ struct EncodedImageMetadata {
     bool isVector = false;
     RasterDecodeStatus status = RasterDecodeStatus::decodeFailure;
 
-    bool isSuccess() const {
+    bool isSuccess() const noexcept {
         return status == RasterDecodeStatus::success;
     }
 };
@@ -245,10 +250,10 @@ struct EncodedImageMetadata {
 class Image {
 public:
     struct Impl;
-    explicit Image(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    int32_t width() const;
-    int32_t height() const;
+    explicit Image(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    int32_t width() const noexcept;
+    int32_t height() const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -261,12 +266,12 @@ private:
 class UploadTexture {
 public:
     struct Impl;
-    explicit UploadTexture(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    int32_t width() const;
-    int32_t height() const;
-    bool updateRGBA(const uint8_t *pixels, size_t byteLength) const;
-    Image image() const;
+    explicit UploadTexture(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    int32_t width() const noexcept;
+    int32_t height() const noexcept;
+    bool updateRGBA(std::span<const uint8_t> pixels [[clang::noescape]]) const noexcept;
+    Image image() const noexcept;
 
 private:
     std::shared_ptr<Impl> impl_;
@@ -279,8 +284,8 @@ private:
 class Shader {
 public:
     struct Impl;
-    explicit Shader(std::shared_ptr<Impl> impl);
-    bool isValid() const;
+    explicit Shader(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -295,18 +300,21 @@ enum class TileMode : int32_t {
     decal = 3,
 };
 
-/// Build a gradient shader. `colors` and `stops` are parallel arrays of
-/// `count` entries; a null `stops` distributes the colors evenly. Returned
-/// invalid on a null/short array or `count < 2`.
+/// Build a gradient shader. `colors` and `stops` are parallel arrays; an empty
+/// `stops` span distributes the colors evenly. Returned invalid when the color
+/// span has fewer than two entries or a nonempty stop span has another size.
 Shader makeLinearGradient(
     float x0, float y0, float x1, float y1,
-    const Color *colors, const float *stops, size_t count, TileMode tile);
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept;
 Shader makeRadialGradient(
     float centerX, float centerY, float radius,
-    const Color *colors, const float *stops, size_t count, TileMode tile);
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept;
 Shader makeSweepGradient(
     float centerX, float centerY, float startAngle, float endAngle,
-    const Color *colors, const float *stops, size_t count, TileMode tile);
+    std::span<const Color> colors [[clang::noescape]],
+    std::span<const float> stops [[clang::noescape]], TileMode tile) noexcept;
 
 /// A path verb. Each verb consumes a fixed number of points from the parallel
 /// point array: `move`/`line` one, `quad` two, `cubic` three, `close` none.
@@ -328,22 +336,22 @@ enum class PathVerb : uint8_t {
 class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED Path {
 public:
     struct Impl;
-    explicit Path(std::shared_ptr<Impl> impl);
-    bool isValid() const;
+    explicit Path(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
     std::shared_ptr<Impl> impl_;
 };
 
-/// Build a path from a verb array plus a flat point array (`pointCount` is a
-/// count of *floats*, two per point). `evenOdd` selects the even-odd fill type
+/// Build a path from a verb span plus a flat point span (two floats per point).
+/// `evenOdd` selects the even-odd fill type
 /// instead of winding. Returned invalid if the verbs consume more points than
 /// were supplied — a malformed encoding fails loudly rather than drawing
 /// partial geometry.
 Path makePath(
-    const uint8_t *verbs, size_t verbCount,
-    const float *points, size_t pointCount, bool evenOdd);
+    std::span<const uint8_t> verbs [[clang::noescape]],
+    std::span<const float> points [[clang::noescape]], bool evenOdd) noexcept;
 
 /// A compiled SkSL program. Compilation is the expensive half of building a
 /// runtime-effect shader and does not depend on uniform values, so it is split
@@ -352,17 +360,19 @@ Path makePath(
 class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED RuntimeEffect {
 public:
     struct Impl;
-    explicit RuntimeEffect(std::shared_ptr<Impl> impl);
-    bool isValid() const;
+    explicit RuntimeEffect(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
 
-    /// Bind `uniformFloatCount` floats in declaration order and produce a
+    /// Bind uniform floats in declaration order and produce a
     /// drawable shader. Invalid if the uniform byte size does not match.
-    Shader makeShader(const float *uniforms, size_t uniformFloatCount) const;
+    Shader makeShader(
+        std::span<const float> uniforms [[clang::noescape]]) const noexcept;
 
     /// As `makeShader`, additionally binding `child` as the program's single
     /// child shader (declared `uniform shader …;`).
     Shader makeShaderWithImage(
-        const float *uniforms, size_t uniformFloatCount, const Image &child) const;
+        std::span<const float> uniforms [[clang::noescape]],
+        const Image &child) const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -371,20 +381,24 @@ private:
 
 /// Compile an SkSL shader source. Returns an invalid effect if it fails to
 /// compile. Compilation is GPU-independent, so this is verifiable headless.
-RuntimeEffect makeRuntimeEffect(const char *sksl);
+RuntimeEffect makeRuntimeEffect(
+    std::span<const uint8_t> sksl [[clang::noescape]]) noexcept;
 
-/// Compile an SkSL shader source and bind `uniformFloatCount` float uniforms in
+/// Compile an SkSL shader source and bind float uniforms in
 /// declaration order. Returns an invalid shader if the source fails to compile or
 /// the uniform byte size does not match. Compilation is GPU-independent, so this
 /// is verifiable headless.
-Shader makeRuntimeShader(const char *sksl, const float *uniforms, size_t uniformFloatCount);
+Shader makeRuntimeShader(
+    std::span<const uint8_t> sksl [[clang::noescape]],
+    std::span<const float> uniforms [[clang::noescape]]) noexcept;
 
 /// Like `makeRuntimeShader`, but binds `child` as the effect's single child
 /// shader (declared `uniform shader …;`) — the foreground-vibrancy material
 /// samples the backdrop content this way. Invalid if the source declares other
 /// than exactly one child, fails to compile, or the uniform size mismatches.
 Shader makeRuntimeShaderWithImage(
-    const char *sksl, const float *uniforms, size_t uniformFloatCount, const Image &child);
+    std::span<const uint8_t> sksl [[clang::noescape]],
+    std::span<const float> uniforms [[clang::noescape]], const Image &child) noexcept;
 
 using TextLayoutBorrowBody =
     void (*)(uintptr_t paragraph, void *bodyContext);
@@ -406,8 +420,8 @@ enum class TextLayoutBorrowInstallStatus : uint8_t {
 /// rejected. The provider must invoke `body` synchronously while it owns the
 /// paragraph and must not retain `bodyContext`.
 TextLayoutBorrowInstallStatus installTextLayoutBorrow(
-    TextLayoutBorrow borrow);
-bool hasTextLayoutBorrow();
+    TextLayoutBorrow borrow) noexcept;
+bool hasTextLayoutBorrow() noexcept;
 
 /// A surface-backed canvas. Drawing commands are recorded into the surface's
 /// recorder until the next recording snap. The shared surface keeps the Skia
@@ -416,57 +430,60 @@ bool hasTextLayoutBorrow();
 class Canvas {
 public:
     struct Impl;
-    explicit Canvas(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    void clear(Color color) const;
+    explicit Canvas(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    void clear(Color color) const noexcept;
 
     // --- Save / clip stack ---
-    void save() const;
-    void restore() const;
+    void save() const noexcept;
+    void restore() const noexcept;
     /// Begin a transparency layer bounded by `bounds` (whole canvas if
     /// `bounds.width <= 0`), composited at `alpha` on `restore`.
-    void saveLayerAlpha(RectF bounds, float alpha) const;
-    void clipRect(RectF rect, bool antialias) const;
-    void clipRRect(RectF rect, RRectRadii radii, bool antialias) const;
-    void clipPath(const Path &path, bool antialias) const;
+    void saveLayerAlpha(RectF bounds, float alpha) const noexcept;
+    void clipRect(RectF rect, bool antialias) const noexcept;
+    void clipRRect(RectF rect, RRectRadii radii, bool antialias) const noexcept;
+    void clipPath(const Path &path, bool antialias) const noexcept;
     /// Intersect with `path` after mapping it through `matrix`, without
     /// changing the canvas CTM. This preserves the resulting clip after a
     /// command-local transform has gone out of scope.
     void clipPathTransformed(
-        const Path &path, const float matrix[9], bool antialias) const;
+        const Path &path, std::span<const float> matrix [[clang::noescape]],
+        bool antialias) const noexcept;
 
     // --- Transform ---
     /// Concatenate a row-major 3x3 matrix. `translate`/`scale`/`rotate` are all
     /// expressible through this, so the facade carries only the general form.
-    void concat(const float m[9]) const;
+    void concat(std::span<const float> matrix [[clang::noescape]]) const noexcept;
 
     // --- Draws (Paint-carrying) ---
-    void drawRect(RectF rect, Paint paint) const;
-    void drawRRect(RectF rect, RRectRadii radii, Paint paint) const;
+    void drawRect(RectF rect, Paint paint) const noexcept;
+    void drawRRect(RectF rect, RRectRadii radii, Paint paint) const noexcept;
     /// Draw the layer visual-style primitive. The border is the area between the
     /// outer and inset inner rounded rectangles, partitioned into four edge
     /// regions so unequal widths and colors remain exact at the corners.
-    void drawStyledRRect(StyledRRect style, float alpha) const;
+    void drawStyledRRect(StyledRRect style, float alpha) const noexcept;
     /// Draw `src` region of `image` into `dst`. A zero-size `src` draws the whole
     /// image. Honors the paint's alpha, blend mode, blur, and saturation.
-    void drawImageRect(const Image &image, RectF src, RectF dst, Paint paint) const;
+    void drawImageRect(
+        const Image &image, RectF src, RectF dst, Paint paint) const noexcept;
     /// Fill `rect` with a runtime-effect shader (vibrancy), modulated by the paint.
-    void drawShaderRect(RectF rect, const Shader &shader, Paint paint) const;
+    void drawShaderRect(RectF rect, const Shader &shader, Paint paint) const noexcept;
     /// Fill or stroke `path` per the paint's style.
-    void drawPath(const Path &path, Paint paint) const;
+    void drawPath(const Path &path, Paint paint) const noexcept;
     /// Draw `path` with `shader` bound. Unifies gradients and SkSL effects —
     /// both are "a Shader bound to a draw".
-    void drawPathWithShader(const Path &path, const Shader &shader, Paint paint) const;
+    void drawPathWithShader(
+        const Path &path, const Shader &shader, Paint paint) const noexcept;
     /// Paint the text-layout paragraph named by `handle` into `dst`. Painting
     /// occurs synchronously inside the owning borrow installed with
     /// `installTextLayoutBorrow`; the paragraph pointer never escapes the body.
     /// A zero or unknown handle is ignored. Renderer composition must install a
     /// provider before this method is reachable.
-    void drawTextLayout(uint64_t handle, RectF dst, float alpha) const;
+    void drawTextLayout(uint64_t handle, RectF dst, float alpha) const noexcept;
 
-    void drawRect(RectF rect, Color color) const;
-    void drawImage(const Image &image, RectF dst, float alpha) const;
-    void drawRoundRect(RectF rect, float radius, Color color) const;
+    void drawRect(RectF rect, Color color) const noexcept;
+    void drawImage(const Image &image, RectF dst, float alpha) const noexcept;
+    void drawRoundRect(RectF rect, float radius, Color color) const noexcept;
 
 private:
     std::shared_ptr<Impl> impl_;
@@ -475,24 +492,26 @@ private:
 /// Make a raster RGBA8888 image from CPU pixels (tightly packed, premultiplied).
 /// Returned invalid on a size/argument error.
 RasterImage makeRasterImageRGBA(
-    int32_t width, int32_t height, const uint8_t *pixels, size_t byteLength);
+    int32_t width, int32_t height,
+    std::span<const uint8_t> pixels [[clang::noescape]]) noexcept;
 
 /// Read intrinsic encoded-image metadata without allocating decoded pixels.
-EncodedImageMetadata probeEncodedImageFileDescriptor(int32_t fileDescriptor);
+EncodedImageMetadata probeEncodedImageFileDescriptor(int32_t fileDescriptor) noexcept;
 EncodedImageMetadata probeEncodedImageMemory(
-    const uint8_t *bytes, size_t byteLength);
+    std::span<const uint8_t> bytes [[clang::noescape]]) noexcept;
 
 /// Eagerly decode an encoded image file into CPU pixels inside the positive
 /// target box. Aspect ratio is preserved and images are never enlarged.
 /// Invalid input, unsupported formats, invalid bounds, resource-limit
 /// violations, and decode failures are distinguished explicitly.
 RasterDecodeResult decodeEncodedImageFileDescriptor(
-    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight);
+    int32_t fileDescriptor, int32_t maxWidth, int32_t maxHeight) noexcept;
 
 /// Eagerly decode encoded image bytes already in memory under the same bounds,
 /// limits, and typed-result contract as the file entry point.
 RasterDecodeResult decodeEncodedImageMemory(
-    const uint8_t *bytes, size_t byteLength, int32_t maxWidth, int32_t maxHeight);
+    std::span<const uint8_t> bytes [[clang::noescape]],
+    int32_t maxWidth, int32_t maxHeight) noexcept;
 
 /// A borrowed Vulkan image to wrap as a Graphite-sampleable `Image` (an imported
 /// client DMA-BUF or a compositor render texture). The façade never owns the
@@ -516,16 +535,17 @@ struct VulkanImageDescriptor {
 class Surface {
 public:
     struct Impl;
-    explicit Surface(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    int32_t width() const;
-    int32_t height() const;
-    Canvas getCanvas() const;
-    Image snapshotImage() const;
+    explicit Surface(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    int32_t width() const noexcept;
+    int32_t height() const noexcept;
+    Canvas getCanvas() const noexcept;
+    Image snapshotImage() const noexcept;
     /// Read the surface's pixels as tightly-packed (or `rowBytes`-strided)
     /// RGBA8888 premultiplied. Valid for CPU raster surfaces; a GPU-backed
     /// surface uses `GraphiteContext::beginSurfaceReadbackRGBA` instead.
-    bool readPixelsRGBA(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
+    bool readPixelsRGBA(
+        std::span<uint8_t> destination [[clang::noescape]], int32_t rowBytes) const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -535,14 +555,14 @@ private:
 /// Make a CPU raster render target. Needs no Graphite context or GPU, so the
 /// drawing façade — paths, strokes, gradients, blend modes — is verifiable
 /// headless, the same property `makeRuntimeShader` already has.
-Surface makeRasterSurface(int32_t width, int32_t height);
+Surface makeRasterSurface(int32_t width, int32_t height) noexcept;
 
 /// An immutable recorded sequence of GPU work, produced by `Recorder::snap`.
 class Recording {
 public:
     struct Impl;
-    explicit Recording(std::shared_ptr<Impl> impl);
-    bool isValid() const;
+    explicit Recording(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
 
 private:
     friend struct GraphiteInternalAccess;
@@ -554,10 +574,11 @@ private:
 class SurfaceReadback {
 public:
     struct Impl;
-    explicit SurfaceReadback(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    bool isComplete() const;
-    Status copyPixels(uint8_t *dst, size_t byteLength, int32_t rowBytes) const;
+    explicit SurfaceReadback(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    bool isComplete() const noexcept;
+    Status copyPixels(
+        std::span<uint8_t> destination [[clang::noescape]], int32_t rowBytes) const noexcept;
 
 private:
     std::shared_ptr<Impl> impl_;
@@ -567,25 +588,25 @@ private:
 class Recorder {
 public:
     struct Impl;
-    explicit Recorder(std::shared_ptr<Impl> impl);
-    bool isValid() const;
-    Surface makeOffscreenSurface(int32_t width, int32_t height) const;
+    explicit Recorder(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
+    Surface makeOffscreenSurface(int32_t width, int32_t height) const noexcept;
     /// Copy a CPU/lazy image into a Graphite-backed texture owned by this
     /// recorder. The upload is ordered before later draws in the same recording.
     /// Returned invalid when `image` is invalid or the texture cannot be made.
-    Image makeTextureImage(const RasterImage &image) const;
+    Image makeTextureImage(const RasterImage &image) const noexcept;
     /// Allocate a non-renderable sampled RGBA8 texture. `updateRGBA` records its
     /// transfer into this recorder; callers must snap and submit before sampling.
-    UploadTexture makeUploadTextureRGBA(int32_t width, int32_t height) const;
+    UploadTexture makeUploadTextureRGBA(int32_t width, int32_t height) const noexcept;
     /// Wrap a borrowed Vulkan image as a sampleable `Image` (DMA-BUF import /
     /// compositor render texture). Invalid on an unusable descriptor.
-    Image wrapBackendImage(const VulkanImageDescriptor &descriptor) const;
+    Image wrapBackendImage(const VulkanImageDescriptor &descriptor) const noexcept;
     /// Wrap a borrowed Vulkan image as a render-target `Surface` — the GBM scanout
     /// BO the compositor composites into and KMS flips. The façade never owns the
     /// image or its memory; the Swift owner outlives the surface. Invalid if the
     /// descriptor lacks `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`.
-    Surface wrapBackendSurface(const VulkanImageDescriptor &descriptor) const;
-    Recording snapRecording() const;
+    Surface wrapBackendSurface(const VulkanImageDescriptor &descriptor) const noexcept;
+    Recording snapRecording() const noexcept;
 
 private:
     std::shared_ptr<Impl> impl_;
@@ -596,63 +617,64 @@ private:
 class GraphiteContext {
 public:
     struct Impl;
-    explicit GraphiteContext(std::shared_ptr<Impl> impl);
-    bool isValid() const;
+    explicit GraphiteContext(std::shared_ptr<Impl> impl) noexcept;
+    bool isValid() const noexcept;
     /// Release Skia's Graphite context, Vulkan allocator, and interface while the
     /// borrowed Vulkan device is still alive. Idempotent.
-    void reset();
-    Recorder makeRecorder() const;
+    void reset() noexcept;
+    Recorder makeRecorder() const noexcept;
     /// Insert exactly one recording, signal the borrowed Vulkan binary
     /// semaphore, and submit without waiting on the CPU. The Linux DRM backend
     /// exports that semaphore as a sync_file for KMS IN_FENCE_FD.
     SubmissionResult submitWithSemaphores(
-        const Recording &recording, void *const *waitSemaphores,
-        size_t waitSemaphoreCount, void *signalSemaphore,
-        uint64_t submissionSerial, bool requestGpuTiming) const;
+        const Recording &recording,
+        std::span<const uintptr_t> waitSemaphores [[clang::noescape]],
+        uintptr_t signalSemaphore,
+        uint64_t submissionSerial, bool requestGpuTiming) const noexcept;
     /// Submit a recording that renders into a Vulkan swapchain image for
     /// presentation (the Android WSI path): the GPU work waits on `waitSemaphore`
     /// (the swapchain acquire) before executing and signals `signalSemaphore` (the
     /// present wait) when done, and `targetSurface`'s image is transitioned to
     /// `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` on `presentQueueFamily`. Does NOT sync to
     /// the CPU — `vkQueuePresentKHR` orders against `signalSemaphore`. The semaphore
-    /// args are `VkSemaphore` handles as `void *` (0/null skips that semaphore).
+    /// args are opaque `VkSemaphore` handle bit patterns (zero skips the signal).
     /// Returns ok on success.
     SubmissionResult submitForPresent(
         const Surface &targetSurface, const Recording &recording,
-        void *const *waitSemaphores, size_t waitSemaphoreCount,
-        void *signalSemaphore, uint32_t presentQueueFamily,
-        uint64_t submissionSerial, bool requestGpuTiming) const;
+        std::span<const uintptr_t> waitSemaphores [[clang::noescape]],
+        uintptr_t signalSemaphore, uint32_t presentQueueFamily,
+        uint64_t submissionSerial, bool requestGpuTiming) const noexcept;
     /// Submit ordinary Graphite work without a CPU wait. Completion advances the
     /// same monotonically increasing serial observed by
     /// `pollCompletedSubmissionSerial`.
     SubmissionResult submitAsync(
-        const Recording &recording, uint64_t submissionSerial) const;
+        const Recording &recording, uint64_t submissionSerial) const noexcept;
     /// Test-only insertion control using Skia's real simulated-status path.
     SubmissionResult submitAsyncSimulatingInsertStatus(
         const Recording &recording, uint64_t submissionSerial,
-        RecordingInsertStatus simulatedStatus) const;
+        RecordingInsertStatus simulatedStatus) const noexcept;
     /// Start a nonblocking readback. The context owner calls
     /// `pollCompletedSubmissionSerial` until the returned readback completes.
-    SurfaceReadback beginSurfaceReadbackRGBA(const Surface &surface) const;
-    SurfaceReadback beginSurfaceReadbackBGRA(const Surface &surface) const;
+    SurfaceReadback beginSurfaceReadbackRGBA(const Surface &surface) const noexcept;
+    SurfaceReadback beginSurfaceReadbackBGRA(const Surface &surface) const noexcept;
     /// Read one checked surface sub-rectangle without allocating or transferring
     /// the rest of the render target.
     SurfaceReadback beginSurfaceReadbackBGRARegion(
         const Surface &surface, int32_t x, int32_t y,
-        int32_t width, int32_t height) const;
+        int32_t width, int32_t height) const noexcept;
     /// Poll internal submission fences without waiting and return the greatest
     /// serial whose GPU-finished callback has completed.
-    uint64_t pollCompletedSubmissionSerial() const;
+    uint64_t pollCompletedSubmissionSerial() const noexcept;
     /// Poll completion and consume the Vulkan timestamp-query duration for exactly
     /// `submissionSerial`. Returns zero when that submission has not completed or
     /// elapsed-time queries are unavailable. Consumption is exact-keyed because
     /// different outputs may deliver pageflips out of submission-serial order.
-    uint64_t takeCompletedSubmissionGpuElapsedNs(uint64_t submissionSerial) const;
-    size_t completedSubmissionTimingCount() const;
-    uint64_t droppedSubmissionTimingCount() const;
-    uint64_t submissionCallbackCount() const;
-    uint64_t successfulSubmissionCallbackCount() const;
-    uint64_t failedSubmissionCallbackCount() const;
+    uint64_t takeCompletedSubmissionGpuElapsedNs(uint64_t submissionSerial) const noexcept;
+    size_t completedSubmissionTimingCount() const noexcept;
+    uint64_t droppedSubmissionTimingCount() const noexcept;
+    uint64_t submissionCallbackCount() const noexcept;
+    uint64_t successfulSubmissionCallbackCount() const noexcept;
+    uint64_t failedSubmissionCallbackCount() const noexcept;
 private:
     std::shared_ptr<Impl> impl_;
 };
@@ -660,6 +682,7 @@ private:
 /// Create a Graphite context over the borrowed Vulkan handles. The returned
 /// context is invalid (`isValid() == false`) if creation failed; no exception
 /// is thrown.
-GraphiteContext makeGraphiteVulkanContext(const VulkanContextDescriptor &descriptor);
+GraphiteContext makeGraphiteVulkanContext(
+    const VulkanContextDescriptor &descriptor) noexcept;
 
 }  // namespace nucleus::skia

@@ -11,7 +11,7 @@ func submitGraphiteAndWait(
     serial: UInt64
 ) -> Bool {
     guard unsafe recording.isValid(),
-          unsafe context.submitAsync(recording, serial).isOk()
+        unsafe context.submitAsync(recording, serial).isOk()
     else { return false }
     return unsafe waitForGraphiteSerial(context: context, serial: serial)
 }
@@ -23,8 +23,8 @@ func readGraphiteSurfaceRGBA(
     let width = unsafe Int(surface.width())
     let height = unsafe Int(surface.height())
     guard width > 0, height > 0,
-          width <= Int.max / 4,
-          height <= Int.max / (width * 4)
+        width <= Int.max / 4,
+        height <= Int.max / (width * 4)
     else { return nil }
     let rowBytes = width * 4
     let readback = unsafe context.beginSurfaceReadbackRGBA(surface)
@@ -36,9 +36,8 @@ func readGraphiteSurfaceRGBA(
         sched_yield()
     }
     var pixels = [UInt8](repeating: 0, count: rowBytes * height)
-    let status = pixels.withUnsafeMutableBufferPointer {
-        unsafe readback.copyPixels($0.baseAddress, $0.count, Int32(rowBytes))
-    }
+    var pixelSpan = pixels.mutableSpan
+    let status = unsafe readback.copyPixels(&pixelSpan, Int32(rowBytes))
     return status == nucleus.skia.Status.ok ? pixels : nil
 }
 

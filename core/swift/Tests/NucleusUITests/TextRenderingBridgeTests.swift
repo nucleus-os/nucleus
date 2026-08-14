@@ -134,12 +134,8 @@ struct TextRenderingBridgeTests {
         var pixels = [UInt8](
             repeating: 0,
             count: 200 * 64 * 4)
-        let read = pixels.withUnsafeMutableBufferPointer {
-            unsafe surface.readPixelsRGBA(
-                $0.baseAddress,
-                $0.count,
-                200 * 4)
-        }
+        var pixelSpan = pixels.mutableSpan
+        let read = unsafe surface.readPixelsRGBA(&pixelSpan, 200 * 4)
         #expect(read)
         #expect(
             pixels.enumerated().contains {

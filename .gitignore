@@ -30,7 +30,9 @@ Desktop.ini
 **/.build/
 **/.swiftpm/
 !/.swiftpm/
+/.swiftpm/*
 !/.swiftpm/configuration/
+/.swiftpm/configuration/*
 !/.swiftpm/configuration/mirrors.json
 /collider/.nucleus/
 /collider/.sourcekit-lsp/

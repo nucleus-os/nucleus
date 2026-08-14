@@ -315,6 +315,7 @@ class ReactRuntimeHostImpl final {
     if (timerManager_ != nullptr) {
       timerManager_->quit();
     }
+    turboModuleRegistry_.clearModules();
     if (deviceEventEmitter_ != nullptr) {
       deviceEventEmitter_->shutdown();
     }

@@ -8,7 +8,7 @@ import NucleusTextBackendNative
 package final class DefaultTextLayoutHandler: Sendable {
     package init() {}
 
-    package func measure(_ request: nucleus.react.TextMeasureRequest)
+    package func measure(_ request: borrowing nucleus.react.TextMeasureRequest)
         -> nucleus.react.TextMeasureResult
     {
         let metrics = nucleus.text.measureParagraph(request.runs, request.paragraphStyle)

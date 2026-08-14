@@ -9,6 +9,6 @@ enum class TextRenderingBridgeInstallStatus : uint8_t {
   conflictingProvider,
 };
 
-TextRenderingBridgeInstallStatus installTextRenderingBridge();
+TextRenderingBridgeInstallStatus installTextRenderingBridge() noexcept;
 
 } // namespace nucleus::text

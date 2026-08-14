@@ -1,9 +1,10 @@
-import Testing
-@testable import NucleusRenderer
-import VulkanC
-import Vulkan
-import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Testing
+import Vulkan
+import VulkanC
+
+@testable import NucleusRenderer
 
 // Converted from BackdropFixture: blur-sigma + vibrancy-strength
 // derivation and the chroma-preserving vibrancy runtime shader (hardware-
@@ -23,13 +24,16 @@ import NucleusRenderModel
 
     @Test func pureDerivationsAndVibrancyShader() {
         // --- Pure derivations ---
-        #expect(Backdrop.blurSigma(Self.spec(blending: .behindWindow, shape: .rect((10, 10, 80, 60)))) == 12,
-                "blur-sigma-offset-x-passes")
+        #expect(
+            Backdrop.blurSigma(Self.spec(blending: .behindWindow, shape: .rect((10, 10, 80, 60))))
+                == 12,
+            "blur-sigma-offset-x-passes")
         var zeroPass = Self.spec(blending: .behindWindow, shape: .rect((0, 0, 1, 1)))
         zeroPass.passes = 0
         #expect(Backdrop.blurSigma(zeroPass) == 4, "blur-sigma-min-one-pass")
-        #expect(Backdrop.vibrancyStrength(.light) < Backdrop.vibrancyStrength(.dark),
-                "vibrancy-light-lt-dark")
+        #expect(
+            Backdrop.vibrancyStrength(.light) < Backdrop.vibrancyStrength(.dark),
+            "vibrancy-light-lt-dark")
 
         // --- Vibrancy shader compiles over a raster content image ---
         let contentSurface = unsafe nucleus.skia.makeRasterSurface(2, 2)
@@ -51,12 +55,14 @@ import NucleusRenderModel
         #expect(lightShaderExists, "vibrancy-shader-light")
         #expect(darkShaderExists, "vibrancy-shader-dark")
         // A child-less SkSL fails the with-image binding (needs exactly one child).
-        "half4 main(float2 c) { return half4(1,0,0,1); }".withCString { src in
-            let bad = unsafe nucleus.skia.makeRuntimeShaderWithImage(
-                src, nil, 0, content)
-            let badIsValid = unsafe bad.isValid()
-            #expect(!badIsValid, "vibrancy-no-child-fails")
-        }
+        let emptyUniforms: [Float] = []
+        let source = Array("half4 main(float2 c) { return half4(1,0,0,1); }".utf8)
+        let bad = unsafe nucleus.skia.makeRuntimeShaderWithImage(
+            source.span,
+            emptyUniforms.span,
+            content)
+        let badIsValid = unsafe bad.isValid()
+        #expect(!badIsValid, "vibrancy-no-child-fails")
     }
 
     @Test func gpuHeadless_bandExecution() throws {
@@ -73,7 +79,10 @@ import NucleusRenderModel
             // Compose a background, snapshot the prefix (the .behindWindow source).
             let canvas = unsafe surface.getCanvas()
             var bg = nucleus.skia.Color()
-            bg.r = 0.3; bg.g = 0.5; bg.b = 0.7; bg.a = 1
+            bg.r = 0.3
+            bg.g = 0.5
+            bg.b = 0.7
+            bg.a = 1
             unsafe canvas.clear(bg)
             let prefix = unsafe surface.snapshotImage()
             let live = unsafe surface.snapshotImage()

@@ -1,7 +1,8 @@
-import Testing
-import VulkanC
-import Vulkan
 import NucleusSkiaGraphiteBridge
+import Testing
+import Vulkan
+import VulkanC
+
 @testable import NucleusRenderer
 
 // capture sizing (hardware-independent), plus the device-rect capture → register
@@ -29,9 +30,8 @@ import NucleusSkiaGraphiteBridge
                 pixels[i * 4 + 1] = 255  // green
                 pixels[i * 4 + 3] = 255
             }
-            let decodedSource = pixels.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRasterImageRGBA(32, 32, $0.baseAddress, $0.count)
-            }
+            let decodedSource = nucleus.skia.makeRasterImageRGBA(
+                32, 32, pixels.span)
             let source = unsafe recorder.makeTextureImage(decodedSource)
 
             // begin() allocates a render texture of the requested size.

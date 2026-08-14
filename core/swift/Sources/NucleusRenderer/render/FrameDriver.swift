@@ -184,9 +184,7 @@ package protocol FrameResourceResolver: AnyObject {
             unsafe texture = unsafe recorder.makeUploadTextureRGBA(width, height)
         }
         guard unsafe texture.isValid() else { return nil }
-        let updated = pixels.withUnsafeBufferPointer {
-            unsafe texture.updateRGBA($0.baseAddress, $0.count)
-        }
+        let updated = unsafe texture.updateRGBA(pixels.span)
         guard updated else { return nil }
         return unsafe texture
     }
@@ -199,18 +197,15 @@ package protocol FrameResourceResolver: AnyObject {
         waitSemaphores: [VkSemaphore],
         submissionSerial: UInt64
     ) -> nucleus.skia.SubmissionResult {
-        let waits: [UnsafeMutableRawPointer?] = unsafe waitSemaphores.map {
-            unsafe UnsafeMutableRawPointer($0)
+        let waits: [UInt] = unsafe waitSemaphores.map {
+            unsafe UInt(bitPattern: UnsafeMutableRawPointer($0))
         }
-        return waits.withUnsafeBufferPointer { waits in
-            return unsafe context.submitWithSemaphores(
-                recording,
-                waits.baseAddress,
-                waits.count,
-                nil,
-                submissionSerial,
-                false)
-        }
+        return unsafe context.submitWithSemaphores(
+            recording,
+            waits.span,
+            0,
+            submissionSerial,
+            false)
     }
 
     /// Drop GPU-backed images before the context tears down (lifetime invariant).
@@ -292,7 +287,8 @@ package protocol FrameResourceResolver: AnyObject {
         if let existing = compiledEffects[handle], existing.isValid() {
             return existing
         }
-        let effect = unsafe nucleus.skia.makeRuntimeEffect(source.sksl)
+        let sourceBytes = Array(source.sksl.utf8)
+        let effect = nucleus.skia.makeRuntimeEffect(sourceBytes.span)
         guard effect.isValid() else { return nil }
         compiledEffects[handle] = effect
         return effect
@@ -704,33 +700,31 @@ package protocol FrameResourceResolver: AnyObject {
         timings.frameSnapNs = elapsedNanoseconds(phaseStart, clock.now)
         let submissionResult: nucleus.skia.SubmissionResult
         phaseStart = clock.now
-        var waits: [UnsafeMutableRawPointer?] = unsafe frameAcquireWaits.map {
-            unsafe UnsafeMutableRawPointer($0)
+        var waits: [UInt] = unsafe frameAcquireWaits.map {
+            unsafe UInt(bitPattern: UnsafeMutableRawPointer($0))
         }
         switch request.submissionMode {
         case .swapchain(let present):
             if let wait = unsafe present.waitSemaphore {
-                unsafe waits.append(UnsafeMutableRawPointer(wait))
+                unsafe waits.append(UInt(bitPattern: UnsafeMutableRawPointer(wait)))
             }
-            let signal = unsafe present.signalSemaphore.map { unsafe UnsafeMutableRawPointer($0) }
-            submissionResult = waits.withUnsafeBufferPointer { waits in
-                return unsafe context.submitForPresent(
-                    request.scanout, recordingHandle, waits.baseAddress, waits.count,
-                    signal, present.queueFamily, request.frame.frameSerial, true)
-            }
+            let signal =
+                unsafe present.signalSemaphore.map {
+                    unsafe UInt(bitPattern: UnsafeMutableRawPointer($0))
+                } ?? 0
+            submissionResult = unsafe context.submitForPresent(
+                request.scanout, recordingHandle, waits.span,
+                signal, present.queueFamily, request.frame.frameSerial, true)
         case .drm(let drmSubmit):
-            let signal = unsafe UnsafeMutableRawPointer(drmSubmit.signalSemaphore)
-            submissionResult = waits.withUnsafeBufferPointer { waits in
-                return unsafe context.submitWithSemaphores(
-                    recordingHandle, waits.baseAddress, waits.count,
-                    signal, request.frame.frameSerial, true)
-            }
+            let signal = unsafe UInt(
+                bitPattern: UnsafeMutableRawPointer(drmSubmit.signalSemaphore))
+            submissionResult = unsafe context.submitWithSemaphores(
+                recordingHandle, waits.span,
+                signal, request.frame.frameSerial, true)
         case .offscreen:
-            submissionResult = waits.withUnsafeBufferPointer { waits in
-                return unsafe context.submitWithSemaphores(
-                    recordingHandle, waits.baseAddress, waits.count,
-                    nil, request.frame.frameSerial, false)
-            }
+            submissionResult = unsafe context.submitWithSemaphores(
+                recordingHandle, waits.span,
+                0, request.frame.frameSerial, false)
         }
         timings.submitNs = elapsedNanoseconds(phaseStart, clock.now)
 

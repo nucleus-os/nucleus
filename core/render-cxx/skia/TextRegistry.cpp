@@ -51,125 +51,166 @@ sk_sp<SkFontMgr> makePlatformFontManager() {
 
 } // namespace
 
-uint64_t registerParagraph(ParagraphPtr paragraph, float layoutWidth) {
-  if (!paragraph) {
+uint64_t registerParagraph(ParagraphPtr paragraph, float layoutWidth) noexcept {
+  try {
+    if (!paragraph) {
+      return 0;
+    }
+
+    uint64_t handle = g_next_handle.fetch_add(1, std::memory_order_relaxed);
+    if (handle == 0) {
+      handle = g_next_handle.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    std::lock_guard<std::mutex> lock(g_paragraph_mutex);
+    g_paragraphs.emplace(handle, ParagraphRecord{
+        .paragraph = std::move(paragraph),
+        .layoutWidth = layoutWidth,
+        .refCount = 1,
+    });
+    return handle;
+  } catch (...) {
     return 0;
   }
-
-  uint64_t handle = g_next_handle.fetch_add(1, std::memory_order_relaxed);
-  if (handle == 0) {
-    handle = g_next_handle.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  std::lock_guard<std::mutex> lock(g_paragraph_mutex);
-  g_paragraphs.emplace(handle, ParagraphRecord{
-      .paragraph = std::move(paragraph),
-      .layoutWidth = layoutWidth,
-      .refCount = 1,
-  });
-  return handle;
 }
 
 uint64_t registerParagraph(
     std::unique_ptr<skia::textlayout::Paragraph> paragraph,
-    float layoutWidth) {
-  return registerParagraph(ParagraphPtr(std::move(paragraph)), layoutWidth);
-}
-
-void retainParagraph(uint64_t handle) {
-  if (handle == 0) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(g_paragraph_mutex);
-  auto it = g_paragraphs.find(handle);
-  if (it != g_paragraphs.end()) {
-    it->second.refCount += 1;
+    float layoutWidth) noexcept {
+  try {
+    return registerParagraph(ParagraphPtr(std::move(paragraph)), layoutWidth);
+  } catch (...) {
+    return 0;
   }
 }
 
-void releaseParagraph(uint64_t handle) {
-  if (handle == 0) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(g_paragraph_mutex);
-  auto it = g_paragraphs.find(handle);
-  if (it == g_paragraphs.end()) {
-    return;
-  }
-  if (it->second.refCount <= 1) {
-    g_paragraphs.erase(it);
-  } else {
-    it->second.refCount -= 1;
+void retainParagraph(uint64_t handle) noexcept {
+  try {
+    if (handle == 0) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(g_paragraph_mutex);
+    auto it = g_paragraphs.find(handle);
+    if (it != g_paragraphs.end()) {
+      it->second.refCount += 1;
+    }
+  } catch (...) {
   }
 }
 
-ParagraphPtr lookupParagraph(uint64_t handle) {
-  if (handle == 0) {
+void releaseParagraph(uint64_t handle) noexcept {
+  try {
+    if (handle == 0) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(g_paragraph_mutex);
+    auto it = g_paragraphs.find(handle);
+    if (it == g_paragraphs.end()) {
+      return;
+    }
+    if (it->second.refCount <= 1) {
+      g_paragraphs.erase(it);
+    } else {
+      it->second.refCount -= 1;
+    }
+  } catch (...) {
+  }
+}
+
+ParagraphPtr lookupParagraph(uint64_t handle) noexcept {
+  try {
+    if (handle == 0) {
+      return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(g_paragraph_mutex);
+    auto it = g_paragraphs.find(handle);
+    return it == g_paragraphs.end() ? nullptr : it->second.paragraph;
+  } catch (...) {
     return nullptr;
   }
-  std::lock_guard<std::mutex> lock(g_paragraph_mutex);
-  auto it = g_paragraphs.find(handle);
-  return it == g_paragraphs.end() ? nullptr : it->second.paragraph;
 }
 
 bool borrowParagraph(
     uint64_t handle,
     void *bodyContext,
-    ParagraphBorrowBody body) {
-  if (handle == 0 || body == nullptr) {
+    ParagraphBorrowBody body) noexcept {
+  try {
+    if (handle == 0 || body == nullptr) {
+      return false;
+    }
+    ParagraphPtr paragraph = lookupParagraph(handle);
+    if (!paragraph) {
+      return false;
+    }
+    body(reinterpret_cast<uintptr_t>(paragraph.get()), bodyContext);
+    return true;
+  } catch (...) {
     return false;
   }
-  ParagraphPtr paragraph = lookupParagraph(handle);
-  if (!paragraph) {
-    return false;
-  }
-  body(reinterpret_cast<uintptr_t>(paragraph.get()), bodyContext);
-  return true;
 }
 
-float paragraphLayoutWidth(uint64_t handle) {
-  if (handle == 0) {
+float paragraphLayoutWidth(uint64_t handle) noexcept {
+  try {
+    if (handle == 0) {
+      return 0.0f;
+    }
+    std::lock_guard<std::mutex> lock(g_paragraph_mutex);
+    auto it = g_paragraphs.find(handle);
+    return it == g_paragraphs.end() ? 0.0f : it->second.layoutWidth;
+  } catch (...) {
     return 0.0f;
   }
-  std::lock_guard<std::mutex> lock(g_paragraph_mutex);
-  auto it = g_paragraphs.find(handle);
-  return it == g_paragraphs.end() ? 0.0f : it->second.layoutWidth;
 }
 
-sk_sp<SkFontMgr> sharedFontMgr() {
-  std::lock_guard<std::mutex> lock(g_font_mutex);
-  if (!g_font_mgr) {
-    g_font_mgr = makePlatformFontManager();
-  }
-  return g_font_mgr;
-}
-
-sk_sp<skia::textlayout::FontCollection> sharedFontCollection() {
-  std::lock_guard<std::mutex> lock(g_font_mutex);
-  if (!g_font_collection) {
-    auto collection = sk_make_sp<skia::textlayout::FontCollection>();
+sk_sp<SkFontMgr> sharedFontMgr() noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_font_mutex);
     if (!g_font_mgr) {
       g_font_mgr = makePlatformFontManager();
     }
-    collection->setDefaultFontManager(g_font_mgr);
-    collection->enableFontFallback();
-    g_font_collection = std::move(collection);
+    return g_font_mgr;
+  } catch (...) {
+    return nullptr;
   }
-  return g_font_collection;
 }
 
-sk_sp<SkUnicode> sharedUnicode() {
-  std::lock_guard<std::mutex> lock(g_font_mutex);
-  if (!g_unicode) {
-    g_unicode = SkUnicodes::ICU::Make();
+sk_sp<skia::textlayout::FontCollection> sharedFontCollection() noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_font_mutex);
+    if (!g_font_collection) {
+      auto collection = sk_make_sp<skia::textlayout::FontCollection>();
+      if (!g_font_mgr) {
+        g_font_mgr = makePlatformFontManager();
+      }
+      collection->setDefaultFontManager(g_font_mgr);
+      collection->enableFontFallback();
+      g_font_collection = std::move(collection);
+    }
+    return g_font_collection;
+  } catch (...) {
+    return nullptr;
   }
-  return g_unicode;
 }
 
-void invalidateSharedFonts() {
-  std::lock_guard<std::mutex> lock(g_font_mutex);
-  g_font_collection.reset();
-  g_font_mgr.reset();
+sk_sp<SkUnicode> sharedUnicode() noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_font_mutex);
+    if (!g_unicode) {
+      g_unicode = SkUnicodes::ICU::Make();
+    }
+    return g_unicode;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+void invalidateSharedFonts() noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_font_mutex);
+    g_font_collection.reset();
+    g_font_mgr.reset();
+  } catch (...) {
+  }
 }
 
 } // namespace nucleus::text

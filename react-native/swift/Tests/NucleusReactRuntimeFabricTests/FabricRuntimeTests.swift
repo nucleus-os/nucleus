@@ -7,6 +7,12 @@ import NucleusReactRuntimeCxxBridge
 import Synchronization
 import Testing
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 @MainActor
 private final class TestPresentationFrameSource:
     NucleusPresentationFrameSource
@@ -44,12 +50,12 @@ private final class TestPresentationFrameSource:
 
     init() throws {
         unsafe facade = nucleus.react.ReactRuntimeHostFacade(
-            nucleus.react.NetworkTransport(
+            unsafe nucleus.react.NetworkTransport(
                 .init { _, callbacks in
-                    unsafe callbacks.didComplete(std.string("network unavailable"), false)
-                    return unsafe nucleus.react.NetworkRequestToken()
+                    callbacks.didComplete(std.string("network unavailable"), false)
+                    return nucleus.react.NetworkRequestToken()
                 },
-                .init { _ in unsafe nucleus.react.NetworkWebSocket() }
+                .init { _ in nucleus.react.NetworkWebSocket() }
             ))
         let result = unsafe facade.initializationResult()
         guard result.succeeded else {
@@ -133,7 +139,11 @@ private final class TestPresentationFrameSource:
 
         deinit {
             if process.isRunning {
-                process.terminate()
+                // The Swift test runner blocks termination signals while it
+                // coordinates child processes. Process propagates that mask
+                // into this fixture, so SIGTERM can remain pending forever.
+                // This process owns only disposable loopback test servers.
+                _ = kill(process.processIdentifier, SIGKILL)
                 process.waitUntilExit()
             }
             try? FileManager.default.removeItem(at: directory)
@@ -354,7 +364,7 @@ private final class TestPresentationFrameSource:
                 == #"[true,"object","function"]"#)
     }
 
-    @Test func portableNetworkingModulesUseProductionTransportsAndRetireCleanly() async throws {
+    @Test func portableNetworkingModulesUseProductionTransportsAndRetireCleanly() throws {
         let fixture = try NetworkFixture()
         let host = try RuntimeHost()
         try host.evaluateJavaScriptSource(
@@ -440,7 +450,7 @@ private final class TestPresentationFrameSource:
                     sourceUrl: "portable-networking-completion.js")
                 == #"{"redirect":true,"socket":true,"tlsRejected":true}"#
             if complete { break }
-            try await Task.sleep(for: .milliseconds(10))
+            usleep(10_000)
         }
 
         #expect(

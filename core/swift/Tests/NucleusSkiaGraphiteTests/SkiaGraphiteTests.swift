@@ -10,11 +10,8 @@ import Testing
         255, 0, 0, 255, 0, 255, 0, 255,
         0, 0, 255, 255, 255, 255, 0, 255,
     ]
-    let img = px.withUnsafeBufferPointer { buf in
-        unsafe RasterFixtureImage(
-            nucleus.skia.makeRasterImageRGBA(
-                2, 2, buf.baseAddress, buf.count))
-    }
+    let img = RasterFixtureImage(
+        nucleus.skia.makeRasterImageRGBA(2, 2, px.span))
     #expect(img.isValid)
     #expect(img.width == 2)
     #expect(img.height == 2)

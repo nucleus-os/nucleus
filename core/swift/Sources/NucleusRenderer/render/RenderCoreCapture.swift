@@ -256,10 +256,8 @@ extension RenderCore {
             overlay.width > 0, overlay.height > 0,
             overlay.rgbaPixels.count >= Int(overlay.width) * Int(overlay.height) * 4
         {
-            let decoded = overlay.rgbaPixels.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRasterImageRGBA(
-                    overlay.width, overlay.height, $0.baseAddress, $0.count)
-            }
+            let decoded = nucleus.skia.makeRasterImageRGBA(
+                overlay.width, overlay.height, overlay.rgbaPixels.span)
             let image = unsafe recorder.makeTextureImage(decoded)
             if unsafe image.isValid() {
                 var src = nucleus.skia.RectF()
@@ -329,12 +327,10 @@ extension RenderCore {
                 repeating: 0,
                 count: pending.byteCount)
             let copyStartedAt = telemetryClock.now
-            let status = pixels.withUnsafeMutableBufferPointer {
-                unsafe pending.readback.copyPixels(
-                    $0.baseAddress,
-                    $0.count,
-                    Int32(pending.width * 4))
-            }
+            var pixelSpan = pixels.mutableSpan
+            let status = unsafe pending.readback.copyPixels(
+                &pixelSpan,
+                Int32(pending.width * 4))
             Trace.plot(
                 "swift.nucleus.renderer.capture.pixel_copy_ms",
                 Double(

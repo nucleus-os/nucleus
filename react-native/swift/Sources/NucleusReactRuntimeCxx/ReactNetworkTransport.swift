@@ -29,10 +29,10 @@ package final class ReactNetworkTransport: @unchecked Sendable {
     package func makeFacade() -> nucleus.react.NetworkTransport {
         unsafe nucleus.react.NetworkTransport(
             .init { [self] request, callbacks in
-                unsafe startHTTPRequest(request, callbacks: callbacks)
+                startHTTPRequest(request, callbacks: callbacks)
             },
             .init { [self] callbacks in
-                unsafe createWebSocket(callbacks: callbacks)
+                createWebSocket(callbacks: callbacks)
             }
         )
     }
@@ -41,7 +41,7 @@ package final class ReactNetworkTransport: @unchecked Sendable {
         _ request: borrowing nucleus.react.NetworkHTTPRequest,
         callbacks: nucleus.react.NetworkHTTPCallbacks
     ) -> nucleus.react.NetworkRequestToken {
-        let sink = unsafe HTTPCallbackSink(callbacks)
+        let sink = HTTPCallbackSink(callbacks)
         do {
             let prepared = try makeRequest(request)
             let timeoutMilliseconds = request.timeoutMilliseconds
@@ -60,8 +60,8 @@ package final class ReactNetworkTransport: @unchecked Sendable {
             handle.install(task)
             return unsafe nucleus.react.NetworkRequestToken(.init { handle.cancel() })
         } catch {
-            unsafe sink.value.didComplete(std.string(String(describing: error)), false)
-            return unsafe nucleus.react.NetworkRequestToken()
+            sink.value.didComplete(std.string(String(describing: error)), false)
+            return nucleus.react.NetworkRequestToken()
         }
     }
 
@@ -72,7 +72,7 @@ package final class ReactNetworkTransport: @unchecked Sendable {
     ) async {
         do {
             if prepared.bodyByteCount > 0 {
-                unsafe callbacks.value.didSendBody(
+                callbacks.value.didSendBody(
                     Int64(prepared.bodyByteCount),
                     Int64(prepared.bodyByteCount)
                 )
@@ -108,12 +108,12 @@ package final class ReactNetworkTransport: @unchecked Sendable {
                     response,
                     callbacks: callbacks
                 )
-                unsafe callbacks.value.didComplete(std.string(), false)
+                callbacks.value.didComplete(std.string(), false)
                 return
             }
             throw ReactNetworkError.redirectLimitReached
         } catch {
-            unsafe callbacks.value.didComplete(
+            callbacks.value.didComplete(
                 std.string(String(describing: error)), isTimeout(error))
         }
     }
@@ -122,12 +122,12 @@ package final class ReactNetworkTransport: @unchecked Sendable {
         _ response: HTTPClientResponse,
         callbacks: HTTPCallbackSink
     ) async throws {
-        unsafe callbacks.value.didReceiveResponse(UInt16(response.status.code))
+        callbacks.value.didReceiveResponse(UInt16(response.status.code))
         for header in response.headers {
-            unsafe callbacks.value.didReceiveHeader(
+            callbacks.value.didReceiveHeader(
                 std.string(header.name), std.string(header.value))
         }
-        unsafe callbacks.value.didFinishHeaders()
+        callbacks.value.didFinishHeaders()
 
         let total = response.headers.first(name: "content-length").flatMap(Int64.init) ?? -1
         var received: Int64 = 0
@@ -138,7 +138,7 @@ package final class ReactNetworkTransport: @unchecked Sendable {
             var cxxBytes = nucleus.react.NetworkBytes()
             cxxBytes.reserve(bytes.count)
             for byte in bytes { cxxBytes.push_back(byte) }
-            let accepted = unsafe callbacks.value.didReceiveBody(received, total, cxxBytes)
+            let accepted = callbacks.value.didReceiveBody(received, total, cxxBytes)
             guard accepted > 0 || buffer.readableBytes == 0 else {
                 throw ReactNetworkError.responseRejected
             }
@@ -150,7 +150,7 @@ package final class ReactNetworkTransport: @unchecked Sendable {
     ) throws -> PreparedRequest {
         var result = HTTPClientRequest(url: String(request.url))
         result.method = HTTPMethod(rawValue: String(request.method))
-        for header in request.headers {
+        request.headers.forEach { header in
             result.headers.add(name: String(header.name), value: String(header.value))
         }
 
@@ -269,7 +269,7 @@ private struct PreparedRequest: Sendable {
     let value: nucleus.react.NetworkHTTPCallbacks
 
     init(_ value: consuming nucleus.react.NetworkHTTPCallbacks) {
-        unsafe self.value = value
+        self.value = value
     }
 }
 

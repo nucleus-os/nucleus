@@ -65,9 +65,9 @@ private nonisolated func makeAnimationFrameCancel(
         mountConsumer = consumer
         let networkTransport = ReactNetworkTransport()
         self.networkTransport = networkTransport
-        unsafe facade = nucleus.react.ReactRuntimeHostFacade(
+        facade = nucleus.react.ReactRuntimeHostFacade(
             networkTransport.makeFacade())
-        try requireSuccess(unsafe facade.initializationResult())
+        try requireSuccess(facade.initializationResult())
         try requireSuccess(
             unsafe facade.setMountingObserver(
                 nucleus.react.makeMountingObserver(
@@ -89,20 +89,20 @@ private nonisolated func makeAnimationFrameCancel(
     }
 
     package func evaluateBytecode(at path: String) throws {
-        try requireSuccess(unsafe facade.evaluateBytecode(std.string(path)))
+        try requireSuccess(facade.evaluateBytecode(std.string(path)))
     }
 
     package func installFabric() throws {
-        try requireSuccess(unsafe facade.installFabric())
+        try requireSuccess(facade.installFabric())
     }
 
     package func registerSurface(id: Int) throws {
-        try requireSuccess(unsafe facade.registerSurface(CInt(id)))
+        try requireSuccess(facade.registerSurface(CInt(id)))
     }
 
     package func configureSurface(id: Int, width: Double, height: Double) throws {
         try requireSuccess(
-            unsafe facade.configureSurface(CInt(id), width, height))
+            facade.configureSurface(CInt(id), width, height))
     }
 
     /// Updates the `DeviceInfo` TurboModule's window/screen metrics so
@@ -116,21 +116,21 @@ private nonisolated func makeAnimationFrameCancel(
         fontScale: Double = 1.0
     ) throws {
         try requireSuccess(
-            unsafe facade.setDisplayMetrics(width, height, scale, fontScale))
+            facade.setDisplayMetrics(width, height, scale, fontScale))
     }
 
     package func stopSurface(id: Int) throws {
-        try requireSuccess(unsafe facade.stopSurface(CInt(id)))
+        try requireSuccess(facade.stopSurface(CInt(id)))
     }
 
     package func runApplication(surfaceID: Int, appKey: String) throws {
         try requireSuccess(
-            unsafe facade.runApplication(CInt(surfaceID), std.string(appKey)))
+            facade.runApplication(CInt(surfaceID), std.string(appKey)))
     }
 
     package func evaluateJavaScriptSource(_ source: String, sourceUrl: String) throws {
         try requireSuccess(
-            unsafe facade.evaluateJavaScriptSource(
+            facade.evaluateJavaScriptSource(
                 std.string(source),
                 std.string(sourceUrl)))
     }
@@ -140,7 +140,7 @@ private nonisolated func makeAnimationFrameCancel(
         _ source: String,
         sourceUrl: String
     ) throws -> String {
-        let result = unsafe facade.evaluateJavaScriptForString(
+        let result = facade.evaluateJavaScriptForString(
             std.string(source),
             std.string(sourceUrl))
         try requireSuccess(result)
@@ -149,7 +149,7 @@ private nonisolated func makeAnimationFrameCancel(
 
     @discardableResult
     package func drainPendingJSCalls() throws -> UInt32 {
-        let result = unsafe facade.drainPendingJSCalls()
+        let result = facade.drainPendingJSCalls()
         try requireSuccess(result)
         return UInt32(result.unsignedValue)
     }
@@ -181,7 +181,7 @@ private nonisolated func makeAnimationFrameCancel(
     /// Delivers one monotonic platform presentation timestamp.
     package func deliverAnimationFrame(timestampNanoseconds: UInt64) throws {
         try requireSuccess(
-            unsafe facade.deliverAnimationFrame(timestampNanoseconds))
+            facade.deliverAnimationFrame(timestampNanoseconds))
     }
 
     /// Thread-safe. Schedules a JS-thread dispatch of a device event with the
@@ -190,13 +190,13 @@ private nonisolated func makeAnimationFrameCancel(
     /// called on the JS thread.
     package func emitDeviceEvent(name: String, payloadJson: String = "") throws {
         try requireSuccess(
-            unsafe facade.emitDeviceEvent(
+            facade.emitDeviceEvent(
                 std.string(name),
                 std.string(payloadJson)))
     }
 
     package func setAppState(_ state: String) throws {
-        try requireSuccess(unsafe facade.setAppState(std.string(state)))
+        try requireSuccess(facade.setAppState(std.string(state)))
     }
 
     /// Install the JS→native command handler. JS initiates
@@ -227,11 +227,11 @@ private nonisolated func makeAnimationFrameCancel(
     }
 
     package var surfaceCount: UInt32 {
-        UInt32(unsafe facade.surfaceCount())
+        UInt32(facade.surfaceCount())
     }
 
     package var fabricMountReport: RuntimeMountReport {
-        let report = unsafe facade.readFabricMountReport()
+        let report = facade.readFabricMountReport()
         return RuntimeMountReport(
             commitCount: UInt32(report.commitCount),
             mutationCount: UInt32(report.mutationCount)
@@ -244,15 +244,15 @@ private nonisolated func makeAnimationFrameCancel(
     }
 
     nonisolated package static func hermesCanCreateRuntime() -> Bool {
-        unsafe nucleus.react.ReactRuntimeHostFacade.hermesCanCreateRuntime()
+        nucleus.react.ReactRuntimeHostFacade.hermesCanCreateRuntime()
     }
 
     nonisolated package static func hermesBytecodeVersion() -> UInt32 {
         UInt32(
-            unsafe nucleus.react.ReactRuntimeHostFacade.hermesBytecodeVersion())
+            nucleus.react.ReactRuntimeHostFacade.hermesBytecodeVersion())
     }
 
     nonisolated package static func hermesIntlDateTimeFormatWorks() -> Bool {
-        unsafe nucleus.react.ReactRuntimeHostFacade.hermesIntlDateTimeFormatWorks()
+        nucleus.react.ReactRuntimeHostFacade.hermesIntlDateTimeFormatWorks()
     }
 }

@@ -1,7 +1,8 @@
-import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 import NucleusTypes
 import Testing
+
 @testable import NucleusRenderer
 
 @Test
@@ -29,13 +30,12 @@ func rendererTreatsTextAsAnOptionalInstalledCapability() {
         resolveEffect: { _ in nil })
 
     var pixels = [UInt8](repeating: 0, count: 16)
-    let copied = pixels.withUnsafeMutableBufferPointer {
-        unsafe surface.readPixelsRGBA(
-            $0.baseAddress, $0.count, 8)
-    }
+    var pixelSpan = pixels.mutableSpan
+    let copied = unsafe surface.readPixelsRGBA(&pixelSpan, 8)
     #expect(copied)
-    #expect(pixels == [
-        64, 128, 191, 255, 64, 128, 191, 255,
-        64, 128, 191, 255, 64, 128, 191, 255,
-    ])
+    #expect(
+        pixels == [
+            64, 128, 191, 255, 64, 128, 191, 255,
+            64, 128, 191, 255, 64, 128, 191, 255,
+        ])
 }

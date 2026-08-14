@@ -67,13 +67,10 @@ enum Backdrop {
         variant: ForegroundVibrancyVariant, content: nucleus.skia.Image
     ) -> nucleus.skia.Shader? {
         let uniforms: [Float] = [vibrancyStrength(variant)]
-        return uniforms.withUnsafeBufferPointer { up in
-            vibrancySksl.withCString { src in
-                let shader = unsafe nucleus.skia.makeRuntimeShaderWithImage(
-                    src, up.baseAddress, 1, content)
-                return unsafe shader.isValid() ? shader : nil
-            }
-        }
+        let source = Array(vibrancySksl.utf8)
+        let shader = unsafe nucleus.skia.makeRuntimeShaderWithImage(
+            source.span, uniforms.span, content)
+        return unsafe shader.isValid() ? shader : nil
     }
 
     /// Clip `canvas` to `shape` (caller has already `save`d).

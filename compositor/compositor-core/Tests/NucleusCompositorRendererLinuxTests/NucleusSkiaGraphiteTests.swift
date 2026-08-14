@@ -34,29 +34,31 @@ import VulkanC
 
     @Test func runtimeEffectCompilation() {
         // Runtime-effect compilation is GPU-independent (SkSL → shader).
-        "half4 main(float2 c) { return half4(1.0, 0.0, 0.0, 1.0); }".withCString { src in
-            let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
-            let shaderIsValid = unsafe shader.isValid()
-            #expect(shaderIsValid, "runtime-shader-no-uniform")
-        }
-        "uniform half intensity; half4 main(float2 c) { return half4(intensity, 0, 0, 1); }"
-            .withCString { src in
-                let uniforms: [Float] = [0.5]
-                let shader = uniforms.withUnsafeBufferPointer {
-                    unsafe nucleus.skia.makeRuntimeShader(src, $0.baseAddress, 1)
-                }
-                let shaderIsValid = unsafe shader.isValid()
-                #expect(shaderIsValid, "runtime-shader-with-uniform")
-                // Wrong uniform count fails closed (byte-size mismatch).
-                let bad = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
-                let badIsValid = unsafe bad.isValid()
-                #expect(!badIsValid, "runtime-shader-uniform-mismatch")
-            }
-        "this is not valid sksl {{{".withCString { src in
-            let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
-            let shaderIsValid = unsafe shader.isValid()
-            #expect(!shaderIsValid, "runtime-shader-compile-fail")
-        }
+        let emptyUniforms: [Float] = []
+        let source = Array(
+            "half4 main(float2 c) { return half4(1.0, 0.0, 0.0, 1.0); }".utf8)
+        let shader = unsafe nucleus.skia.makeRuntimeShader(
+            source.span,
+            emptyUniforms.span)
+        #expect(unsafe shader.isValid(), "runtime-shader-no-uniform")
+
+        let uniformSource =
+            "uniform half intensity; half4 main(float2 c) { return half4(intensity, 0, 0, 1); }"
+        let uniformSourceBytes = Array(uniformSource.utf8)
+        let uniforms: [Float] = [0.5]
+        let uniformShader = unsafe nucleus.skia.makeRuntimeShader(
+            uniformSourceBytes.span, uniforms.span)
+        #expect(unsafe uniformShader.isValid(), "runtime-shader-with-uniform")
+        let bad = unsafe nucleus.skia.makeRuntimeShader(
+            uniformSourceBytes.span, emptyUniforms.span)
+        let badIsValid = unsafe bad.isValid()
+        #expect(!badIsValid, "runtime-shader-uniform-mismatch")
+
+        let invalidSource = Array("this is not valid sksl {{{".utf8)
+        let invalid = unsafe nucleus.skia.makeRuntimeShader(
+            invalidSource.span, emptyUniforms.span)
+        let invalidIsValid = unsafe invalid.isValid()
+        #expect(!invalidIsValid, "runtime-shader-compile-fail")
     }
 
     @Test func rasterReadbackRoundTrip() {
@@ -64,16 +66,13 @@ import VulkanC
             255, 0, 0, 255, 0, 255, 0, 255,
             0, 0, 255, 255, 255, 255, 255, 255,
         ]
-        let rasterImage = srcPixels.withUnsafeBufferPointer {
-            unsafe nucleus.skia.makeRasterImageRGBA(
-                2, 2, $0.baseAddress, $0.count)
-        }
+        let rasterImage = nucleus.skia.makeRasterImageRGBA(
+            2, 2, srcPixels.span)
         let rasterImageIsValid = rasterImage.isValid()
         #expect(rasterImageIsValid, "raster-image")
         var readback = [UInt8](repeating: 0, count: 16)
-        let readOk = readback.withUnsafeMutableBufferPointer {
-            unsafe rasterImage.readPixelsRGBA($0.baseAddress, $0.count, 8)
-        }
+        var readbackSpan = readback.mutableSpan
+        let readOk = rasterImage.readPixelsRGBA(&readbackSpan, 8)
         #expect(readOk && readback == srcPixels, "raster-readback-roundtrip")
     }
 
@@ -82,10 +81,8 @@ import VulkanC
             255, 0, 0, 255, 0, 255, 0, 255,
             0, 0, 255, 255, 255, 255, 255, 255,
         ]
-        let rasterImage = srcPixels.withUnsafeBufferPointer {
-            unsafe nucleus.skia.makeRasterImageRGBA(
-                2, 2, $0.baseAddress, $0.count)
-        }
+        let rasterImage = nucleus.skia.makeRasterImageRGBA(
+            2, 2, srcPixels.span)
         var radii = nucleus.skia.RRectRadii()
         radii.topLeft = 4
         radii.bottomRight = 8
@@ -174,15 +171,18 @@ import VulkanC
             unsafe canvas.drawImageRect(textureImage, srcRect, dstRect, blurred)
             unsafe canvas.restore()
 
-            "half4 main(float2 c) { return half4(0.2, 0.4, 0.6, 1.0); }".withCString { src in
-                let shader = unsafe nucleus.skia.makeRuntimeShader(src, nil, 0)
-                let shaderIsValid = unsafe shader.isValid()
-                #expect(shaderIsValid)
-                if shaderIsValid {
-                    var shaderPaint = nucleus.skia.Paint()
-                    shaderPaint.alpha = 0.9
-                    unsafe canvas.drawShaderRect(rect, shader, shaderPaint)
-                }
+            let emptyUniforms: [Float] = []
+            let source = Array(
+                "half4 main(float2 c) { return half4(0.2, 0.4, 0.6, 1.0); }".utf8)
+            let shader = unsafe nucleus.skia.makeRuntimeShader(
+                source.span,
+                emptyUniforms.span)
+            let shaderIsValid = unsafe shader.isValid()
+            #expect(shaderIsValid)
+            if shaderIsValid {
+                var shaderPaint = nucleus.skia.Paint()
+                shaderPaint.alpha = 0.9
+                unsafe canvas.drawShaderRect(rect, shader, shaderPaint)
             }
 
             let image = unsafe surface.snapshotImage()
@@ -204,9 +204,7 @@ import VulkanC
             var uploadPixels = srcPixels
             for generation in 1...2 {
                 if generation == 2 { uploadPixels[0] = 32 }
-                let updated = uploadPixels.withUnsafeBufferPointer {
-                    unsafe texture.updateRGBA($0.baseAddress, $0.count)
-                }
+                let updated = unsafe texture.updateRGBA(uploadPixels.span)
                 #expect(updated, "upload-texture-updated-\(generation)")
                 let target = unsafe recorder.makeOffscreenSurface(8, 8)
                 let image = unsafe texture.image()
@@ -307,6 +305,7 @@ import VulkanC
             presentation: .headless,
             applicationName: "Nucleus timing-ring"
         ) { _, _, context, recorder in
+            let waits: [UInt] = []
             for serial in 1...257 {
                 let surface = unsafe recorder.makeOffscreenSurface(1, 1)
                 let surfaceIsValid = unsafe surface.isValid()
@@ -319,7 +318,7 @@ import VulkanC
                 unsafe surface.getCanvas().clear(color)
                 let result = unsafe context.submitWithSemaphores(
                     recorder.snapRecording(),
-                    nil, 0, nil,
+                    waits.span, 0,
                     UInt64(serial),
                     true)
                 let resultIsOk = result.isOk()

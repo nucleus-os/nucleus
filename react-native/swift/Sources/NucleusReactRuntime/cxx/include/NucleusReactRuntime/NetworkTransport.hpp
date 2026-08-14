@@ -32,7 +32,7 @@ struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkHTTPRequest final {
   std::uint32_t timeoutMilliseconds{0};
 };
 
-class NetworkHTTPCallbacks final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkHTTPCallbacks final {
 public:
   using Upload = std::function<void(std::int64_t, std::int64_t)>;
   using Response = std::function<void(std::uint16_t)>;
@@ -65,7 +65,7 @@ private:
   Completion completion_;
 };
 
-class NetworkRequestToken final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkRequestToken final {
 public:
   using Cancel = std::function<void()>;
 
@@ -77,7 +77,7 @@ private:
   Cancel cancel_;
 };
 
-class NetworkWebSocketCallbacks final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkWebSocketCallbacks final {
 public:
   using Connect = std::function<void(bool, const std::string &)>;
   using Text = std::function<void(const std::string &)>;
@@ -94,7 +94,7 @@ private:
   Close close_;
 };
 
-class NetworkWebSocket final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkWebSocket final {
 public:
   using Connect = std::function<void(const std::string &)>;
   using Send = std::function<void(const std::string &)>;
@@ -115,7 +115,7 @@ private:
   Close close_;
 };
 
-class NetworkTransport final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkTransport final {
 public:
   using StartHTTPRequest = std::function<NetworkRequestToken(
       const NetworkHTTPRequest &, NetworkHTTPCallbacks)>;

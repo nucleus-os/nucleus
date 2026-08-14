@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <swift/bridging>
 
 #include <NucleusReactRuntime/MountingObserver.hpp>
 #include <NucleusReactRuntime/NetworkTransport.hpp>
@@ -14,7 +15,7 @@ namespace nucleus::react {
 
 class ReactRuntimeHostImpl;
 
-struct RuntimeHostResult {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED RuntimeHostResult {
   bool succeeded{true};
   std::array<char, 512> errorStorage{};
   std::string stringValue;
@@ -23,7 +24,7 @@ struct RuntimeHostResult {
   static RuntimeHostResult failure(const char *message) noexcept;
 };
 
-class ReactRuntimeHostFacade final {
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED ReactRuntimeHostFacade final {
  public:
   explicit ReactRuntimeHostFacade(NetworkTransport networkTransport) noexcept;
   ~ReactRuntimeHostFacade() noexcept;

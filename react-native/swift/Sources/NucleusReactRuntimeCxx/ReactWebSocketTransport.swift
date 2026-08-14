@@ -11,7 +11,7 @@ extension ReactNetworkTransport {
     func createWebSocket(
         callbacks: nucleus.react.NetworkWebSocketCallbacks
     ) -> nucleus.react.NetworkWebSocket {
-        let socket = unsafe ReactWebSocket(
+        let socket = ReactWebSocket(
             eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
             callbacks: callbacks
         )
@@ -43,7 +43,7 @@ extension ReactNetworkTransport {
         callbacks: consuming nucleus.react.NetworkWebSocketCallbacks
     ) {
         self.eventLoopGroup = eventLoopGroup
-        unsafe self.callbacks = callbacks
+        self.callbacks = callbacks
     }
 
     deinit {
@@ -147,6 +147,9 @@ extension ReactNetworkTransport {
             state.closeRequested = true
             return state.channel
         }
+        // React Native erases the client as soon as close returns. Report
+        // synchronously while its callback state is still owned.
+        didClose(reason: reason)
         guard let channel else { return }
         var data = channel.allocator.buffer(capacity: 2 + reason.utf8.count)
         data.writeInteger(UInt16(1000), endianness: .big)
@@ -230,7 +233,7 @@ extension ReactNetworkTransport {
             closeProtocolError(context: context)
             return
         }
-        unsafe callbacks.didReceiveText(std.string(text))
+        callbacks.didReceiveText(std.string(text))
     }
 
     private func closeProtocolError(context: ChannelHandlerContext) {
@@ -254,7 +257,7 @@ extension ReactNetworkTransport {
             return true
         }
         guard report else { return }
-        unsafe callbacks.didClose(std.string(reason))
+        callbacks.didClose(std.string(reason))
     }
 
     private func didUpgrade(_ channel: Channel) {
@@ -271,7 +274,7 @@ extension ReactNetworkTransport {
     }
 
     private func reportConnection(_ connected: Bool, error: String) {
-        unsafe callbacks.didConnect(connected, std.string(error))
+        callbacks.didConnect(connected, std.string(error))
     }
 }
 

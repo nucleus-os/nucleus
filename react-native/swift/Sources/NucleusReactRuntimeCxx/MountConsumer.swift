@@ -119,7 +119,7 @@ package enum MountEvent: Sendable {
         tag: Int,
         component: MountComponentSnapshot)
 
-    package init(_ mutation: nucleus.react.MountMutation) {
+    package init(_ mutation: borrowing nucleus.react.MountMutation) {
         let surfaceID = Int(mutation.surfaceId)
         switch mutation.type {
         case .Create:
@@ -190,7 +190,7 @@ package enum MountEvent: Sendable {
 
 extension MountComponentSnapshot {
     fileprivate init(
-        _ mutation: nucleus.react.MountMutation,
+        _ mutation: borrowing nucleus.react.MountMutation,
         kind: MountComponentKind
     ) {
         guard kind != .other else {
@@ -412,7 +412,7 @@ package final class MountConsumer: Sendable {
         self.scheduleDrain = scheduleDrain
     }
 
-    package func didMount(_ mutation: nucleus.react.MountMutation) {
+    package func didMount(_ mutation: borrowing nucleus.react.MountMutation) {
         enqueue(MountEvent(mutation))
     }
 

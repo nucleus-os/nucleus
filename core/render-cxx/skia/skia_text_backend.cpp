@@ -29,9 +29,29 @@
 #include <mutex>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
+
+template <typename Result, typename Body>
+Result interopOr(Result fallback, Body &&body) noexcept
+{
+    try {
+        return body();
+    } catch (...) {
+        return std::move(fallback);
+    }
+}
+
+template <typename Body>
+void interopVoid(Body &&body) noexcept
+{
+    try {
+        body();
+    } catch (...) {
+    }
+}
 
 static sk_sp<SkTypeface> g_typeface;
 // Guards the lazy `g_typeface` init and every read of it. The rest of the font
@@ -119,13 +139,12 @@ static uint32_t nucleusFontSlant(const SkFontStyle& style) {
     }
 }
 
-static sk_sp<SkTypeface> matchTextTypeface(nucleus::text::TextStringView family_name, uint32_t weight, uint32_t width, uint32_t slant) {
+static sk_sp<SkTypeface> matchTextTypeface(const std::string& family_name, uint32_t weight, uint32_t width, uint32_t slant) {
     (void)getDefaultTypeface();
     const SkFontStyle style(skiaFontWeight(weight), skiaFontWidth(width), skiaFontSlant(slant));
     auto fontMgr = nucleus::text::sharedFontMgr();
-    if (fontMgr && family_name.data && family_name.size > 0) {
-        SkString family(family_name.data, family_name.size);
-        if (auto typeface = fontMgr->matchFamilyStyle(family.c_str(), style)) {
+    if (fontMgr && !family_name.empty()) {
+        if (auto typeface = fontMgr->matchFamilyStyle(family_name.c_str(), style)) {
             return typeface;
         }
     }
@@ -501,25 +520,49 @@ static float textLayoutWidth(skia::textlayout::Paragraph* paragraph, const nucle
 
 namespace nucleus::text {
 
-static std::vector<TextRun> collectRuns(const TextRunView *runs, size_t runCount)
+TextRunList::TextRunList() noexcept = default;
+
+namespace {
+
+std::string owningUtf8(std::span<const uint8_t> bytes)
 {
-    std::vector<TextRun> result;
-    result.reserve(runCount);
-    for (size_t index = 0; index < runCount; ++index) {
+    if (bytes.empty()) {
+        return {};
+    }
+    return {
+        reinterpret_cast<const char *>(bytes.data()),
+        bytes.size(),
+    };
+}
+
+} // namespace
+
+bool TextRunList::append(
+    std::span<const uint8_t> text [[clang::noescape]],
+    std::span<const uint8_t> fontFamily [[clang::noescape]],
+    std::span<const uint8_t> locale [[clang::noescape]],
+    float pointSize,
+    float lineHeight,
+    float baselineShift,
+    uint32_t weight,
+    uint32_t width,
+    uint32_t slant,
+    bool underline,
+    bool strikeThrough,
+    float red,
+    float green,
+    float blue,
+    float alpha) noexcept
+{
+    return interopOr(false, [&] {
         TextRun run;
-        if (runs[index].text.data && runs[index].text.size > 0) {
-            run.text.assign(runs[index].text.data, runs[index].text.size);
-        }
-        if (runs[index].fontFamily.data && runs[index].fontFamily.size > 0) {
-            run.style.fontFamily.assign(runs[index].fontFamily.data, runs[index].fontFamily.size);
-        }
-        if (runs[index].locale.data && runs[index].locale.size > 0) {
-            run.style.locale.assign(runs[index].locale.data, runs[index].locale.size);
-        }
-        run.style.pointSize = runs[index].pointSize;
-        run.style.lineHeight = runs[index].lineHeight;
-        run.style.baselineShift = runs[index].baselineShift;
-        switch (runs[index].weight) {
+        run.text = owningUtf8(text);
+        run.style.fontFamily = owningUtf8(fontFamily);
+        run.style.locale = owningUtf8(locale);
+        run.style.pointSize = pointSize;
+        run.style.lineHeight = lineHeight;
+        run.style.baselineShift = baselineShift;
+        switch (weight) {
             case FontWeightMedium:
                 run.style.fontWeight = SkFontStyle::kMedium_Weight;
                 break;
@@ -533,275 +576,306 @@ static std::vector<TextRun> collectRuns(const TextRunView *runs, size_t runCount
                 run.style.fontWeight = SkFontStyle::kNormal_Weight;
                 break;
             default:
-                run.style.fontWeight = static_cast<int>(std::clamp<uint32_t>(runs[index].weight, 1U, 1000U));
+                run.style.fontWeight = static_cast<int>(std::clamp<uint32_t>(weight, 1U, 1000U));
                 break;
         }
-        run.style.italic = runs[index].slant == FontSlantItalic || runs[index].slant == FontSlantOblique;
-        run.style.underline = runs[index].underline;
-        run.style.strikeThrough = runs[index].strikeThrough;
-        run.style.red = runs[index].red;
-        run.style.green = runs[index].green;
-        run.style.blue = runs[index].blue;
-        run.style.alpha = runs[index].alpha;
-        result.push_back(std::move(run));
-    }
-    return result;
+        (void)width;
+        run.style.italic = slant == FontSlantItalic || slant == FontSlantOblique;
+        run.style.underline = underline;
+        run.style.strikeThrough = strikeThrough;
+        run.style.red = red;
+        run.style.green = green;
+        run.style.blue = blue;
+        run.style.alpha = alpha;
+        runs_.push_back(std::move(run));
+        return true;
+    });
 }
 
-std::optional<ResolvedFontDescriptor> TextLayoutService::resolveFont(
-    TextStringView familyName,
+bool TextLayoutService::resolveFont(
+    std::span<const uint8_t> familyNameBytes [[clang::noescape]],
     float pointSize,
     uint32_t weight,
     uint32_t width,
-    uint32_t slant) const
+    uint32_t slant,
+    ResolvedFontDescriptor &outDescriptor) const noexcept
 {
-    const float size = pointSize > 1.0f ? pointSize : 1.0f;
-    auto typeface = matchTextTypeface(familyName, weight, width, slant);
-    if (!typeface) {
-        return std::nullopt;
-    }
+    return interopOr(false, [&] {
+        auto familyName = owningUtf8(familyNameBytes);
+        const float size = pointSize > 1.0f ? pointSize : 1.0f;
+        auto typeface = matchTextTypeface(familyName, weight, width, slant);
+        if (!typeface) {
+            return false;
+        }
 
-    SkString resolvedFamily;
-    typeface->getFamilyName(&resolvedFamily);
-    SkString postScriptName;
-    if (!typeface->getPostScriptName(&postScriptName) || postScriptName.isEmpty()) {
-        postScriptName = resolvedFamily;
-    }
+        SkString resolvedFamily;
+        typeface->getFamilyName(&resolvedFamily);
+        SkString postScriptName;
+        if (!typeface->getPostScriptName(&postScriptName) || postScriptName.isEmpty()) {
+            postScriptName = resolvedFamily;
+        }
 
-    ResolvedFontDescriptor descriptor;
-    descriptor.familyNameLength = copyFontName(reinterpret_cast<uint8_t*>(descriptor.familyName), resolvedFamily);
-    descriptor.postScriptNameLength = copyFontName(reinterpret_cast<uint8_t*>(descriptor.postScriptName), postScriptName);
-    descriptor.pointSize = size;
-    const SkFontStyle resolvedStyle = typeface->fontStyle();
-    descriptor.weight = nucleusFontWeight(resolvedStyle);
-    descriptor.width = nucleusFontWidth(resolvedStyle);
-    descriptor.slant = nucleusFontSlant(resolvedStyle);
-    return descriptor;
+        ResolvedFontDescriptor descriptor{};
+        descriptor.familyNameLength = copyFontName(reinterpret_cast<uint8_t *>(descriptor.familyName), resolvedFamily);
+        descriptor.postScriptNameLength = copyFontName(reinterpret_cast<uint8_t *>(descriptor.postScriptName), postScriptName);
+        descriptor.pointSize = size;
+        const SkFontStyle resolvedStyle = typeface->fontStyle();
+        descriptor.weight = nucleusFontWeight(resolvedStyle);
+        descriptor.width = nucleusFontWidth(resolvedStyle);
+        descriptor.slant = nucleusFontSlant(resolvedStyle);
+        outDescriptor = descriptor;
+        return true;
+    });
 }
 
-std::optional<FontMetrics> TextLayoutService::queryFontMetrics(
-    TextStringView familyName,
+bool TextLayoutService::queryFontMetrics(
+    std::span<const uint8_t> familyNameBytes [[clang::noescape]],
     float pointSize,
     uint32_t weight,
     uint32_t width,
-    uint32_t slant) const
+    uint32_t slant,
+    FontMetrics &outMetrics) const noexcept
 {
-    const float size = pointSize > 1.0f ? pointSize : 1.0f;
-    auto typeface = matchTextTypeface(familyName, weight, width, slant);
-    if (!typeface) {
-        return std::nullopt;
-    }
-    SkFont font(typeface, size);
-    SkFontMetrics metrics;
-    font.getMetrics(&metrics);
-    FontMetrics result;
-    result.ascender = std::max(0.0f, -metrics.fAscent);
-    result.descender = std::max(0.0f, metrics.fDescent);
-    result.leading = std::max(0.0f, metrics.fLeading);
-    result.capHeight = metrics.fCapHeight > 0.0f ? metrics.fCapHeight : size * 0.7f;
-    result.xHeight = metrics.fXHeight > 0.0f ? metrics.fXHeight : size * 0.5f;
-    return result;
+    return interopOr(false, [&] {
+        auto familyName = owningUtf8(familyNameBytes);
+        const float size = pointSize > 1.0f ? pointSize : 1.0f;
+        auto typeface = matchTextTypeface(familyName, weight, width, slant);
+        if (!typeface) {
+            return false;
+        }
+        SkFont font(typeface, size);
+        SkFontMetrics metrics;
+        font.getMetrics(&metrics);
+        FontMetrics result{};
+        result.ascender = std::max(0.0f, -metrics.fAscent);
+        result.descender = std::max(0.0f, metrics.fDescent);
+        result.leading = std::max(0.0f, metrics.fLeading);
+        result.capHeight = metrics.fCapHeight > 0.0f ? metrics.fCapHeight : size * 0.7f;
+        result.xHeight = metrics.fXHeight > 0.0f ? metrics.fXHeight : size * 0.5f;
+        outMetrics = result;
+        return true;
+    });
 }
 
 std::optional<CreatedLayout> TextLayoutService::createRuns(
-    const TextRunView *runs,
-    size_t runCount,
-    const ParagraphStyle *style) const
+    const TextRunList &runs,
+    const ParagraphStyle &style) const noexcept
 {
-    if (!style || (runCount > 0 && !runs)) {
-        return std::nullopt;
-    }
-    CreatedLayout created;
-    created.handle = registerParagraph(collectRuns(runs, runCount), *style, &created.metrics);
-    if (created.handle == 0) {
-        return std::nullopt;
-    }
-    return created;
+    return interopOr(std::optional<CreatedLayout>{}, [&]() -> std::optional<CreatedLayout> {
+        CreatedLayout created;
+        created.handle = registerParagraph(runs.runs_, style, &created.metrics);
+        if (created.handle == 0) {
+            return std::nullopt;
+        }
+        return created;
+    });
 }
 
 bool TextLayoutService::measureRuns(
-    const TextRunView *runs,
-    size_t runCount,
-    const ParagraphStyle *style,
-    TextLineMetrics *outLines,
-    size_t lineCapacity,
-    ParagraphMetrics *outMetrics) const
+    const TextRunList &runs,
+    const ParagraphStyle &style,
+    std::span<TextLineMetrics> outLines [[clang::noescape]],
+    ParagraphMetrics &outMetrics) const noexcept
 {
-    if (!style || !outMetrics || (runCount > 0 && !runs)) {
-        return false;
-    }
-    auto paragraph = makeParagraphRuns(collectRuns(runs, runCount), *style);
-    if (!paragraph) {
-        return false;
-    }
-    const float layout_width = textLayoutWidth(paragraph.get(), *style);
-    paragraph->layout(layout_width);
-    fillTextMetrics(paragraph.get(), layout_width, outLines, lineCapacity, outMetrics);
-    return true;
+    return interopOr(false, [&] {
+        auto paragraph = makeParagraphRuns(runs.runs_, style);
+        if (!paragraph) {
+            return false;
+        }
+        const float layout_width = textLayoutWidth(paragraph.get(), style);
+        paragraph->layout(layout_width);
+        fillTextMetrics(paragraph.get(), layout_width, outLines.data(), outLines.size(), &outMetrics);
+        return true;
+    });
 }
 
-void TextLayoutService::retain(uint64_t handle) const
+void TextLayoutService::retain(uint64_t handle) const noexcept
 {
-    retainParagraph(handle);
+    interopVoid([&] { retainParagraph(handle); });
 }
 
-void TextLayoutService::release(uint64_t handle) const
+void TextLayoutService::release(uint64_t handle) const noexcept
 {
-    releaseParagraph(handle);
+    interopVoid([&] { releaseParagraph(handle); });
 }
 
 bool TextLayoutService::metrics(
     uint64_t handle,
-    TextLineMetrics *outLines,
-    size_t lineCapacity,
-    ParagraphMetrics *outMetrics) const
+    std::span<TextLineMetrics> outLines [[clang::noescape]],
+    ParagraphMetrics &outMetrics) const noexcept
 {
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !outMetrics) {
-        return false;
-    }
-    fillTextMetrics(paragraph.get(), paragraphLayoutWidth(handle), outLines, lineCapacity, outMetrics);
-    return true;
+    return interopOr(false, [&] {
+        auto paragraph = lookupParagraph(handle);
+        if (!paragraph) {
+            return false;
+        }
+        fillTextMetrics(
+            paragraph.get(), paragraphLayoutWidth(handle), outLines.data(), outLines.size(),
+            &outMetrics);
+        return true;
+    });
 }
 
 std::optional<TextPosition> TextLayoutService::glyphPositionAt(
     uint64_t handle,
     float x,
-    float y) const
+    float y) const noexcept
 {
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph) {
-        return std::nullopt;
-    }
-    const auto position = paragraph->getGlyphPositionAtCoordinate(x, y);
-    TextPosition result;
-    result.utf16Offset = static_cast<uint32_t>(std::max<int32_t>(0, position.position));
-    result.affinity = position.affinity == skia::textlayout::Affinity::kUpstream
-        ? TextAffinityUpstream
-        : TextAffinityDownstream;
-    return result;
+    return interopOr(std::optional<TextPosition>{}, [&]() -> std::optional<TextPosition> {
+        auto paragraph = lookupParagraph(handle);
+        if (!paragraph) {
+            return std::nullopt;
+        }
+        const auto position = paragraph->getGlyphPositionAtCoordinate(x, y);
+        TextPosition result;
+        result.utf16Offset = static_cast<uint32_t>(std::max<int32_t>(0, position.position));
+        result.affinity = position.affinity == skia::textlayout::Affinity::kUpstream
+            ? TextAffinityUpstream
+            : TextAffinityDownstream;
+        return result;
+    });
 }
 
 std::optional<TextCaret> TextLayoutService::caretForOffset(
     uint64_t handle,
     uint32_t utf16Offset,
-    uint32_t affinity) const
+    uint32_t affinity) const noexcept
 {
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph) return std::nullopt;
-    const bool upstream = affinity == TextAffinityUpstream;
-    if (upstream && utf16Offset == 0) return std::nullopt;
-    const size_t queryOffset = upstream && utf16Offset > 0 ? utf16Offset - 1 : utf16Offset;
-    skia::textlayout::Paragraph::GlyphInfo glyph{};
-    if (!paragraph->getGlyphInfoAtUTF16Offset(queryOffset, &glyph)) return std::nullopt;
-    const bool rtl = glyph.fDirection == skia::textlayout::TextDirection::kRtl;
-    const SkRect bounds = glyph.fGraphemeLayoutBounds;
-    return TextCaret{
-        .x = upstream ? (rtl ? bounds.left() : bounds.right())
-                      : (rtl ? bounds.right() : bounds.left()),
-        .y = bounds.top(),
-        .height = bounds.height(),
-        .direction = rtl ? TextDirectionRtl : TextDirectionLtr,
-        .affinity = upstream ? TextAffinityUpstream : TextAffinityDownstream,
-    };
+    return interopOr(std::optional<TextCaret>{}, [&]() -> std::optional<TextCaret> {
+        auto paragraph = lookupParagraph(handle);
+        if (!paragraph) return std::nullopt;
+        const bool upstream = affinity == TextAffinityUpstream;
+        if (upstream && utf16Offset == 0) return std::nullopt;
+        const size_t queryOffset = upstream && utf16Offset > 0 ? utf16Offset - 1 : utf16Offset;
+        skia::textlayout::Paragraph::GlyphInfo glyph{};
+        if (!paragraph->getGlyphInfoAtUTF16Offset(queryOffset, &glyph)) return std::nullopt;
+        const bool rtl = glyph.fDirection == skia::textlayout::TextDirection::kRtl;
+        const SkRect bounds = glyph.fGraphemeLayoutBounds;
+        return TextCaret{
+            .x = upstream ? (rtl ? bounds.left() : bounds.right())
+                          : (rtl ? bounds.right() : bounds.left()),
+            .y = bounds.top(),
+            .height = bounds.height(),
+            .direction = rtl ? TextDirectionRtl : TextDirectionLtr,
+            .affinity = upstream ? TextAffinityUpstream : TextAffinityDownstream,
+        };
+    });
 }
 
 bool TextLayoutService::rectsForRange(
     uint64_t handle,
     uint32_t startUtf16Offset,
     uint32_t endUtf16Offset,
-    TextRect *outRects,
-    size_t rectCapacity,
-    uint32_t *outRectCount) const
+    std::span<TextRect> outRects [[clang::noescape]],
+    uint32_t &outRectCount) const noexcept
 {
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !outRectCount || endUtf16Offset < startUtf16Offset) {
-        return false;
-    }
-    const auto boxes = paragraph->getRectsForRange(
-        startUtf16Offset,
-        endUtf16Offset,
-        skia::textlayout::RectHeightStyle::kTight,
-        skia::textlayout::RectWidthStyle::kTight);
-    *outRectCount = static_cast<uint32_t>(std::min<size_t>(boxes.size(), std::numeric_limits<uint32_t>::max()));
-    const size_t n = std::min<size_t>(boxes.size(), rectCapacity);
-    for (size_t i = 0; i < n; i++) {
-        const auto& box = boxes[i];
-        outRects[i].x = box.rect.x();
-        outRects[i].y = box.rect.y();
-        outRects[i].width = box.rect.width();
-        outRects[i].height = box.rect.height();
-        outRects[i].direction = box.direction == skia::textlayout::TextDirection::kRtl
-            ? TextDirectionRtl
-            : TextDirectionLtr;
-    }
-    return true;
+    return interopOr(false, [&] {
+        auto paragraph = lookupParagraph(handle);
+        if (!paragraph || endUtf16Offset < startUtf16Offset) {
+            return false;
+        }
+        const auto boxes = paragraph->getRectsForRange(
+            startUtf16Offset,
+            endUtf16Offset,
+            skia::textlayout::RectHeightStyle::kTight,
+            skia::textlayout::RectWidthStyle::kTight);
+        outRectCount = static_cast<uint32_t>(
+            std::min<size_t>(boxes.size(), std::numeric_limits<uint32_t>::max()));
+        const size_t n = std::min<size_t>(boxes.size(), outRects.size());
+        for (size_t i = 0; i < n; i++) {
+            const auto& box = boxes[i];
+            outRects[i].x = box.rect.x();
+            outRects[i].y = box.rect.y();
+            outRects[i].width = box.rect.width();
+            outRects[i].height = box.rect.height();
+            outRects[i].direction = box.direction == skia::textlayout::TextDirection::kRtl
+                ? TextDirectionRtl
+                : TextDirectionLtr;
+        }
+        return true;
+    });
 }
 
 bool TextLayoutService::graphemeBreaks(
-    TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const
+    std::span<const uint8_t> textBytes [[clang::noescape]],
+    std::span<uint32_t> outUtf8Offsets [[clang::noescape]],
+    uint32_t &outCount) const noexcept
 {
-    if (!outCount || (!text.data && text.size != 0)) return false;
-    auto unicode = getTextUnicode();
-    auto iterator = unicode ? unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes) : nullptr;
-    if (!iterator || !iterator->setText(text.data, static_cast<int>(text.size))) return false;
-    std::vector<uint32_t> offsets;
-    for (auto position = iterator->first(); !iterator->isDone(); position = iterator->next()) {
-        if (position >= 0) offsets.push_back(static_cast<uint32_t>(position));
-    }
-    if (offsets.empty() || offsets.back() != text.size) offsets.push_back(static_cast<uint32_t>(text.size));
-    *outCount = static_cast<uint32_t>(offsets.size());
-    const size_t count = std::min(capacity, offsets.size());
-    for (size_t i = 0; i < count; ++i) outUtf8Offsets[i] = offsets[i];
-    return true;
+    return interopOr(false, [&] {
+        auto text = owningUtf8(textBytes);
+        auto unicode = getTextUnicode();
+        auto iterator = unicode ? unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes) : nullptr;
+        if (!iterator || !iterator->setText(text.data(), static_cast<int>(text.size()))) return false;
+        std::vector<uint32_t> offsets;
+        for (auto position = iterator->first(); !iterator->isDone(); position = iterator->next()) {
+            if (position >= 0) offsets.push_back(static_cast<uint32_t>(position));
+        }
+        if (offsets.empty() || offsets.back() != text.size()) {
+            offsets.push_back(static_cast<uint32_t>(text.size()));
+        }
+        outCount = static_cast<uint32_t>(offsets.size());
+        const size_t count = std::min(outUtf8Offsets.size(), offsets.size());
+        for (size_t i = 0; i < count; ++i) outUtf8Offsets[i] = offsets[i];
+        return true;
+    });
 }
 
-void TextLayoutService::invalidateFontCollection() const
+void TextLayoutService::invalidateFontCollection() const noexcept
 {
-    nucleus::text::invalidateSharedFonts();
-    std::lock_guard<std::mutex> guard(g_typeface_mutex);
-    g_typeface.reset();
+    interopVoid([] {
+        nucleus::text::invalidateSharedFonts();
+        std::lock_guard<std::mutex> guard(g_typeface_mutex);
+        g_typeface.reset();
+    });
 }
 
-bool TextLayoutService::paint(uint64_t handle, SkCanvas *canvas, float x, float y) const
+bool TextLayoutService::paint(uint64_t handle, SkCanvas *canvas, float x, float y) const noexcept
 {
-    auto paragraph = lookupParagraph(handle);
-    if (!paragraph || !canvas) {
-        return false;
-    }
-    paragraph->paint(canvas, x, y);
-    return true;
+    return interopOr(false, [&] {
+        auto paragraph = lookupParagraph(handle);
+        if (!paragraph || !canvas) {
+            return false;
+        }
+        paragraph->paint(canvas, x, y);
+        return true;
+    });
 }
 
 ParagraphMetrics measureParagraph(
     const std::vector<TextRun> &runs,
-    const ParagraphStyle &style)
+    const ParagraphStyle &style) noexcept
 {
-    auto paragraph = makeParagraphRuns(runs, style);
-    if (!paragraph) {
-        return {};
-    }
-    const float layout_width = textLayoutWidth(paragraph.get(), style);
-    paragraph->layout(layout_width);
-    return paragraphMetrics(paragraph.get(), layout_width);
+    return interopOr(ParagraphMetrics{}, [&] {
+        auto paragraph = makeParagraphRuns(runs, style);
+        if (!paragraph) {
+            return ParagraphMetrics{};
+        }
+        const float layout_width = textLayoutWidth(paragraph.get(), style);
+        paragraph->layout(layout_width);
+        return paragraphMetrics(paragraph.get(), layout_width);
+    });
 }
 
 uint64_t registerParagraph(
     const std::vector<TextRun> &runs,
     const ParagraphStyle &style,
-    ParagraphMetrics *outMetrics)
+    ParagraphMetrics *outMetrics) noexcept
 {
-    auto paragraph = makeParagraphRuns(runs, style);
-    if (!paragraph) {
-        return 0;
-    }
-    paragraph->layout(std::numeric_limits<float>::max() / 4.0f);
-    const float layout_width = style.width > 0.0f ? style.width : std::ceil(paragraph->getMaxIntrinsicWidth());
-    paragraph->layout(layout_width);
-    if (outMetrics) {
-        *outMetrics = paragraphMetrics(paragraph.get(), layout_width);
-    }
-    return registerParagraph(std::move(paragraph), layout_width);
+    return interopOr(uint64_t{0}, [&] {
+        auto paragraph = makeParagraphRuns(runs, style);
+        if (!paragraph) {
+            return uint64_t{0};
+        }
+        paragraph->layout(std::numeric_limits<float>::max() / 4.0f);
+        const float layout_width = style.width > 0.0f
+            ? style.width
+            : std::ceil(paragraph->getMaxIntrinsicWidth());
+        paragraph->layout(layout_width);
+        if (outMetrics) {
+            *outMetrics = paragraphMetrics(paragraph.get(), layout_width);
+        }
+        return registerParagraph(std::move(paragraph), layout_width);
+    });
 }
 
 } // namespace nucleus::text
@@ -809,7 +883,7 @@ uint64_t registerParagraph(
 extern "C" bool nucleus_text_borrow_paragraph(
     uint64_t handle,
     void *bodyContext,
-    nucleus::text::ParagraphBorrowBody body)
+    nucleus::text::ParagraphBorrowBody body) noexcept
 {
     return nucleus::text::borrowParagraph(
         handle,

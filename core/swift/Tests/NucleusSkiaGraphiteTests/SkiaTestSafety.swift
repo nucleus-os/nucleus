@@ -14,9 +14,8 @@ import NucleusSkiaGraphiteBridge
     var height: Int32 { image.height() }
 
     func readPixelsRGBA(into bytes: inout [UInt8], rowBytes: Int32) -> Bool {
-        bytes.withUnsafeMutableBufferPointer {
-            unsafe image.readPixelsRGBA($0.baseAddress, $0.count, rowBytes)
-        }
+        var span = bytes.mutableSpan
+        return image.readPixelsRGBA(&span, rowBytes)
     }
 
     func pixel(x: Int, y: Int) -> (UInt8, UInt8, UInt8, UInt8) {
@@ -65,16 +64,14 @@ import NucleusSkiaGraphiteBridge
     private let value: nucleus.skia.RuntimeEffect
 
     init(_ source: String) {
-        unsafe value = nucleus.skia.makeRuntimeEffect(source)
+        let sourceBytes = Array(source.utf8)
+        value = nucleus.skia.makeRuntimeEffect(sourceBytes.span)
     }
 
     func isValid() -> Bool { value.isValid() }
 
     func makeShader(_ uniforms: [Float]) -> RasterFixtureShader {
-        uniforms.withUnsafeBufferPointer {
-            unsafe RasterFixtureShader(
-                value.makeShader($0.baseAddress, $0.count))
-        }
+        unsafe RasterFixtureShader(value.makeShader(uniforms.span))
     }
 }
 
@@ -112,9 +109,7 @@ import NucleusSkiaGraphiteBridge
 
     func concat(_ matrix: [Float]) {
         precondition(matrix.count == 9)
-        matrix.withUnsafeBufferPointer {
-            unsafe value.concat($0.baseAddress)
-        }
+        unsafe value.concat(matrix.span)
     }
 }
 
@@ -123,17 +118,8 @@ func makeRasterFixturePath(
     _ points: [Float],
     evenOdd: Bool = false
 ) -> RasterFixturePath {
-    verbs.withUnsafeBufferPointer { verbs in
-        points.withUnsafeBufferPointer { points in
-            unsafe RasterFixturePath(
-                nucleus.skia.makePath(
-                    verbs.baseAddress,
-                    verbs.count,
-                    points.baseAddress,
-                    points.count,
-                    evenOdd))
-        }
-    }
+    RasterFixturePath(
+        nucleus.skia.makePath(verbs.span, points.span, evenOdd))
 }
 
 func makeLinearGradientFixture(
@@ -143,11 +129,9 @@ func makeLinearGradientFixture(
     x1: Float,
     y1: Float
 ) -> RasterFixtureShader {
-    colors.withUnsafeBufferPointer {
-        unsafe RasterFixtureShader(
-            nucleus.skia.makeLinearGradient(
-                x0, y0, x1, y1, $0.baseAddress, nil, $0.count, .clamp))
-    }
+    unsafe RasterFixtureShader(
+        nucleus.skia.makeLinearGradient(
+            x0, y0, x1, y1, colors.span, [Float]().span, .clamp))
 }
 
 func makeSweepGradientFixture(
@@ -157,12 +141,10 @@ func makeSweepGradientFixture(
     start: Float,
     end: Float
 ) -> RasterFixtureShader {
-    colors.withUnsafeBufferPointer {
-        unsafe RasterFixtureShader(
-            nucleus.skia.makeSweepGradient(
-                centerX, centerY, start, end,
-                $0.baseAddress, nil, $0.count, .clamp))
-    }
+    unsafe RasterFixtureShader(
+        nucleus.skia.makeSweepGradient(
+            centerX, centerY, start, end,
+            colors.span, [Float]().span, .clamp))
 }
 
 func renderRasterFixture(
@@ -179,9 +161,7 @@ func renderRasterFixture(
     body(unsafe RasterFixtureCanvas(canvas))
 
     var pixels = [UInt8](repeating: 0, count: Int(width * height) * 4)
-    let ok = pixels.withUnsafeMutableBufferPointer {
-        unsafe surface.readPixelsRGBA(
-            $0.baseAddress, $0.count, Int32(width * 4))
-    }
+    var pixelSpan = pixels.mutableSpan
+    let ok = unsafe surface.readPixelsRGBA(&pixelSpan, Int32(width * 4))
     return ok ? pixels : []
 }

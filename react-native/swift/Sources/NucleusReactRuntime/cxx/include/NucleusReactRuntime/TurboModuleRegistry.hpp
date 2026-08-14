@@ -11,10 +11,10 @@
 
 namespace nucleus::react {
 
-// Table-driven factory for TurboModules. Replaces the hardcoded if-ladder
-// that used to live inside ReactRuntimeHost. Modules register their factory
-// once at host construction; the TurboModuleBinding dispatch lambda invokes
-// `lookup` on each `__turboModuleProxy` access from JS.
+// Table-driven factory and lifetime owner for TurboModules. Replaces the
+// hardcoded if-ladder that used to live inside ReactRuntimeHost. Modules
+// register their factory once at host construction; the TurboModuleBinding
+// dispatch lambda invokes `lookup` on each `__turboModuleProxy` access from JS.
 class TurboModuleRegistry final {
  public:
   using ModuleFactory = std::function<std::shared_ptr<facebook::react::TurboModule>(
@@ -30,12 +30,17 @@ class TurboModuleRegistry final {
   // expose `kModuleName` as `std::string_view`.
   void add(std::string_view name, ModuleFactory factory);
 
-  // Returns the module instance produced by the registered factory, or
-  // nullptr if no factory is registered for `name`. The factory may cache or
-  // construct fresh per-call; the registry itself does not memoize.
+  // Returns the module instance for `name`, constructing and caching it on the
+  // first lookup. React Native's TurboModuleBinding caches the JS
+  // representation on that native instance, so every lookup for a name must
+  // preserve the same native module and its state.
   std::shared_ptr<facebook::react::TurboModule> lookup(
       const std::string &name,
       std::shared_ptr<facebook::react::CallInvoker> invoker) const;
+
+  // Drops native modules, including their jsi::WeakObject representations,
+  // while the JS runtime and its callback infrastructure are still alive.
+  void clearModules() noexcept;
 
   bool contains(const std::string &name) const;
 
@@ -43,6 +48,9 @@ class TurboModuleRegistry final {
 
  private:
   std::unordered_map<std::string, ModuleFactory> factories_;
+  mutable std::unordered_map<
+      std::string,
+      std::shared_ptr<facebook::react::TurboModule>> modules_;
 };
 
 } // namespace nucleus::react

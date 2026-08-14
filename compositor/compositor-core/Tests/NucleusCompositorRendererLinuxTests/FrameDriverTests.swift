@@ -1,10 +1,11 @@
 internal import NucleusAppHostProtocols
-import Testing
-import VulkanC
-import Vulkan
-import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 import NucleusTypes
+import Testing
+import Vulkan
+import VulkanC
+
 @testable import NucleusRenderer
 
 struct RendererTestWakeSink: AsyncRenderWakeSink {
@@ -59,15 +60,18 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
     }
 
     @Test func outputRenderGateTreatsCursorAndInitialFrameAsIndependentDemand() {
-        #expect(!RenderCore.shouldRenderOutput(
-            hasPendingDamage: false, forced: false,
-            wantsPresent: false, needsInitialFrame: false))
-        #expect(RenderCore.shouldRenderOutput(
-            hasPendingDamage: false, forced: false,
-            wantsPresent: true, needsInitialFrame: false))
-        #expect(RenderCore.shouldRenderOutput(
-            hasPendingDamage: false, forced: false,
-            wantsPresent: false, needsInitialFrame: true))
+        #expect(
+            !RenderCore.shouldRenderOutput(
+                hasPendingDamage: false, forced: false,
+                wantsPresent: false, needsInitialFrame: false))
+        #expect(
+            RenderCore.shouldRenderOutput(
+                hasPendingDamage: false, forced: false,
+                wantsPresent: true, needsInitialFrame: false))
+        #expect(
+            RenderCore.shouldRenderOutput(
+                hasPendingDamage: false, forced: false,
+                wantsPresent: false, needsInitialFrame: true))
     }
 
     @Test func presentationRevisionsAreAcknowledgedPerOutput() {
@@ -120,49 +124,57 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
 
         let otherOutput = FrameDriver.planFrameDamage(
             plan: initialPlan, previous: [7: old], forceFull: false, width: 200, height: 100)
-        #expect(otherOutput.bounds == nil, "another output's unchanged snapshot remains independent")
+        #expect(
+            otherOutput.bounds == nil, "another output's unchanged snapshot remains independent")
     }
 
     @Test func acquireWaitsIncludeOnlyClientSurfacesSampledByThePlan() {
         let plan = FramePlan()
-        plan.appendTextureQuad(TextureQuad(
-            role: .content, texture: TextureHandle(raw: 41),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        plan.appendTextureQuad(TextureQuad(
-            role: .paint, texture: TextureHandle(raw: 99),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        plan.appendTextureQuad(TextureQuad(
-            role: .content, texture: TextureHandle(raw: 7),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        plan.appendTextureQuad(TextureQuad(
-            role: .content, texture: TextureHandle(raw: 41),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .content, texture: TextureHandle(raw: 41),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .paint, texture: TextureHandle(raw: 99),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .content, texture: TextureHandle(raw: 7),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .content, texture: TextureHandle(raw: 41),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
         #expect(plan.resourceSummary.clientSurfaceIDs == [41, 7])
     }
 
     @Test func textureResolutionKeepsEqualRawHandlesDistinctByRole() {
         let plan = FramePlan()
-        plan.appendTextureQuad(TextureQuad(
-            role: .content, texture: TextureHandle(raw: 1),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
-        plan.appendTextureQuad(TextureQuad(
-            role: .paint, texture: TextureHandle(raw: 1),
-            dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-            src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .content, texture: TextureHandle(raw: 1),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
+        plan.appendTextureQuad(
+            TextureQuad(
+                role: .paint, texture: TextureHandle(raw: 1),
+                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                src: PlanRect(x: 0, y: 0, w: 10, h: 10), alpha: 1))
 
         let references = plan.resourceSummary.textureReferences
         #expect(references.count == 2)
-        #expect(Set(references) == [
-            PlanTextureReference(
-                role: .content, handle: TextureHandle(raw: 1)),
-            PlanTextureReference(
-                role: .paint, handle: TextureHandle(raw: 1)),
-        ])
+        #expect(
+            Set(references) == [
+                PlanTextureReference(
+                    role: .content, handle: TextureHandle(raw: 1)),
+                PlanTextureReference(
+                    role: .paint, handle: TextureHandle(raw: 1)),
+            ])
     }
 
     @Test @MainActor
@@ -172,13 +184,14 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             role: .content,
             handle: TextureHandle(raw: 7))
         for layerID in 1...3 {
-            plan.appendTextureQuad(TextureQuad(
-                layerId: UInt64(layerID),
-                role: reference.role,
-                texture: reference.handle,
-                dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
-                src: PlanRect(x: 0, y: 0, w: 10, h: 10),
-                alpha: 1))
+            plan.appendTextureQuad(
+                TextureQuad(
+                    layerId: UInt64(layerID),
+                    role: reference.role,
+                    texture: reference.handle,
+                    dst: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                    src: PlanRect(x: 0, y: 0, w: 10, h: 10),
+                    alpha: 1))
         }
         let resolver = TestFrameResourceResolver()
         var resolved: [PlanTextureReference: nucleus.skia.Image] = unsafe [:]
@@ -229,12 +242,13 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             structural: false)
         let plan = FramePlan()
         plan.recordLayerSnapshot(1, changed)
-        plan.appendBackdropExecSpec(ExecSpec(
-            layerId: 2,
-            groupId: 2,
-            region: PlanRect(x: 40, y: 40, w: 20, h: 20),
-            shape: .rect((0, 0, 20, 20)),
-            mask: .none))
+        plan.appendBackdropExecSpec(
+            ExecSpec(
+                layerId: 2,
+                groupId: 2,
+                region: PlanRect(x: 40, y: 40, w: 20, h: 20),
+                shape: .rect((0, 0, 20, 20)),
+                mask: .none))
 
         let damage = FrameDriver.planFrameDamage(
             plan: plan,
@@ -243,17 +257,20 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             width: 100,
             height: 100)
 
-        #expect(damage.bounds == PhysicalRect(
-            x: 40,
-            y: 40,
-            width: 20,
-            height: 20))
+        #expect(
+            damage.bounds
+                == PhysicalRect(
+                    x: 40,
+                    y: 40,
+                    width: 20,
+                    height: 20))
     }
 
     static func layer(
         _ id: UInt64,
         kind: NucleusRenderModel.LayerKind = .container,
-                      x: Float, y: Float, w: Float, h: Float) -> LayerCreated {
+        x: Float, y: Float, w: Float, h: Float
+    ) -> LayerCreated {
         LayerCreated(
             nodeId: id,
             kind: kind,
@@ -282,9 +299,10 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
             LayerInserted(nodeId: 2, parentId: 1, index: 0),
             LayerInserted(nodeId: 3, parentId: 0, index: 1),
         ]
-        guard case .success = TransactionApplier.apply(
-            transaction,
-            to: &tree)
+        guard
+            case .success = TransactionApplier.apply(
+                transaction,
+                to: &tree)
         else {
             Issue.record("end-to-end frame tree setup was rejected")
             return
@@ -310,29 +328,32 @@ struct RendererTestWakeSink: AsyncRenderWakeSink {
 
             // A small green source image stands in for resolved content.
             var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
-            for i in 0..<(16 * 16) { pixels[i * 4 + 1] = 255; pixels[i * 4 + 3] = 255 }
-            let decodedSource = pixels.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRasterImageRGBA(
-                    16, 16, $0.baseAddress, $0.count)
+            for i in 0..<(16 * 16) {
+                pixels[i * 4 + 1] = 255
+                pixels[i * 4 + 3] = 255
             }
+            let decodedSource = nucleus.skia.makeRasterImageRGBA(
+                16, 16, pixels.span)
             let source = unsafe driver.recorder.makeTextureImage(decodedSource)
 
             let scanout = unsafe driver.recorder.makeOffscreenSurface(400, 400)
 
             let resolver = TestFrameResourceResolver()
             resolver.paintContents[PaintContentHandle(raw: 9)] =
-                PaintContentStore.Content(commands: [
-                    PaintCommand(
-                        kind: .rect, x: 0, y: 0, w: 80, h: 80,
-                        color: Color(r: 0.8, g: 0.1, b: 0.1, a: 1)),
-                    PaintCommand(
-                        kind: .image, x: 8, y: 8, w: 16, h: 16,
-                        imageHandle: 88),
-                ], width: 80, height: 80)
+                PaintContentStore.Content(
+                    commands: [
+                        PaintCommand(
+                            kind: .rect, x: 0, y: 0, w: 80, h: 80,
+                            color: Color(r: 0.8, g: 0.1, b: 0.1, a: 1)),
+                        PaintCommand(
+                            kind: .image, x: 8, y: 8, w: 16, h: 16,
+                            imageHandle: 88),
+                    ], width: 80, height: 80)
             unsafe resolver.paintImages[88] = source
-            unsafe resolver.textures[PlanTextureReference(
-                role: .content,
-                handle: TextureHandle(raw: 5))] = source
+            unsafe resolver.textures[
+                PlanTextureReference(
+                    role: .content,
+                    handle: TextureHandle(raw: 5))] = source
 
             var resolveCalls = 0
             let firstRequest = unsafe FrameDriver.FrameRenderRequest(

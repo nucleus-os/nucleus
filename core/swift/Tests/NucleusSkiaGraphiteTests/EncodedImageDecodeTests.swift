@@ -257,12 +257,8 @@ import Darwin
         let png = Self.encodePNG(
             width: 8, height: 8, rgba: Self.solid(width: 8, height: 8, 30, 60, 90))
         let bytes = [UInt8](png)
-        let image = bytes.withUnsafeBufferPointer {
-            unsafe RasterFixtureImage(
-                nucleus.skia.decodeEncodedImageMemory(
-                    $0.baseAddress, $0.count, 8, 8
-                ).image)
-        }
+        let image = RasterFixtureImage(
+            nucleus.skia.decodeEncodedImageMemory(bytes.span, 8, 8).image)
         #expect(image.isValid)
         #expect(image.width == 8)
         #expect(image.height == 8)
@@ -272,21 +268,14 @@ import Darwin
         let png = Self.encodePNG(
             width: 64, height: 64, rgba: Self.solid(width: 64, height: 64, 1, 2, 3))
         let bytes = [UInt8](png)
-        let image = bytes.withUnsafeBufferPointer {
-            unsafe RasterFixtureImage(
-                nucleus.skia.decodeEncodedImageMemory(
-                    $0.baseAddress, $0.count, 16, 16
-                ).image)
-        }
+        let image = RasterFixtureImage(
+            nucleus.skia.decodeEncodedImageMemory(bytes.span, 16, 16).image)
         #expect(image.width == 16)
     }
 
     @Test func emptyBytesDecodeToNothing() {
         let empty: [UInt8] = []
-        let result = empty.withUnsafeBufferPointer {
-            unsafe nucleus.skia.decodeEncodedImageMemory(
-                $0.baseAddress, $0.count, 16, 16)
-        }
+        let result = nucleus.skia.decodeEncodedImageMemory(empty.span, 16, 16)
         let succeeded = result.isSuccess()
         let status = result.status
         #expect(!succeeded)

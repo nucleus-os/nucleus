@@ -396,12 +396,8 @@ package final class ImageDecodeQueue {
             guard bytes.count <= Limits.maximumEncodedBytes else {
                 return .failure(.limitExceeded)
             }
-            return bytes.withUnsafeBufferPointer {
-                unsafe mapMetadata(
-                    nucleus.skia.probeEncodedImageMemory(
-                        $0.baseAddress,
-                        $0.count))
-            }
+            return mapMetadata(
+                nucleus.skia.probeEncodedImageMemory(bytes.span))
         }
     }
 
@@ -434,14 +430,11 @@ package final class ImageDecodeQueue {
             guard let bounds = validatedTargetBounds(source) else {
                 return .failure(targetFailure(source))
             }
-            return bytes.withUnsafeBufferPointer {
-                unsafe mapDecode(
-                    nucleus.skia.decodeEncodedImageMemory(
-                        $0.baseAddress,
-                        $0.count,
-                        bounds.width,
-                        bounds.height))
-            }
+            return mapDecode(
+                nucleus.skia.decodeEncodedImageMemory(
+                    bytes.span,
+                    bounds.width,
+                    bounds.height))
         case .raw(let buffer):
             guard buffer.width > 0, buffer.height > 0 else {
                 return .failure(.invalidDimensions)
@@ -455,13 +448,10 @@ package final class ImageDecodeQueue {
             guard let rgba = buffer.normalizedRGBA() else {
                 return .failure(.decodeFailure)
             }
-            let image = rgba.withUnsafeBufferPointer {
-                unsafe nucleus.skia.makeRasterImageRGBA(
-                    Int32(buffer.width),
-                    Int32(buffer.height),
-                    $0.baseAddress,
-                    $0.count)
-            }
+            let image = nucleus.skia.makeRasterImageRGBA(
+                Int32(buffer.width),
+                Int32(buffer.height),
+                rgba.span)
             return image.isValid()
                 ? .success(DecodedImage(image: image))
                 : .failure(.decodeFailure)

@@ -60,12 +60,8 @@ import Testing
         var pixels = [UInt8](
             repeating: 0,
             count: Int(width * height) * 4)
-        let read = pixels.withUnsafeMutableBufferPointer {
-            unsafe next.readPixelsRGBA(
-                $0.baseAddress,
-                $0.count,
-                width * 4)
-        }
+        var pixelSpan = pixels.mutableSpan
+        let read = unsafe next.readPixelsRGBA(&pixelSpan, width * 4)
         #expect(localized)
         #expect(read)
         #expect(pixel(pixels, x: 0, y: 1, width: Int(width)) == (255, 0, 0, 255))

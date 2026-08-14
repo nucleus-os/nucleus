@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
+#include <swift/bridging>
 #include <vector>
 
 class SkCanvas;
@@ -55,12 +57,7 @@ enum class TextLineBreakMode : uint8_t {
 enum class EllipsisMode : uint8_t { None, Start, Middle, End };
 enum class ParagraphDirection : uint8_t { Automatic, Ltr, Rtl };
 
-struct TextStringView final {
-  const char *data{nullptr};
-  size_t size{0};
-};
-
-struct TextStyle final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextStyle final {
   std::string fontFamily;
   std::string locale;
   float pointSize{14.0f};
@@ -76,12 +73,12 @@ struct TextStyle final {
   float alpha{1.0f};
 };
 
-struct TextRun final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextRun final {
   std::string text;
   TextStyle style;
 };
 
-struct ParagraphStyle final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED ParagraphStyle final {
   float width{0.0f};
   uint32_t maximumNumberOfLines{0};
   TextAlignment alignment{TextAlignment::Leading};
@@ -90,7 +87,7 @@ struct ParagraphStyle final {
   ParagraphDirection direction{ParagraphDirection::Automatic};
 };
 
-struct ParagraphMetrics final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED ParagraphMetrics final {
   float width{0.0f};
   float height{0.0f};
   float minIntrinsicWidth{0.0f};
@@ -101,25 +98,7 @@ struct ParagraphMetrics final {
   bool didExceedMaximumLines{false};
 };
 
-struct TextRunView final {
-  TextStringView text;
-  TextStringView fontFamily;
-  TextStringView locale;
-  float pointSize{14.0f};
-  float lineHeight{0.0f};
-  float baselineShift{0.0f};
-  uint32_t weight{FontWeightRegular};
-  uint32_t width{FontWidthStandard};
-  uint32_t slant{FontSlantUpright};
-  bool underline{false};
-  bool strikeThrough{false};
-  float red{1.0f};
-  float green{1.0f};
-  float blue{1.0f};
-  float alpha{1.0f};
-};
-
-struct TextLineMetrics final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextLineMetrics final {
   float x{0.0f};
   float y{0.0f};
   float width{0.0f};
@@ -137,12 +116,12 @@ struct TextLineMetrics final {
   bool isLastVisibleLine{false};
 };
 
-struct TextPosition final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextPosition final {
   uint32_t utf16Offset{0};
   uint32_t affinity{TextAffinityDownstream};
 };
 
-struct TextCaret final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextCaret final {
   float x{0.0f};
   float y{0.0f};
   float height{0.0f};
@@ -150,7 +129,7 @@ struct TextCaret final {
   uint32_t affinity{TextAffinityDownstream};
 };
 
-struct TextRect final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextRect final {
   float x{0.0f};
   float y{0.0f};
   float width{0.0f};
@@ -158,7 +137,7 @@ struct TextRect final {
   uint32_t direction{TextDirectionLtr};
 };
 
-struct FontMetrics final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED FontMetrics final {
   float ascender{0.0f};
   float descender{0.0f};
   float leading{0.0f};
@@ -166,7 +145,7 @@ struct FontMetrics final {
   float xHeight{0.0f};
 };
 
-struct ResolvedFontDescriptor final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED ResolvedFontDescriptor final {
   char familyName[128]{};
   uint32_t familyNameLength{0};
   char postScriptName[128]{};
@@ -179,78 +158,112 @@ struct ResolvedFontDescriptor final {
 
 // The handle and the metrics of the layout pass that produced it, returned
 // together so a caller cannot observe one without the other.
-struct CreatedLayout final {
+struct SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED CreatedLayout final {
   uint64_t handle{0};
   ParagraphMetrics metrics;
 };
 
-class TextLayoutService final {
+/// An owning batch of styled UTF-8 runs. Swift constructs this value before
+/// entering the layout service, so no pointer into Swift storage can escape or
+/// become invalid while C++ copies nested string views.
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextRunList final {
  public:
-  std::optional<ResolvedFontDescriptor> resolveFont(
-      TextStringView familyName,
-      float pointSize,
-      uint32_t weight,
-      uint32_t width,
-      uint32_t slant) const;
+  TextRunList() noexcept;
+  TextRunList(const TextRunList &) = delete;
+  TextRunList &operator=(const TextRunList &) = delete;
+  TextRunList(TextRunList &&) noexcept = default;
+  TextRunList &operator=(TextRunList &&) noexcept = default;
+  ~TextRunList() noexcept = default;
 
-  std::optional<FontMetrics> queryFontMetrics(
-      TextStringView familyName,
+  bool append(
+      std::span<const uint8_t> text [[clang::noescape]],
+      std::span<const uint8_t> fontFamily [[clang::noescape]],
+      std::span<const uint8_t> locale [[clang::noescape]],
+      float pointSize,
+      float lineHeight,
+      float baselineShift,
+      uint32_t weight,
+      uint32_t width,
+      uint32_t slant,
+      bool underline,
+      bool strikeThrough,
+      float red,
+      float green,
+      float blue,
+      float alpha) noexcept;
+
+ private:
+  friend class TextLayoutService;
+  std::vector<TextRun> runs_;
+};
+
+class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED TextLayoutService final {
+ public:
+  bool resolveFont(
+      std::span<const uint8_t> familyName [[clang::noescape]],
       float pointSize,
       uint32_t weight,
       uint32_t width,
-      uint32_t slant) const;
+      uint32_t slant,
+      ResolvedFontDescriptor &outDescriptor) const noexcept;
+
+  bool queryFontMetrics(
+      std::span<const uint8_t> familyName [[clang::noescape]],
+      float pointSize,
+      uint32_t weight,
+      uint32_t width,
+      uint32_t slant,
+      FontMetrics &outMetrics) const noexcept;
 
   std::optional<CreatedLayout> createRuns(
-      const TextRunView *runs,
-      size_t runCount,
-      const ParagraphStyle *style) const;
+      const TextRunList &runs,
+      const ParagraphStyle &style) const noexcept;
 
   bool measureRuns(
-      const TextRunView *runs,
-      size_t runCount,
-      const ParagraphStyle *style,
-      TextLineMetrics *outLines,
-      size_t lineCapacity,
-      ParagraphMetrics *outMetrics) const;
+      const TextRunList &runs,
+      const ParagraphStyle &style,
+      std::span<TextLineMetrics> outLines [[clang::noescape]],
+      ParagraphMetrics &outMetrics) const noexcept;
 
-  void retain(uint64_t handle) const;
-  void release(uint64_t handle) const;
+  void retain(uint64_t handle) const noexcept;
+  void release(uint64_t handle) const noexcept;
 
   bool metrics(
       uint64_t handle,
-      TextLineMetrics *outLines,
-      size_t lineCapacity,
-      ParagraphMetrics *outMetrics) const;
+      std::span<TextLineMetrics> outLines [[clang::noescape]],
+      ParagraphMetrics &outMetrics) const noexcept;
 
   std::optional<TextPosition> glyphPositionAt(uint64_t handle, float x, float y)
-      const;
+      const noexcept;
 
   std::optional<TextCaret> caretForOffset(
       uint64_t handle,
       uint32_t utf16Offset,
-      uint32_t affinity) const;
+      uint32_t affinity) const noexcept;
 
   bool rectsForRange(
       uint64_t handle,
       uint32_t startUtf16Offset,
       uint32_t endUtf16Offset,
-      TextRect *outRects,
-      size_t rectCapacity,
-      uint32_t *outRectCount) const;
+      std::span<TextRect> outRects [[clang::noescape]],
+      uint32_t &outRectCount) const noexcept;
 
-  bool graphemeBreaks(TextStringView text, uint32_t *outUtf8Offsets, size_t capacity, uint32_t *outCount) const;
-  void invalidateFontCollection() const;
+  bool graphemeBreaks(
+      std::span<const uint8_t> text [[clang::noescape]],
+      std::span<uint32_t> outUtf8Offsets [[clang::noescape]],
+      uint32_t &outCount) const noexcept;
+  void invalidateFontCollection() const noexcept;
 
-  bool paint(uint64_t handle, SkCanvas *canvas, float x, float y) const;
+  bool paint(uint64_t handle, SkCanvas *canvas, float x, float y) const noexcept;
 };
 
 ParagraphMetrics measureParagraph(
     const std::vector<TextRun> &runs,
-    const ParagraphStyle &style);
+    const ParagraphStyle &style) noexcept;
 
 uint64_t registerParagraph(
     const std::vector<TextRun> &runs,
     const ParagraphStyle &style,
-    ParagraphMetrics *outMetrics);
+    ParagraphMetrics *outMetrics) noexcept;
 
 } // namespace nucleus::text
