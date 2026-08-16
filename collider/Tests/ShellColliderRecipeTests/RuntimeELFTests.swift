@@ -19,25 +19,29 @@ import Testing
     #expect(inspection.needed == ["libvulkan.so.1", "libdrm.so.2"])
 }
 
-@Test func lddOutputRetainsResolvedSONAMEsAndAbsolutePaths() {
-    let dependencies = parseLDDResolvedDependencies(
+@Test func dynamicSymbolMetadataSeparatesDefinitionsAndStrongImports() {
+    let symbols = parseReadELFDynamicSymbols(
         """
-            linux-vdso.so.1 (0x00007fff00000000)
-            libswiftCore.so => /toolchain/usr/lib/swift/linux/libswiftCore.so (0x1)
-            libmissing.so => not found
-            /lib64/ld-linux-x86-64.so.2 (0x2)
+              1: 0000000000001000 12 FUNC GLOBAL DEFAULT 12 provided@@GLIBC_2.38
+              2: 0000000000000000  0 FUNC GLOBAL DEFAULT UND provided@GLIBC_2.38 (2)
+              3: 0000000000000000  0 NOTYPE WEAK DEFAULT UND optional
         """)
 
-    #expect(
-        dependencies == [
-            ResolvedELFDependency(
-                soname: "libswiftCore.so",
-                path: FilePath(
-                    "/toolchain/usr/lib/swift/linux/libswiftCore.so")),
-            ResolvedELFDependency(
-                soname: "ld-linux-x86-64.so.2",
-                path: FilePath("/lib64/ld-linux-x86-64.so.2")),
-        ])
+    #expect(symbols.defined == ["provided@GLIBC_2.38"])
+    #expect(symbols.undefined == ["provided@GLIBC_2.38"])
+}
+
+@Test func ELFMachineMustMatchTheDeclaredArtifactArchitecture() throws {
+    try validateELFArchitecture(
+        "Machine:                           Advanced Micro Devices X86-64",
+        artifact: FilePath("/fixture"),
+        expected: .x86_64)
+    #expect(throws: RuntimeELFFailure.self) {
+        try validateELFArchitecture(
+            "Machine:                           AArch64",
+            artifact: FilePath("/fixture"),
+            expected: .x86_64)
+    }
 }
 
 @Test func linuxABIContractRejectsUnknownDependencies() {
@@ -125,13 +129,17 @@ import Testing
             reportBytes.withLock { $0 = bytes }
         })
     let context = testActionContext(files: files) { command in
-        guard case .named(let executable) = command.executable else {
-            return CommandResult(status: 1)
-        }
+        let executable = commandExecutableName(command.executable)
         let name =
             command.arguments.last.map {
                 FilePath($0).lastComponent?.string ?? $0
             } ?? ""
+        if executable == "readelf", command.arguments.first == "-h" {
+            return CommandResult(
+                status: 0,
+                standardOutput:
+                    "Machine:                           Advanced Micro Devices X86-64")
+        }
         if executable == "readelf", command.arguments.first == "-d",
             let inspection = inspections[name]
         {
@@ -152,7 +160,7 @@ import Testing
     try await ValidateRuntimeELFAction(
         root: FilePath("/products"),
         report: FilePath("/products/runtime-elf-report.json"),
-        environment: [:],
+        environment: ["NUCLEUS_TARGET_LIBRARY_PATH": "/target-libraries"],
         executionPlatform: .linuxX86_64Native
     ).execute(in: context)
 
@@ -188,30 +196,21 @@ import Testing
         setPermissions: { _, _ in },
         write: { _, _ in })
     let context = testActionContext(files: files) { command in
-        guard case .named(let executable) = command.executable else {
-            return CommandResult(status: 1)
-        }
+        let executable = commandExecutableName(command.executable)
         recording.withLock {
             $0.commands.append((executable, command.arguments))
         }
-        if executable == "readelf" {
+        if executable == "readelf", command.arguments.first == "-h" {
+            return CommandResult(
+                status: 0,
+                standardOutput:
+                    "Machine:                           Advanced Micro Devices X86-64")
+        }
+        if executable == "readelf", command.arguments.first == "-d" {
             return CommandResult(
                 status: 0,
                 standardOutput:
                     " 0x1 (NEEDED) Shared library: [libswiftCore.so]\n")
-        }
-        if executable == "ldd" {
-            if command.arguments == ["/runtime/lib/libswiftCore.so"] {
-                return CommandResult(
-                    status: 0,
-                    standardOutput:
-                        "libswiftCore.so => /runtime/lib/libswiftCore.so (0x1)\n")
-            }
-            return CommandResult(
-                status: 0,
-                standardOutput:
-                    "libswiftCore.so => /toolchain/libswiftCore.so (0x1)\n"
-                    + "libstdc++.so.6 => /lib/libstdc++.so.6 (0x2)\n")
         }
         return CommandResult(status: 0)
     }
@@ -219,7 +218,9 @@ import Testing
     try await StageRuntimeELFAction(
         products: FilePath("/products"),
         prefix: FilePath("/runtime"),
-        environment: [:],
+        environment: [
+            "NUCLEUS_TARGET_LIBRARY_PATH": "/toolchain"
+        ],
         executionPlatform: .linuxX86_64Native
     ).execute(in: context)
 
@@ -230,14 +231,14 @@ import Testing
             $0 == ("/toolchain/libswiftCore.so", "/runtime/lib/libswiftCore.so")
         })
     #expect(result.commands.filter { $0.0 == "patchelf" }.count == 8)
-    #expect(result.commands.filter { $0.0 == "strip" }.count == 8)
+    #expect(result.commands.filter { $0.0 == "llvm-strip" }.count == 8)
 }
 
-@Test func stagingActionRejectsDifferentLibrariesWithTheSameBasename() async {
-    let lddInvocation = Mutex(0)
+@Test func stagingActionRejectsAnUnresolvedArtifactDependency() async {
     let files = ActionFileSystem(
-        metadata: { _ in
-            ActionFileSystem.Metadata(type: .regular, ownerExecutable: true)
+        metadata: { path in
+            if path.string == "/missing/libswiftCore.so" { return nil }
+            return ActionFileSystem.Metadata(type: .regular, ownerExecutable: true)
         },
         contentsEqual: { _, _ in false },
         createDirectory: { _ in },
@@ -245,32 +246,27 @@ import Testing
         setPermissions: { _, _ in },
         write: { _, _ in })
     let context = testActionContext(files: files) { command in
-        guard case .named(let executable) = command.executable else {
-            return CommandResult(status: 0)
+        let executable = commandExecutableName(command.executable)
+        if executable == "readelf", command.arguments.first == "-h" {
+            return CommandResult(
+                status: 0,
+                standardOutput:
+                    "Machine:                           Advanced Micro Devices X86-64")
         }
-        if executable == "readelf" {
+        if executable == "readelf", command.arguments.first == "-d" {
             return CommandResult(
                 status: 0,
                 standardOutput:
                     " 0x1 (NEEDED) Shared library: [libswiftCore.so]\n")
         }
-        guard executable == "ldd" else { return CommandResult(status: 0) }
-        let invocation = lddInvocation.withLock {
-            $0 += 1
-            return $0
-        }
-        let root = invocation == 1 ? "/toolchain-a" : "/toolchain-b"
-        return CommandResult(
-            status: 0,
-            standardOutput:
-                "libswiftCore.so => \(root)/libswiftCore.so (0x1)\n")
+        return CommandResult(status: 0)
     }
 
     await #expect(throws: RuntimeELFFailure.self) {
         try await StageRuntimeELFAction(
             products: FilePath("/products"),
             prefix: FilePath("/runtime"),
-            environment: [:],
+            environment: ["NUCLEUS_TARGET_LIBRARY_PATH": "/missing"],
             executionPlatform: .linuxX86_64Native
         ).execute(in: context)
     }
@@ -314,4 +310,15 @@ private func testActionContext(
         logger: ActionLogger { _ in },
         commands: ActionCommandExecutor(execute: execute),
         downloads: ActionDownloader { _, _ in })
+}
+
+private func commandExecutableName(_ executable: CommandSpec.Executable) -> String {
+    switch executable {
+    case .named(let name), .operationalNamed(let name):
+        return name
+    case .path(let path), .taskOutput(let path):
+        return path.lastComponent?.string ?? path.string
+    case .artifact:
+        return "artifact"
+    }
 }

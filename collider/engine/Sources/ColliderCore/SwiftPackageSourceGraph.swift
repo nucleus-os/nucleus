@@ -115,6 +115,23 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         }
     }
 
+    /// Git-owned paths that contribute source bytes to one product. This is
+    /// the source-closure boundary for product provenance; generated build
+    /// state, tool identities, and dependency locks remain separate inputs.
+    public func sourcePaths(forProduct productName: String) -> [FilePath] {
+        let paths = inputs(forProduct: productName).flatMap { input -> [FilePath] in
+            switch input {
+            case .file(let path), .tree(let path), .sourceCheckout(let path):
+                [path]
+            case .sourceCheckoutClosure(let paths):
+                paths
+            case .value, .string, .environment, .swiftBuildContext, .tool:
+                []
+            }
+        }
+        return Array(Set(paths)).sorted { $0.string < $1.string }
+    }
+
     public var testInputs: [ArtifactInput] {
         switch storage {
         case .packageWide(let inputs):

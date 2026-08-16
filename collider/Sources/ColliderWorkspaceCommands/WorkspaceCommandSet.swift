@@ -8,6 +8,7 @@ package enum WorkspaceCommandSet {
         Test.self,
         Check.self,
         Generate.self,
+        PackageArtifacts.self,
     ]
 
     package static let rootSuffix: [ParsableCommand.Type] = [
@@ -19,10 +20,6 @@ package enum WorkspaceCommandSet {
         Runs.self,
         Logs.self,
         Status.self,
-    ]
-
-    package static let install: [ParsableCommand.Type] = [
-        InstallBrowser.self
     ]
 
 }

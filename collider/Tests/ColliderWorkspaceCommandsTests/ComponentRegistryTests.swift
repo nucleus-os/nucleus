@@ -6,9 +6,12 @@ import ColliderTesting
 import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
+import LinuxColliderRecipe
 import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
+import ShellColliderRecipe
+import SwiftTargetSDKColliderRecipe
 import SystemPackage
 import Testing
 import VulkanColliderRecipe
@@ -221,15 +224,89 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(storageOwners["core-skia-inputs"] == "core")
     #expect(storageOwners["rn-boost-inputs"] == "rn")
     #expect(storageOwners["android-aosp-build"] == "android-runtime")
-    #expect(storageOwners["linux-runtime-generations"] == "linux")
+    #expect(storageOwners["linux-arm64-runtime-generations"] == "linux")
+    #expect(storageOwners["linux-x86_64-runtime-generations"] == "linux")
+    #expect(storageOwners["linux-arm64-native-package-generations"] == "linux")
+    #expect(storageOwners["linux-x86_64-native-package-generations"] == "linux")
+    #expect(storageOwners["linux-package-source-snapshot"] == "linux")
     #expect(storageOwners["browser-product-arm64-generations"] == "browser")
     #expect(storageOwners["browser-product-x86_64-generations"] == "browser")
     let storageClasses = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
     #expect(storageClasses["android-aosp-source-inputs"] == .cache)
     #expect(storageClasses["android-aosp-signing-identity"] == .identity)
+    let swiftBuildRegression = try #require(
+        withoutLinuxOperations.tasks.first {
+            $0.id == NativeBuilderTaskIDs.swiftBuildRegressionTest
+        })
+    #expect(swiftBuildRegression.swiftTests.count == 1)
+    #expect(
+        swiftBuildRegression.swiftTests.first?.arguments == [
+            "--filter",
+            "HostBuildToolTaskConstructionTests."
+                + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux",
+        ])
+    let swiftPMRegression = try #require(
+        withoutLinuxOperations.tasks.first {
+            $0.id == NativeBuilderTaskIDs.swiftPMRegressionTest
+        })
+    #expect(swiftPMRegression.swiftTests.count == 1)
+    #expect(
+        swiftPMRegression.swiftTests.first?.arguments == [
+            "--filter",
+            "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly",
+        ])
+    #expect(
+        swiftPMRegression.dependencies.contains(
+            NativeBuilderTaskIDs.swiftBuildRegressionTest))
+    let swiftPMOverlayBuild = try #require(
+        withoutLinuxOperations.tasks.first {
+            $0.id == NativeBuilderTaskIDs.swiftPMOverlayBuild
+        })
+    #expect(
+        swiftPMOverlayBuild.dependencies.contains(
+            NativeBuilderTaskIDs.swiftPMRegressionTest))
+    let swiftPMOverlayArtifact = try #require(
+        withoutLinuxOperations.tasks.first {
+            $0.id == NativeBuilderTaskIDs.swiftPMOverlayArtifact
+        })
+    #expect(
+        swiftPMOverlayArtifact.dependencies.contains(
+            NativeBuilderTaskIDs.swiftPMOverlayBuild))
+    #expect(swiftPMOverlayArtifact.action?.kind == "native.assemble-swiftpm-overlay")
+    let nativeBuilderDependencies = try #require(
+        withoutLinuxOperations.tasks.first {
+            $0.id == NativeBuilderTaskIDs.dependencies
+        })
+    #expect(nativeBuilderDependencies.dependencies.isEmpty)
+    #expect(
+        nativeBuilderDependencies.action?.kind
+            == "native.prepare-builder-dependency-image")
+    let overlayInputs = ArtifactInput.file(
+        root.appending(
+            "collider/images/native-builder/swiftpm-overlay-inputs.json"))
+    #expect(!nativeBuilderDependencies.inputs.contains(overlayInputs))
+    #expect(
+        !nativeBuilderDependencies.dependencies.contains(
+            NativeBuilderTaskIDs.swiftPMOverlayArtifact))
+    #expect(swiftPMOverlayArtifact.inputs.contains(overlayInputs))
+    let selectedNativeBootstrap = Set(
+        try selectedTasks(
+            in: withoutLinuxOperations,
+            entrypoint: .bootstrap,
+            selection: "native-builder"))
+    #expect(selectedNativeBootstrap.contains(NativeBuilderTaskIDs.dependencies))
+    #expect(
+        selectedNativeBootstrap.contains(
+            NativeBuilderTaskIDs.swiftPMOverlayArtifact))
     let persistentWorkspaces = withoutLinuxOperations.components.flatMap(
         \.persistentWorkspaces)
+    #expect(
+        persistentWorkspaces.contains {
+            $0.identity.key == "nucleus-swiftbuild-tests"
+                && $0.identity.artifactTarget == .linuxARM64
+                && $0.identity.role == "build"
+        })
     for workspace in persistentWorkspaces where workspace.identity.role == "compiler-cache" {
         guard case .toolManagedLimit(let maximumBytes) = workspace.retentionPolicy else {
             Issue.record("compiler cache lacks a tool-managed limit: \(workspace.identity.key)")
@@ -238,32 +315,13 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         #expect(maximumBytes > 0)
         #expect(maximumBytes <= workspace.capacityBytes)
     }
-    let aospBuildTools = try #require(
-        withoutLinuxOperations.tasks.first {
-            $0.id == AndroidRuntimeTaskIDs.aospBuildTools
-        })
-    let aospArtifactTools = try #require(
-        withoutLinuxOperations.tasks.first {
-            $0.id == AndroidRuntimeTaskIDs.aospArtifactTools
-        })
     #expect(
-        aospBuildTools.dependencies == [NativeBuilderTaskIDs.dependencies])
-    #expect(
-        aospArtifactTools.dependencies == [NativeBuilderTaskIDs.dependencies])
-    #expect(
-        aospBuildTools.action?.kind
-            == "android-runtime.prepare-aosp-build-image")
-    #expect(
-        aospArtifactTools.action?.kind
-            == "android-runtime.prepare-aosp-artifact-image")
-    let gfxstreamTools = try #require(
-        withoutLinuxOperations.tasks.first {
-            $0.id == AndroidRuntimeTaskIDs.gfxstreamTools
-        })
-    #expect(gfxstreamTools.dependencies == [NativeBuilderTaskIDs.dependencies])
-    #expect(
-        gfxstreamTools.action?.kind
-            == "android-runtime.prepare-gfxstream-image")
+        Set(withoutLinuxOperations.tasks.compactMap(\.action).map(\.kind))
+            .isDisjoint(with: [
+                "android-runtime.prepare-aosp-build-image",
+                "android-runtime.prepare-aosp-artifact-image",
+                "android-runtime.prepare-gfxstream-image",
+            ]))
 
     let shellInstall = ComponentEntrypointRequest(
         spelling: "shell",
@@ -285,29 +343,166 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         })
 }
 
+@Test func linuxNativePackageCohortsConsumeExactArchitecturePublications()
+    async throws
+{
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: root,
+            environment: [:],
+            runtime: ColliderRuntime()))
+    let catalog = try registry.componentCatalog()
+    let selected = Set(
+        try selectedTasks(
+            in: catalog,
+            entrypoint: LinuxEntrypoints.packageRuntime,
+            selection: "linux-runtime"))
+    let sourceSnapshot = try #require(
+        catalog.tasks.first {
+            $0.id == LinuxTaskIDs.packageSourceSnapshot
+        })
+    let sourceSnapshotOutput = try #require(sourceSnapshot.outputs.first?.path)
+    #expect(sourceSnapshot.assessmentPolicy == .incremental)
+    #expect(sourceSnapshot.action?.kind == "linux.capture-package-source")
+    #expect(
+        sourceSnapshot.action?.requirements.executionPlatform
+            == .macOSARM64Native)
+    #expect(
+        sourceSnapshot.action?.requirements.effects.contains(
+            ActionEffect(
+                .readWrite,
+                scope: .output(sourceSnapshotOutput.removingLastComponent())))
+            == true)
+    #expect(selected == [LinuxTaskIDs.packageStorageRetention])
+    let retention = try #require(
+        catalog.tasks.first { $0.id == LinuxTaskIDs.packageStorageRetention })
+    #expect(retention.action?.kind == "linux.retain-package-storage")
+    #expect(retention.assessmentPolicy == .always)
+    let retentionDependencies = Set(retention.dependencies)
+    for architecture in PlatformArchitecture.allCases {
+        let id = LinuxTaskIDs.packageCohort(architecture)
+        let qualificationID = LinuxTaskIDs.packageLifecycleQualification(
+            architecture)
+        #expect(retentionDependencies.contains(qualificationID))
+        let task = try #require(catalog.tasks.first { $0.id == id })
+        #expect(
+            Set(task.swiftProducts.map(\.qualifiedProduct)) == [
+                "collider-cli:nucleus-linux-assembler"
+            ])
+        let dependencies = Set(task.dependencies)
+        #expect(task.assessmentPolicy == .incremental)
+        #expect(dependencies.contains(sourceSnapshot.id))
+        #expect(dependencies.contains(LinuxTaskIDs.runtimeArtifact(architecture)))
+        #expect(
+            dependencies.contains(
+                TaskID(
+                    rawValue:
+                        "browser.\(architecture.rawValue).package-input")))
+        #expect(
+            dependencies.contains(
+                TaskID(
+                    rawValue:
+                        "browser.browser.\(architecture.rawValue).artifact")))
+        let action = try #require(task.action)
+        #expect(action.kind == "linux.package-runtime-cohort")
+        #expect(action.requirements.networkAccess == .none)
+        let execution = try #require(try await ociExecutions(in: action).first)
+        #expect(execution.executionPlatform == .linuxARM64OCI)
+        #expect(execution.artifactTarget.architecture == architecture)
+        #expect(execution.executableRequirements.isEmpty)
+        #expect(
+            execution.mounts.contains(
+                OCIMount(
+                    source: sourceSnapshotOutput.removingLastComponent(),
+                    target: sourceSnapshotOutput.removingLastComponent().string,
+                    access: .readOnly)))
+        #expect(
+            !execution.mounts.contains {
+                $0.source == root && $0.target == root.string
+            })
+        let productStoreMount = try #require(
+            execution.mounts.first {
+                $0.target.hasSuffix("/artifacts/product-store")
+            })
+        #expect(productStoreMount.purpose == .boundedExport)
+        #expect(execution.command.contains(productStoreMount.target))
+        #expect(execution.command.contains(sourceSnapshotOutput.string))
+        #expect(
+            execution.command.contains {
+                $0.hasSuffix("nucleus-linux-assembler")
+            })
+
+        let qualification = try #require(
+            catalog.tasks.first { $0.id == qualificationID })
+        #expect(qualification.assessmentPolicy == .incremental)
+        #expect(qualification.dependencies.contains(id))
+        #expect(
+            Set(qualification.swiftProducts.map(\.qualifiedProduct)) == [
+                "collider-cli:nucleus-linux-package-qualifier"
+            ])
+        let qualificationAction = try #require(qualification.action)
+        #expect(qualificationAction.kind == "linux.qualify-runtime-packages")
+        #expect(qualificationAction.requirements.networkAccess == .none)
+        let qualificationExecutions = try await ociExecutions(
+            in: qualificationAction)
+        #expect(
+            qualificationExecutions.count
+                == LinuxDistributionFamily.allCases.count)
+        for qualificationExecution in qualificationExecutions {
+            #expect(qualificationExecution.executionPlatform == .linuxARM64OCI)
+            #expect(
+                qualificationExecution.artifactTarget.architecture
+                    == architecture)
+            #expect(qualificationExecution.executableRequirements.isEmpty)
+            #expect(qualificationExecution.userPolicy.userID == 0)
+            #expect(qualificationExecution.capabilityPolicy == .dropAll)
+            #expect(
+                qualificationExecution.processFilesystemPolicy
+                    == .writableRoot)
+            #expect(
+                qualificationExecution.command.contains {
+                    $0.hasSuffix("nucleus-linux-package-qualifier")
+                })
+            let storeMount = try #require(
+                qualificationExecution.mounts.first {
+                    $0.target.hasSuffix("/artifacts/product-store")
+                })
+            #expect(storeMount.isReadOnly)
+            let outputMount = try #require(
+                qualificationExecution.mounts.first {
+                    $0.target.contains("/artifacts/package-qualification/")
+                })
+            #expect(outputMount.purpose == .boundedExport)
+            #expect(
+                !qualificationExecution.mounts.contains {
+                    $0.source == root && $0.target == root.string
+                })
+        }
+    }
+}
+
 private func fixtureNativeBuilder(
-    context: FilePath,
     imageID: FilePath,
     ccache: FilePath,
     swiftSDKRoot: FilePath,
     environment: [String: String]
 ) throws -> NativeOCIConfiguration {
-    var dependencyProducer = TaskBuilder(
-        id: TaskID(rawValue: "native.builder-dependencies"),
-        component: ComponentID(rawValue: "native"))
-    let dependencyImage: ArtifactReference =
-        try dependencyProducer.output(
-            "image-id",
-            path: imageID.removingLastComponent().appending(
-                "dependency-image-id"),
-            validation: .regularFile)
     var producer = TaskBuilder(
-        id: TaskID(rawValue: "native.builder"),
+        id: TaskID(rawValue: "native.builder-dependencies"),
         component: ComponentID(rawValue: "native"))
     let image: ArtifactReference = try producer.output(
         "image-id",
         path: imageID,
         validation: .regularFile)
+    var overlayProducer = TaskBuilder(
+        id: TaskID(rawValue: "native.swiftpm-overlay-artifact"),
+        component: ComponentID(rawValue: "native"))
+    let swiftPMOverlay: ArtifactReference = try overlayProducer.output(
+        "root",
+        path: imageID.removingLastComponent().appending("swiftpm-overlay/artifact"),
+        validation: .nonEmptyDirectory)
     var swiftSDKProducer = TaskBuilder(
         id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
         component: ComponentID(rawValue: "swift-sdk"))
@@ -317,11 +512,12 @@ private func fixtureNativeBuilder(
         validation: .symlinkTarget)
     return NativeOCIConfiguration(
         base: NativeOCIBaseConfiguration(
-            context: context,
-            dependencyImage: dependencyImage,
             image: image,
+            swiftPMOverlay: swiftPMOverlay,
             ccache: ccache,
-            environment: environment),
+            environment: environment,
+            swiftPMOverlayRevision:
+                "5f40ba93598ca18b00c114e6dad28acdeebbbb60"),
         swiftSDK: swiftSDK)
 }
 
@@ -351,6 +547,16 @@ private func fixtureSkiaExternalSources(
         validation: .nonEmptyDirectory)
 }
 
+private func fixtureHermesHostTools() throws -> ArtifactReference {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "rn.hermes.linux-arm64"),
+        component: ComponentID(rawValue: "rn"))
+    return try producer.output(
+        "host-tools",
+        path: FilePath("/cache/native-sdk/linux-arm64/rn/lib/rn/hermes/host-tools"),
+        validation: .nonEmptyDirectory)
+}
+
 private func fixtureReactNativeNodeModules(
     root: FilePath
 ) throws -> ArtifactReference {
@@ -363,7 +569,9 @@ private func fixtureReactNativeNodeModules(
         validation: .nonEmptyDirectory)
 }
 
-@Test func linuxBuildLanesUseMatchingCompilerArchitectures() throws {
+@Test func linuxBuildLanesUsePatchedNativeSwiftPMForBothTargetArchitectures()
+    throws
+{
     let environment = ["HOME": "/tmp/nucleus-fixture"]
     let registry = ComponentRegistry(
         context: WorkspaceContext(
@@ -371,7 +579,6 @@ private func fixtureReactNativeNodeModules(
             environment: environment,
             runtime: ColliderRuntime()))
     let builder = try fixtureNativeBuilder(
-        context: fixtureRepositoryRoot.appending("collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -384,6 +591,17 @@ private func fixtureReactNativeNodeModules(
         architecture: .x86_64,
         builder: builder)
 
+    #expect(arm64.context.maximumParallelism == 12)
+    #expect(amd64.context.maximumParallelism == 12)
+    #expect(arm64.context.buildSystem == .swiftbuild)
+    #expect(amd64.context.buildSystem == .swiftbuild)
+    #expect(
+        arm64.context.toolchainIdentity.contains(
+            "swiftpm-overlay-5f40ba93598ca18b00c114e6dad28acdeebbbb60"))
+    #expect(
+        amd64.context.toolchainIdentity.contains(
+            "swiftpm-overlay-5f40ba93598ca18b00c114e6dad28acdeebbbb60"))
+
     guard case .oci(let armExecution) = arm64.context.execution,
         case .oci(let x86Execution) = amd64.context.execution
     else {
@@ -395,7 +613,11 @@ private func fixtureReactNativeNodeModules(
             == .path(FilePath("/opt/swift/usr/bin/swift")))
     #expect(
         amd64.swiftExecutable
-            == .path(FilePath("/opt/swift-x86_64/usr/bin/swift")))
+            == .path(FilePath("/opt/swift/usr/bin/swift")))
+    #expect(armExecution.executableRequirements.isEmpty)
+    #expect(x86Execution.executableRequirements.isEmpty)
+    #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay])
+    #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay])
     #expect(
         NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
             .hasSuffix(
@@ -419,6 +641,12 @@ private func fixtureReactNativeNodeModules(
             $0.target == SwiftPMInvocation.ociSwiftSDKDirectory.string
         })
     #expect(
+        armExecution.mounts.contains(
+            OCIMount(
+                source: builder.swiftPMOverlay.path,
+                target: "/swiftpm-overlay",
+                access: .readOnly)))
+    #expect(
         armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.contains(
             "/usr/lib/aarch64-linux-gnu") == false)
     #expect(
@@ -426,26 +654,60 @@ private func fixtureReactNativeNodeModules(
             "/usr/lib/x86_64-linux-gnu") == false)
     #expect(
         armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
+            "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64:"
+                + SwiftPMInvocation.ociSwiftSDKDirectory.string
+                + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                + NativeLinuxTarget(architecture: .arm64).targetTriple + "/"
+                + NucleusLinuxABI.sdkDirectoryName
+                + "/usr/lib/swift/linux:") == true)
+    #expect(
+        x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
+            "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64:"
+                + SwiftPMInvocation.ociSwiftSDKDirectory.string
+                + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                + NativeLinuxTarget(architecture: .x86_64).targetTriple + "/"
+                + NucleusLinuxABI.sdkDirectoryName
+                + "/usr/lib/swift/linux:") == true)
+    #expect(
+        armExecution.containerEnvironment["PATH"]?.hasPrefix(
+            "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:") == true)
+    #expect(
+        x86Execution.containerEnvironment["PATH"]?.hasPrefix(
+            "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:") == true)
+    let armTargetLibraryPath = try #require(
+        armExecution.containerEnvironment["NUCLEUS_TARGET_LIBRARY_PATH"])
+    #expect(
+        armTargetLibraryPath.hasPrefix(
             SwiftPMInvocation.ociSwiftSDKDirectory.string
                 + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
                 + NativeLinuxTarget(architecture: .arm64).targetTriple + "/"
                 + NucleusLinuxABI.sdkDirectoryName
-                + "/usr/lib/swift/linux:/opt/swift/usr/lib/swift/linux:"
-                + "/opt/swift-compat/arm64:") == true)
+                + "/usr/lib/swift/linux:"))
+    let armTargetLibraryRoots = armTargetLibraryPath.split(separator: ":").map(
+        String.init)
     #expect(
-        x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
+        armTargetLibraryRoots.dropLast(2).last?.hasSuffix(
+            "/native-sdks/linux-arm64/wayland/lib") == true)
+    #expect(
+        Array(armTargetLibraryRoots.suffix(2))
+            == ["/lib/aarch64-linux-gnu", "/usr/lib/aarch64-linux-gnu"])
+    let x86TargetLibraryPath = try #require(
+        x86Execution.containerEnvironment["NUCLEUS_TARGET_LIBRARY_PATH"])
+    #expect(
+        x86TargetLibraryPath.hasPrefix(
             SwiftPMInvocation.ociSwiftSDKDirectory.string
                 + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
                 + NativeLinuxTarget(architecture: .x86_64).targetTriple + "/"
                 + NucleusLinuxABI.sdkDirectoryName
-                + "/usr/lib/swift/linux:/opt/swift-x86_64/usr/lib/swift/linux:"
-                + "/opt/swift-compat/amd64:") == true)
+                + "/usr/lib/swift/linux:"))
+    let x86TargetLibraryRoots = x86TargetLibraryPath.split(separator: ":").map(
+        String.init)
     #expect(
-        armExecution.containerEnvironment["PATH"]?.hasPrefix(
-            "/opt/swift/usr/bin:") == true)
+        x86TargetLibraryRoots.dropLast(2).last?.hasSuffix(
+            "/native-sdks/linux-x86_64/wayland/lib") == true)
     #expect(
-        x86Execution.containerEnvironment["PATH"]?.hasPrefix(
-            "/opt/swift-x86_64/usr/bin:") == true)
+        Array(x86TargetLibraryRoots.suffix(2))
+            == ["/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu"])
     #expect(armExecution.hostDependencyCache == x86Execution.hostDependencyCache)
     #expect(
         armExecution.hostDependencyCache.string.hasSuffix(
@@ -542,6 +804,32 @@ private func fixtureReactNativeNodeModules(
         ]) == FilePath(ndk.path))
 }
 
+@Test func androidSwiftPMIncludesTheActiveToolchainInteropHeaders() throws {
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: fixtureRepositoryRoot,
+            environment: ["HOME": "/tmp/nucleus-fixture"],
+            runtime: ColliderRuntime()))
+    let inputs = try SwiftTargetSDKInputs.load(
+        from: fixtureRepositoryRoot.appending("swift-sdk/target-sdk-inputs.json"))
+    let toolchain = try AndroidToolchainVersions.load(
+        workspaceRoot: fixtureRepositoryRoot)
+    let swiftSDKRoot = FilePath("/cache/swift-target-sdks/current/swift-sdks")
+    let swiftIncludeRoot = FilePath(
+        "/cache/swift-target-sdks/current/toolchain/usr/include")
+    let invocation = try registry.androidSwiftPMInvocation(
+        toolchain: toolchain,
+        inputs: inputs,
+        swiftSDKRoot: swiftSDKRoot,
+        swiftIncludeRoot: swiftIncludeRoot,
+        swiftExecutable: .path(
+            FilePath("/cache/swift-target-sdks/current/toolchain/usr/bin/swift")))
+
+    let includeFlag = "-I\(swiftIncludeRoot.string)"
+    #expect(invocation.context.cFlags.contains(includeFlag))
+    #expect(invocation.context.cxxFlags.contains(includeFlag))
+}
+
 @Test func runtimeTestSelectionsUseNativeARM64LinuxLane() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
@@ -551,6 +839,17 @@ private func fixtureReactNativeNodeModules(
             environment: [:],
             runtime: ColliderRuntime()))
     let catalog = try registry.componentCatalog()
+    let armBuild = try #require(
+        catalog.tasks.first {
+            $0.id == TaskID(rawValue: "linux.arm64.build")
+        })
+    let x86Build = try #require(
+        catalog.tasks.first {
+            $0.id == TaskID(rawValue: "linux.x86_64.build")
+        })
+    #expect(
+        armBuild.locks == [.checkout("linux-swiftpm-execution")])
+    #expect(x86Build.locks == armBuild.locks)
     let nativeTest = try #require(
         catalog.tasks.first { $0.id == TaskID(rawValue: "linux.arm64.test") })
     let nativeTestRequirement = try #require(nativeTest.swiftTests.first)
@@ -618,7 +917,9 @@ private func fixtureReactNativeNodeModules(
     }
 }
 
-@Test func linuxRuntimeArtifactBuildsOnceThenPublishesTypedOutputs() async throws {
+@Test func linuxRuntimeArtifactsBuildOncePerArchitectureAndPublishTypedOutputs()
+    async throws
+{
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
@@ -631,33 +932,46 @@ private func fixtureReactNativeNodeModules(
         in: catalog,
         entrypoint: .build,
         selection: "linux-runtime")
-    #expect(selected.contains(TaskID(rawValue: "linux.arm64.runtime-artifact")))
-
-    let task = try #require(
-        catalog.tasks.first {
-            $0.id == TaskID(rawValue: "linux.arm64.runtime-artifact")
-        })
-    #expect(
-        Set(task.swiftProducts.map(\.qualifiedProduct)) == [
-            "collider-cli:nucleus-runtime-assembler",
-            "nucleus:NucleusCompositor",
-            "nucleus:NucleusSessionSupervisor",
-            "nucleus:NucleusConfigService",
-            "nucleus:NucleusControlService",
-            "nucleus:NucleusShell",
-            "nucleus:NucleusShellPamHelper",
-            "nucleus:nucleus",
-        ])
-    #expect(task.outputs.count == 2)
-    #expect(task.outputs.allSatisfy { $0.validation == .symlinkTarget })
-    let action = try #require(task.action)
-    #expect(action.kind == "linux.publish-runtime-artifact")
-    let execution = try #require(try await ociExecutions(in: action).first)
-    #expect(execution.executionPlatform == .linuxARM64OCI)
-    #expect(action.requirements.networkAccess == .none)
-    #expect(execution.command.first == "swiftpm")
-    #expect(execution.command.dropFirst().first?.hasSuffix("nucleus-runtime-assembler") == true)
-    #expect(!execution.command.contains("swift"))
+    let expectedProducts = Set([
+        "collider-cli:nucleus-linux-assembler",
+        "nucleus:NucleusCompositor",
+        "nucleus:NucleusSessionSupervisor",
+        "nucleus:NucleusConfigService",
+        "nucleus:NucleusControlService",
+        "nucleus:NucleusShell",
+        "nucleus:NucleusShellPamHelper",
+        "nucleus:nucleus",
+    ])
+    for architecture in PlatformArchitecture.allCases {
+        let id = TaskID(
+            rawValue: "linux.\(architecture.rawValue).runtime-artifact")
+        #expect(selected.contains(id))
+        let task = try #require(catalog.tasks.first { $0.id == id })
+        #expect(Set(task.swiftProducts.map(\.qualifiedProduct)) == expectedProducts)
+        #expect(task.outputs.count == 2)
+        #expect(task.outputs.allSatisfy { $0.validation == .symlinkTarget })
+        let action = try #require(task.action)
+        #expect(action.kind == "linux.publish-runtime-artifact")
+        let execution = try #require(try await ociExecutions(in: action).first)
+        #expect(execution.executionPlatform == .linuxARM64OCI)
+        #expect(execution.artifactTarget.architecture == architecture)
+        #expect(execution.executableRequirements.isEmpty)
+        #expect(action.requirements.networkAccess == .none)
+        #expect(execution.command.first == "swiftpm")
+        #expect(
+            execution.command.dropFirst().first?.hasSuffix(
+                "nucleus-linux-assembler") == true)
+        #expect(execution.command.last == architecture.rawValue)
+        #expect(!execution.command.contains("swift"))
+        #expect(
+            execution.containerEnvironment["LD_LIBRARY_PATH"]
+                == "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64")
+        #expect(
+            execution.containerEnvironment["NUCLEUS_TARGET_LIBRARY_PATH"]?
+                .contains(
+                    "/swift-linux/\(architecture == .arm64 ? "aarch64" : "x86_64")"
+                ) == true)
+    }
 }
 
 @Test func unselectedWorkDoesNotRequireDRMHardware() throws {
@@ -716,25 +1030,27 @@ private func fixtureReactNativeNodeModules(
     let runtimeRoot = repositoryRoot.appending("android-runtime")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: repositoryRoot.appending("collider/images/native-builder"),
         imageID: repositoryRoot.appending(".nucleus/native-builder/image-id"),
         ccache: repositoryRoot.appending(".nucleus/ccache"),
         swiftSDKRoot: repositoryRoot.appending(".nucleus/swift-sdks"),
         environment: environment)
     var imageBuilder = TaskBuilder(
-        id: AndroidRuntimeTaskIDs.gfxstreamTools,
+        id: NativeBuilderTaskIDs.dependencies,
         component: ComponentID(rawValue: "android-runtime"))
     let image: ArtifactReference = try imageBuilder.output(
         "image-id",
         path: FilePath("/cache/gfxstream/image-id"),
         validation: .regularFile)
+    let tool = fixtureMountedEntrypoint(
+        image: image,
+        role: "gfxstream")
     let arm64 = try AndroidRuntimeColliderRecipe.buildGfxstream(
         root: runtimeRoot,
         repositoryRoot: repositoryRoot,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: NativeLinuxTarget(architecture: .arm64),
-        image: image,
+        tool: tool,
         builder: builder
     ).task
     let x8664 = try AndroidRuntimeColliderRecipe.buildGfxstream(
@@ -743,7 +1059,7 @@ private func fixtureReactNativeNodeModules(
         sdkRoot: FilePath("/cache/native-sdk/linux-x86_64"),
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
-        image: image,
+        tool: tool,
         builder: builder
     ).task
 
@@ -758,8 +1074,7 @@ private func fixtureReactNativeNodeModules(
         ])
 
     for task in [arm64, x8664] {
-        #expect(task.dependencies.contains(AndroidRuntimeTaskIDs.gfxstreamTools))
-        #expect(!task.dependencies.contains(NativeBuilderTaskIDs.prepare))
+        #expect(task.dependencies.contains(NativeBuilderTaskIDs.dependencies))
         let executions = try await ociExecutions(in: task.action)
         #expect(executions.count == 2)
         #expect(
@@ -1113,8 +1428,6 @@ private func fixtureReactNativeNodeModules(
         .deletingLastPathComponent()
     let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
     let builder = try fixtureNativeBuilder(
-        context: FilePath(
-            workspace.appendingPathComponent("collider/images/native-builder").path),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1218,7 +1531,6 @@ private func fixtureReactNativeNodeModules(
     }
 
     let builder = try fixtureNativeBuilder(
-        context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1308,7 +1620,6 @@ private func fixtureReactNativeNodeModules(
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
     let builder = try fixtureNativeBuilder(
-        context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1336,7 +1647,7 @@ private func fixtureReactNativeNodeModules(
     #expect(
         Set(gnInstall.dependencies) == [
             CoreTaskIDs.gnDownload,
-            TaskID(rawValue: "native.builder"),
+            NativeBuilderTaskIDs.dependencies,
         ])
     #expect(gnInstall.assessmentPolicy == .incremental)
     let gnExecutions = try await ociExecutions(in: gnInstall.action)
@@ -1361,17 +1672,32 @@ private func fixtureReactNativeNodeModules(
         linuxExecutions[0].command.contains {
             $0.contains(#"cxx="/usr/bin/clang++""#)
         })
-    for task in [
-        linuxTask,
-        try CoreColliderRecipe.buildSkiaAndroid(
-            root: root,
-            sdkRoot: FilePath("/cache/native-sdk/android-arm64"),
-            minimumAndroidAPI: 24,
-            environment: environment,
-            sources: sources,
-            builder: builder
-        ).task,
-    ] {
+    let androidTask = try CoreColliderRecipe.buildSkiaAndroid(
+        root: root,
+        sdkRoot: FilePath("/cache/native-sdk/android-arm64"),
+        minimumAndroidAPI: 24,
+        environment: environment,
+        sources: sources,
+        builder: builder
+    ).task
+    let androidExecutions = try await ociExecutions(in: androidTask.action)
+    #expect(
+        androidExecutions[0].command.contains {
+            $0.contains(#"target_ar="/usr/bin/llvm-ar""#)
+        })
+    #expect(
+        androidExecutions[0].command.contains {
+            $0.contains(
+                #"target_cc="/usr/bin/clang --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
+            )
+        })
+    #expect(
+        androidExecutions[0].command.contains {
+            $0.contains(
+                #"target_cxx="/usr/bin/clang++ --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
+            )
+        })
+    for task in [linuxTask, androidTask] {
         guard let action = task.action else {
             Issue.record("Skia provisioning must be a recipe-owned action")
             continue
@@ -1379,6 +1705,7 @@ private func fixtureReactNativeNodeModules(
         #expect(action.kind == "core.build-skia")
         let executions = try await ociExecutions(in: task.action)
         #expect(executions.count == 3)
+        #expect(executions.allSatisfy { $0.executableRequirements.isEmpty })
         #expect(executions.allSatisfy { $0.imageID == builder.imageID })
         #expect(
             executions.allSatisfy {
@@ -1440,7 +1767,6 @@ private func fixtureReactNativeNodeModules(
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
     let builder = try fixtureNativeBuilder(
-        context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1483,7 +1809,6 @@ private func fixtureReactNativeNodeModules(
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
     let builder = try fixtureNativeBuilder(
-        context: coreRoot.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1522,6 +1847,7 @@ private func fixtureReactNativeNodeModules(
         dependencies: dependencies,
         skiaExternalSources: skiaSources.externalSources,
         icuLibrary: fixtureICULibrary(x8664, root: coreRoot),
+        importedHostTools: armHermes.hostTools,
         builder: builder)
     let armSupport = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: reactNativeRoot,
@@ -1612,7 +1938,6 @@ private func fixtureReactNativeNodeModules(
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1698,7 +2023,7 @@ private func fixtureReactNativeNodeModules(
     }
     #expect(
         Set(runtime.task.dependencies) == [
-            TaskID(rawValue: "native.builder"),
+            NativeBuilderTaskIDs.dependencies,
             TaskID(rawValue: "rn.support.linux-arm64"),
             TaskID(rawValue: "rn.codegen"),
             TaskID(rawValue: "rn.boost"),
@@ -1712,7 +2037,6 @@ private func fixtureReactNativeNodeModules(
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1726,6 +2050,7 @@ private func fixtureReactNativeNodeModules(
         skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(
             NativeLinuxTarget(architecture: .x86_64)),
+        importedHostTools: fixtureHermesHostTools(),
         builder: builder
     ).task
     guard let action = task.action else {
@@ -1746,6 +2071,14 @@ private func fixtureReactNativeNodeModules(
             "-DJSI_DIR=/react-native/ReactCommon/jsi"
         ))
     #expect(
+        configure.command.contains(
+            "-DIMPORT_HOST_COMPILERS=/host-hermes/ImportHostCompilers.cmake"
+        ))
+    #expect(
+        configure.mounts.contains(where: {
+            $0.target == "/host-hermes" && $0.isReadOnly
+        }))
+    #expect(
         task.dependencies.contains(
             TaskID(rawValue: "rn.javascript-dependencies")))
     #expect(build.command.contains("ninja"))
@@ -1764,10 +2097,7 @@ private func fixtureReactNativeNodeModules(
     #expect(
         task.dependencies.contains(
             TaskID(rawValue: "core.skia.linux-x86_64")))
-    #expect(
-        executions.allSatisfy {
-            $0.intelBinaryTranslationPolicy == .required
-        })
+    #expect(executions.allSatisfy { $0.executableRequirements.isEmpty })
 }
 
 @Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() async throws {
@@ -1776,7 +2106,6 @@ private func fixtureReactNativeNodeModules(
     let x86SDKRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1801,12 +2130,12 @@ private func fixtureReactNativeNodeModules(
 
     #expect(
         Set(arm.dependencies) == [
-            TaskID(rawValue: "native.builder"),
+            NativeBuilderTaskIDs.dependencies,
             TaskID(rawValue: "swift-sdk.activate-target-sdks"),
         ])
     #expect(
         Set(x86.dependencies) == [
-            TaskID(rawValue: "native.builder"),
+            NativeBuilderTaskIDs.dependencies,
             TaskID(rawValue: "swift-sdk.activate-target-sdks"),
             TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
         ])
@@ -1836,7 +2165,7 @@ private func fixtureReactNativeNodeModules(
 
     #expect(armConfigure.executionPlatform == .linuxARM64OCI)
     #expect(armConfigure.artifactTarget == .linuxARM64)
-    #expect(armConfigure.intelBinaryTranslationPolicy == .disabled)
+    #expect(armConfigure.executableRequirements.isEmpty)
     #expect(armConfigure.command.contains("--prefix=/native-wayland"))
     #expect(
         Set(armConfigure.persistentWorkspaceMounts.map(\.target)) == ["/build", "/ccache"])
@@ -1846,7 +2175,7 @@ private func fixtureReactNativeNodeModules(
 
     #expect(x86Configure.executionPlatform == .linuxARM64OCI)
     #expect(x86Configure.artifactTarget == .linuxX86_64)
-    #expect(x86Configure.intelBinaryTranslationPolicy == .required)
+    #expect(x86Configure.executableRequirements.isEmpty)
     #expect(x86Configure.command.contains("--prefix=/sdk"))
     #expect(x86Configure.command.contains("--cross-file=/build-support/linux-x86_64.ini"))
     #expect(
@@ -1890,7 +2219,6 @@ private func fixtureReactNativeNodeModules(
     let target = NativeLinuxTarget(architecture: .x86_64)
     let environment = ["PATH": "/usr/bin"]
     let builder = try fixtureNativeBuilder(
-        context: FilePath("/workspace/collider/images/native-builder"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
@@ -1913,6 +2241,7 @@ private func fixtureReactNativeNodeModules(
         dependencies: dependencies,
         skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(target),
+        importedHostTools: fixtureHermesHostTools(),
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root,
@@ -1963,20 +2292,18 @@ private func fixtureReactNativeNodeModules(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     var buildImageBuilder = TaskBuilder(
-        id: AndroidRuntimeTaskIDs.aospBuildTools,
+        id: NativeBuilderTaskIDs.dependencies,
         component: ComponentID(rawValue: "fixture"))
     let buildImage: ArtifactReference = try buildImageBuilder.output(
         "image",
         path: FilePath("/cache/aosp/build-image-id"),
         validation: .regularFile)
-    var artifactImageBuilder = TaskBuilder(
-        id: AndroidRuntimeTaskIDs.aospArtifactTools,
-        component: ComponentID(rawValue: "fixture"))
-    let artifactImage: ArtifactReference =
-        try artifactImageBuilder.output(
-            "image",
-            path: FilePath("/cache/aosp/artifact-image-id"),
-            validation: .regularFile)
+    let buildTool = fixtureMountedEntrypoint(
+        image: buildImage,
+        role: "aosp-build")
+    let artifactTool = fixtureMountedEntrypoint(
+        image: buildImage,
+        role: "aosp-artifact")
     let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
         root: FilePath(
             workspace.appendingPathComponent(
@@ -1984,8 +2311,8 @@ private func fixtureReactNativeNodeModules(
             ).path),
         sourceInputRoot: FilePath("/cache/aosp/source-inputs"),
         artifactRoot: FilePath("/artifacts/aosp"),
-        buildImage: buildImage,
-        artifactImage: artifactImage,
+        buildTool: buildTool,
+        artifactTool: artifactTool,
         environment: [
             "NUCLEUS_BUILD_ROOT": "/build-root",
             "PATH": "/usr/bin",
@@ -2017,14 +2344,10 @@ private func fixtureReactNativeNodeModules(
     #expect(productTasks[0].assessmentPolicy == .incremental)
     #expect(
         productTasks[0].dependencies.contains(
-            AndroidRuntimeTaskIDs.aospBuildTools))
-    #expect(
-        !productTasks[0].dependencies.contains(
-            AndroidRuntimeTaskIDs.aospArtifactTools))
+            NativeBuilderTaskIDs.dependencies))
     #expect(
         productTasks.dropFirst().dropLast().allSatisfy {
-            $0.dependencies.contains(AndroidRuntimeTaskIDs.aospArtifactTools)
-                && !$0.dependencies.contains(AndroidRuntimeTaskIDs.aospBuildTools)
+            $0.dependencies.contains(NativeBuilderTaskIDs.dependencies)
         })
     let publication = try #require(tasks.last)
     let publicationPaths = publication.outputs.map(\.path)

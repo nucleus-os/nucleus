@@ -2,8 +2,8 @@
 
 Status: active
 
-Execution position: Phase 1 is complete. Phases 2 through 10 follow the
-production artifact, package, CI, publication, distribution-qualification, and
+Execution position: Phases 1 and 2 are complete. Phases 3 through 10 follow the
+production package, CI, publication, distribution-qualification, and
 development-deployment sequence in the root documentation inventory. The
 contributor workflow reuses portable identity primitives without becoming a
 production artifact, release path, or CI cache.
@@ -66,9 +66,11 @@ The third-party application SDK is a separate external compatibility boundary.
 Its versioning, API documentation, source-compatibility policy, and SwiftPM
 distribution do not belong to this plan.
 
-The translated amd64 Swift compiler on the M2 Ultra is also separate. Replacing
-it with a genuine arm64-hosted cross-compile is a macOS build optimization, not
-a prerequisite for native x86_64 Linux development.
+The M2 Ultra runs the arm64 Swift compiler and Nucleus-patched arm64
+SwiftPM/SwiftBuild natively for both Linux lanes. The x86_64 lane is a genuine
+cross-compile selected by its target SDK; it does not run an amd64 Swift compiler
+or SwiftPM process through translation. This remains separate from native
+x86_64 Linux development.
 
 ## Current State
 
@@ -86,14 +88,30 @@ Collider currently builds only on macOS arm64:
 
 Most x86_64 C and C++ work is already a conventional cross-compile in the
 arm64 guest. Skia, Wayland, gfxstream guest libraries, and the React Native C++
-stack use arm64 host tools while producing x86_64 objects. Hermes alone runs its
-newly built x86_64 `hermesc` for `InternalBytecode`; upstream Hermes already
-provides `IMPORT_HOST_COMPILERS` for this case.
+stack use arm64 host tools while producing x86_64 objects. Hermes builds and
+publishes arm64 `hermesc` and `shermes` once, then supplies them through upstream
+`IMPORT_HOST_COMPILERS` to both target lanes.
 
-Chromium/CEF, AOSP, and the Linux Android NDK ship x86_64-only Linux host tools.
-They require translation on the M2 Ultra but run natively on an x86_64 Linux
-host. The translated x86_64 Swift lane remains an intentional macOS execution
-path until the independent Swift cross-compilation work replaces it.
+Chromium build/test and AOSP product operations still execute x86_64-only Linux
+host tools. They require translation on the M2 Ultra but run natively on an
+x86_64 Linux host. Android Skia uses arm64 Clang against the Android NDK sysroot;
+the x86_64 Swift lane uses the arm64 host toolchain with the x86_64 target SDK.
+Only third-party x86_64 host tools that lack arm64 equivalents require
+translation on the M2 Ultra.
+
+Collider now separates guest platform, artifact target, and executable
+requirements. AOSP source materialization, Linux Skia, Wayland, React Native,
+gfxstream, runtime publication, browser staging and validation, and CEF
+validation and archive assembly run arm64 tools without translation while
+producing or inspecting x86_64 artifacts. Runtime publication uses static ELF
+closure inspection and never executes the target loader. Hermes publishes and
+imports arm64 host compilers for both target lanes. Remaining translated AOSP
+and Chromium operations name the exact x86_64 executable that requires it.
+
+The builder graph also avoids entrypoint-only OCI derivatives. AOSP,
+gfxstream, Chromium, and target-runtime actions mount hashed operational scripts
+read-only over stable dependency images. A script edit invalidates its consumer
+without importing and unpacking another copy of the heavyweight parent layers.
 
 Collider produces build inputs locally but cannot resolve finished build inputs
 from a publisher. Its action identities canonicalize the checkout and cache
@@ -120,7 +138,37 @@ workflow inspection finds no Linux runner, Collider setup, build, or test step;
 and the generated Collider skill and current-state documents make no supported
 Linux-host claim.
 
-## Phase 2: Define Portable Published-Input Identity
+## Phase 2: Model Executable Architecture Per Action
+
+Status: complete.
+
+Guest platform, produced artifact target, and executable architecture are now
+independent. `NativeLinuxTarget.intelBinaryTranslationPolicy` and the
+target-derived translation model are deleted. Actions declare exact foreign
+executables, and Apple Container enables Rosetta only when one of those
+declarations cannot run natively.
+
+Linux Skia, Android Skia, Wayland, React Native, Hermes, gfxstream, runtime
+publication, native package assembly, AOSP source materialization, browser
+staging/validation, CEF validation/archive assembly, and traced
+`cef-make-distrib` execute arm64 host tools. Pure-cross-build helpers no longer
+accept executable-requirement passthroughs. Runtime publication inspects ELF
+metadata without executing target loaders, CEF validation uses arm64 Clang, and
+Hermes imports separately published arm64 host compilers for both target lanes.
+
+The only translated domains are Chromium build/test commands that name their
+checked-in x86_64 GN, Siso, and Clang tools, and AOSP build/signing/image
+commands that name their x86_64 JDK, Soong, or `out/host/linux-x86` tools.
+
+Gate evidence: the dual-architecture native/package graph succeeded in run
+`2026-08-16T16-22-13.643Z-8454`; the complete Android native package, including
+Android Skia and the Swift/C++ host library, succeeded in run
+`2026-08-16T15-54-54.335Z-81451`; Collider tests assert empty executable
+requirements for every pure cross-compile and artifact action; and the source
+audit finds executable requirements only in the named Chromium and AOSP
+domains.
+
+## Phase 3: Define Portable Published-Input Identity
 
 Reuse the canonical identity, platform, and digest primitives established by
 Phase 1 of the
@@ -151,29 +199,6 @@ semantic build input must change the identity.
 
 Gate: every allowlisted input has one machine-independent identity and manifest,
 and no non-allowlisted task can request publication or remote resolution.
-
-## Phase 3: Model Executable Architecture Per Action
-
-Build host-native Hermes `hermesc` and `shermes`, publish their
-`ImportHostCompilers.cmake` inside the native build graph, mount that host-tools
-generation separately from the target build, and configure every cross-built
-Hermes target with `IMPORT_HOST_COMPILERS`.
-
-Delete `NativeLinuxTarget.intelBinaryTranslationPolicy`. Replace
-`OCIIntelBinaryTranslationPolicy` with an executor-neutral declaration of the
-executable architectures an action requires. Keep guest architecture, executed
-tool architecture, runner capability, and produced artifact target as distinct
-values. The executor selects native execution when possible and translation
-only when a declared executable cannot run natively.
-
-Declare the remaining translated M2 Ultra actions explicitly: the x86_64 Swift
-build and test lanes, Chromium/CEF host tools, AOSP host tools, and the Linux
-Android NDK used by the Android Skia build. Pure C and C++ cross-compiles do not
-request translation.
-
-Gate: the native SDK builds both architectures with host-native Hermes tools;
-translation is absent from pure cross-compiles; and every translated action
-names the foreign executable requirement that justifies it.
 
 ## Phase 4: Make Execution and Workspace Contracts Backend-Neutral
 
@@ -218,7 +243,7 @@ glibc and libc++ contracts.
 ## Phase 6: Publish and Resolve Contributor Build Inputs
 
 Publish each allowlisted non-image input as an OCI artifact in GHCR with
-component-specific media types and the Phase 2 manifest. Split large payloads
+component-specific media types and the Phase 3 manifest. Split large payloads
 only at natural independently verified component boundaries; no OCI layer may
 exceed [GHCR's 10 GB layer
 limit](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).

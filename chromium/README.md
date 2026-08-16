@@ -9,7 +9,6 @@ collider doctor browser
 collider bootstrap browser
 collider build browser
 collider test browser
-collider install browser
 ```
 
 `bootstrap` prepares host-owned downloads and source. `build` compiles,
@@ -92,6 +91,13 @@ CEF publishes beneath `~/.cache/nucleus/cef/dist/linux-arm64` and
 `~/.cache/nucleus/cef/browser-dist/linux-x86_64`. Each target has its own
 validated `current` symlink.
 
+Each browser `current` symlink resolves to a generation named by the complete
+payload tree digest. The corresponding `BrowserPackageInputManifest` binds that
+exact generation, target architecture, payload digest, and build-manifest
+digest. Native package assembly consumes this typed input without rebuilding or
+patching the browser. Development diagnostics consume the validated publication
+directly.
+
 Artifact validation uses the matching Chromium target sysroot and dynamic
 loader. The arm64 artifacts execute natively; x86_64 artifacts execute through
 macOS 27 Intel binary translation. CEF validation cross-compiles, links, and
@@ -99,9 +105,8 @@ runs a real consumer for each target. Browser validation resolves the shipped
 runtime and executes the browser version path for each target. Focused Ozone
 and Viz tests execute in the same target-specific workspaces.
 
-`collider install browser` installs the x86_64 desktop browser generation and
-its Linux x64 Widevine payload. Dual-architecture build and publication do not
-change that existing local installation contract.
+Collider does not install the browser or model a browser prefix. APT, DNF, and
+pacman receive the browser only through the native package cohort.
 
 Live Wayland, GPU, media, sandbox, Widevine, 120 Hz, and hardware behavior
 remain explicit user-owned qualification after automated build and test gates.

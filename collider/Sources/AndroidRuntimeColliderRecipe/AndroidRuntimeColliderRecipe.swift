@@ -3,18 +3,6 @@ import Foundation
 import NativeBuilderColliderRecipe
 import SystemPackage
 
-private enum AOSPBuildImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "android-runtime.prepare-aosp-build-image"
-}
-
-private enum AOSPArtifactImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "android-runtime.prepare-aosp-artifact-image"
-}
-
-private enum GfxstreamImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "android-runtime.prepare-gfxstream-image"
-}
-
 package enum AndroidRuntimeEntrypoints {
     package static let packageAddon = ComponentEntrypointID(
         rawValue: "package.android-addon")
@@ -27,13 +15,6 @@ package enum AndroidRuntimeTaskIDs {
     package static let aospSourceInputs = TaskID(
         rawValue: "android-runtime.aosp-source-inputs")
     package static let aospImage = TaskID(rawValue: "android-runtime.aosp-image")
-    package static let aospBuildTools = TaskID(
-        rawValue: "android-runtime.aosp-build-tools")
-    package static let aospArtifactTools = TaskID(
-        rawValue: "android-runtime.aosp-artifact-tools")
-    package static let gfxstreamTools = TaskID(
-        rawValue: "android-runtime.gfxstream-tools")
-
     package static func gfxstream(_ target: NativeLinuxTarget) -> TaskID {
         TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)")
     }
@@ -106,16 +87,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     }
 
     private struct AOSPContainerArtifacts {
-        let tasks: [TaskDeclaration]
-        let buildImage: ArtifactReference
-        let artifactImage: ArtifactReference
-        let cacheRoot: FilePath
+        let build: OCIMountedEntrypoint
+        let artifact: OCIMountedEntrypoint
     }
 
     private struct GfxstreamContainerArtifacts {
-        let task: TaskDeclaration
-        let image: ArtifactReference
-        let cacheRoot: FilePath
+        let tool: OCIMountedEntrypoint
     }
 
     private struct AssembleArtifacts {
@@ -144,27 +121,21 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let aospBuildRoot = context.artifactRoot.appending("android-runtime/aosp")
-        let aospContainers = try aospContainerTasks(
+        let aospContainers = aospContainerArtifacts(
             root: root,
-            cacheRoot: context.cacheRoot.appending(
-                "android-runtime/build-container"),
-            dependencyImage: native.builder.dependencyImage,
-            environment: context.environment)
+            image: native.builder.image)
         let aosp = try aospImageTasks(
             root: root,
             sourceInputRoot: context.cacheRoot.appending(
                 "android-runtime/aosp-source-inputs"),
             artifactRoot: aospBuildRoot,
-            buildImage: aospContainers.buildImage,
-            artifactImage: aospContainers.artifactImage,
+            buildTool: aospContainers.build,
+            artifactTool: aospContainers.artifact,
             environment: context.environment)
-        let gfxstreamContainer = try gfxstreamContainerTask(
+        let gfxstreamContainer = gfxstreamContainerArtifacts(
             root: root,
-            cacheRoot: context.cacheRoot.appending(
-                "android-runtime/gfxstream-build-container"),
-            dependencyImage: native.builder.dependencyImage,
-            environment: context.environment)
-        var tasks = aospContainers.tasks + aosp.tasks + [gfxstreamContainer.task]
+            image: native.builder.image)
+        var tasks = aosp.tasks
         var gfxstreamRoots: Set<TaskID> = []
         var gfxstreamArtifacts: [NativeLinuxTarget: GfxstreamArtifacts] = [:]
         for architecture in PlatformArchitecture.allCases {
@@ -175,7 +146,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 sdkRoot: native.nativeSDK(for: target),
                 environment: context.environment,
                 target: target,
-                image: gfxstreamContainer.image,
+                tool: gfxstreamContainer.tool,
                 builder: native.builder)
             tasks.append(artifacts.task)
             gfxstreamRoots.insert(artifacts.task.id)
@@ -268,23 +239,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 safetyRoot: root,
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
-                id: "android-aosp-container-tools",
-                owner: descriptor.id,
-                producers: Set(
-                    aospContainers.tasks.map { StorageProducer.task($0.id) }),
-                storageClass: .cache,
-                root: aospContainers.cacheRoot,
-                safetyRoot: aospContainers.cacheRoot.removingLastComponent(),
-                retentionPolicy: .singleWorkingSet),
-            StorageDeclaration(
-                id: "android-gfxstream-container-tools",
-                owner: descriptor.id,
-                producers: [.task(gfxstreamContainer.task.id)],
-                storageClass: .cache,
-                root: gfxstreamContainer.cacheRoot,
-                safetyRoot: gfxstreamContainer.cacheRoot.removingLastComponent(),
-                retentionPolicy: .singleWorkingSet),
-            StorageDeclaration(
                 id: "android-aosp-artifact-root",
                 owner: descriptor.id,
                 producers: [.task(AndroidRuntimeTaskIDs.aospImage)],
@@ -309,6 +263,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 safetyRoot: aospBuildRoot,
                 retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                 activeGenerationLink: aospBuildRoot.appending("current"),
+                generationNaming: .aospProduct,
                 interruptedCandidateNaming: nil),
         ]
         for architecture in PlatformArchitecture.allCases {
@@ -406,134 +361,39 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         return SourceLockArtifacts(task: task, verification: verification)
     }
 
-    private static func aospContainerTasks(
+    private static func aospContainerArtifacts(
         root: FilePath,
-        cacheRoot: FilePath,
-        dependencyImage: ArtifactReference,
-        environment: [String: String]
-    ) throws -> AOSPContainerArtifacts {
+        image: ArtifactReference
+    ) -> AOSPContainerArtifacts {
         let sourceRoot = root.appending("build-container")
-        let buildEntrypoint = sourceRoot.appending("build-entrypoint.sh")
-        let artifactEntrypoint = sourceRoot.appending(
-            "artifact-entrypoint.sh")
-        let buildContext = cacheRoot.appending("build-context")
-        let artifactContext = cacheRoot.appending("artifact-context")
-        let buildImageID = cacheRoot.appending("build-image-id")
-        let artifactImageID = cacheRoot.appending("artifact-image-id")
-
-        var buildBuilder = TaskBuilder(
-            id: AndroidRuntimeTaskIDs.aospBuildTools,
-            component: component)
-        buildBuilder.consume(dependencyImage)
-        let buildImage: ArtifactReference = try buildBuilder.output(
-            "image-id",
-            path: buildImageID,
-            validation: .regularFile)
-        let buildTask = buildBuilder.build(
-            inputs: [.file(buildEntrypoint)],
-            locks: [.checkout("android-runtime-aosp-build-image")],
-            action: try AnyColliderAction(
-                PrepareOCIEntrypointImageAction<AOSPBuildImageActionKind>(
-                    baseImageID: dependencyImage.path,
-                    entrypoint: buildEntrypoint,
-                    entrypointDestination: "/usr/local/bin/nucleus-aosp-build",
-                    generatedContext: buildContext,
-                    preparation: OCIImagePreparation(
-                        executionPlatform: .linuxARM64OCI,
-                        context: buildContext,
-                        containerFile: buildContext.appending("Containerfile"),
-                        imageID: buildImageID,
-                        imageName: "localhost/nucleus-aosp-build",
-                        baseImageSource: .local,
-                        localBaseImageID: dependencyImage.path,
-                        environment: environment))))
-
-        var artifactBuilder = TaskBuilder(
-            id: AndroidRuntimeTaskIDs.aospArtifactTools,
-            component: component)
-        artifactBuilder.consume(dependencyImage)
-        let artifactImage: ArtifactReference =
-            try artifactBuilder.output(
-                "image-id",
-                path: artifactImageID,
-                validation: .regularFile)
-        let artifactTask = artifactBuilder.build(
-            inputs: [.file(artifactEntrypoint)],
-            locks: [.checkout("android-runtime-aosp-artifact-image")],
-            action: try AnyColliderAction(
-                PrepareOCIEntrypointImageAction<AOSPArtifactImageActionKind>(
-                    baseImageID: dependencyImage.path,
-                    entrypoint: artifactEntrypoint,
-                    entrypointDestination:
-                        "/usr/local/bin/nucleus-aosp-artifact",
-                    generatedContext: artifactContext,
-                    preparation: OCIImagePreparation(
-                        executionPlatform: .linuxARM64OCI,
-                        context: artifactContext,
-                        containerFile: artifactContext.appending(
-                            "Containerfile"),
-                        imageID: artifactImageID,
-                        imageName: "localhost/nucleus-aosp-artifact",
-                        baseImageSource: .local,
-                        localBaseImageID: dependencyImage.path,
-                        environment: environment))))
-
         return AOSPContainerArtifacts(
-            tasks: [buildTask, artifactTask],
-            buildImage: buildImage,
-            artifactImage: artifactImage,
-            cacheRoot: cacheRoot)
+            build: OCIMountedEntrypoint(
+                image: image,
+                executable: sourceRoot.appending("build-entrypoint.sh"),
+                containerDirectory: "/collider-entrypoints/aosp-build"),
+            artifact: OCIMountedEntrypoint(
+                image: image,
+                executable: sourceRoot.appending("artifact-entrypoint.sh"),
+                containerDirectory: "/collider-entrypoints/aosp-artifact"))
     }
 
-    private static func gfxstreamContainerTask(
+    private static func gfxstreamContainerArtifacts(
         root: FilePath,
-        cacheRoot: FilePath,
-        dependencyImage: ArtifactReference,
-        environment: [String: String]
-    ) throws -> GfxstreamContainerArtifacts {
-        let entrypoint = root.appending(
-            "gfxstream-build-container/entrypoint.sh")
-        let generatedContext = cacheRoot.appending("context")
-        let imageID = cacheRoot.appending("image-id")
-        var builder = TaskBuilder(
-            id: AndroidRuntimeTaskIDs.gfxstreamTools,
-            component: component)
-        builder.consume(dependencyImage)
-        let image: ArtifactReference = try builder.output(
-            "image-id",
-            path: imageID,
-            validation: .regularFile)
-        let task = builder.build(
-            inputs: [.file(entrypoint)],
-            locks: [.checkout("android-runtime-gfxstream-image")],
-            action: try AnyColliderAction(
-                PrepareOCIEntrypointImageAction<GfxstreamImageActionKind>(
-                    baseImageID: dependencyImage.path,
-                    entrypoint: entrypoint,
-                    entrypointDestination:
-                        "/usr/local/bin/nucleus-gfxstream-build",
-                    generatedContext: generatedContext,
-                    preparation: OCIImagePreparation(
-                        executionPlatform: .linuxARM64OCI,
-                        context: generatedContext,
-                        containerFile: generatedContext.appending(
-                            "Containerfile"),
-                        imageID: imageID,
-                        imageName: "localhost/nucleus-gfxstream-build",
-                        baseImageSource: .local,
-                        localBaseImageID: dependencyImage.path,
-                        environment: environment))))
+        image: ArtifactReference
+    ) -> GfxstreamContainerArtifacts {
         return GfxstreamContainerArtifacts(
-            task: task,
-            image: image,
-            cacheRoot: cacheRoot)
+            tool: OCIMountedEntrypoint(
+                image: image,
+                executable: root.appending(
+                    "gfxstream-build-container/entrypoint.sh"),
+                containerDirectory: "/collider-entrypoints/gfxstream"))
     }
 
     private static func aospSourceArtifacts(
         root: FilePath,
         sourceInputRoot: FilePath,
         sourceStateRoot: FilePath,
-        buildImage: ArtifactReference,
+        buildTool: OCIMountedEntrypoint,
         apiLevel: UInt32,
         environment: [String: String]
     ) throws -> SourceArtifacts {
@@ -555,7 +415,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             sourceStateRoot: sourceStateRoot,
             sourceWorkspace: aospSourceWorkspace(apiLevel: apiLevel),
             sourceInputs: inputs,
-            buildImage: buildImage,
+            buildTool: buildTool,
             environment: environment,
             launcher: launcher.executable)
         return SourceArtifacts(
@@ -568,8 +428,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         root: FilePath,
         sourceInputRoot: FilePath,
         artifactRoot: FilePath,
-        buildImage: ArtifactReference,
-        artifactImage: ArtifactReference,
+        buildTool: OCIMountedEntrypoint,
+        artifactTool: OCIMountedEntrypoint,
         environment: [String: String]
     ) throws -> AOSPImageArtifacts {
         let productLock = try JSONDecoder().decode(
@@ -582,7 +442,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             root: root,
             sourceInputRoot: sourceInputRoot,
             sourceStateRoot: artifactRoot.appending("source-state"),
-            buildImage: buildImage,
+            buildTool: buildTool,
             apiLevel: productLock.platformSDK,
             environment: environment)
         let signing = try aospSigningIdentity(
@@ -595,8 +455,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             environment: environment,
             sourceProvenance: source.provenance,
             signing: signing,
-            buildImage: buildImage,
-            artifactImage: artifactImage)
+            buildTool: buildTool,
+            artifactTool: artifactTool)
         return AOSPImageArtifacts(
             tasks: source.tasks + [signing.task] + product.tasks,
             activeGeneration: product.activeGeneration)
@@ -707,7 +567,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         sourceStateRoot: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         sourceInputs: SourceInputArtifacts,
-        buildImage: ArtifactReference,
+        buildTool: OCIMountedEntrypoint,
         environment: [String: String],
         launcher: ArtifactReference
     ) throws -> SourceTaskArtifacts {
@@ -719,7 +579,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         builder.consume(sourceInputs.resolvedManifest)
         builder.consume(sourceInputs.provenance)
         builder.consume(launcher)
-        builder.consume(buildImage)
+        builder.consume(buildTool.image)
         let _: ArtifactReference = try builder.output(
             "resolved-manifest",
             path: state.appending("resolved-manifest.xml"),
@@ -732,6 +592,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             inputs: [
                 .file(root.appending("aosp.lock.json")),
                 .file(root.appending("build-container/materialize-source.sh")),
+                buildTool.input,
             ],
             locks: [.checkout("android-runtime-aosp-source")],
             assessmentPolicy: .incremental,
@@ -747,7 +608,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                             "resolved-manifest.xml"),
                         exportedProvenance: provenance.path,
                         script: root.appending("build-container/materialize-source.sh"),
-                        imageID: buildImage.path,
+                        entrypoint: buildTool,
                         sourceWorkspace: sourceWorkspace,
                         syncJobs: 24,
                         environment: environment))))
@@ -807,8 +668,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         environment: [String: String],
         sourceProvenance: ArtifactReference,
         signing: SigningArtifacts,
-        buildImage: ArtifactReference,
-        artifactImage: ArtifactReference
+        buildTool: OCIMountedEntrypoint,
+        artifactTool: OCIMountedEntrypoint
     ) throws -> PublishedAOSPArtifacts {
         let lockPath = root.appending("aosp-product.lock.json")
         let lock = try JSONDecoder().decode(
@@ -864,8 +725,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             outputWorkspace: aospOutputWorkspace(apiLevel: lock.platformSDK),
             compilerCacheWorkspace: aospCompilerCacheWorkspace(
                 apiLevel: lock.platformSDK),
-            buildImageID: buildImage.path,
-            artifactImageID: artifactImage.path,
+            buildEntrypoint: buildTool,
+            artifactEntrypoint: artifactTool,
             signingIdentity: signingIdentity,
             product: lock.product,
             release: lock.release,
@@ -882,7 +743,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "android-runtime.aosp-compile"),
             component: component)
         compileBuilder.consume(sourceProvenance)
-        compileBuilder.consume(buildImage)
+        compileBuilder.consume(buildTool.image)
         let unsignedReference: ArtifactReference = try compileBuilder.output(
             "unsigned-target-files",
             path: unsigned,
@@ -906,6 +767,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     root.appending(
                         "aosp/packages/apps/NucleusRuntimeBridge")),
                 .tool(.named("python3")),
+                buildTool.input,
             ],
             locks: [
                 .checkout("android-runtime-aosp-source"),
@@ -924,7 +786,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         signBuilder.consume(signing.identity)
         signBuilder.consume(signing.directory)
         signBuilder.consume(compile.unsignedTargetFiles)
-        signBuilder.consume(artifactImage)
+        signBuilder.consume(artifactTool.image)
         let stagedTargetFilesReference: ArtifactReference =
             try signBuilder.output(
                 "staged-target-files",
@@ -936,6 +798,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     name: "aosp-product-identity",
                     bytes: productIdentity),
                 .tool(.named("openssl")),
+                artifactTool.input,
             ],
             locks: [
                 .checkout("android-runtime-aosp-source"),
@@ -949,7 +812,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
             component: component)
         assembleBuilder.consume(stagedTargetFilesReference)
-        assembleBuilder.consume(artifactImage)
+        assembleBuilder.consume(artifactTool.image)
         let stagedArchiveReference: ArtifactReference =
             try assembleBuilder.output(
                 "image-archive",
@@ -968,6 +831,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     name: "aosp-product-identity",
                     bytes: productIdentity),
                 .tool(.named("unzip")),
+                artifactTool.input,
             ],
             locks: [
                 .checkout("android-runtime-aosp-source"),
@@ -988,7 +852,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         validateBuilder.consume(signing.identity)
         validateBuilder.consume(assemble.targetFiles)
         validateBuilder.consume(assemble.imageArchive)
-        validateBuilder.consume(artifactImage)
+        validateBuilder.consume(artifactTool.image)
         for image in assemble.images {
             validateBuilder.consume(image)
         }
@@ -1010,6 +874,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                         "ipc/transport/Sources/NucleusIPCTransportC")),
                 .tool(.named("openssl")),
                 .tool(.named("unzip")),
+                artifactTool.input,
             ],
             locks: [
                 .checkout("android-runtime-aosp-source"),
@@ -1087,7 +952,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
-        image: ArtifactReference,
+        tool: OCIMountedEntrypoint,
         builder: NativeOCIConfiguration
     ) throws -> GfxstreamArtifacts {
         let artifactRoot = sdkRoot.appending("android/gfxstream")
@@ -1127,7 +992,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         var task = TaskBuilder(
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component)
-        task.consume(image)
+        task.consume(tool.image)
         task.consume(builder.swiftSDK)
         let hostBackend: ArtifactReference = try task.output(
             "host-backend",
@@ -1141,6 +1006,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             inputs: [
                 .sourceCheckout(hostSource),
                 .sourceCheckout(guestSource),
+                tool.input,
             ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
@@ -1159,7 +1025,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 buildWorkspace: buildWorkspace,
                                 compilerCacheWorkspace: compilerCacheWorkspace,
                                 target: target,
-                                imageID: image.path,
+                                tool: tool,
                                 builder: builder,
                                 environment: environment,
                                 command: [
@@ -1188,7 +1054,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 buildWorkspace: buildWorkspace,
                                 compilerCacheWorkspace: compilerCacheWorkspace,
                                 target: target,
-                                imageID: image.path,
+                                tool: tool,
                                 builder: builder,
                                 environment: environment,
                                 command: [
@@ -1263,7 +1129,7 @@ private func gfxstreamExecution(
     buildWorkspace: PersistentWorkspaceDeclaration,
     compilerCacheWorkspace: PersistentWorkspaceDeclaration,
     target: NativeLinuxTarget,
-    imageID: FilePath,
+    tool: OCIMountedEntrypoint,
     builder: NativeOCIConfiguration,
     environment: [String: String],
     command: [String]
@@ -1271,11 +1137,12 @@ private func gfxstreamExecution(
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
-        imageID: imageID,
+        imageID: tool.image.path,
         hostname: "native-gfxstream-\(target.architecture.rawValue)",
         workingDirectory: "/build",
         hostWorkingDirectory: root,
         mounts: [
+            tool.mount,
             OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
             OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
             OCIMount(boundedExport: artifactRoot, target: "/export"),
@@ -1302,7 +1169,6 @@ private func gfxstreamExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
         resourceLimits: .parallelBuild,
         containerEnvironment: [
             "CC": "/usr/bin/clang",
@@ -1316,6 +1182,7 @@ private func gfxstreamExecution(
             "PKG_CONFIG_LIBDIR":
                 "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
         ],
+        imageEntrypointOverride: tool.containerPath,
         command: command,
         environment: environment,
         output: .logged)

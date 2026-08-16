@@ -87,6 +87,7 @@ public struct StorageDeclaration: Hashable, Sendable {
     public let safetyRoot: FilePath
     public let retentionPolicy: StorageRetentionPolicy
     public let activeGenerationLink: FilePath?
+    public let generationNaming: DirectoryNamePattern?
     public let interruptedCandidateNaming: DirectoryNamePattern?
 
     public init(
@@ -98,6 +99,7 @@ public struct StorageDeclaration: Hashable, Sendable {
         safetyRoot: FilePath,
         retentionPolicy: StorageRetentionPolicy,
         activeGenerationLink: FilePath? = nil,
+        generationNaming: DirectoryNamePattern? = nil,
         interruptedCandidateNaming: DirectoryNamePattern? = nil
     ) {
         self.id = id
@@ -108,6 +110,7 @@ public struct StorageDeclaration: Hashable, Sendable {
         self.safetyRoot = safetyRoot
         self.retentionPolicy = retentionPolicy
         self.activeGenerationLink = activeGenerationLink
+        self.generationNaming = generationNaming
         self.interruptedCandidateNaming = interruptedCandidateNaming
     }
 }
@@ -189,10 +192,11 @@ public enum StorageCatalog {
             switch declaration.retentionPolicy {
             case .keepActiveAndRollback:
                 guard declaration.storageClass == .generation,
-                    declaration.activeGenerationLink != nil
+                    declaration.activeGenerationLink != nil,
+                    declaration.generationNaming != nil
                 else {
                     throw StorageCatalogFailure.invalid(
-                        "generation retention requires generation storage with an active link: "
+                        "generation retention requires generation storage with an active link and naming contract: "
                             + declaration.id)
                 }
             case .boundedHistory:
@@ -250,6 +254,13 @@ public enum StorageCatalog {
             {
                 throw StorageCatalogFailure.invalid(
                     "only generation storage may declare an active link: \(declaration.id)")
+            }
+            if declaration.generationNaming != nil,
+                declaration.storageClass != .generation
+            {
+                throw StorageCatalogFailure.invalid(
+                    "only generation storage may declare generation naming: "
+                        + declaration.id)
             }
             if declaration.storageClass == .generation,
                 declaration.activeGenerationLink != nil,

@@ -589,11 +589,15 @@ struct RepositoryCache {
             throw StorageCatalogFailure.invalid(
                 "generation pruning requires generation retention: \(declaration.id)")
         }
+        guard let generationNaming = declaration.generationNaming else {
+            throw StorageCatalogFailure.invalid(
+                "generation pruning requires a naming contract: \(declaration.id)")
+        }
         let root = URL(fileURLWithPath: declaration.root.string, isDirectory: true)
         guard FileManager.default.fileExists(atPath: root.path) else { return [] }
         let activeName = try activeGenerationName(link: activeLink)
         let entries = try realDirectories(in: root)
-        let generations = try matching(entries, pattern: .contentIdentity)
+        let generations = try matching(entries, pattern: generationNaming)
             .filter { $0.lastPathComponent != activeName }
             .sorted(by: newestFirst)
         var targets = Array(generations.dropFirst(Int(rollbackCount)))
@@ -929,19 +933,15 @@ struct RepositoryCache {
     private func hostFilesystemStatus() -> HostFilesystemStatusRecord? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         guard
-            let values = try? home.resourceValues(forKeys: [
-                .volumeTotalCapacityKey,
-                .volumeAvailableCapacityForImportantUsageKey,
-            ]),
-            let total = values.volumeTotalCapacity,
-            let available = values.volumeAvailableCapacityForImportantUsage,
-            total >= 0,
-            available >= 0
+            let attributes = try? FileManager.default.attributesOfFileSystem(
+                forPath: home.path),
+            let total = attributes[.systemSize] as? NSNumber,
+            let available = attributes[.systemFreeSize] as? NSNumber
         else { return nil }
         return HostFilesystemStatusRecord(
             path: home.path,
-            totalBytes: UInt64(total),
-            availableBytes: UInt64(available))
+            totalBytes: total.uint64Value,
+            availableBytes: available.uint64Value)
     }
 
     private func emit(_ report: StorageStatusReport) throws {

@@ -11,6 +11,7 @@ func productInputsFollowTheTransitiveManifestTargetGraph() {
 
     let inputs = Set(graph.inputs(forProduct: "App"))
     let sourcePaths = sourcePaths(in: inputs)
+    let productSourcePaths = Set(graph.sourcePaths(forProduct: "App"))
 
     #expect(inputs.contains(.file(root.appending("Package.swift"))))
     #expect(sourcePaths.contains(root.appending("domains/app")))
@@ -20,6 +21,12 @@ func productInputsFollowTheTransitiveManifestTargetGraph() {
     #expect(!sourcePaths.contains(root.appending("domains/unrelated")))
     #expect(!sourcePaths.contains(root.appending("tests/app")))
     #expect(!sourcePaths.contains(root))
+    #expect(
+        productSourcePaths
+            == sourcePaths.union([
+                root.appending("Package.swift"),
+                dependency.appending("Package.swift"),
+            ]))
 }
 
 @Test

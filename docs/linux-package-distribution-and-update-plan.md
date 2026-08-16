@@ -67,12 +67,10 @@ plan's package-manager boundary.
 
 ## Current State
 
-Collider currently retains three transitional product installation surfaces:
+Collider currently retains two transitional product installation surfaces:
 
 - `collider install session` assembles a generation below the checkout-local
   `.install` prefix;
-- `collider install browser` publishes the Linux x86_64 browser into that prefix
-  and is exposed even by the macOS Collider command tree; and
 - `collider install android-addon` validates and mutates an add-on store directly
   on Linux.
 
@@ -82,11 +80,24 @@ generation directly. Its active generation lives below
 session install command. The shell recipe and runtime assembler describe runtime
 publication rather than installation.
 
-The Linux distribution portability work already provides the common relocatable
-runtime payload, explicit host dependency contract, content-addressed
-generations, host-integration templates, and deterministic Debian, RPM, and Arch
-package manifests. It does not yet emit native package archives or repositories
-that ordinary package managers can consume.
+The Linux distribution portability work provides the common relocatable runtime
+payload, explicit host dependency contract, content-addressed generations, and
+host-integration templates. The root `collider package linux-runtime` operation,
+typed Debian, RPM, and Arch adapters, exact browser package input, native archive
+assemblers, and product-artifact envelopes are implemented and qualified for
+both architectures. The root SwiftPM closure resolves Swift System through one
+pinned `nucleus-os` source identity. Every package and family cohort publishes
+through the local product store, isolated APT/RPM/pacman roots exercise the full
+install/upgrade/downgrade/remove lifecycle, and unchanged invocations reuse the
+published cohorts. Package storage retains the active and one rollback cohort
+per architecture and prunes product-store objects by exact retained-manifest
+reachability. Repository snapshots remain pending.
+
+`collider build browser` publishes validated arm64 and x86_64 browser payloads
+under their exact tree digests. A separate typed package-input publication binds
+each selected payload digest, target architecture, immutable generation, and
+build-manifest digest. Collider has no browser installation task, component
+entrypoint, prefix policy, or command.
 
 Immutable releases are enabled for `nucleus-os/nucleus`. Existing browser
 runtime publications and the signed Android image archive fit below GitHub's
@@ -233,45 +244,52 @@ developer workflow invokes `collider install session`.
 
 ## Phase 2: Make the Browser a Package Input
 
-Make both browser architectures ordinary immutable outputs of `collider build
-browser`. Remove the special x86_64 installation task and its checkout prefix.
-The common Linux package graph consumes the selected browser artifact by digest
-and places it in `nucleus-browser` without rebuilding it.
+Status: complete.
 
-Browser qualification consumes the package-installed generation. Development
-diagnostics consume the build publication directly and do not simulate a system
-installation on macOS.
+Both browser architectures are ordinary immutable outputs of `collider build
+browser`. Each validated payload generation is named by its complete tree
+digest. A separate content-addressed package-input manifest binds the selected
+payload digest, target architecture, immutable generation, and build-manifest
+digest for the common Linux package graph.
 
-Gate: the browser has no install entrypoint in the Collider component graph, and
-arm64 and x86_64 package inputs come from their corresponding qualified build
-publications.
+The special x86_64 installation action, task, storage generation, component
+entrypoint, checkout prefix, macOS command, and installation tests are deleted.
+Development diagnostics consume the validated build publication directly and
+do not simulate a system installation on macOS.
+
+Gate satisfied: behavioral graph coverage proves that each architecture's
+package-input task consumes only its matching browser publication, while
+artifact coverage proves that the manifest resolves the exact immutable payload
+and rejects substituted bytes. CLI composition and grammar coverage prove that
+no browser installation surface remains.
 
 ## Phase 3: Emit Native Distribution Packages
 
-Add the root `collider package linux-runtime` operation. It consumes the common
-runtime, session integration, browser, and optional Android artifacts and emits
-real `.deb`, `.rpm`, and `.pkg.tar.zst` packages for both architectures.
+Status: complete.
 
-Each package and complete cohort is an immutable product artifact using the
-portable manifest and digest primitives established by Phase 1 of the
-[GitHub Actions self-hosted CI
-plan](github-actions-self-hosted-runner-plan.md). Package-family metadata remains
-a typed package contract; it is not encoded as a generic CI artifact or remote
-cache entry.
+`collider package linux-runtime` emits real `.deb`, `.rpm`, and `.pkg.tar.zst`
+cohorts for arm64 and x86_64 from exact runtime and browser publications. Each
+package and family cohort is an immutable `ProductArtifactEnvelope` published
+through `LocalProductArtifactStore`. Arch metadata, archive entry ownership and
+mode, sandbox setuid identity, path containment, dependency closure, maintainer
+scripts, and clean removal are validated from the package bytes.
 
-The existing distribution manifests become typed inputs to native package
-assembly rather than user-facing results. Every adapter declares only runtime
-dependencies, exact cohort relationships, owned paths, configuration-file
-semantics, lifecycle hooks, and removal behavior. No adapter contains source
-build logic.
+The SwiftPM closure resolves the canonical Swift System identity through the
+pinned `nucleus-os` mirror without a duplicate identity. RPM disables every
+`__os_install_post` transformation, so the native package adapter never strips
+or mutates an already-built cross-architecture payload. Package publication is
+incremental. A final retention task runs on every package invocation after both
+architecture qualifications, keeps the active and one rollback generation for
+each lane, and prunes only known product and archive objects not referenced by
+those retained cohort manifests; unknown store entries survive.
 
-Generate family-specific repository enrollment and keyring packages alongside
-the product packages. Validate archive metadata, ownership, permissions,
-dependency closure, maintainer scripts, installed paths, and clean removal
-without modifying the build host.
-
-Gate: a local package-manager root can install, upgrade, downgrade, and remove
-the complete cohort using only the emitted native packages.
+Gate evidence: the corrected dual-architecture native package, lifecycle, and
+retention graph succeeded in run `2026-08-16T17-27-41.466Z-39675` without an RPM
+strip attempt; unchanged run `2026-08-16T17-45-01.664Z-43818` reused every
+package cohort and qualification while still running reachability retention;
+empty-cache dependency resolution selected the pinned forks without an identity
+warning; and retention reduced package/product storage to two generations per
+architecture with zero interrupted candidates.
 
 ## Phase 4: Move Android Add-on Activation into Nucleus
 
@@ -305,6 +323,11 @@ Repository assembly accepts explicit signing identities and an immutable package
 set. It performs no upload and no source or package download. Unsigned local test
 snapshots are a distinct test fixture and cannot satisfy a release gate.
 
+Generate the family-specific repository enrollment and keyring packages here,
+from the public half of the explicit signing identity. They carry repository
+configuration, the active public key, and the key-transition contract and are
+themselves members of the signed snapshot.
+
 Gate: each package manager resolves and verifies the complete signed cohort from
 a local copy of the generated snapshot; independently repeated assembly over the
 same package set and signing inputs produces the same release index and
@@ -316,7 +339,6 @@ Move every remaining caller to development staging, native packaging, or the
 installed Nucleus add-on boundary. Then delete, in one cutover:
 
 - `collider install session`;
-- `collider install browser`;
 - `collider install android-addon` and its lifecycle children;
 - the root `collider install` command group;
 - component install entrypoints and checkout installation-prefix policy; and

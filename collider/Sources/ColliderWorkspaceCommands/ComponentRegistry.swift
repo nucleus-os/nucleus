@@ -40,10 +40,9 @@ package struct ComponentRegistry {
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
         let nativeBuilderCache = context.cacheRoot
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
+            repositoryRoot: context.root,
             context: context.root.appending("collider/images/native-builder"),
             cacheRoot: nativeBuilderCache.appending("build-containers/native"),
-            imageID: nativeBuilderCache.appending(
-                "build-containers/native/image-id"),
             ccache: nativeBuilderCache.appending("ccache/native"),
             environment: recipeEnvironment)
         let androidToolchain = try AndroidToolchainVersions.load(
@@ -69,11 +68,18 @@ package struct ComponentRegistry {
                 architecture: architecture,
                 builder: nativeConfiguration)
         }
-        let linuxARM64Release = try linuxSwiftPMInvocation(
-            configuration: .release,
-            builder: nativeConfiguration)
-        buildContexts[.linux(.arm64, configuration: .release)] = linuxARM64Release
-        let runtimeAssembler = try linuxRuntimeAssemblerSwiftPMInvocation(
+        var linuxReleaseContexts: [PlatformArchitecture: SwiftPMInvocation] = [:]
+        for architecture in PlatformArchitecture.allCases {
+            let invocation = try linuxSwiftPMInvocation(
+                architecture: architecture,
+                configuration: .release,
+                builder: nativeConfiguration)
+            linuxReleaseContexts[architecture] = invocation
+            buildContexts[
+                .linux(architecture, configuration: .release)
+            ] = invocation
+        }
+        let runtimeAssembler = try linuxAssemblerSwiftPMInvocation(
             builder: nativeConfiguration)
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
@@ -88,6 +94,10 @@ package struct ComponentRegistry {
             toolchain: androidToolchain,
             inputs: targetSDKInputs,
             swiftSDKRoot: swiftTargetSDK.activeSDK.path,
+            swiftIncludeRoot: swiftTargetSDK.activeSwift.path
+                .removingLastComponent()
+                .removingLastComponent()
+                .appending("include"),
             swiftExecutable: swiftTargetSDK.activeSwift.executable)
         var configurations: [ComponentID: any RecipeConfiguration] = [
             SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration,
@@ -95,17 +105,6 @@ package struct ComponentRegistry {
                 NativeBuilderGraphConfiguration(
                     builder: nativeConfiguration,
                     nativeSDKRoot: context.nativeSDKRoot.removingLastComponent()),
-            LinuxColliderRecipe.descriptor.id:
-                LinuxRuntimeArtifactConfiguration(
-                    runtimeSwiftPM: linuxARM64Release,
-                    assemblerSwiftPM: runtimeAssembler,
-                    artifactRoot: context.artifactRoot.appending(
-                        "runtime/linux-arm64"),
-                    sessionPackage: context.layout.compositorSessionPackage,
-                    kernelContract: context.layout.androidRuntime.appending(
-                        "Sources/NucleusAndroidRuntimeCore/"
-                            + "AndroidRuntimeKernelRequirements.swift"),
-                    environment: recipeEnvironment),
         ]
         if let androidAddonConfiguration = hostAugmentation.androidAddonConfiguration {
             configurations[AndroidRuntimeColliderRecipe.descriptor.id] =
@@ -123,6 +122,7 @@ package struct ComponentRegistry {
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
+        let chromium = try ChromiumColliderRecipe.prepare(in: baseRecipeContext)
         let coreArtifacts = try CoreColliderRecipe.prepare(in: baseRecipeContext)
         let androidRuntime = try AndroidRuntimeColliderRecipe.prepare(
             in: baseRecipeContext)
@@ -158,6 +158,44 @@ package struct ComponentRegistry {
                 builder: nativeConfiguration,
                 nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
                 targetArtifacts: targetArtifacts)
+        configurations[LinuxColliderRecipe.descriptor.id] =
+            LinuxRuntimeArtifactConfiguration(
+                lanes: try Dictionary(
+                    uniqueKeysWithValues: PlatformArchitecture.allCases.map {
+                        architecture in
+                        guard let invocation = linuxReleaseContexts[architecture]
+                        else {
+                            throw WorkspaceFailure.message(
+                                "missing Linux release context for "
+                                    + architecture.rawValue)
+                        }
+                        return (
+                            architecture,
+                            LinuxRuntimeArtifactLane(
+                                runtimeSwiftPM: invocation,
+                                artifactRoot: context.artifactRoot.appending(
+                                    "runtime/linux-\(architecture.rawValue)"),
+                                packageRoot: context.artifactRoot.appending(
+                                    "packages/linux-\(architecture.rawValue)"),
+                                qualificationRoot: context.artifactRoot.appending(
+                                    "package-qualification/linux-"
+                                        + architecture.rawValue))
+                        )
+                    }),
+                browserPackageInputs: Dictionary(
+                    uniqueKeysWithValues: chromium.packageInputs.map {
+                        ($0.key.architecture, $0.value)
+                    }),
+                assemblerSwiftPM: runtimeAssembler,
+                packageSourceSnapshotRoot: context.hostBuildRoot.appending(
+                    "product-source/linux-packages"),
+                productStoreRoot: context.artifactRoot.appending(
+                    "product-store"),
+                sessionPackage: context.layout.compositorSessionPackage,
+                kernelContract: context.layout.androidRuntime.appending(
+                    "Sources/NucleusAndroidRuntimeCore/"
+                        + "AndroidRuntimeKernelRequirements.swift"),
+                environment: recipeEnvironment)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
@@ -169,7 +207,6 @@ package struct ComponentRegistry {
             configurations: configurations)
         let componentTypes: [any ColliderComponent.Type] = [
             BenchmarkColliderRecipe.self,
-            ChromiumColliderRecipe.self,
             SanitizerColliderRecipe.self,
             ReleaseGateColliderRecipe.self,
             ShellColliderRecipe.self,
@@ -182,6 +219,7 @@ package struct ComponentRegistry {
                 try ColliderStorageComponent.makeComponent(in: context),
                 try ColliderSelfComponent.makeComponent(in: context),
                 nativeBuilder.component, swiftTargetSDK.component,
+                chromium.component,
                 coreArtifacts.component,
                 androidRuntime.component, reactNativeArtifacts.component,
                 waylandArtifacts.component,
@@ -246,6 +284,14 @@ package struct ComponentRegistry {
             ]
         }
         routes += [
+            ComponentEntrypointRoute(
+                spelling: "linux-runtime",
+                requestedEntrypoint: LinuxEntrypoints.packageRuntime,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: linux,
+                        entrypoint: LinuxEntrypoints.packageRuntime)
+                ]),
             ComponentEntrypointRoute(
                 spelling: "linux-runtime",
                 requestedEntrypoint: .build,
@@ -442,7 +488,7 @@ package struct ComponentRegistry {
         if includeLinuxOperations { bootstrapSpellings.append("tracy") }
         expose(.bootstrap, to: bootstrapSpellings)
         expose(.generate, to: ["vulkan", "wayland"])
-        expose(.install, to: ["browser", "chromium"])
+        expose(LinuxEntrypoints.packageRuntime, to: ["linux-runtime"])
         if includeLinuxOperations { expose(.install, to: ["shell"]) }
         expose(BenchmarkEntrypoints.run, to: ["benchmark"])
         expose(SanitizerKind.address.entrypoint, to: ["sanitize"])
@@ -537,6 +583,21 @@ package struct ComponentRegistry {
                 ComponentEntrypointRequest(
                     entrypoint: .generate,
                     selection: selection)
+            ],
+            controls: controls)
+    }
+
+    func packageLinuxRuntime(controls: TaskControls) async throws {
+        try await checkBrowserPrerequisites(
+            selection: "browser",
+            controls: controls)
+        let catalog = try componentCatalog()
+        try await context.execute(
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: LinuxEntrypoints.packageRuntime,
+                    selection: "linux-runtime")
             ],
             controls: controls)
     }
@@ -687,7 +748,6 @@ package struct ComponentRegistry {
         architecture: PlatformArchitecture = .arm64,
         triple: String? = nil,
         artifactTarget: ArtifactTarget? = nil,
-        translation: OCIIntelBinaryTranslationPolicy? = nil,
         configuration: SwiftBuildConfiguration = .debug,
         sanitizer: String? = nil,
         linkerFlags additionalLinkerFlags: [String] = [],
@@ -697,13 +757,14 @@ package struct ComponentRegistry {
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
         let resolvedArtifactTarget = artifactTarget ?? target.artifactTarget
-        let resolvedTranslation = translation ?? target.intelBinaryTranslationPolicy
         let guestSDKRoot = SwiftPMInvocation.ociSwiftSDKDirectory.string
         let sourceID =
             context.taskEnvironment["NUCLEUS_SWIFT_SOURCE_ID"]
             ?? "swift-6.4"
         let toolchainIdentity =
-            "nucleus-linux-build-\(sourceID)-\(architecture.rawValue)"
+            "nucleus-linux-build-\(sourceID)-swiftpm-overlay-"
+            + builder.swiftPMOverlayRevision + "-"
+            + architecture.rawValue
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
         let swiftPMRoot = context.cacheRoot.appending(
@@ -716,18 +777,9 @@ package struct ComponentRegistry {
             + resolvedTriple + "/" + NucleusLinuxABI.sdkDirectoryName
         let targetRuntimeLibraryDirectory =
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
-        let hostSwiftRuntimeLibraryDirectory =
-            architecture == .arm64
-            ? "/opt/swift/usr/lib/swift/linux"
-            : "/opt/swift-x86_64/usr/lib/swift/linux"
-        let hostSwiftCompatibilityLibraryDirectory =
-            architecture == .arm64
-            ? "/opt/swift-compat/arm64"
-            : "/opt/swift-compat/amd64"
-        let hostSwiftBinaryDirectory =
-            architecture == .arm64
-            ? "/opt/swift/usr/bin"
-            : "/opt/swift-x86_64/usr/bin"
+        let hostSwiftRuntimeLibraryDirectory = "/opt/swift/usr/lib/swift/linux"
+        let hostSwiftCompatibilityLibraryDirectory = "/opt/swift-compat/arm64"
+        let hostSwiftBinaryDirectory = "/opt/swift/usr/bin"
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
             gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
@@ -736,6 +788,7 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: resolvedArtifactTarget,
                 image: builder.image,
+                inputArtifacts: [builder.swiftPMOverlay],
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
                 mounts: [
@@ -744,6 +797,10 @@ package struct ComponentRegistry {
                     OCIMount(
                         source: builder.swiftSDKRoot,
                         target: guestSDKRoot,
+                        access: .readOnly),
+                    OCIMount(
+                        source: builder.swiftPMOverlay.path,
+                        target: "/swiftpm-overlay",
                         access: .readOnly),
                 ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
@@ -765,7 +822,6 @@ package struct ComponentRegistry {
                     retentionPolicy: .toolManagedLimit(
                         maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 hostDependencyCache: swiftPMDependencyCache,
-                intelBinaryTranslationPolicy: resolvedTranslation,
                 resourceLimits: .parallelBuild,
                 containerEnvironment: [
                     "CCACHE_DIR": "/ccache",
@@ -775,13 +831,21 @@ package struct ComponentRegistry {
                         nativeSDK.appending(
                             "android/gfxstream/lib/libvulkan_gfxstream.so"
                         ).string,
-                    "LD_LIBRARY_PATH": [
+                    "NUCLEUS_TARGET_LIBRARY_PATH": [
                         guestTargetSDK + "/usr/lib/swift/linux",
+                        waylandSDK.appending("lib").string,
+                        "/lib/\(target.gnuArchitecture)",
+                        "/usr/lib/\(target.gnuArchitecture)",
+                    ].joined(separator: ":"),
+                    "LD_LIBRARY_PATH": [
                         hostSwiftRuntimeLibraryDirectory,
                         hostSwiftCompatibilityLibraryDirectory,
+                        guestTargetSDK + "/usr/lib/swift/linux",
                         waylandSDK.appending("lib").string,
                     ].joined(separator: ":"),
-                    "PATH": hostSwiftBinaryDirectory
+                    "SWIFTPM_CUSTOM_BIN_DIR": hostSwiftBinaryDirectory,
+                    "PATH": "/swiftpm-overlay/usr/bin:"
+                        + hostSwiftBinaryDirectory
                         + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     "PKG_CONFIG_PATH":
                         guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
@@ -790,8 +854,10 @@ package struct ComponentRegistry {
                     "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                     "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                 ],
-                environmentProjection: nucleusSwiftPMEnvironmentProjection))
+                environmentProjection: nucleusSwiftPMEnvironmentProjection,
+                swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
         return try context.swiftPMInvocation(
+            buildSystem: .swiftbuild,
             configuration: configuration,
             sanitizer: sanitizer,
             cFlags: nativeCompiler.cFlags + [
@@ -811,13 +877,10 @@ package struct ComponentRegistry {
             execution: execution,
             toolchainIdentity: toolchainIdentity,
             scratchRoot: swiftPMRoot,
-            swiftExecutable: .path(
-                architecture == .arm64
-                    ? FilePath("/opt/swift/usr/bin/swift")
-                    : FilePath("/opt/swift-x86_64/usr/bin/swift")))
+            swiftExecutable: .path("/opt/swift/usr/bin/swift"))
     }
 
-    private func linuxRuntimeAssemblerSwiftPMInvocation(
+    private func linuxAssemblerSwiftPMInvocation(
         builder: NativeOCIConfiguration
     ) throws -> SwiftPMInvocation {
         let root = context.layout.root
@@ -831,10 +894,15 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: .linuxARM64,
                 image: builder.image,
-                hostname: "nucleus-runtime-assembler",
+                inputArtifacts: [builder.swiftPMOverlay],
+                hostname: "nucleus-linux-assembler",
                 hostWorkingDirectory: packageRoot,
                 mounts: [
-                    OCIMount(source: root, target: root.string, access: .readOnly)
+                    OCIMount(source: root, target: root.string, access: .readOnly),
+                    OCIMount(
+                        source: builder.swiftPMOverlay.path,
+                        target: "/swiftpm-overlay",
+                        access: .readOnly),
                 ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
@@ -850,25 +918,30 @@ package struct ComponentRegistry {
                     "HOME": "/home/nucleus-build",
                     "LD_LIBRARY_PATH":
                         "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
+                    "SWIFTPM_CUSTOM_BIN_DIR": "/opt/swift/usr/bin",
                     "PATH":
-                        "/opt/swift/usr/bin:/usr/local/sbin:/usr/local/bin:"
+                        "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:"
+                        + "/usr/local/sbin:/usr/local/bin:"
                         + "/usr/sbin:/usr/bin:/sbin:/bin",
                 ],
-                environmentProjection: nucleusSwiftPMEnvironmentProjection))
+                environmentProjection: nucleusSwiftPMEnvironmentProjection,
+                swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
         return try context.swiftPMInvocation(
             packageRoot: packageRoot,
             configuration: .release,
             target: .host(identity: "aarch64-unknown-linux-gnu"),
             execution: execution,
-            toolchainIdentity: "official-swift-6.4-linux-arm64",
+            toolchainIdentity: "nucleus-linux-builder-swiftpm-overlay-"
+                + builder.swiftPMOverlayRevision,
             scratchRoot: scratchRoot,
             swiftExecutable: .path("/opt/swift/usr/bin/swift"))
     }
 
-    private func androidSwiftPMInvocation(
+    package func androidSwiftPMInvocation(
         toolchain: AndroidToolchainVersions,
         inputs: SwiftTargetSDKInputs,
         swiftSDKRoot: FilePath,
+        swiftIncludeRoot: FilePath,
         swiftExecutable: CommandSpec.Executable
     ) throws -> SwiftPMInvocation {
         let nativeSDK = context.nativeSDKRoot(named: "android-arm64")
@@ -881,8 +954,8 @@ package struct ComponentRegistry {
         return try context.swiftPMInvocation(
             configuration: .release,
             swiftFlags: ["-disable-cmo"],
-            cFlags: nativeCompiler.cFlags,
-            cxxFlags: nativeCompiler.cxxFlags,
+            cFlags: nativeCompiler.cFlags + ["-I\(swiftIncludeRoot.string)"],
+            cxxFlags: nativeCompiler.cxxFlags + ["-I\(swiftIncludeRoot.string)"],
             linkerFlags: nativeCompiler.linkerFlags + ["-L\(swiftCxxLibraries.string)"],
             staticSwiftStandardLibrary: true,
             target: .swiftSDK(

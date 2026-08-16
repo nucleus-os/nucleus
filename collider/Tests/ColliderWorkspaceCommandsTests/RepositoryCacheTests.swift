@@ -711,6 +711,7 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
             retentionPolicy: .keepActiveAndRollback(count: 0),
             activeGenerationLink: FilePath(
                 cache.appendingPathComponent("swift-target-sdks/current").path),
+            generationNaming: .contentIdentity,
             interruptedCandidateNaming: DirectoryNamePattern(
                 rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#))
     ]
@@ -970,12 +971,14 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
     let artifactRoot = cacheRoot.appendingPathComponent("artifacts", isDirectory: true)
     let generations = artifactRoot.appendingPathComponent("generations", isDirectory: true)
     try FileManager.default.createDirectory(at: generations, withIntermediateDirectories: true)
-    let active = generations.appendingPathComponent("aaaaaaaaaaaaaaaaaaaaaaaa")
+    let active = generations.appendingPathComponent(
+        "sha256-" + String(repeating: "a", count: 64))
     try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
     try Data("active".utf8).write(to: active.appendingPathComponent("payload"))
     for index in 0..<64 {
         let suffix = String(index + 1, radix: 16)
-        let name = String(repeating: "0", count: 24 - suffix.count) + suffix
+        let name =
+            "sha256-" + String(repeating: "0", count: 64 - suffix.count) + suffix
         let generation = generations.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: generation, withIntermediateDirectories: true)
         try Data(repeating: UInt8(index), count: 4_096).write(
@@ -995,6 +998,7 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
         safetyRoot: FilePath(artifactRoot.path),
         retentionPolicy: .keepActiveAndRollback(count: 0),
         activeGenerationLink: FilePath(current.path),
+        generationNaming: .artifactDigestDirectory,
         interruptedCandidateNaming: nil)
     let catalog = ComponentCatalog(
         components: [

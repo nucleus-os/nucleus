@@ -6,9 +6,13 @@ at-spi2-core
 ca-certificates
 ccache
 clang
+cpio
 curl
 dbus-daemon
+desktop-file-utils
+dpkg
 file
+fakeroot
 flex
 fontconfig
 git
@@ -59,11 +63,13 @@ ninja-build
 openssl
 patch
 patchelf
+pacman-package-manager
 pkg-config
 python3
 python3-mako
 python3-yaml
 rsync
+rpm
 unzip
 util-linux
 uuid-dev
@@ -71,6 +77,7 @@ x11proto-core-dev
 xwayland
 xsltproc
 zip
+zstd
 zlib1g-dev
 libc6-dev:amd64
 libbsd-dev:amd64

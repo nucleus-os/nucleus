@@ -70,6 +70,7 @@ public actor ColliderRuntime {
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
     let ociBackend: any OCIRuntimeBackend
+    package nonisolated let hasOCIRuntimeBackend: Bool
 
     public init(
         logging: CommandLogging? = nil,
@@ -105,6 +106,7 @@ public actor ColliderRuntime {
         }
         self.cancellation = cancellation
         self.ociConfiguration = ociConfiguration
+        hasOCIRuntimeBackend = ociBackend != nil
         self.ociBackend = ociBackend ?? UnsupportedOCIRuntimeBackend()
     }
 
@@ -212,8 +214,8 @@ public actor ColliderRuntime {
                                 privilegePolicy: execution.privilegePolicy,
                                 processFilesystemPolicy:
                                     execution.processFilesystemPolicy,
-                                intelBinaryTranslationPolicy:
-                                    execution.intelBinaryTranslationPolicy,
+                                executableRequirements:
+                                    execution.executableRequirements,
                                 resourceLimits: execution.resourceLimits,
                                 status: result.status,
                                 timings: outcome.timings))

@@ -2,7 +2,7 @@ import ColliderCore
 import SystemPackage
 
 extension DirectoryNamePattern {
-    fileprivate static let aospProduct = Self(
+    package static let aospProduct = Self(
         rawValue: #"^[0-9]+-[a-z0-9][a-z0-9._-]*$"#)
 }
 

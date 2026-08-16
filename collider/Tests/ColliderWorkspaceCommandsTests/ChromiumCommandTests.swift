@@ -13,9 +13,6 @@ func chromiumCommandHasOneOpinionatedOperationSurface() throws {
         try Build.parse(["browser", "--dry-run"]).taskOptions.dryRun)
     #expect(
         try Test.parse(["browser", "--verbose"]).taskOptions.verbose)
-    #expect(
-        try InstallBrowser.parse(["--prefix", "/browser"]).prefix
-            == "/browser")
 }
 
 @Test
@@ -34,7 +31,6 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             cacheRoot: FilePath("/cache/cef"),
             artifactRoot: FilePath("/artifacts/browser"),
             logRoot: FilePath("/logs/browser"),
-            installPrefix: FilePath("/home/user/.local"),
             jobs: 16))
     let graph = try TaskGraph(tasks)
     #expect(
@@ -42,31 +38,18 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             of: [
                 ChromiumTaskIDs.source,
                 ChromiumTaskIDs.retention,
-                ChromiumTaskIDs.install,
                 ChromiumTaskIDs.builderDependencies,
-                ChromiumTaskIDs.buildTools,
-                ChromiumTaskIDs.artifactTools,
-            ] + chromiumLinuxTargets.map(ChromiumTaskIDs.test)))
+            ] + chromiumLinuxTargets.map(ChromiumTaskIDs.test)
+                + chromiumLinuxTargets.map(ChromiumTaskIDs.packageInput)))
     let orderedBuildTasks = try graph.orderedTasks(selecting: [
         ChromiumTaskIDs.retention
     ]).map(\.id)
     #expect(orderedBuildTasks.last == ChromiumTaskIDs.retention)
-    let dependencyBuilderIndex = try #require(
-        orderedBuildTasks.firstIndex(
-            of: ChromiumTaskIDs.builderDependencies))
-    let buildToolsIndex = try #require(
-        orderedBuildTasks.firstIndex(of: ChromiumTaskIDs.buildTools))
-    let artifactToolsIndex = try #require(
-        orderedBuildTasks.firstIndex(
-            of: ChromiumTaskIDs.artifactTools))
-    #expect(dependencyBuilderIndex < buildToolsIndex)
-    #expect(dependencyBuilderIndex < artifactToolsIndex)
+    #expect(orderedBuildTasks.contains(ChromiumTaskIDs.builderDependencies))
 
     #expect(
         Set(tasks.compactMap(\.action).map(\.kind)).isSuperset(of: [
             ActionKind(rawValue: "browser.bootstrap-depot-tools"),
-            ActionKind(rawValue: "browser.prepare-build-image"),
-            ActionKind(rawValue: "browser.prepare-artifact-image"),
             ActionKind(rawValue: "browser.run-tests"),
         ]))
 
@@ -102,6 +85,9 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     #expect(!execution.mounts.contains { $0.target == "/build" })
     #expect(!execution.mounts.contains { $0.target == "/source" })
     #expect(
+        execution.imageEntrypointOverride
+            == "/collider-entrypoints/chromium-build/build-entrypoint.sh")
+    #expect(
         execution.persistentWorkspaceMounts.map(\.target)
             == ["/source", "/build", "/ccache"])
 
@@ -113,9 +99,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     for left in buildIDs {
         let task = try #require(tasks.first { $0.id == left })
         #expect(task.dependencies.allSatisfy { !buildIDs.contains($0) })
-        #expect(task.dependencies.contains(ChromiumTaskIDs.buildTools))
-        #expect(
-            !task.dependencies.contains(ChromiumTaskIDs.artifactTools))
+        #expect(task.dependencies.contains(ChromiumTaskIDs.builderDependencies))
     }
     for target in chromiumLinuxTargets {
         for product in ChromiumProduct.allCases {
@@ -124,10 +108,15 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
                     $0.id == ChromiumTaskIDs.artifact(product, target)
                 })
             #expect(
-                task.dependencies.contains(ChromiumTaskIDs.artifactTools))
-            #expect(
-                !task.dependencies.contains(ChromiumTaskIDs.buildTools))
+                task.dependencies.contains(ChromiumTaskIDs.builderDependencies))
         }
+        let packageInput = try #require(
+            tasks.first { $0.id == ChromiumTaskIDs.packageInput(target) })
+        #expect(
+            packageInput.dependencies
+                == [ChromiumTaskIDs.artifact(.browser, target)])
+        #expect(packageInput.action?.kind == "browser.publish-package-input")
+        #expect(packageInput.action?.requirements.artifactTarget == nil)
     }
     let retention = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.retention })
@@ -138,7 +127,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
                     ChromiumProduct.allCases.map { product in
                         ChromiumTaskIDs.artifact(product, target)
                     }
-                })))
+                } + chromiumLinuxTargets.map(ChromiumTaskIDs.packageInput))))
 }
 
 @Test

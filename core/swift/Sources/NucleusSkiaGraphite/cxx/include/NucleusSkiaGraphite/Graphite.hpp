@@ -19,10 +19,18 @@
 
 #include <cstdint>
 #include <memory>
-#include <ptrcheck.h>
 #include <span>
 #include <string>
 #include <swift/bridging>
+
+#if defined(__has_feature) &&                                               \
+    (__has_feature(bounds_attributes) ||                                    \
+     __has_feature(bounds_safety_attributes))
+#define NUCLEUS_COUNTED_BY_OR_NULL(count)                                     \
+    __attribute__((__counted_by_or_null__(count)))
+#else
+#define NUCLEUS_COUNTED_BY_OR_NULL(count)
+#endif
 
 namespace nucleus::skia {
 
@@ -39,12 +47,14 @@ struct VulkanContextDescriptor {
     uint32_t graphicsQueueIndex = 0;
     uint32_t maxApiVersion = 0;
     uint32_t instanceExtensionCount = 0;
-    const char *const * __counted_by_or_null(instanceExtensionCount)
+    const char *const * NUCLEUS_COUNTED_BY_OR_NULL(instanceExtensionCount)
         instanceExtensions = nullptr;
     uint32_t deviceExtensionCount = 0;
-    const char *const * __counted_by_or_null(deviceExtensionCount)
+    const char *const * NUCLEUS_COUNTED_BY_OR_NULL(deviceExtensionCount)
         deviceExtensions = nullptr;
 };
+
+#undef NUCLEUS_COUNTED_BY_OR_NULL
 
 /// Typed result of a fallible façade operation.
 enum class Status : int32_t {

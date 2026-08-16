@@ -25,9 +25,15 @@ func validateExecutionPolicies(
     else {
         throw OCIExecutorFailure.unsupportedPolicy
     }
-    if execution.intelBinaryTranslationPolicy == .required {
-        guard execution.executionPlatform == .linuxARM64OCI else {
-            throw OCIExecutorFailure.invalidIntelBinaryTranslationContract
+    let foreignArchitectures = Set(
+        execution.executableRequirements.lazy
+            .map(\.architecture)
+            .filter { $0 != execution.executionPlatform.architecture })
+    if !foreignArchitectures.isEmpty {
+        guard execution.executionPlatform == .linuxARM64OCI,
+            foreignArchitectures == [.x86_64]
+        else {
+            throw OCIExecutorFailure.invalidExecutableArchitectureContract
         }
     }
 }
@@ -42,15 +48,15 @@ package func ociPlatformName(_ platform: ExecutionPlatform) -> String {
 }
 
 package enum OCIExecutorFailure: Error, CustomStringConvertible {
-    case invalidIntelBinaryTranslationContract
+    case invalidExecutableArchitectureContract
     case unsupportedExecutionPlatform(ExecutionPlatform)
     case unsupportedPolicy
     case unsupportedRunner(RunnerPlatform)
 
     package var description: String {
         switch self {
-        case .invalidIntelBinaryTranslationContract:
-            "Intel Linux binary translation requires an ARM64 Linux OCI execution platform"
+        case .invalidExecutableArchitectureContract:
+            "OCI executable requirements cannot be satisfied by this execution platform"
         case .unsupportedExecutionPlatform(let platform):
             "unsupported OCI execution platform: "
                 + "\(platform.environment.rawValue)/"

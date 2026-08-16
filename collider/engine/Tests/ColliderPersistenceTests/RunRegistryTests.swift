@@ -299,7 +299,11 @@ import Testing
                         capabilityPolicy: .dropAll,
                         privilegePolicy: .prohibitAcquisition,
                         processFilesystemPolicy: .standard,
-                        intelBinaryTranslationPolicy: .required,
+                        executableRequirements: [
+                            OCIExecutableRequirement(
+                                architecture: .x86_64,
+                                executable: "/fixture/x86-tool")
+                        ],
                         resourceLimits: .parallelBuild,
                         status: 0,
                         timings: OCIExecutionTimings(
@@ -342,7 +346,11 @@ import Testing
     #expect(decodedTask.observations?.containerExecutions.first?.imageDigest == digest)
     #expect(
         decodedTask.observations?.containerExecutions.first?
-            .intelBinaryTranslationPolicy == .required)
+            .executableRequirements == [
+                OCIExecutableRequirement(
+                    architecture: .x86_64,
+                    executable: "/fixture/x86-tool")
+            ])
     #expect(
         decodedTask.observations?.containerExecutions.first?.timings?
             .totalDurationNanoseconds == 15)

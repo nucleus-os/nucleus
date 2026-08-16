@@ -61,7 +61,7 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
-    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
+    public let executableRequirements: Set<OCIExecutableRequirement>
     public let resourceLimits: OCIResourceLimits
     public let status: Int32
     public let timings: OCIExecutionTimings?
@@ -74,7 +74,7 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
         processFilesystemPolicy: OCIProcessFilesystemPolicy,
-        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
+        executableRequirements: Set<OCIExecutableRequirement>,
         resourceLimits: OCIResourceLimits,
         status: Int32,
         timings: OCIExecutionTimings? = nil
@@ -86,7 +86,7 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy
         self.processFilesystemPolicy = processFilesystemPolicy
-        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
+        self.executableRequirements = executableRequirements
         self.resourceLimits = resourceLimits
         self.status = status
         self.timings = timings

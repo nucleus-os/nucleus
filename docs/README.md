@@ -26,14 +26,15 @@ qualification, packaging, CI, signing, publication, and distribution establish
 the contracts that development deployment and independent contributor hosts
 reuse.
 
-1. Complete Phase 1 of the
-   [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-   to establish portable product-artifact identity and digest-bound
-   qualification evidence.
-2. Complete Phases 2 through 4 of the
-   [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md):
-   make the browser a package input, emit both architectures' native package
-   cohorts, and move Android add-on activation into the installed product.
+1. Complete Phases 2 through 7 of the
+   [Collider throughput optimization plan](collider-throughput-optimization-plan.md)
+   to expose package stage costs, overlap independent architecture assembly,
+   eliminate repeated payload copies, accelerate exact Skia source validation,
+   and narrow Collider rebuild and test closures before extending the package
+   pipeline.
+2. Complete Phase 4 of the
+   [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+   to move Android add-on activation into the installed product.
 3. Complete Phases 2 through 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    establish the protected main-only workflow boundary, provision the
@@ -74,7 +75,7 @@ reuse.
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-13. Complete Phases 2 through 10 of the
+13. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.

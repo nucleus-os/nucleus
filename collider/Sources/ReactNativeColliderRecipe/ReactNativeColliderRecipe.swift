@@ -28,6 +28,7 @@ package struct HermesArtifacts: Sendable {
     package let task: TaskDeclaration
     package let libraries: [ArtifactReference]
     package let compiler: ExecutableReference
+    package let hostTools: ArtifactReference?
 }
 
 package struct SupportLibraryArtifacts: Sendable {
@@ -85,6 +86,7 @@ public enum ReactNativeColliderRecipe {
         var tasks = [javascript.task, codegen.task] + boost.tasks
         var bootstrapRoots: Set<TaskID> = []
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
+        var hermesHostTools: ArtifactReference?
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
             guard let icuLibrary = icuLibraries[target] else {
@@ -98,7 +100,11 @@ public enum ReactNativeColliderRecipe {
                 dependencies: javascript.nodeModules,
                 skiaExternalSources: skiaExternalSources,
                 icuLibrary: icuLibrary,
+                importedHostTools: hermesHostTools,
                 builder: native.builder)
+            if architecture == .arm64 {
+                hermesHostTools = hermes.hostTools
+            }
             let support = try buildSupportLibraries(
                 root: root,
                 sdkRoot: native.nativeSDK(for: target),
@@ -353,12 +359,17 @@ public enum ReactNativeColliderRecipe {
         dependencies: ArtifactReference,
         skiaExternalSources: ArtifactReference,
         icuLibrary: ArtifactReference,
+        importedHostTools: ArtifactReference? = nil,
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
+        guard target.architecture == .arm64 || importedHostTools != nil else {
+            throw ReactNativeRecipeFailure.missingHermesHostTools
+        }
         let source = root.appending("third-party/hermes")
         let artifacts = sdkRoot.appending("rn/lib/rn/hermes")
         let combined = artifacts.appending("libhermes_lean_combined.a")
         let hermesc = artifacts.appending("bin/hermesc")
+        let hostToolsRoot = artifacts.appending("host-tools")
         let workspaces = ReactNativeBuildWorkspaces(
             component: "hermes",
             target: target)
@@ -374,6 +385,9 @@ public enum ReactNativeColliderRecipe {
         taskBuilder.consume(dependencies)
         taskBuilder.consume(skiaExternalSources)
         taskBuilder.consume(icuLibrary)
+        if let importedHostTools {
+            taskBuilder.consume(importedHostTools)
+        }
         let combinedArtifact: ArtifactReference = try taskBuilder.output(
             "combined-library",
             path: combined,
@@ -381,6 +395,27 @@ public enum ReactNativeColliderRecipe {
         let compilerArtifact: ExecutableReference = try taskBuilder.executableOutput(
             "compiler",
             path: hermesc)
+        let hostToolsArtifact: ArtifactReference? =
+            if target.architecture == .arm64 {
+                try taskBuilder.output(
+                    "host-tools",
+                    path: hostToolsRoot,
+                    validation: .nonEmptyDirectory)
+            } else {
+                nil
+            }
+        let importedHostToolsMounts =
+            importedHostTools.map {
+                [
+                    OCIMount(
+                        source: $0.path,
+                        target: "/host-hermes",
+                        access: .readOnly)
+                ]
+            } ?? []
+        let importedHostToolsArguments =
+            importedHostTools == nil
+            ? [] : ["-DIMPORT_HOST_COMPILERS=/host-hermes/ImportHostCompilers.cmake"]
         let task = taskBuilder.build(
             inputs: [
                 .sourceCheckout(source),
@@ -405,7 +440,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DICU_FOUND=ON",
                                     "-DICU_INCLUDE_DIRS=/icu/common;/icu/i18n",
                                     "-DICU_LIBRARIES=/icu/lib/libicu.a",
-                                ],
+                                ] + importedHostToolsArguments,
                                 root: root,
                                 environment: environment,
                                 target: target,
@@ -432,7 +467,7 @@ public enum ReactNativeColliderRecipe {
                                         source: icuLibraryDirectory,
                                         target: "/icu/lib",
                                         access: .readOnly),
-                                ]),
+                                ] + importedHostToolsMounts),
                             try nativeNinja(
                                 containerBuild: "/build/hermes",
                                 targets: ["hermesvmlean", "jsi", "hermesc"],
@@ -454,7 +489,7 @@ public enum ReactNativeColliderRecipe {
                                         source: icuLibraryDirectory,
                                         target: "/icu/lib",
                                         access: .readOnly),
-                                ]),
+                                ] + importedHostToolsMounts),
                             try nativeContainerOperation(
                                 root: root,
                                 builder: builder,
@@ -477,7 +512,20 @@ public enum ReactNativeColliderRecipe {
                                         + " /build/hermes/libhermes_lean_combined.a"
                                         + " /export/libhermes_lean_combined.a"
                                         + " && install -m 0755 /build/hermes/bin/hermesc"
-                                        + " /export/bin/hermesc",
+                                        + " /export/bin/hermesc"
+                                        + (target.architecture == .arm64
+                                            ? " && install -d /export/host-tools/bin"
+                                                + " && install -m 0755"
+                                                + " /build/hermes/bin/hermesc"
+                                                + " /build/hermes/bin/shermes"
+                                                + " /export/host-tools/bin/"
+                                                + " && install -m 0644"
+                                                + " /build/hermes/ImportHostCompilers.cmake"
+                                                + " /export/host-tools/ImportHostCompilers.cmake"
+                                                + " && sed -i"
+                                                + " 's#/build/hermes#/host-hermes#g'"
+                                                + " /export/host-tools/ImportHostCompilers.cmake"
+                                            : ""),
                                 ],
                                 environment: environment,
                                 target: target,
@@ -492,7 +540,8 @@ public enum ReactNativeColliderRecipe {
         return HermesArtifacts(
             task: task,
             libraries: [combinedArtifact],
-            compiler: compilerArtifact)
+            compiler: compilerArtifact,
+            hostTools: hostToolsArtifact)
     }
 
     package static func buildSupportLibraries(
@@ -1063,12 +1112,15 @@ private let boostArchiveSHA256 =
 
 package enum ReactNativeRecipeFailure: Error, CustomStringConvertible {
     case invalidBoostSpecification
+    case missingHermesHostTools
     case missingICULibrary(NativeLinuxTarget)
 
     package var description: String {
         switch self {
         case .invalidBoostSpecification:
             "the pinned Boost download specification is invalid"
+        case .missingHermesHostTools:
+            "the x86_64 Hermes build requires the ARM64 host compiler artifact"
         case .missingICULibrary(let target):
             "React Native is missing Core's ICU artifact for \(target.identifier)"
         }
@@ -1250,7 +1302,6 @@ private func nativeContainerOperation(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
         resourceLimits: .parallelBuild,
         containerEnvironment: [
             "CCACHE_DIR": "/ccache",

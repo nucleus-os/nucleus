@@ -126,6 +126,7 @@ func everyRetiredOperationHasOneNormalizedSpelling() throws {
         ["bootstrap", "browser"],
         ["build", "browser"],
         ["test", "browser"],
+        ["package", "linux-runtime"],
         ["check", "sanitizers"],
     ]
     for arguments in replacements {
@@ -156,6 +157,10 @@ func inspectionCommandsDoNotCreateRunRecords() throws {
     let buildCommand = try #require(build as? any ColliderWorkspaceCommand)
     #expect(buildCommand.recordsRun)
     #expect(buildCommand.requiresExecutionAdmission)
+    let package = try ColliderCommand.parseAsRoot(["package", "linux-runtime"])
+    let packageCommand = try #require(package as? any ColliderWorkspaceCommand)
+    #expect(packageCommand.recordsRun)
+    #expect(packageCommand.requiresExecutionAdmission)
 }
 
 @Test

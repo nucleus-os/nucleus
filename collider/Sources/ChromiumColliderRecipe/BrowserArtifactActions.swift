@@ -43,7 +43,7 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
         let staging = try await context.containers.execute(
             chromiumToolExecution(
                 target: assembly.target,
-                imageID: assembly.artifactImageID,
+                entrypoint: assembly.entrypoint,
                 hostname: "chromium-browser-staging",
                 workingDirectory: "/candidate",
                 hostWorkingDirectory: candidate,
@@ -96,9 +96,11 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
             assembly: assembly,
             environment: assembly.environment,
             context: context)
+        let payloadDigest = try context.files.digest(tree: candidate)
         try context.files.publishGeneration(
             candidate: candidate,
-            generation: generations.appending(buildID),
+            generation: generations.appending(
+                "sha256-\(payloadDigest.hexadecimal)"),
             active: assembly.distributionRoot.appending("current"))
         succeeded = true
     }
@@ -117,6 +119,8 @@ private func encodeBrowserArtifactIdentity(
     encoder.append(path: assembly.distributionRoot)
     encoder.append(path: assembly.launcher)
     encoder.append(path: assembly.desktopTemplate)
+    encoder.append(
+        nested: OCIMountedEntrypointActionIdentity(assembly.entrypoint))
     encoder.append(assembly.target.architecture.rawValue)
     encoder.append(assembly.outputWorkspace.identity.key)
     encoder.append(assembly.sourceWorkspace.identity.key)
@@ -130,7 +134,8 @@ private func browserArtifactRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
-            ActionEffect(.read, scope: .input(assembly.artifactImageID)),
+            ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
+            ActionEffect(.read, scope: .input(assembly.entrypoint.executable)),
             ActionEffect(.read, scope: .input(assembly.launcher)),
             ActionEffect(.read, scope: .input(assembly.desktopTemplate)),
             ActionEffect(
@@ -160,15 +165,9 @@ private func validateBrowserPublicationStructure(
 ) throws -> FilePath {
     let builtManifest = assembly.buildManifest
     let buildID = try chromiumBuildID(manifest: builtManifest, files: files)
-    let current = assembly.distributionRoot.appending("current")
-    guard
-        try files.metadataWithoutFollowingSymlinks(for: current)?.type
-            == .symbolicLink,
-        try files.readSymbolicLink(current) == "generations/\(buildID)"
-    else {
-        throw BrowserArtifactActionFailure.invalidOutput(
-            "published browser generation does not match \(buildID)")
-    }
+    let current = try validatedBrowserPublicationPayload(
+        distributionRoot: assembly.distributionRoot,
+        files: files)
     let publishedManifest = current.appending(
         "nucleus-build-manifest.json")
     guard try files.contentsEqual(at: builtManifest, and: publishedManifest)
@@ -176,8 +175,38 @@ private func validateBrowserPublicationStructure(
         throw BrowserArtifactActionFailure.invalidOutput(
             "published browser build manifest does not match \(buildID)")
     }
-    try validateBrowserGenerationStructure(current, files: files)
     return current
+}
+
+package func validatedBrowserPublicationPayload(
+    distributionRoot: FilePath,
+    files: ActionFileSystem
+) throws -> FilePath {
+    let current = distributionRoot.appending("current")
+    guard
+        try files.metadataWithoutFollowingSymlinks(for: current)?.type
+            == .symbolicLink
+    else {
+        throw BrowserArtifactActionFailure.invalidOutput(
+            "published browser generation is missing")
+    }
+    let target = try files.readSymbolicLink(current)
+    guard
+        target.range(
+            of: #"^generations/sha256-[0-9a-f]{64}$"#,
+            options: .regularExpression) != nil
+    else {
+        throw BrowserArtifactActionFailure.invalidOutput(
+            "published browser generation is not content addressed: \(target)")
+    }
+    let payload = distributionRoot.appending(target)
+    try validateBrowserGenerationStructure(payload, files: files)
+    let digest = try files.digest(tree: payload)
+    guard target == "generations/sha256-\(digest.hexadecimal)" else {
+        throw BrowserArtifactActionFailure.invalidOutput(
+            "published browser generation digest does not match its payload")
+    }
+    return payload
 }
 
 private func validateBrowserGeneration(
@@ -190,7 +219,7 @@ private func validateBrowserGeneration(
     let validation = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.artifactImageID,
+            entrypoint: assembly.entrypoint,
             hostname: "chromium-browser-validation",
             workingDirectory: "/artifact",
             hostWorkingDirectory: generation,
@@ -212,7 +241,7 @@ private func validateBrowserGeneration(
     }
 }
 
-private func validateBrowserGenerationStructure(
+package func validateBrowserGenerationStructure(
     _ generation: FilePath,
     files: ActionFileSystem
 ) throws {

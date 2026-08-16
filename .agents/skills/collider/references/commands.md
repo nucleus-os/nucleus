@@ -21,7 +21,7 @@ Subcommands:
 - `test`
 - `check`
 - `generate`
-- `install`: Install Nucleus runtime and browser products.
+- `package`: Assemble native Nucleus distribution packages.
 - `skill`: Maintain repository-scoped agent skills.
 - `benchmark`
 - `clean`: Remove a component's graph-declared rebuildable storage.
@@ -139,11 +139,11 @@ Arguments and options:
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
-## `collider install`
+## `collider package`
 
-Install Nucleus runtime and browser products.
+Assemble native Nucleus distribution packages.
 
-Usage: `collider install [--version] [--help] <subcommand>`
+Usage: `collider package [--version] [--help] <subcommand>`
 
 Arguments and options:
 
@@ -152,11 +152,13 @@ Arguments and options:
 
 Subcommands:
 
-- `browser`
+- `linux-runtime`: Assemble the complete Linux runtime package cohort.
 
-## `collider install browser`
+## `collider package linux-runtime`
 
-Usage: `collider install browser [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--prefix <prefix>] [--version] [--help]`
+Assemble the complete Linux runtime package cohort.
+
+Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
 
 Arguments and options:
 
@@ -168,7 +170,6 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
-- `--prefix` `<prefix>`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

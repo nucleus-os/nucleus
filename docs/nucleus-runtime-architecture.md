@@ -159,6 +159,26 @@ stable Collider-owned products link rather than reconstructing SwiftPM's private
 scratch layout. Target Swift actions retain a declared-input gate outside the
 container so unchanged work avoids container startup.
 
+The Linux arm64 builder starts from the exact official Swift 6.4 compiler
+archive. Collider then resolves the exact pinned SwiftPM closure on the host,
+compiles the pinned Nucleus SwiftPM and SwiftBuild sources offline and natively
+for arm64 in a persistent workspace, and assembles a deterministic overlay. The
+overlay contains only the arm64 `swift-package-manager` executable, its
+`swift-package` and `swift-build` links, matching resource bundles, and
+source/compiler provenance. Collider
+publishes it as a bounded host artifact and mounts it read-only at
+`/swiftpm-overlay` for production SwiftPM actions. The single stable builder
+image retains the official adjacent SwiftPM tools for bootstrap work but never
+contains or depends on the overlay. Production actions address the mounted
+executable explicitly, so overlay changes do not rebuild or unpack the
+heavyweight image. No remote release or GitHub-hosted build participates. Its SwiftBuild patch
+preserves the host SDK through host-build-tool dependency specialization when
+the destination is another Linux architecture. Collider invokes the mounted
+unified executable directly with an explicit command mode and selects the
+official arm64 compiler through `SWIFTPM_CUSTOM_BIN_DIR`. Both Linux target lanes
+therefore run the arm64 host compiler and SwiftPM process natively; x86_64
+remains only a target triple and target SDK, not a translated host compiler.
+
 The Swift target-SDK workspace is one immutable generation graph. Collider
 validates the pinned source gitlinks, prepares exact Linux sysroots, builds the
 Linux/arm64 target runtime natively in the Apple-container builder, cross-builds

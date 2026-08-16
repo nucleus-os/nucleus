@@ -11,7 +11,9 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     #if os(Linux)
     commands.append(contentsOf: LinuxOperationCommandSet.root)
     #endif
+    #if os(Linux)
     commands.append(Install.self)
+    #endif
     commands.append(Skill.self)
     #if os(Linux)
     commands.append(AndroidRuntime.self)
@@ -94,11 +96,11 @@ package struct Install: AsyncParsableCommand {
         subcommands: installSubcommands())
 
     private static func installSubcommands() -> [ParsableCommand.Type] {
-        var commands = WorkspaceCommandSet.install
         #if os(Linux)
-        commands.insert(contentsOf: LinuxOperationCommandSet.install, at: 0)
+        return LinuxOperationCommandSet.install
+        #else
+        return []
         #endif
-        return commands
     }
 
     package init() {}

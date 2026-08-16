@@ -8,7 +8,7 @@ direction. Nested first-party package manifests do not survive the cutover.
 Third-party source remains in independently versioned path packages.
 
 Collider owns repository orchestration, native lanes, task attribution, and
-artifact policy. Stock SwiftPM owns one first-party package graph, one scratch
+artifact policy. SwiftPM owns one first-party package graph, one scratch
 directory, one build database, incremental compilation, and test compilation.
 
 ## Production Shape
@@ -43,7 +43,7 @@ remain separate from the executable process-policy entry point.
 
 ## Command Contract
 
-The build and test commands use only stock SwiftPM interfaces:
+The build and test commands use only public SwiftPM interfaces:
 
 ```sh
 swift build \
@@ -68,7 +68,7 @@ triple; ambient environment state never changes the manifest graph.
 
 ## Manifest and Destination Contract
 
-The root manifest evaluates from a bare clone with stock Swift 6.4. Evaluation
+The root manifest evaluates from a bare clone with Swift 6.4. Evaluation
 reads no environment variables, launches no process, derives no repository root
 from `#filePath`, and embeds no absolute host path. It declares one unconditional,
 destination-independent product, dependency, and target graph. Platform
@@ -128,7 +128,7 @@ Two migration constraints are mandatory:
 
 ## Decision
 
-Stock SwiftPM supplies the architecture the former multi-root patches
+SwiftPM supplies the architecture the former multi-root patches
 approximated:
 
 - one invocation floor;
@@ -138,7 +138,17 @@ approximated:
 - standard SourceKit-LSP integration.
 
 SwiftPM patches `0002` through `0005` and the SourceKit-LSP workspace-plan patch
-are removed. Unrelated toolchain fixes remain.
+are removed. The Linux builder applies one unrelated Nucleus-owned
+SwiftPM/SwiftBuild host-tool overlay: it preserves the native host SDK for build
+tools and their dependencies while an arm64 SwiftPM process cross-compiles an
+x86_64 destination. Collider builds that overlay locally from exact pinned
+SwiftPM and SwiftBuild root submodules using the official arm64 compiler,
+persistent build state, host-materialized dependencies, and offline container
+execution. Collider publishes it as a bounded directory, retains its producer
+edge in every production SwiftPM invocation, and mounts it read-only rather than
+copying it into the stable builder image. The overlay does not change the
+package graph or public command contract and is not a separately published
+release input.
 
 ## Verified State
 
@@ -152,4 +162,4 @@ are removed. Unrelated toolchain fixes remain.
 - A warm no-op build has one invocation floor.
 - SourceKit-LSP resolves cross-target symbols without a custom workspace plan.
 - The complete host build and complete host test graph pass.
-- Collider’s command suite passes against the stock SwiftPM command contract.
+- Collider’s command suite passes against the public SwiftPM command contract.

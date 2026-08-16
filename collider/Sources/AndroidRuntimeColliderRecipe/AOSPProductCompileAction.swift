@@ -11,10 +11,12 @@ struct CompileAOSPProductAction: ColliderAction {
                 build.productSource,
                 build.sourceProvenance,
                 build.artifactRoot,
-                build.buildImageID,
             ] {
                 encoder.append(path: path)
             }
+            encoder.append(
+                nested: OCIMountedEntrypointActionIdentity(
+                    build.buildEntrypoint))
             encoder.append(build.product)
             encoder.append(build.release)
             encoder.append(build.variant)
@@ -49,7 +51,8 @@ struct CompileAOSPProductAction: ColliderAction {
         var effects = [
             ActionEffect(.read, scope: .input(build.productSource)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(.read, scope: .input(build.buildImageID)),
+            ActionEffect(.read, scope: .input(build.buildEntrypoint.image.path)),
+            ActionEffect(.read, scope: .input(build.buildEntrypoint.executable)),
             ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]
         for overlay in build.sourceOverlays {
@@ -148,6 +151,10 @@ private struct AOSPProductCompileWorkflow {
                     build.outputMount,
                     build.compilerCacheMount,
                 ],
+                executableRequirements: aospX86ExecutableRequirements([
+                    "/src/prebuilts/jdk/jdk21/linux-x86/bin/java",
+                    "/out/soong/.bootstrap/bin/soong_build",
+                ]),
                 command: [
                     "/src/build/soong/soong_ui.bash",
                     "--make-mode",

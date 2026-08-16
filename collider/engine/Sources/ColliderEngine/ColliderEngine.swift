@@ -86,18 +86,33 @@ public struct ColliderEngine: Sendable {
             digestIndex: stateRoot.appending("artifact-digests.json"))
         let outputValidator = TaskOutputValidator(
             fileSystem: runtime.actionFileSystem())
-        let services = TaskPlanningServices(
-            identityPathMap: identityPathMap,
-            digestBytes: planningInputs.digest(bytes:),
-            digestFile: planningInputs.digest(file:),
-            digestTree: planningInputs.digest(tree:),
-            digestSourceCheckout: planningInputs.digest(sourceCheckout:),
-            digestSourceCheckoutClosure:
-                planningInputs.digest(sourceCheckoutClosure:),
-            semanticToolIdentity: planningInputs.semanticToolIdentity,
-            taskState: state.lookup,
-            validateOutputs: outputValidator.validate)
-        let plan = try planning(services)
+        func services(
+            validatingOCIImages imageValidator: OCIImageOutputValidator? = nil
+        ) -> TaskPlanningServices {
+            TaskPlanningServices(
+                identityPathMap: identityPathMap,
+                digestBytes: planningInputs.digest(bytes:),
+                digestFile: planningInputs.digest(file:),
+                digestTree: planningInputs.digest(tree:),
+                digestSourceCheckout: planningInputs.digest(sourceCheckout:),
+                digestSourceCheckoutClosure:
+                    planningInputs.digest(sourceCheckoutClosure:),
+                semanticToolIdentity: planningInputs.semanticToolIdentity,
+                taskState: state.lookup,
+                validateOutputs: { task in
+                    try outputValidator.validate(task)
+                    try imageValidator?.validate(task)
+                })
+        }
+        var plan = try planning(services())
+        if runtime.hasOCIRuntimeBackend,
+            plan.containsCleanOCIImageOutput
+        {
+            let imageValidator = OCIImageOutputValidator(
+                images: try await runtime.ociImages())
+            plan = try planning(
+                services(validatingOCIImages: imageValidator))
+        }
         let hashingDuration = planningInputs.hashingDurationNanoseconds
         try planningInputs.persistDigestIndex()
         let planningDuration = elapsedNanoseconds(since: planningStart)

@@ -3,17 +3,20 @@ import Foundation
 import SystemPackage
 
 package enum NativeBuilderTaskIDs {
+    package static let swiftBuildRegressionTest = TaskID(
+        rawValue: "native.swiftbuild-regression-test")
+    package static let swiftPMRegressionTest = TaskID(
+        rawValue: "native.swiftpm-regression-test")
+    package static let swiftPMOverlayBuild = TaskID(
+        rawValue: "native.swiftpm-overlay-build")
+    package static let swiftPMOverlayArtifact = TaskID(
+        rawValue: "native.swiftpm-overlay-artifact")
     package static let dependencies = TaskID(rawValue: "native.builder-dependencies")
-    package static let prepare = TaskID(rawValue: "native.builder")
 }
 
 package struct NativeBuilderArtifacts: Sendable {
     package let component: ComponentDefinition
     package let configuration: NativeOCIBaseConfiguration
-}
-
-private enum NativeEntrypointImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "native.prepare-entrypoint-image"
 }
 
 public enum NativeBuilderColliderRecipe {
@@ -23,20 +26,33 @@ public enum NativeBuilderColliderRecipe {
         directoryName: "collider/images/native-builder")
 
     package static func prepare(
+        repositoryRoot: FilePath,
         context sourceContext: FilePath,
         cacheRoot: FilePath,
-        imageID: FilePath,
         ccache: FilePath,
         environment: [String: String]
     ) throws -> NativeBuilderArtifacts {
         let inputRoot = cacheRoot.appending("inputs")
         let dependencyContext = cacheRoot.appending("dependency-context")
-        let generatedContext = cacheRoot.appending("context")
         let resolverOutput = cacheRoot.appending("apt-resolution")
         let resolverImageID = cacheRoot.appending("resolver-image-id")
         let dependencyImageID = cacheRoot.appending("dependency-image-id")
+        let overlayRoot = cacheRoot.appending("swiftpm-overlay/artifact")
+        let swiftPMSource = repositoryRoot.appending(
+            "swift-sdk/source/swift-package-manager")
+        let swiftBuildSource = repositoryRoot.appending(
+            "swift-sdk/source/swift-build")
         let manifest = try NativeBuilderInputManifest.load(
             from: sourceContext.appending("native-builder-inputs.json"))
+        let overlayManifest = try SwiftPMOverlayInputManifest.load(
+            from: sourceContext.appending("swiftpm-overlay-inputs.json"))
+        guard
+            let swiftCompilerArchive = manifest.archives.first(where: {
+                $0.name == "swift-arm64.tar.gz"
+            })
+        else {
+            throw NativeBuilderInputFailure.invalidManifest
+        }
         let downloads = try manifest.downloads(root: inputRoot)
         let resolverPreparation = OCIImagePreparation(
             executionPlatform: .linuxARM64OCI,
@@ -51,15 +67,6 @@ public enum NativeBuilderColliderRecipe {
             containerFile: dependencyContext.appending("Containerfile"),
             imageID: dependencyImageID,
             imageName: "localhost/nucleus-linux-build-dependencies",
-            environment: environment)
-        let finalPreparation = OCIImagePreparation(
-            executionPlatform: .linuxARM64OCI,
-            context: generatedContext,
-            containerFile: generatedContext.appending("Containerfile"),
-            imageID: imageID,
-            imageName: "localhost/nucleus-linux-build",
-            baseImageSource: .local,
-            localBaseImageID: dependencyImageID,
             environment: environment)
 
         var dependencyBuilder = TaskBuilder(
@@ -90,44 +97,217 @@ public enum NativeBuilderColliderRecipe {
                         initialDownloads: downloads,
                         resolverPreparation: resolverPreparation,
                         dependencyPreparation: dependencyPreparation)))
-        var builder = TaskBuilder(
-            id: NativeBuilderTaskIDs.prepare,
-            component: descriptor.id)
-        builder.consume(dependencyImage)
-        let image: ArtifactReference = try builder.output(
-            "image-id",
-            path: imageID,
-            validation: .regularFile)
-        let task = builder.build(
-            inputs: [.file(sourceContext.appending("entrypoint.sh"))],
-            locks: [.checkout("native-builder-image")],
-            assessmentPolicy: .incremental,
-            action:
-                try AnyColliderAction(
-                    PrepareOCIEntrypointImageAction<NativeEntrypointImageActionKind>(
-                        baseImageID: dependencyImageID,
-                        entrypoint: sourceContext.appending("entrypoint.sh"),
-                        entrypointDestination: "/usr/local/bin/nucleus-build",
-                        generatedContext: generatedContext,
-                        preparation: finalPreparation)))
-        let configuration = NativeOCIBaseConfiguration(
-            context: generatedContext,
-            dependencyImage: dependencyImage,
-            image: image,
-            ccache: ccache,
+
+        let swiftBuildInvocation = SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: swiftBuildSource,
+                buildSystem: .native,
+                configuration: .debug,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "swift-6.4-swiftbuild-"
+                    + overlayManifest.swiftBuildRevision,
+                maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: dependencyImage,
+                        hostname: "nucleus-swiftbuild-regression",
+                        hostWorkingDirectory: repositoryRoot,
+                        mounts: [
+                            OCIMount(
+                                source: repositoryRoot,
+                                target: repositoryRoot.string,
+                                access: .readOnly)
+                        ],
+                        buildWorkspace: PersistentWorkspaceDeclaration(
+                            identity: PersistentWorkspaceIdentity(
+                                key: "nucleus-swiftbuild-tests",
+                                artifactTarget: .linuxARM64,
+                                role: "build"),
+                            capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                            filesystem: .ext4,
+                            journal: .writeback64MiB),
+                        hostDependencyCache: cacheRoot.appending(
+                            "swiftbuild-regression/dependency-cache"),
+                        resourceLimits: .parallelBuild,
+                        containerEnvironment: [
+                            "HOME": "/home/nucleus-build",
+                            "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
+                                + "/opt/swift-compat/arm64",
+                        ],
+                        commandPrefix: ["swiftpm"]))),
+            scratchPath: cacheRoot.appending("swiftbuild-regression/scratch"),
+            dependencyLock: swiftBuildSource.appending("Package.resolved"))
+        let swiftBuildRegression = swiftBuildInvocation.testProduct(
+            package: "SwiftBuild",
+            testProduct: "SwiftBuildPackageTests",
+            packageRoot: swiftBuildSource,
+            environment: environment,
+            arguments: [
+                "--filter",
+                "HostBuildToolTaskConstructionTests."
+                    + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux",
+            ])
+        let swiftBuildRegressionTask = TaskBuilder(
+            id: NativeBuilderTaskIDs.swiftBuildRegressionTest,
+            component: descriptor.id
+        ).build(
+            swiftTests: [swiftBuildRegression],
+            inputs: [
+                .sourceCheckout(swiftBuildSource),
+                swiftBuildInvocation.identityInput,
+            ],
+            locks: [.checkout("native-swiftbuild-regression-test")])
+
+        let swiftPMInvocation = SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: swiftPMSource,
+                buildSystem: .native,
+                configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "swift-6.4-"
+                    + overlayManifest.swiftPackageManagerRevision,
+                maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: dependencyImage,
+                        hostname: "nucleus-swiftpm-overlay",
+                        hostWorkingDirectory: repositoryRoot,
+                        mounts: [
+                            OCIMount(
+                                source: repositoryRoot,
+                                target: repositoryRoot.string,
+                                access: .readOnly)
+                        ],
+                        buildWorkspace: PersistentWorkspaceDeclaration(
+                            identity: PersistentWorkspaceIdentity(
+                                key: "nucleus-swiftpm-overlay",
+                                artifactTarget: .linuxARM64,
+                                role: "build"),
+                            capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                            filesystem: .ext4,
+                            journal: .writeback64MiB),
+                        hostDependencyCache: cacheRoot.appending(
+                            "swiftpm-overlay/dependency-cache"),
+                        resourceLimits: .parallelBuild,
+                        containerEnvironment: [
+                            "HOME": "/home/nucleus-build",
+                            "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
+                                + "/opt/swift-compat/arm64",
+                        ],
+                        commandPrefix: ["swiftpm"]))),
+            scratchPath: cacheRoot.appending("swiftpm-overlay/scratch"),
+            dependencyLock: swiftPMSource.appending("Package.resolved"))
+        let swiftPMRegression = swiftPMInvocation.testProduct(
+            package: "SwiftPM",
+            testProduct: "SwiftPMPackageTests",
+            packageRoot: swiftPMSource,
+            environment: environment,
+            arguments: [
+                "--filter",
+                "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly",
+            ])
+        let swiftPMRegressionTask = TaskBuilder(
+            id: NativeBuilderTaskIDs.swiftPMRegressionTest,
+            component: descriptor.id
+        ).build(
+            swiftTests: [swiftPMRegression],
+            inputs: [
+                .sourceCheckout(swiftPMSource),
+                .sourceCheckout(swiftBuildSource),
+                swiftPMInvocation.identityInput,
+            ],
+            locks: [.checkout("native-swiftpm-regression-test")]
+        ).addingDependencies([swiftBuildRegressionTask.id])
+
+        let swiftPMProduct = swiftPMInvocation.product(
+            package: "SwiftPM",
+            product: "swift-package-manager",
+            packageRoot: swiftPMSource,
             environment: environment)
+        var overlayBuildBuilder = TaskBuilder(
+            id: NativeBuilderTaskIDs.swiftPMOverlayBuild,
+            component: descriptor.id)
+        let swiftPMExecutable = try overlayBuildBuilder.executableOutput(
+            "swift-package-manager",
+            path: swiftPMInvocation.executable("swift-package-manager"))
+        let overlayBuildTask = overlayBuildBuilder.build(
+            swiftProducts: [swiftPMProduct],
+            inputs: [
+                .sourceCheckout(swiftPMSource),
+                .sourceCheckout(swiftBuildSource),
+                swiftPMInvocation.identityInput,
+            ],
+            locks: [.checkout("native-swiftpm-overlay-build")]
+        ).addingDependencies([swiftPMRegressionTask.id])
+
+        var overlayArtifactBuilder = TaskBuilder(
+            id: NativeBuilderTaskIDs.swiftPMOverlayArtifact,
+            component: descriptor.id)
+        overlayArtifactBuilder.consume(swiftPMExecutable)
+        overlayArtifactBuilder.consume(dependencyImage)
+        let overlayArtifact: ArtifactReference = try overlayArtifactBuilder.output(
+            "root",
+            path: overlayRoot,
+            validation: .nonEmptyDirectory)
+        let overlayArtifactTask = overlayArtifactBuilder.build(
+            inputs: [
+                .file(sourceContext.appending("swiftpm-overlay-inputs.json")),
+                .file(sourceContext.appending("assemble-swiftpm-overlay.sh")),
+                .sourceCheckout(swiftPMSource),
+                .sourceCheckout(swiftBuildSource),
+            ],
+            locks: [.checkout("native-swiftpm-overlay-artifact")],
+            action: try AnyColliderAction(
+                AssembleSwiftPMOverlayAction(
+                    image: dependencyImage,
+                    repositoryRoot: repositoryRoot,
+                    products: swiftPMInvocation.productsDirectory,
+                    outputRoot: overlayRoot,
+                    assemblyScript: sourceContext.appending(
+                        "assemble-swiftpm-overlay.sh"),
+                    swiftPMSource: swiftPMSource,
+                    swiftBuildSource: swiftBuildSource,
+                    inputs: overlayManifest,
+                    swiftCompilerArchiveSHA256: swiftCompilerArchive.sha256,
+                    environment: environment)))
+
+        let configuration = NativeOCIBaseConfiguration(
+            image: dependencyImage,
+            swiftPMOverlay: overlayArtifact,
+            ccache: ccache,
+            environment: environment,
+            swiftPMOverlayRevision:
+                overlayManifest.swiftPackageManagerRevision)
         return NativeBuilderArtifacts(
             component: try ComponentDefinition(
                 descriptor: descriptor,
-                tasks: [dependencyTask, task],
+                tasks: [
+                    dependencyTask,
+                    swiftBuildRegressionTask,
+                    swiftPMRegressionTask,
+                    overlayBuildTask,
+                    overlayArtifactTask,
+                ],
                 entrypoints: [
-                    ComponentEntrypoint(id: .bootstrap, roots: [task.id])
+                    ComponentEntrypoint(
+                        id: .bootstrap,
+                        roots: [dependencyTask.id, overlayArtifactTask.id])
                 ],
                 storage: [
                     StorageDeclaration(
                         id: "native-builder-metadata",
                         owner: descriptor.id,
-                        producers: [.task(dependencyTask.id), .task(task.id)],
+                        producers: [
+                            .task(dependencyTask.id),
+                            .task(swiftBuildRegressionTask.id),
+                            .task(swiftPMRegressionTask.id),
+                            .task(overlayBuildTask.id),
+                            .task(overlayArtifactTask.id),
+                        ],
                         storageClass: .cache,
                         root: cacheRoot,
                         safetyRoot: cacheRoot.removingLastComponent(),
@@ -146,11 +326,100 @@ public enum NativeBuilderColliderRecipe {
     }
 }
 
+private struct AssembleSwiftPMOverlayAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let execution: OCIExecution
+
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(nested: OCIExecutionActionIdentity(execution))
+        }
+    }
+
+    static let kind: ActionKind = "native.assemble-swiftpm-overlay"
+
+    private let execution: OCIExecution
+    private let pipeline: OCIExecutionPipeline
+    private let outputRoot: FilePath
+
+    var identity: Identity { Identity(execution: execution) }
+    var requirements: ActionRequirements { pipeline.requirements }
+
+    init(
+        image: ArtifactReference,
+        repositoryRoot: FilePath,
+        products: FilePath,
+        outputRoot: FilePath,
+        assemblyScript: FilePath,
+        swiftPMSource: FilePath,
+        swiftBuildSource: FilePath,
+        inputs: SwiftPMOverlayInputManifest,
+        swiftCompilerArchiveSHA256: String,
+        environment: [String: String]
+    ) throws {
+        self.outputRoot = outputRoot
+        let entrypoint = OCIMountedEntrypoint(
+            image: image,
+            executable: assemblyScript,
+            containerDirectory: "/collider-entrypoints/swiftpm-overlay")
+        execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: image.path,
+            hostname: "nucleus-swiftpm-overlay-artifact",
+            workingDirectory: repositoryRoot.string,
+            hostWorkingDirectory: repositoryRoot,
+            mounts: [
+                OCIMount(
+                    source: repositoryRoot,
+                    target: repositoryRoot.string,
+                    access: .readOnly),
+                OCIMount(
+                    source: products,
+                    target: products.string,
+                    access: .readOnly),
+                OCIMount(
+                    boundedExport: outputRoot,
+                    target: outputRoot.string),
+                entrypoint.mount,
+            ],
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .build,
+            containerEnvironment: [
+                "HOME": "/home/nucleus-build",
+                "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
+                    + "/opt/swift-compat/arm64",
+                "NUCLEUS_SWIFTPM_OVERLAY_OUTPUT": outputRoot.string,
+                "NUCLEUS_SWIFTPM_OVERLAY_PRODUCTS": products.string,
+                "NUCLEUS_SWIFTPM_REVISION": inputs.swiftPackageManagerRevision,
+                "NUCLEUS_SWIFTBUILD_REVISION": inputs.swiftBuildRevision,
+                "NUCLEUS_SWIFTPM_SOURCE": swiftPMSource.string,
+                "NUCLEUS_SWIFTBUILD_SOURCE": swiftBuildSource.string,
+                "NUCLEUS_SWIFT_COMPILER_ARCHIVE_SHA256":
+                    swiftCompilerArchiveSHA256,
+                "SOURCE_DATE_EPOCH": String(inputs.sourceDateEpoch),
+            ],
+            imageEntrypointOverride: entrypoint.containerPath,
+            command: ["assemble"],
+            environment: environment,
+            output: .logged)
+        pipeline = try OCIExecutionPipeline([execution])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.createDirectory(outputRoot)
+        try await context.containers.run(execution)
+    }
+}
+
 private func nativeBuilderDependencyInputs(
     sourceContext: FilePath
 ) -> [ArtifactInput] {
     [
         "Dependencies.Containerfile",
+        "entrypoint.sh",
         "Resolver.Containerfile",
         "apt-extract-packages.txt",
         "apt-install-packages.txt",
@@ -217,6 +486,9 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
                     .read,
                     scope: .input(
                         sourceContext.appending("Dependencies.Containerfile"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(sourceContext.appending("entrypoint.sh"))),
                 ActionEffect(
                     .read,
                     scope: .input(
@@ -365,6 +637,9 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
         try files.copy(
             from: sourceContext.appending("Dependencies.Containerfile"),
             to: candidate.appending("Containerfile"))
+        try files.copy(
+            from: sourceContext.appending("entrypoint.sh"),
+            to: candidate.appending("entrypoint.sh"))
         for download in downloads {
             let destination: FilePath
             switch download.placement {

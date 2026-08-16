@@ -56,6 +56,22 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(defaultContext.identityBytes == narrowerContext.identityBytes)
 }
 
+@Test func swiftBuildContextIncludesBuildSystemInArtifactIdentity() {
+    let swiftBuild = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .release,
+        target: .triple("x86_64-unknown-linux-gnu"),
+        toolchainIdentity: "swiftc@fixture")
+    let native = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        buildSystem: .native,
+        configuration: .release,
+        target: .triple("x86_64-unknown-linux-gnu"),
+        toolchainIdentity: "swiftc@fixture")
+
+    #expect(swiftBuild.identityBytes != native.identityBytes)
+}
+
 @Test func swiftPMInvocationOwnsArgumentsOutputAndSharedLock() {
     let context = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
@@ -241,6 +257,14 @@ private let fixturePackageRoot = FilePath("/workspace")
         "image-id",
         path: imageID,
         validation: .regularFile)
+    let overlayRoot = FilePath("/cache/nucleus-linux-build/swiftpm-overlay")
+    var overlayProducer = TaskBuilder(
+        id: TaskID(rawValue: "native.swiftpm-overlay-artifact"),
+        component: ComponentID(rawValue: "native"))
+    let overlay: ArtifactReference = try overlayProducer.output(
+        "root",
+        path: overlayRoot,
+        validation: .nonEmptyDirectory)
     let buildWorkspace = PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
             key: "fixture-swiftpm",
@@ -261,22 +285,32 @@ private let fixturePackageRoot = FilePath("/workspace")
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64,
         image: image,
+        inputArtifacts: [overlay],
         hostname: "nucleus-linux-amd64-test",
         hostWorkingDirectory: fixturePackageRoot,
         mounts: [
             OCIMount(
                 source: fixturePackageRoot,
                 target: fixturePackageRoot.string,
-                access: .readOnly)
+                access: .readOnly),
+            OCIMount(
+                source: overlayRoot,
+                target: "/swiftpm-overlay",
+                access: .readOnly),
         ],
         buildWorkspace: buildWorkspace,
         compilerCacheWorkspace: compilerCacheWorkspace,
         hostDependencyCache: FilePath("/cache/swiftpm"),
-        intelBinaryTranslationPolicy: .required,
+        executableRequirements: [
+            OCIExecutableRequirement(
+                architecture: .x86_64,
+                executable: "/opt/swift-x86_64/usr/bin/swift")
+        ],
         containerEnvironment: ["HOME": "/home/fixture"],
         environmentProjection: EnvironmentProjection(
             prefixes: ["PROJECT_"],
-            excludedNames: ["PROJECT_PRIVATE"]))
+            excludedNames: ["PROJECT_PRIVATE"]),
+        swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager")
     let context = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
         configuration: .debug,
@@ -291,7 +325,7 @@ private let fixturePackageRoot = FilePath("/workspace")
         swiftExecutable: .path(
             FilePath("/opt/swift-x86_64/usr/bin/swift")))
 
-    #expect(invocation.artifactReferences.map(\.path) == [imageID])
+    #expect(invocation.artifactReferences.map(\.path) == [imageID, overlayRoot])
     let logicalTest = TaskBuilder(
         id: TaskID(rawValue: "fixture.test"),
         component: ComponentID(rawValue: "fixture")
@@ -302,7 +336,11 @@ private let fixturePackageRoot = FilePath("/workspace")
             packageRoot: fixturePackageRoot,
             environment: [:])
     ])
-    #expect(logicalTest.dependencies == [TaskID(rawValue: "native.builder")])
+    #expect(
+        logicalTest.dependencies == [
+            TaskID(rawValue: "native.builder"),
+            TaskID(rawValue: "native.swiftpm-overlay-artifact"),
+        ])
 
     let operation = try invocation.ociExecution(
         arguments: ["test"],
@@ -315,15 +353,21 @@ private let fixturePackageRoot = FilePath("/workspace")
 
     #expect(operation.executionPlatform == .linuxARM64OCI)
     #expect(operation.artifactTarget == .linuxX86_64)
-    #expect(operation.intelBinaryTranslationPolicy == .required)
+    #expect(
+        operation.executableRequirements == [
+            OCIExecutableRequirement(
+                architecture: .x86_64,
+                executable: "/opt/swift-x86_64/usr/bin/swift")
+        ])
     #expect(
         operation.command.starts(with: [
             "swiftpm", "taskset", "--cpu-list", "0-9",
-            "/opt/swift-x86_64/usr/bin/swift", "test",
+            "/swiftpm-overlay/usr/bin/swift-package-manager", "--build-system",
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
     #expect(operation.containerEnvironment["PROJECT_MODE"] == "debug")
     #expect(operation.containerEnvironment["PROJECT_PRIVATE"] == nil)
+    #expect(operation.containerEnvironment["SWIFTPM_EXEC_NAME"] == "swift-test")
     #expect(invocation.executionScratchPath.string.hasPrefix("/swiftpm-workspace/"))
     #expect(operation.command.contains(invocation.executionScratchPath.string))
     #expect(operation.command.contains("--swift-sdks-path"))

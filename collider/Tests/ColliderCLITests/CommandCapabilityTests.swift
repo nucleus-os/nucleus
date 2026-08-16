@@ -15,7 +15,7 @@ private let taskControlledLeaves: [[String]] = [
     ["check", "thread-sanitizer"],
     ["check", "android-source-lock"],
     ["generate", "vulkan"],
-    ["install", "browser"],
+    ["package", "linux-runtime"],
     ["benchmark"],
 ]
 
@@ -155,15 +155,13 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
 }
 
 @Test
-func installationHelpExposesTheOnlyBrowserNamespace() throws {
-    _ = try ColliderCommand.parseAsRoot(["install", "browser"])
+func browserInstallationGrammarIsRemoved() throws {
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["install", "browser"])
+    }
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["browser", "install"])
     }
-
-    let installHelp = ColliderCommand.message(
-        for: CleanExit.helpRequest(Install.self))
-    #expect(installHelp.contains("browser"))
 }
 
 private func awaitRejects(_ path: [String], options: [String]) {

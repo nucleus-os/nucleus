@@ -1,8 +1,13 @@
 import SystemPackage
 
-public enum SwiftBuildConfiguration: String, Hashable, Sendable {
+public enum SwiftBuildConfiguration: String, Codable, Hashable, Sendable {
     case debug
     case release
+}
+
+public enum SwiftPMBuildSystem: String, Codable, Hashable, Sendable {
+    case native
+    case swiftbuild
 }
 
 public enum SwiftBuildTarget: Hashable, Sendable {
@@ -33,6 +38,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget
     public let image: ArtifactReference
+    public let inputArtifacts: [ArtifactReference]
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
@@ -40,16 +46,21 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let compilerCacheWorkspace: PersistentWorkspaceDeclaration?
     public let hostDependencyCache: FilePath
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
-    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
+    public let executableRequirements: Set<OCIExecutableRequirement>
     public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
     public let environmentProjection: EnvironmentProjection
     public let commandPrefix: [String]
+    /// An installed unified SwiftPM executable used directly inside the OCI
+    /// environment. Its command mode is selected with `SWIFTPM_EXEC_NAME`, so
+    /// it does not need to be installed beside the Swift compiler driver.
+    public let swiftPMExecutable: FilePath?
 
     public init(
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget,
         image: ArtifactReference,
+        inputArtifacts: [ArtifactReference] = [],
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
@@ -57,16 +68,18 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         compilerCacheWorkspace: PersistentWorkspaceDeclaration? = nil,
         hostDependencyCache: FilePath,
         processFilesystemPolicy: OCIProcessFilesystemPolicy = .standard,
-        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
+        executableRequirements: Set<OCIExecutableRequirement> = [],
         resourceLimits: OCIResourceLimits = .build,
         containerEnvironment: [String: String] = [:],
         environmentProjection: EnvironmentProjection = .none,
-        commandPrefix: [String] = ["swiftpm"]
+        commandPrefix: [String] = ["swiftpm"],
+        swiftPMExecutable: FilePath? = nil
     ) {
         precondition(executionPlatform == .linuxARM64OCI)
         self.executionPlatform = executionPlatform
         self.artifactTarget = artifactTarget
         self.image = image
+        self.inputArtifacts = inputArtifacts
         self.hostname = hostname
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
@@ -74,11 +87,12 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.compilerCacheWorkspace = compilerCacheWorkspace
         self.hostDependencyCache = hostDependencyCache
         self.processFilesystemPolicy = processFilesystemPolicy
-        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
+        self.executableRequirements = executableRequirements
         self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
         self.environmentProjection = environmentProjection
         self.commandPrefix = commandPrefix
+        self.swiftPMExecutable = swiftPMExecutable
     }
 
     public var imageID: FilePath { image.path }
@@ -117,6 +131,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public static let concurrentOCIMaximumParallelism: UInt32 = 12
 
     public let packageRoot: FilePath
+    public let buildSystem: SwiftPMBuildSystem
     public let configuration: SwiftBuildConfiguration
     public let target: SwiftBuildTarget
     public let toolchainIdentity: String
@@ -133,6 +148,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
 
     public init(
         packageRoot: FilePath,
+        buildSystem: SwiftPMBuildSystem = .swiftbuild,
         configuration: SwiftBuildConfiguration,
         target: SwiftBuildTarget,
         toolchainIdentity: String,
@@ -150,6 +166,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
         precondition(packageRoot.isAbsolute && packageRoot.isLexicallyNormal)
         precondition(maximumParallelism > 0)
         self.packageRoot = packageRoot
+        self.buildSystem = buildSystem
         self.configuration = configuration
         self.target = target
         self.toolchainIdentity = toolchainIdentity
@@ -174,6 +191,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public func identityBytes(identityPathMap: IdentityPathMap) -> [UInt8] {
         var encoder = IdentityEncoder(identityPathMap: identityPathMap)
         encoder.append(path: packageRoot)
+        encoder.append(buildSystem.rawValue)
         encoder.append(configuration.rawValue)
         switch target {
         case .host(let identity):
@@ -206,7 +224,20 @@ public struct SwiftBuildContext: Hashable, Sendable {
             encoder.append(configuration.artifactTarget.operatingSystem.rawValue)
             encoder.append(configuration.artifactTarget.architecture.rawValue)
             encoder.append(path: configuration.imageID)
-            encoder.append(configuration.intelBinaryTranslationPolicy.rawValue)
+            encoder.appendSequence(configuration.inputArtifacts) {
+                $0.append(path: $1.path)
+            }
+            encoder.appendSequence(
+                configuration.executableRequirements.sorted {
+                    if $0.architecture != $1.architecture {
+                        return $0.architecture.rawValue < $1.architecture.rawValue
+                    }
+                    return $0.executable < $1.executable
+                }
+            ) { requirement, value in
+                requirement.appendEnum(value.architecture)
+                requirement.append(value.executable)
+            }
             encoder.appendSequence(configuration.mounts) { mountEncoder, mount in
                 mountEncoder.append(path: mount.source)
                 mountEncoder.append(mount.target)
@@ -219,6 +250,9 @@ public struct SwiftBuildContext: Hashable, Sendable {
                 append($1, into: &$0)
             }
             encoder.appendSequence(configuration.commandPrefix) { $0.append($1) }
+            encoder.appendOptional(configuration.swiftPMExecutable) {
+                $0.append(path: $1)
+            }
             encoder.append(path: configuration.hostDependencyCache)
         }
         return encoder.bytes
@@ -233,6 +267,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     public let scratchPath: FilePath
     public let swiftExecutable: CommandSpec.Executable
     public let dependencyLock: FilePath?
+    public let dependencyConfigurationFiles: [FilePath]
     public let sourceGraph: SwiftPackageSourceGraph
 
     public init(
@@ -240,12 +275,16 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         scratchPath: FilePath,
         swiftExecutable: CommandSpec.Executable = .named("swift"),
         dependencyLock: FilePath? = nil,
+        dependencyConfigurationFiles: [FilePath] = [],
         sourceGraph: SwiftPackageSourceGraph? = nil
     ) {
         self.context = context
         self.scratchPath = scratchPath
         self.swiftExecutable = swiftExecutable
         self.dependencyLock = dependencyLock
+        self.dependencyConfigurationFiles = Array(Set(dependencyConfigurationFiles)).sorted {
+            $0.string < $1.string
+        }
         self.sourceGraph = sourceGraph ?? .packageWide(context.packageRoot)
     }
 
@@ -259,6 +298,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         }
         if case .oci(let configuration) = context.execution {
             references.append(configuration.image)
+            references.append(contentsOf: configuration.inputArtifacts)
         }
         return references
     }
@@ -307,6 +347,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         let inputs =
             sourceGraph.inputs(forProduct: product)
             + (dependencyLock.map { [.file($0)] } ?? [])
+            + dependencyConfigurationFiles.map(ArtifactInput.file)
         return SwiftProductRequirement(
             package: package,
             product: product,
@@ -329,6 +370,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         let inputs =
             sourceGraph.testInputs
             + (dependencyLock.map { [.file($0)] } ?? [])
+            + dependencyConfigurationFiles.map(ArtifactInput.file)
         return SwiftTestRequirement(
             package: package,
             testProduct: testProduct,
@@ -371,6 +413,12 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         configurePersistentWorkspaceEnvironment(
             &containerEnvironment,
             configuration: configuration)
+        let swiftPMCommand = ociSwiftPMCommand(
+            arguments: arguments,
+            configuration: configuration)
+        if let executableName = swiftPMCommand.executableName {
+            containerEnvironment["SWIFTPM_EXEC_NAME"] = executableName
+        }
         return OCIExecution(
             executionPlatform: configuration.executionPlatform,
             artifactTarget: configuration.artifactTarget,
@@ -384,12 +432,12 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: configuration.processFilesystemPolicy,
-            intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+            executableRequirements: configuration.executableRequirements,
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
             command: configuration.commandPrefix + processorAffinityArguments
-                + [ociSwiftExecutable]
-                + commandArguments(arguments),
+                + [swiftPMCommand.executable]
+                + swiftPMCommand.arguments,
             environment: environment,
             output: output)
     }
@@ -403,6 +451,22 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         case .artifact(let reference):
             reference.path.string
         }
+    }
+
+    private func ociSwiftPMCommand(
+        arguments: [String],
+        configuration: SwiftPMOCIExecution
+    ) -> (executable: String, executableName: String?, arguments: [String]) {
+        guard let executable = configuration.swiftPMExecutable,
+            let subcommand = arguments.first
+        else {
+            return (ociSwiftExecutable, nil, commandArguments(arguments))
+        }
+        return (
+            executable.string,
+            "swift-\(subcommand)",
+            contextArguments + arguments.dropFirst()
+        )
     }
 
     public func ociExecutableExecution(
@@ -450,7 +514,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: configuration.processFilesystemPolicy,
-            intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+            executableRequirements: configuration.executableRequirements,
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
             command: configuration.commandPrefix + processorAffinityArguments
@@ -473,7 +537,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
 
     private var contextArguments: [String] {
         var arguments = [
-            "--build-system", "swiftbuild",
+            "--build-system", context.buildSystem.rawValue,
             "--configuration", context.configuration.rawValue,
             "--jobs", String(context.maximumParallelism),
             "--scratch-path", executionScratchPath.string,

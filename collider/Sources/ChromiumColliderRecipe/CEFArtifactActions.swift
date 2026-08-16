@@ -159,6 +159,8 @@ private func encodeCEFArtifactIdentity(
     encoder.append(path: assembly.distributionRoot)
     encoder.append(assembly.cefCheckout)
     encoder.append(assembly.chromiumVersion)
+    encoder.append(
+        nested: OCIMountedEntrypointActionIdentity(assembly.entrypoint))
     encoder.append(assembly.target.architecture.rawValue)
     encoder.append(assembly.outputWorkspace.identity.key)
     encoder.append(assembly.sourceWorkspace.identity.key)
@@ -172,7 +174,8 @@ private func cefArtifactRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
-            ActionEffect(.read, scope: .input(assembly.artifactImageID)),
+            ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
+            ActionEffect(.read, scope: .input(assembly.entrypoint.executable)),
             ActionEffect(
                 publicationAccess,
                 scope: publicationAccess == .read
@@ -243,7 +246,7 @@ private func validateCEFSDK(
     let validation = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.artifactImageID,
+            entrypoint: assembly.entrypoint,
             hostname: "chromium-cef-validation",
             workingDirectory: "/sdk",
             hostWorkingDirectory: sdk,
@@ -291,7 +294,7 @@ private func requireCEFContainerSuccess(
     let result = try await context.containers.execute(
         chromiumToolExecution(
             target: assembly.target,
-            imageID: assembly.artifactImageID,
+            entrypoint: assembly.entrypoint,
             hostname: "chromium-cef-artifact",
             workingDirectory: workingDirectory,
             hostWorkingDirectory: hostWorkingDirectory,

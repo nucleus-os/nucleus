@@ -31,8 +31,10 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-        buildImageID: FilePath(imageID.path),
-        artifactImageID: FilePath(imageID.path),
+        buildEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-build"),
+        artifactEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-artifact"),
         signingIdentity: path("keys"),
         product: "nucleus_x86_64",
         release: "cp2a",
@@ -49,6 +51,9 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         writableMounts: [(path("output"), "/output")],
         readOnlyMounts: aospProductSourceMounts(build: build),
         persistentWorkspaceMounts: [build.outputMount, build.compilerCacheMount],
+        executableRequirements: aospX86ExecutableRequirements([
+            "/out/host/linux-x86/bin/fixture"
+        ]),
         command: ["/bin/true"],
         phase: .build,
         containerEnvironment: ["TZ": "UTC"])
@@ -65,11 +70,17 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         ])
 
     #expect(execution.executionPlatform == .linuxARM64OCI)
-    #expect(execution.intelBinaryTranslationPolicy == .required)
+    #expect(
+        execution.executableRequirements
+            == aospX86ExecutableRequirements([
+                "/out/host/linux-x86/bin/fixture"
+            ]))
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
     #expect(execution.command == ["/bin/true"])
-    #expect(flags.management.entrypoint == nil)
+    #expect(
+        flags.management.entrypoint
+            == "/collider-entrypoints/aosp-build/sh")
     #expect(aospProductContainerToolEnvironment()["REPO_TRACE"] == "0")
     #expect(
         flags.management.networks

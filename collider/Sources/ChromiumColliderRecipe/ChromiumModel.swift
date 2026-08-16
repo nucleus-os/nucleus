@@ -200,7 +200,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
     package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let compilerCacheWorkspace: PersistentWorkspaceDeclaration
-    package let containerImageID: FilePath
+    package let entrypoint: OCIMountedEntrypoint
     package let gnArguments: String?
     package let targets: [String]
     package let jobs: UInt32
@@ -215,7 +215,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
-        containerImageID: FilePath,
+        entrypoint: OCIMountedEntrypoint,
         gnArguments: String? = nil,
         targets: [String],
         jobs: UInt32,
@@ -229,7 +229,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
-        self.containerImageID = containerImageID
+        self.entrypoint = entrypoint
         self.gnArguments = gnArguments
         self.targets = targets
         self.jobs = jobs
@@ -278,7 +278,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let buildManifest: FilePath
     package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
-    package let artifactImageID: FilePath
+    package let entrypoint: OCIMountedEntrypoint
     package let distributionRoot: FilePath
     package let launcher: FilePath
     package let desktopTemplate: FilePath
@@ -290,7 +290,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         buildManifest: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
-        artifactImageID: FilePath,
+        entrypoint: OCIMountedEntrypoint,
         distributionRoot: FilePath,
         launcher: FilePath,
         desktopTemplate: FilePath,
@@ -301,7 +301,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         self.buildManifest = buildManifest
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
-        self.artifactImageID = artifactImageID
+        self.entrypoint = entrypoint
         self.distributionRoot = distributionRoot
         self.launcher = launcher
         self.desktopTemplate = desktopTemplate
@@ -323,13 +323,82 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     }
 }
 
+package struct BrowserPackageInputPublication: Hashable, Sendable {
+    package let target: ChromiumLinuxTarget
+    package let distributionRoot: FilePath
+    package let packageInputRoot: FilePath
+
+    package init(
+        target: ChromiumLinuxTarget,
+        distributionRoot: FilePath,
+        packageInputRoot: FilePath
+    ) {
+        self.target = target
+        self.distributionRoot = distributionRoot
+        self.packageInputRoot = packageInputRoot
+    }
+}
+
+package struct BrowserPackageInputManifest: Codable, Equatable, Sendable {
+    package let packageName: String
+    package let artifactTarget: ArtifactTarget
+    package let payloadDigest: ArtifactDigest
+    package let payloadGeneration: String
+    package let buildManifestDigest: ArtifactDigest
+    package let hostCapabilities: [String]
+
+    package init(
+        artifactTarget: ArtifactTarget,
+        payloadDigest: ArtifactDigest,
+        payloadGeneration: String,
+        buildManifestDigest: ArtifactDigest
+    ) {
+        self.packageName = "nucleus-browser"
+        self.artifactTarget = artifactTarget
+        self.payloadDigest = payloadDigest
+        self.payloadGeneration = payloadGeneration
+        self.buildManifestDigest = buildManifestDigest
+        hostCapabilities = [
+            "audio.alsa",
+            "desktop.at-spi",
+            "desktop.gtk3",
+            "device.udev",
+            "font.fontconfig",
+            "font.pango",
+            "graphics.cairo",
+            "graphics.gbm",
+            "ipc.dbus",
+            "network.nss",
+            "printing.cups",
+            "runtime.expat",
+            "runtime.glib",
+            "x11.compatibility",
+            "xkb.common",
+        ]
+    }
+
+    package var identity: ArtifactDigest {
+        var encoder = IdentityEncoder()
+        encoder.append("browser-package-input")
+        encoder.append(artifactTarget.operatingSystem.rawValue)
+        encoder.append(artifactTarget.architecture.rawValue)
+        encoder.append(artifactTarget.abi ?? "")
+        encoder.append(UInt64(artifactTarget.androidAPILevel ?? 0))
+        encoder.append(digest: payloadDigest)
+        encoder.append(payloadGeneration)
+        encoder.append(digest: buildManifestDigest)
+        encoder.appendSequence(hostCapabilities) { $0.append($1) }
+        return .sha256(encoder.bytes)
+    }
+}
+
 package struct CEFArtifactAssembly: Hashable, Sendable {
     package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
     package let buildManifest: FilePath
     package let sourceWorkspace: PersistentWorkspaceDeclaration
     package let outputWorkspace: PersistentWorkspaceDeclaration
-    package let artifactImageID: FilePath
+    package let entrypoint: OCIMountedEntrypoint
     package let distributionRoot: FilePath
     package let cefCheckout: String
     package let chromiumVersion: String
@@ -341,7 +410,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         buildManifest: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
-        artifactImageID: FilePath,
+        entrypoint: OCIMountedEntrypoint,
         distributionRoot: FilePath,
         cefCheckout: String,
         chromiumVersion: String,
@@ -352,7 +421,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         self.buildManifest = buildManifest
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
-        self.artifactImageID = artifactImageID
+        self.entrypoint = entrypoint
         self.distributionRoot = distributionRoot
         self.cefCheckout = cefCheckout
         self.chromiumVersion = chromiumVersion
@@ -371,31 +440,5 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
             workspace: sourceWorkspace,
             target: "/source",
             access: .readOnly)
-    }
-}
-
-package struct BrowserInstallation: Hashable, Sendable {
-    package let distributionRoot: FilePath
-    package let prefix: FilePath
-    package let systemSandboxDirectory: FilePath
-    package let widevineCandidates: [FilePath]
-    package let environment: [String: String]
-
-    package init(
-        distributionRoot: FilePath,
-        prefix: FilePath,
-        systemSandboxDirectory: FilePath = FilePath(
-            "/usr/local/libexec/nucleus-browser"),
-        widevineCandidates: [FilePath] = [
-            FilePath("/opt/google/chrome/WidevineCdm"),
-            FilePath("/opt/google/chrome-unstable/WidevineCdm"),
-        ],
-        environment: [String: String]
-    ) {
-        self.distributionRoot = distributionRoot
-        self.prefix = prefix
-        self.systemSandboxDirectory = systemSandboxDirectory
-        self.widevineCandidates = widevineCandidates
-        self.environment = environment
     }
 }

@@ -71,6 +71,7 @@ public enum ShellColliderRecipe: ColliderComponent {
                     safetyRoot: configuration.generationsRoot.removingLastComponent(),
                     retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: configuration.prefix,
+                    generationNaming: .contentIdentity,
                     interruptedCandidateNaming: nil),
                 StorageDeclaration(
                     id: "shell-package-manifest-generations",
@@ -81,6 +82,7 @@ public enum ShellColliderRecipe: ColliderComponent {
                     safetyRoot: configuration.packageManifestsRoot.removingLastComponent(),
                     retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
                     activeGenerationLink: configuration.packageManifestsRoot.appending("current"),
+                    generationNaming: .contentIdentity,
                     interruptedCandidateNaming: nil),
                 StorageDeclaration(
                     id: "shell-tracy-receivers",

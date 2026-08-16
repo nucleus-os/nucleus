@@ -396,6 +396,7 @@ struct FixturePrepareOCIImageAction: ColliderAction {
     }
 
     var environment: [String: String] { identity.preparation.environment }
+    var imagePreparations: [OCIImagePreparation] { [identity.preparation] }
 
     func execute(in context: ActionContext) async throws {
         try await context.containers.prepareImage(identity.preparation)

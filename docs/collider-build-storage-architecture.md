@@ -114,11 +114,40 @@ deletes no unknown path and no foreign image repository. Mutating prune runs
 under host execution admission, reacquires the affected workflow and workspace
 locks, recomputes candidates, and revalidates every deletion boundary.
 
+Each generation declaration supplies the exact naming contract for its durable
+generations and, separately, any interrupted candidates. Retention therefore
+handles legacy content IDs, full artifact digests, and product-specific names
+without a global filename assumption. Native package publication adds a
+reachability pass after both architecture qualifications: it retains the active
+and one rollback cohort per lane, derives the exact product/archive live set
+from those manifests, and removes only known unreferenced store objects. The
+reachability pass is always assessed because generic cache pruning can remove a
+generation and thereby change the live product set without changing the package
+task identity. The product-store root remains protected from generic clean and
+cache-prune logic.
+
 OCI retention belongs to the catalog rather than the runtime backend. Each
 Collider-owned local repository family retains its active digest and declared
 rollback generations. The backend lists parsed runtime state and removes only
 the exact inactive references selected by Collider; it never performs a global
 dangling-image sweep or infers ownership from tag spelling alone.
+
+A recipe never derives another OCI image merely to copy in an operational
+entrypoint. Specialized AOSP build and artifact processing, gfxstream,
+Chromium build and artifact processing, and Swift target-runtime construction
+reuse their owning dependency image. Each action declares the entrypoint script
+as a hashed input, mounts it read-only, and selects its absolute container path
+through the OCI execution contract. Changing one of these scripts invalidates
+only its consuming task closure; it does not stream, import, unpack, or retain a
+second copy of the dependency image's layers. The native builder's common
+dispatcher remains part of its single stable image contract. Its separately
+mounted SwiftPM overlay does not create a bootstrap-to-production derivative.
+
+Recorded image-ID output is not sufficient evidence that a local OCI image
+still exists. Before accepting a clean image-producing task, Collider compares
+the recorded repository and digest with the runtime's current image state. A
+missing or mismatched image makes the task dirty and reconstructs it through
+the normal graph instead of attempting a registry fallback.
 
 Default `collider cache status` reads only bounded metadata and shallow owned
 roots. Apple Container usage, images, and persistent-workspace queries run

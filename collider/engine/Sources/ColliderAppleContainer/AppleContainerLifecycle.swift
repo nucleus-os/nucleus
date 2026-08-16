@@ -565,10 +565,12 @@ func appleContainerFlags(
         platform: "linux/arm64",
         publishPorts: [],
         publishSockets: [],
-        readOnly: true,
+        readOnly: execution.processFilesystemPolicy != .writableRoot,
         readonlyPaths: [],
         remove: false,
-        rosetta: execution.intelBinaryTranslationPolicy == .required,
+        rosetta: execution.executableRequirements.contains {
+            $0.architecture != execution.executionPlatform.architecture
+        },
         runtime: nil,
         ssh: false,
         shmSize: nil,

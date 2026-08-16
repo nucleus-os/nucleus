@@ -6,6 +6,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         let sourceWorkspace: PersistentWorkspaceDeclaration
         let buildRoot: FilePath
         let containerImageID: FilePath
+        let entrypoint: OCIMountedEntrypoint
         let product: String
         let expectedPlatformSDK: UInt32
 
@@ -14,6 +15,9 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
             encoder.append(sourceWorkspace.capacityBytes)
             encoder.append(path: buildRoot)
             encoder.append(path: containerImageID)
+            encoder.append(
+                nested: OCIMountedEntrypointActionIdentity(
+                    entrypoint))
             encoder.append(product)
             encoder.append(UInt64(expectedPlatformSDK))
         }
@@ -27,7 +31,8 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         Identity(
             sourceWorkspace: build.sourceWorkspace,
             buildRoot: build.artifactRoot,
-            containerImageID: build.artifactImageID,
+            containerImageID: build.artifactEntrypoint.image.path,
+            entrypoint: build.artifactEntrypoint,
             product: build.product,
             expectedPlatformSDK: build.expectedPlatformSDK)
     }
@@ -35,7 +40,12 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(build.artifactImageID)),
+                ActionEffect(
+                    .read,
+                    scope: .input(build.artifactEntrypoint.image.path)),
+                ActionEffect(
+                    .read,
+                    scope: .input(build.artifactEntrypoint.executable)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],
             persistentWorkspaceEffects: [
@@ -73,6 +83,9 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 writableMounts: [(staged, "/staged")],
                 readOnlyMounts: [],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                executableRequirements: aospX86ExecutableRequirements([
+                    "/out/host/linux-x86/bin/img_from_target_files"
+                ]),
                 command: [
                     "/out/host/linux-x86/bin/img_from_target_files",
                     "/staged/\(signedTarget.lastComponent?.string ?? "")",
@@ -117,6 +130,9 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                     writableMounts: [(imageCandidate, "/images")],
                     readOnlyMounts: [],
                     persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                    executableRequirements: aospX86ExecutableRequirements([
+                        "/out/host/linux-x86/bin/simg2img"
+                    ]),
                     command: [
                         "/out/host/linux-x86/bin/simg2img",
                         "/images/\(name)",
@@ -172,27 +188,42 @@ enum AOSPContainerPhase: Sendable {
     case artifact
 }
 
+package func aospX86ExecutableRequirements(
+    _ executables: [String]
+) -> Set<OCIExecutableRequirement> {
+    Set(
+        executables.map {
+            OCIExecutableRequirement(
+                architecture: .x86_64,
+                executable: $0)
+        })
+}
+
 func aospProductOCIExecution(
     build: AOSPProductBuild,
     writableMounts: [(FilePath, String)],
     readOnlyMounts: [(FilePath, String)],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
+    executableRequirements: Set<OCIExecutableRequirement> = [],
     command: [String],
     phase: AOSPContainerPhase = .artifact,
     workingDirectory: String = "/src",
     containerEnvironment: [String: String] = aospProductContainerToolEnvironment(),
     output: CommandSpec.Output = .logged
 ) -> OCIExecution {
-    OCIExecution(
+    let entrypoint =
+        phase == .build ? build.buildEntrypoint : build.artifactEntrypoint
+    return OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .androidX86_64(apiLevel: build.expectedPlatformSDK),
-        imageID: phase == .build ? build.buildImageID : build.artifactImageID,
+        imageID: entrypoint.image.path,
         hostname: "android-build",
         workingDirectory: workingDirectory,
         hostWorkingDirectory: build.productSource,
-        mounts: readOnlyMounts.map {
-            OCIMount(source: $0.0, target: $0.1, access: .readOnly)
-        }
+        mounts: [entrypoint.mount]
+            + readOnlyMounts.map {
+                OCIMount(source: $0.0, target: $0.1, access: .readOnly)
+            }
             + writableMounts.map {
                 OCIMount(boundedExport: $0.0, target: $0.1)
             },
@@ -201,9 +232,10 @@ func aospProductOCIExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .unmasked,
-        intelBinaryTranslationPolicy: .required,
+        executableRequirements: executableRequirements,
         resourceLimits: .build,
         containerEnvironment: containerEnvironment,
+        imageEntrypointOverride: entrypoint.containerPath,
         command: command,
         environment: build.environment,
         output: output)

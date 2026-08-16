@@ -164,6 +164,56 @@ import Testing
     #expect(first == second)
 }
 
+@Test func taskIdentityMatchesBeforeAndAfterCommittingTheEffectiveSourceTree() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-task-source-commit-independent-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let sources = repository.appendingPathComponent("Sources")
+    try FileManager.default.createDirectory(
+        at: sources,
+        withIntermediateDirectories: true)
+    let tracked = sources.appendingPathComponent("Value.swift")
+    try Data("let value = 1\n".utf8).write(to: tracked)
+    try commitAll(repository)
+
+    let sourcePath = FilePath(sources.path)
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.source-checkout"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.sourceCheckout(sourcePath)])
+    func plannedIdentity() throws -> ArtifactDigest {
+        let digests = PlanningArtifactDigestCache()
+        let services = TaskPlanningServices(
+            digestBytes: { ArtifactHasher.digest(bytes: Data($0)) },
+            digestFile: { try digests.digest(file: $0) },
+            digestTree: { try digests.digest(tree: $0) },
+            digestSourceCheckout: { try digests.digest(sourceCheckout: $0) },
+            semanticToolIdentity: { _, _ in
+                ToolIdentitySnapshot(
+                    path: FilePath("/fixture/tool"),
+                    digest: ArtifactDigest(bytes: Array(repeating: 7, count: 32)))
+            },
+            taskState: { _ in .missing },
+            validateOutputs: { _ in })
+        let plan = try ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first).identity
+    }
+
+    try Data("let value = 2\n".utf8).write(to: tracked)
+    try Data("let added = true\n".utf8).write(
+        to: sources.appendingPathComponent("Added.swift"))
+    let dirty = try plannedIdentity()
+    try commitAll(repository)
+
+    #expect(try plannedIdentity() == dirty)
+}
+
 @Test func semanticDependencyOrderDoesNotAffectTaskIdentity() throws {
     let first = TaskDeclaration(
         id: TaskID(rawValue: "fixture.first"),
@@ -278,4 +328,40 @@ private func deterministicHashingServices(
         },
         taskState: { _ in .missing },
         validateOutputs: { _ in })
+}
+
+private func initializeGitRepository(_ repository: URL) throws {
+    try FileManager.default.createDirectory(
+        at: repository,
+        withIntermediateDirectories: true)
+    try runGit(at: repository, arguments: ["init", "--quiet"])
+    try runGit(
+        at: repository,
+        arguments: ["config", "user.name", "Collider Tests"])
+    try runGit(
+        at: repository,
+        arguments: ["config", "user.email", "collider@example.invalid"])
+}
+
+private func commitAll(_ repository: URL) throws {
+    try runGit(at: repository, arguments: ["add", "--all"])
+    try runGit(
+        at: repository,
+        arguments: ["commit", "--quiet", "--message", "fixture"])
+}
+
+private func runGit(at repository: URL, arguments: [String]) throws {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.currentDirectoryURL = repository
+    process.arguments = arguments
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    _ = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
+    }
 }

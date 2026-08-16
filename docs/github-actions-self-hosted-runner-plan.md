@@ -61,6 +61,35 @@ cancellation, logs, and cleanup. Its execution lease serializes task-graph
 execution within one configured storage root while retaining internal task and
 architecture concurrency.
 
+Collider now also owns the portable product-artifact contract, a tested local
+content-addressed product-store primitive, distinct provenance identities, and
+digest-bound qualification records. Effective Git-owned source and task
+identities are independent of checkout placement and of whether identical
+contents have been committed. Production package producers and qualification
+consumers are not yet wired through that store; the active package phase and
+Phase 6 complete that integration before CI cutover.
+
+Collider also owns the patched Linux SwiftPM/SwiftBuild host-tool closure. The
+root pins the Nucleus forks as submodules; host resolution materializes their
+exact dependency closure, an offline arm64 container compiles the unified
+`swift-package-manager` executable in a persistent workspace, and Collider
+assembles and validates the
+bounded overlay as a host artifact mounted read-only by production SwiftPM
+actions. The single stable builder image does not contain or depend on that
+artifact, so overlay revisions reuse it and avoid repeated OCI unpacking.
+Production actions invoke only the mounted executable; the official adjacent
+SwiftPM remains available solely for bootstrap work. This work is part of the same cacheable graph used locally and
+later by self-hosted `main`. There is no GitHub-hosted overlay workflow or
+separately published overlay release.
+
+The same graph no longer creates entrypoint-only variants of the native image
+for AOSP, gfxstream, Chromium, or Swift target-runtime work. Those actions mount
+their hashed operational entrypoint read-only and reuse the dependency image.
+Entrypoint changes therefore preserve the shared image layers and avoid repeated
+Apple Container import and unpack costs. Collider also verifies that every
+recorded clean image producer still has its exact local runtime digest before a
+job may reuse it.
+
 Collider's complete incremental state is deliberately per-user. The largest
 state includes Apple-container persistent volumes beneath the current user's
 Developer root, not only loose files beneath a cache directory. Pointing two
@@ -71,10 +100,9 @@ initiated execution.
 Persistent workspace names are currently scoped by a digest of the absolute
 checkout root. A builder-owned CI checkout and the authoritative development
 checkout therefore select different Apple-container volumes even when the
-builder identity and source contents match. The source-closure digest also
-distinguishes a base Git tree plus working-copy overlay from the identical tree
-after commit. Both identities must be corrected before local pre-commit builds
-can warm the exact state later used by CI.
+builder identity and source contents match. Phase 4 replaces that remaining
+workspace-owner identity before local pre-commit builds can warm the exact
+persistent state later used by CI.
 
 The existing retained M2 Ultra state belongs to the interactive account. The
 `nucleus-builder` account, its clean checkout, its persistent Apple-container
@@ -162,7 +190,9 @@ deployment job receives more than one of these authorities.
 
 ## Phase 1: Define Portable Product Artifacts and Qualification Evidence
 
-Define one content-addressed product-artifact envelope in Collider before a CI
+Status: complete
+
+Collider defines one content-addressed product-artifact envelope before a CI
 workflow, package publisher, or development transport consumes it. Every
 transferable product bundle carries a manifest containing:
 
@@ -176,22 +206,23 @@ transferable product bundle carries a manifest containing:
 - producer trust domain; and
 - required qualification roles.
 
-Canonicalize placement-only checkout, cache, home, workspace, and output roots
-before encoding identity. Retain semantic relative paths and file contents.
-Reject an artifact identity containing an unrecognized absolute host path
+Placement-only checkout, cache, home, workspace, and output roots are
+canonicalized before encoding identity. Semantic relative paths and file
+contents remain intact. Artifact construction rejects an identity containing an
+unrecognized absolute host path
 instead of producing a bundle that another runner or qualifier cannot validate.
 
-Define task source identity from the effective Git-owned file tree: tracked
+Task source identity comes from the effective Git-owned file tree: tracked
 contents after applying modifications and deletions, non-ignored untracked
 files, executable bits, symlink targets, and nested-checkout trees. The same
 effective tree has the same cache identity before and after commit and from the
-builder CI checkout or authoritative development checkout. Record the base
-commit, branch, dirty paths, and protected-`main` authority separately as
+builder CI checkout or authoritative development checkout. Base commit, branch,
+dirty paths, and protected-`main` authority are recorded separately as
 provenance; those facts decide releasability but do not force identical source
 bytes to compile twice. Any task whose result genuinely consumes Git metadata
 declares that metadata as a semantic input.
 
-Use the same canonical identity and digest primitives for domain-specific
+The same canonical identity and digest primitives serve domain-specific
 contracts without making those contracts interchangeable. A CI product bundle,
 digest-bound qualification record, package release index, allowlisted GHCR
 contributor input, and unsigned dirty development generation remain distinct
@@ -201,24 +232,27 @@ between those domains.
 
 Qualification consumes only an immutable product bundle and its manifest. A
 native Linux or physical GPU/DRM qualifier emits a separate record bound to the
-artifact digest and its declared capability. Cross-build inspection and
+artifact and provenance digests, evidence, trust domain, and declared
+capability. Cross-build inspection and
 Apple-translated execution cannot satisfy native kernel, performance, GPU, DRM,
 or release gates.
 
-Use a local filesystem artifact store for build and qualification. Do not
-upload reconstructible Chromium, AOSP, Swift, native-SDK, compiler-cache,
-incremental-workspace, or pre-package artifact state to GitHub Actions caches or
-release assets. The package plan alone defines the final release index and
-immutable package-object publication boundary.
+Collider defines and behaviorally validates a local filesystem artifact store.
+Production package publication adopts it in Phase 3 of the package plan, and
+the complete verification graph adopts it for product and qualification
+exchange in Phase 6 below. Reconstructible Chromium, AOSP, Swift, native-SDK,
+compiler-cache, incremental-workspace, and pre-package artifact state do not
+enter GitHub Actions caches or release assets. The package plan alone defines
+the final release index and immutable package-object publication boundary.
 
-Gate: planning the same representative products under different checkout,
-cache, home, workspace, and output roots produces the same portable artifact
-identity; an effective local tree and the identical committed tree produce the
-same source and task cache identities but distinct provenance authority;
-changing source, toolchain, configuration, target, or a semantic input changes
-the relevant identity; a clean qualifier validates a bundle without builder
-cache or source; corruption and substitution fail; and no domain-specific
-artifact can be consumed through another domain's authority.
+Gate evidence: Collider tests prove identical product identity across relocated
+checkout, cache, home, workspace, and output roots; identical source and task
+identity immediately before and after commit; distinct local and protected-main
+provenance; invalidation by source, toolchain, configuration, target, and
+semantic argument; rejection of undeclared absolute host paths; source-free and
+cache-free validation in a clean artifact store; archive substitution and
+payload corruption failure; multiple provenance authorities for one bundle;
+and rejection of cross, translated, and nonphysical qualification capabilities.
 
 ## Phase 2: Establish the Main-Only Workflow Boundary
 
@@ -239,6 +273,24 @@ Restrict the Nucleus runner group to the protected workflow path at
 `refs/heads/main`. Pin every external action to a reviewed full commit identity.
 Disable GitHub-hosted fallback; a missing M2 Ultra or native qualifier leaves a
 supported `main` job queued rather than moving it to different compute.
+
+After the protected preflight selects and verifies the immutable revision, it
+passes this product-provenance contract to Collider:
+
+```text
+NUCLEUS_PRODUCT_SOURCE_AUTHORITY=protected-main
+NUCLEUS_PRODUCT_SOURCE_COMMIT=<verified full revision>
+NUCLEUS_PRODUCT_SOURCE_REF=refs/heads/main
+NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN=nucleus-builder
+```
+
+Product assembly rechecks that the asserted revision equals `HEAD`, records the
+protected branch even when GitHub checked out that revision detached, and
+rejects a dirty checkout. A local invocation supplies none of these assertions;
+Collider records the observed branch, revision, and dirty paths with
+`local-development` authority and the `local-developer` producer trust domain.
+The source-tree digest remains independent of both provenance forms, so equal
+source bytes can reuse build work without making a local product releasable.
 
 Gate: a `main` push and exact-`main` manual invocation reach the M2 Ultra; branch
 push, pull-request, fork, foreign-repository, mutable-ref, and pull-request-merge
@@ -407,12 +459,17 @@ workflow input.
 The graph includes:
 
 - host and toolchain doctor contracts;
+- local native-builder construction, including the pinned, offline
+  SwiftPM/SwiftBuild overlay build;
 - complete repository build and test lanes for every supported target
   architecture;
 - Swift SDK, native SDK, Android, Chromium, CEF, compositor, shell, and browser
   artifact construction selected by the ordinary build graph;
 - artifact linkage, dependency-closure, ABI, packaging, and consumer
   validation;
+- publication of every transferable product through
+  `LocalProductArtifactStore`, followed by qualification from a source-free,
+  cache-free store view rather than a producer workspace or loose envelope;
 - translated x86_64 execution checks where they provide build confidence;
 - native Linux and physical GPU/DRM qualification on their declared
   self-hosted capability runners; and
@@ -430,8 +487,10 @@ Gate: automated and local planning of identical effective source and
 configuration produces the same task identities, cache hits, and artifact
 identities; debug and release select distinct configuration-specific products
 while sharing configuration-independent prerequisites; only the complete
-protected-`main` graph can request release qualification; no build path
-publishes or signs; and delivery performs no compilation or package assembly.
+protected-`main` graph can request release qualification; every qualifier
+resolves its exact immutable input from the local product store without source
+or producer-cache access; no build path publishes externally or signs; and
+delivery performs no compilation or package assembly.
 
 ## Phase 7: Cut Over Main CI/CD
 

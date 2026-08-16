@@ -6,9 +6,22 @@ let chromiumToolResourceLimits = OCIResourceLimits(
     memoryBytes: 8 * 1_024 * 1_024 * 1_024,
     processCount: 4_096)
 
+let chromiumBuildExecutableRequirements: Set<OCIExecutableRequirement> = [
+    OCIExecutableRequirement(
+        architecture: .x86_64,
+        executable: "/source/chromium/src/buildtools/linux64/gn"),
+    OCIExecutableRequirement(
+        architecture: .x86_64,
+        executable: "/source/chromium/src/third_party/siso/cipd/siso"),
+    OCIExecutableRequirement(
+        architecture: .x86_64,
+        executable:
+            "/source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang++"),
+]
+
 func chromiumToolExecution(
     target: ChromiumLinuxTarget,
-    imageID: FilePath,
+    entrypoint: OCIMountedEntrypoint,
     hostname: String,
     workingDirectory: String,
     hostWorkingDirectory: FilePath,
@@ -21,18 +34,16 @@ func chromiumToolExecution(
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
-        imageID: imageID,
+        imageID: entrypoint.image.path,
         hostname: hostname,
         workingDirectory: workingDirectory,
         hostWorkingDirectory: hostWorkingDirectory,
-        mounts: mounts,
+        mounts: [entrypoint.mount] + mounts,
         persistentWorkspaceMounts: persistentWorkspaceMounts,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        // Chromium's Linux clang bundle and some checked-in tools remain x86_64.
-        intelBinaryTranslationPolicy: .required,
         resourceLimits: chromiumToolResourceLimits,
         containerEnvironment: [
             "DEPOT_TOOLS_UPDATE": "0",
@@ -46,6 +57,7 @@ func chromiumToolExecution(
             "PYTHONDONTWRITEBYTECODE": "1",
             "TZ": "UTC",
         ],
+        imageEntrypointOverride: entrypoint.containerPath,
         command: command,
         environment: environment,
         output: output)

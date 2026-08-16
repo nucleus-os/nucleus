@@ -7,29 +7,14 @@
       "sha256": "d0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de"
     },
     {
-      "name": "swift-amd64.tar.gz",
-      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-01-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-01-a-ubuntu24.04.tar.gz",
-      "sha256": "fa3f1d9517068ead03518d6c9936814c2e1b588cb6e89c4c0284283d274f5d73"
-    },
-    {
       "name": "swift-libxml2-arm64.deb",
       "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_arm64.deb",
       "sha256": "f833e07c5dffb9f7a26084522ef58854c4297982439a2affc94e20dbb495c696"
     },
     {
-      "name": "swift-libxml2-amd64.deb",
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb",
-      "sha256": "bfd07c01d6e5ab3e327f3ca5819409b1914bbfb3f1a016d53e4dabd5f96143bb"
-    },
-    {
       "name": "swift-libicu74-arm64.deb",
       "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/i/icu/libicu74_74.2-1ubuntu3_arm64.deb",
       "sha256": "041df33ab32c57287a62ba141890a82512bf092854be455259c8034ab7ae9fbc"
-    },
-    {
-      "name": "swift-libicu74-amd64.deb",
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/i/icu/libicu74_74.2-1ubuntu3_amd64.deb",
-      "sha256": "d29c97a21a3e3254731cfac186e4d4e611e5e67d2c9a0430f6acfbd9acaefa2e"
     },
     {
       "name": "cmake-arm64.tar.gz",

@@ -11,7 +11,8 @@ package struct BuildChromiumProductAction: ColliderAction {
             encoder.append(build.target.architecture.rawValue)
             encoder.append(path: build.sourceRoot)
             encoder.append(path: build.buildManifest)
-            encoder.append(path: build.containerImageID)
+            encoder.append(
+                nested: OCIMountedEntrypointActionIdentity(build.entrypoint))
             encoder.appendOptional(build.gnArguments) { $0.append($1) }
             encoder.appendSequence(build.targets) { $0.append($1) }
             encoder.append(UInt64(build.jobs))
@@ -39,7 +40,8 @@ package struct BuildChromiumProductAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(build.sourceRoot)),
-                ActionEffect(.read, scope: .input(build.containerImageID)),
+                ActionEffect(.read, scope: .input(build.entrypoint.image.path)),
+                ActionEffect(.read, scope: .input(build.entrypoint.executable)),
                 ActionEffect(.readWrite, scope: .scratch(build.inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildManifest)),
             ],
@@ -147,15 +149,16 @@ package struct BuildChromiumProductAction: ColliderAction {
         OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: build.target.artifactTarget,
-            imageID: build.containerImageID,
+            imageID: build.entrypoint.image.path,
             hostname: "chromium-build",
             workingDirectory: "/source/chromium/src",
             hostWorkingDirectory: chromium,
             mounts: [
+                build.entrypoint.mount,
                 OCIMount(
                     source: build.inputRoot,
                     target: "/inputs",
-                    access: .readOnly)
+                    access: .readOnly),
             ],
             persistentWorkspaceMounts: [
                 build.sourceMount,
@@ -166,7 +169,7 @@ package struct BuildChromiumProductAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: .required,
+            executableRequirements: chromiumBuildExecutableRequirements,
             resourceLimits: .parallelBuild,
             containerEnvironment: [
                 "DEPOT_TOOLS_UPDATE": "0",
@@ -176,6 +179,7 @@ package struct BuildChromiumProductAction: ColliderAction {
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TZ": "UTC",
             ],
+            imageEntrypointOverride: build.entrypoint.containerPath,
             command: command,
             environment: chromiumEnvironment,
             output: output)
@@ -185,22 +189,22 @@ package struct BuildChromiumProductAction: ColliderAction {
         OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: build.target.artifactTarget,
-            imageID: build.containerImageID,
+            imageID: build.entrypoint.image.path,
             hostname: "chromium-source-materialization",
             workingDirectory: "/",
             hostWorkingDirectory: build.sourceRoot,
             mounts: [
+                build.entrypoint.mount,
                 OCIMount(
                     source: build.sourceRoot,
                     target: "/host-source",
-                    access: .readOnly)
+                    access: .readOnly),
             ],
             persistentWorkspaceMounts: [build.writableSourceMount],
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: .disabled,
             resourceLimits: chromiumToolResourceLimits,
             containerEnvironment: [
                 "HOME": "/tmp/nucleus-home",
@@ -208,6 +212,7 @@ package struct BuildChromiumProductAction: ColliderAction {
                 "LC_ALL": "C.UTF-8",
                 "TZ": "UTC",
             ],
+            imageEntrypointOverride: build.entrypoint.containerPath,
             command: ["materialize-source", sourceID],
             environment: build.environment,
             output: .logged)

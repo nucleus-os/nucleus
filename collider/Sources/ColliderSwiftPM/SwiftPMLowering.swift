@@ -68,13 +68,13 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let dependencyPrerequisites = Set(materialization.map { [$0.id] } ?? [])
         var lowered: [LoweredExecutionTask] = []
         if let materialization {
-            let owners = Set(
-                products.map(\.owner.id) + tests.map(\.owner.id))
+            let logicalOwners = products.map(\.owner) + tests.map(\.owner)
             lowered.append(
                 LoweredExecutionTask(
-                    task: materialization,
+                    task: materialization.addingLocks(
+                        logicalOwnerLocks(owners: logicalOwners)),
                     attribution: "host:swift-package-dependencies",
-                    logicalOwners: owners,
+                    logicalOwners: Set(logicalOwners.map(\.id)),
                     prerequisites: []))
         }
         if !products.isEmpty {
@@ -192,7 +192,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 .file(invocation.context.packageRoot.appending("Package.swift")),
                 .file(lock),
                 .tool(.named("swift")),
-            ],
+            ] + invocation.dependencyConfigurationFiles.map(ArtifactInput.file),
             postconditions: [
                 PathPostcondition(path: marker, validation: .regularFile)
             ],
@@ -210,6 +210,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     scratchPath: invocation.scratchPath,
                     dependencyCache: execution.hostDependencyCache,
                     lock: lock,
+                    dependencyConfigurationFiles: invocation.dependencyConfigurationFiles,
                     marker: marker)))
     }
 
@@ -303,9 +304,10 @@ public struct SwiftPMLowering: TaskPlanLowering {
             context: first.invocation.context,
             products: products,
             prebuildTargets: prebuildTargets)
+        let requestedProducts = Array(Set(requirements.map(\.product))).sorted()
         let buildArguments =
-            requirements.count == 1
-            ? ["build", "--product", first.product]
+            requestedProducts.count == 1
+            ? ["build", "--product", requestedProducts[0]]
             : ["build"]
         var builder = TaskBuilder(
             id: taskID,
@@ -319,7 +321,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             inputs: inputs,
             postconditions: [first.invocation.postcondition]
                 + uniqued(requirements.flatMap(\.expectedOutputs)),
-            locks: [first.invocation.lock],
+            locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
             assessmentPolicy: assessmentPolicy(for: first.invocation),
             action: try swiftPMAction(
                 invocation: first.invocation,
@@ -384,7 +386,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             inputs: inputs,
             postconditions: [first.invocation.postcondition]
                 + uniqued(requirements.flatMap(\.expectedBuildOutputs)),
-            locks: [first.invocation.lock],
+            locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
             assessmentPolicy: assessmentPolicy(for: first.invocation),
             action: try swiftPMAction(
                 invocation: first.invocation,
@@ -403,6 +405,16 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 builder.consume(reference)
             }
         }
+    }
+
+    private func logicalOwnerLocks(
+        owners: [TaskDeclaration]
+    ) -> [TaskLock] {
+        var result: [TaskLock] = []
+        for lock in owners.flatMap(\.locks) where !result.contains(lock) {
+            result.append(lock)
+        }
+        return result
     }
 
     private func consumeSwiftExecutable(
@@ -696,6 +708,7 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
     let command: CommandSpec
     let packageManifest: FilePath
     let lock: FilePath
+    let dependencyConfigurationFiles: [FilePath]
     let marker: FilePath
 
     init(
@@ -704,11 +717,13 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         scratchPath: FilePath,
         dependencyCache: FilePath,
         lock: FilePath,
+        dependencyConfigurationFiles: [FilePath],
         marker: FilePath
     ) throws {
         self.command = command
         packageManifest = packageRoot.appending("Package.swift")
         self.lock = lock
+        self.dependencyConfigurationFiles = dependencyConfigurationFiles
         self.marker = marker
         identity = Identity(
             command: command,
@@ -741,6 +756,9 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         var encoder = IdentityEncoder()
         encoder.append(try context.files.digest(file: packageManifest).description)
         encoder.append(try context.files.digest(file: lock).description)
+        for configuration in dependencyConfigurationFiles {
+            encoder.append(try context.files.digest(file: configuration).description)
+        }
         let digest = ArtifactDigest.sha256(encoder.bytes)
         try context.files.write(Array("\(digest)\n".utf8), to: marker)
     }

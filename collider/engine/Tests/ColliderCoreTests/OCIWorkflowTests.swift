@@ -9,10 +9,6 @@ import Testing
 @testable import ColliderAppleContainer
 @testable import ColliderRuntime
 
-private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "fixture.prepare-entrypoint-image"
-}
-
 @Test func nativeAppleContainerFlagsEnforceTheHermeticBoundary() throws {
     let execution = OCIExecution(
         executionPlatform: .linuxARM64OCI,
@@ -34,7 +30,11 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        intelBinaryTranslationPolicy: .required,
+        executableRequirements: [
+            OCIExecutableRequirement(
+                architecture: .x86_64,
+                executable: "/fixture/x86-tool")
+        ],
         resourceLimits: .build,
         containerEnvironment: ["BUILD_MODE": "fixture"],
         command: ["fixture", "compile"],
@@ -72,6 +72,30 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         flags.management.mounts.contains(
             "type=bind,source=/var/nucleus/output,target=/build"))
     #expect(!flags.management.mounts.contains { $0.contains("target=/tmp") })
+
+    let writableRootExecution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath("/var/nucleus/image-id"),
+        hostname: "fixture-package-manager",
+        workingDirectory: "/",
+        hostWorkingDirectory: FilePath("/var/nucleus"),
+        mounts: [],
+        userPolicy: OCIUserPolicy(userID: 0, groupID: 0),
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .writableRoot,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["dpkg", "--version"],
+        environment: [:],
+        output: .logged)
+    let writableRootFlags = try appleContainerFlags(
+        writableRootExecution,
+        name: "fixture-package-manager")
+    #expect(!writableRootFlags.management.readOnly)
+    #expect(writableRootFlags.management.capDrop == ["ALL"])
+    #expect(writableRootFlags.management.networks == ["collider-internal"])
 
     let alternateConfiguration = OCIRuntimeConfiguration(
         isolatedNetwork: "alternate-isolated",
@@ -388,6 +412,63 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         manifest.tasks?[ociTaskID.rawValue]?.observations?.containerExecutions.count == 1)
 }
 
+@Test func missingCurrentOCIImageInvalidatesRecordedTaskOutput() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-missing-oci-image-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let context = root.appending("context")
+    try FileManager.default.createDirectory(
+        atPath: context.string,
+        withIntermediateDirectories: true)
+    let containerFile = context.appending("Containerfile")
+    try Data(
+        ("FROM ubuntu@sha256:" + String(repeating: "a", count: 64) + "\n").utf8
+    ).write(to: URL(fileURLWithPath: containerFile.string))
+    let imageID = root.appending("image-id")
+    let preparation = OCIImagePreparation(
+        executionPlatform: .linuxARM64OCI,
+        context: context,
+        containerFile: containerFile,
+        imageID: imageID,
+        imageName: "localhost/fixture-current-image",
+        environment: [:])
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.prepare-current-image"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.file(containerFile)],
+        outputs: [OutputDeclaration(path: imageID, validation: .regularFile)],
+        action: try fixturePrepareOCIImageAction(preparation))
+    let graph = try TaskGraph([task])
+    let backend = MutableImageOCIBackend()
+    let runtime = ColliderRuntime(
+        downloadCacheRoot: root.appending("downloads"),
+        ociConfiguration: .engineDefault,
+        ociBackend: backend)
+    let engine = ColliderEngine(runtime: runtime)
+    let state = root.appending("state")
+
+    let first = try await engine.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: state)
+    let clean = try await engine.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: state)
+    await backend.removeImages()
+    let missing = try await engine.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: state)
+
+    #expect(first.executed == [task.id])
+    #expect(clean.executed.isEmpty)
+    #expect(missing.executed == [task.id])
+    #expect(await backend.preparationCount == 2)
+}
+
 @Test func appleContainerCleanupDeletesAndVerifiesTheExactName() async throws {
     let fixture = AppleContainerCleanupFixture(remainingChecks: 0)
     let name = "fixture-cleanup-exact"
@@ -620,7 +701,11 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        intelBinaryTranslationPolicy: .required,
+        executableRequirements: [
+            OCIExecutableRequirement(
+                architecture: .x86_64,
+                executable: "/fixture/x86-tool")
+        ],
         resourceLimits: OCIResourceLimits(
             cpuCount: 16,
             memoryBytes: 88 * 1_024 * 1_024 * 1_024,
@@ -702,68 +787,6 @@ private enum FixtureEntrypointImageActionKind: OCIEntrypointImageActionKind {
     #expect(!untranslatedFlags.management.rosetta)
 }
 
-@Test func entrypointImageLayersOntoAnExactLocalDependencyImage() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-entrypoint-image-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let baseImageID = root.appendingPathComponent("base-image-id")
-    let entrypoint = root.appendingPathComponent("entrypoint.sh")
-    let generatedContext = root.appendingPathComponent("context")
-    let imageID = root.appendingPathComponent("image-id")
-    let digest = "sha256:" + String(repeating: "a", count: 64)
-    try Data("localhost/nucleus-dependencies\n\(digest)\n".utf8).write(
-        to: baseImageID)
-    try Data("#!/bin/sh\nexec \"$@\"\n".utf8).write(to: entrypoint)
-    let preparation = OCIImagePreparation(
-        executionPlatform: .linuxARM64OCI,
-        context: FilePath(generatedContext.path),
-        containerFile: FilePath(
-            generatedContext.appendingPathComponent("Containerfile").path),
-        imageID: FilePath(imageID.path),
-        imageName: "localhost/nucleus-build",
-        baseImageSource: .local,
-        localBaseImageID: FilePath(baseImageID.path),
-        environment: [:])
-    let action = PrepareOCIEntrypointImageAction<FixtureEntrypointImageActionKind>(
-        baseImageID: FilePath(baseImageID.path),
-        entrypoint: FilePath(entrypoint.path),
-        entrypointDestination: "/usr/local/bin/nucleus-build",
-        generatedContext: FilePath(generatedContext.path),
-        preparation: preparation)
-    let runtime = ColliderRuntime()
-    let files = runtime.actionFileSystem()
-    try await action.execute(
-        in: ActionContext(
-            files: files,
-            cancellation: ActionCancellation {},
-            logger: ActionLogger { _ in },
-            commands: ActionCommandExecutor { _ in
-                throw ActionContainerExecutorFailure.unavailable
-            },
-            downloads: ActionDownloader { _, _ in },
-            containers: ActionContainerExecutor(
-                prepareImage: { received in
-                    #expect(received == preparation)
-                    let contents = try String(
-                        contentsOfFile: received.containerFile.string,
-                        encoding: .utf8)
-                    #expect(
-                        contents.contains(
-                            "FROM localhost/nucleus-dependencies:digest-"
-                                + String(repeating: "a", count: 64)))
-                    #expect(
-                        contents.contains(
-                            "ENTRYPOINT [\"/usr/local/bin/nucleus-build\"]"))
-                    try Data("localhost/nucleus-build\n\(digest)\n".utf8).write(
-                        to: imageID)
-                })))
-    try action.validateOutputs(using: files)
-    #expect(
-        try Data(contentsOf: generatedContext.appendingPathComponent("entrypoint"))
-            == Data("#!/bin/sh\nexec \"$@\"\n".utf8))
-}
-
 private actor AppleContainerCleanupFixture {
     private var remainingChecks: Int
     private(set) var deletedNames: [String] = []
@@ -784,6 +807,42 @@ private actor AppleContainerCleanupFixture {
 }
 
 private struct BuilderOperationFailure: Error {}
+
+private actor MutableImageOCIBackend: OCIRuntimeBackend {
+    private let digest = "sha256:" + String(repeating: "b", count: 64)
+    private var imageStates: [OCIImageState] = []
+    private(set) var preparationCount = 0
+
+    func prepareImage(_ preparation: OCIImagePreparation) async throws -> String {
+        preparationCount += 1
+        imageStates = [
+            OCIImageState(
+                reference: preparation.imageName + ":latest",
+                repository: preparation.imageName,
+                tag: "latest",
+                digest: digest,
+                creationDate: nil,
+                active: false)
+        ]
+        return preparation.imageName + "\n" + digest
+    }
+
+    func execute(
+        _: OCIRuntimeExecutionRequest
+    ) async throws -> OCIRuntimeExecutionOutcome {
+        OCIRuntimeExecutionOutcome(
+            result: CommandResult(status: 0, standardOutput: ""),
+            timings: .zero)
+    }
+
+    func images() async throws -> [OCIImageState] {
+        imageStates
+    }
+
+    func removeImages() {
+        imageStates = []
+    }
+}
 
 private actor RecordingOCIBackend: OCIRuntimeBackend {
     private(set) var preparation: OCIImagePreparation?

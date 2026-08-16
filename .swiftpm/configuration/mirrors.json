@@ -1,9 +1,13 @@
 {
-  "object" : [
+  "object": [
     {
-      "mirror" : "https://github.com/nucleus-os/swift-system.git",
-      "original" : "https://github.com/apple/swift-system.git"
+      "mirror": "https://github.com/nucleus-os/swift-system.git",
+      "original": "https://github.com/apple/swift-system"
+    },
+    {
+      "mirror": "https://github.com/nucleus-os/swift-system.git",
+      "original": "https://github.com/apple/swift-system.git"
     }
   ],
-  "version" : 1
+  "version": 1
 }

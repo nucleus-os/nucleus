@@ -372,7 +372,6 @@ public enum CoreColliderRecipe: ColliderComponent {
             gnArguments: linuxGNArguments(target),
             mode: "linux",
             artifactTarget: target.artifactTarget,
-            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
             containerEnvironment: targetEnvironment(target),
             externalSources: sources.externalSources,
             gn: sources.gn,
@@ -388,6 +387,8 @@ public enum CoreColliderRecipe: ColliderComponent {
         builder: NativeOCIConfiguration
     ) throws -> SkiaBuildArtifacts {
         let ndk = "/opt/android-ndk-r30-beta2"
+        let target = "aarch64-linux-android\(minimumAndroidAPI)"
+        let sysroot = "\(ndk)/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
         return try skiaTask(
             id: CoreTaskIDs.androidSkia,
             root: root,
@@ -398,11 +399,13 @@ public enum CoreColliderRecipe: ColliderComponent {
                 #"target_cpu="arm64""#,
                 #"ndk="\#(ndk)""#,
                 "ndk_api=\(minimumAndroidAPI)",
+                #"target_ar="/usr/bin/llvm-ar""#,
+                #"target_cc="/usr/bin/clang --target=\#(target) --sysroot=\#(sysroot) -fno-addrsig""#,
+                #"target_cxx="/usr/bin/clang++ --target=\#(target) --sysroot=\#(sysroot) -fno-addrsig""#,
                 "skia_use_fontconfig=false",
             ] + commonGNArguments,
             mode: "android",
             artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
-            intelBinaryTranslationPolicy: .required,
             containerEnvironment: [:],
             externalSources: sources.externalSources,
             gn: sources.gn,
@@ -1126,7 +1129,6 @@ private struct InstallSkiaGNAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: .disabled,
             resourceLimits: OCIResourceLimits(
                 cpuCount: 1,
                 memoryBytes: 1 * 1_024 * 1_024 * 1_024,
@@ -1246,7 +1248,6 @@ private func skiaTask(
     gnArguments: [String],
     mode: String,
     artifactTarget: ArtifactTarget,
-    intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
     containerEnvironment: [String: String],
     externalSources: ArtifactReference,
     gn: ExecutableReference,
@@ -1311,7 +1312,6 @@ private func skiaTask(
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: intelBinaryTranslationPolicy,
             resourceLimits: .parallelBuild,
             containerEnvironment: containerEnvironment.merging(
                 ["CCACHE_LOGFILE": "/ccache/ccache.log"],

@@ -9,7 +9,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # name without pulling in the conflicting amd64 development package.
 # LLVM's libc++ runtime packages also install architecture-colliding versioned
 # paths and cannot be co-installed. Extract only the current amd64 runtime
-# objects into the multiarch directory used by translated SwiftPM host tools.
+# objects into the multiarch directory used when translated x86_64 products run.
 # Collider resolves and downloads this exact package closure on the host. The
 # image build never contacts an Ubuntu mirror.
 COPY inputs/apt/install/ /tmp/nucleus-apt/install/
@@ -63,39 +63,26 @@ RUN sed -i 's/if delta > 0\.001:/if delta > 1.0:/' \
 # exact older runtime closure isolated from the system multiarch directories so
 # it cannot replace the target SDK or the builder's native libraries.
 COPY inputs/archives/swift-libxml2-arm64.deb /tmp/swift-libxml2-arm64.deb
-COPY inputs/archives/swift-libxml2-amd64.deb /tmp/swift-libxml2-amd64.deb
 COPY inputs/archives/swift-libicu74-arm64.deb /tmp/swift-libicu74-arm64.deb
-COPY inputs/archives/swift-libicu74-amd64.deb /tmp/swift-libicu74-amd64.deb
 RUN echo 'f833e07c5dffb9f7a26084522ef58854c4297982439a2affc94e20dbb495c696  /tmp/swift-libxml2-arm64.deb' \
-        | sha256sum --check --strict \
-    && echo 'bfd07c01d6e5ab3e327f3ca5819409b1914bbfb3f1a016d53e4dabd5f96143bb  /tmp/swift-libxml2-amd64.deb' \
         | sha256sum --check --strict \
     && echo '041df33ab32c57287a62ba141890a82512bf092854be455259c8034ab7ae9fbc  /tmp/swift-libicu74-arm64.deb' \
         | sha256sum --check --strict \
-    && echo 'd29c97a21a3e3254731cfac186e4d4e611e5e67d2c9a0430f6acfbd9acaefa2e  /tmp/swift-libicu74-amd64.deb' \
-        | sha256sum --check --strict \
     && mkdir -p \
         /tmp/swift-compat-arm64 \
-        /tmp/swift-compat-amd64 \
         /opt/swift-compat/arm64 \
-        /opt/swift-compat/amd64 \
     && dpkg-deb --extract /tmp/swift-libxml2-arm64.deb /tmp/swift-compat-arm64 \
     && dpkg-deb --extract /tmp/swift-libicu74-arm64.deb /tmp/swift-compat-arm64 \
-    && dpkg-deb --extract /tmp/swift-libxml2-amd64.deb /tmp/swift-compat-amd64 \
-    && dpkg-deb --extract /tmp/swift-libicu74-amd64.deb /tmp/swift-compat-amd64 \
     && cp -a /tmp/swift-compat-arm64/usr/lib/aarch64-linux-gnu/libxml2.so.2* \
         /tmp/swift-compat-arm64/usr/lib/aarch64-linux-gnu/libicu*.so.74* \
         /opt/swift-compat/arm64/ \
-    && cp -a /tmp/swift-compat-amd64/usr/lib/x86_64-linux-gnu/libxml2.so.2* \
-        /tmp/swift-compat-amd64/usr/lib/x86_64-linux-gnu/libicu*.so.74* \
-        /opt/swift-compat/amd64/ \
+    && printf '%s\n' /opt/swift-compat/arm64 \
+        > /etc/ld.so.conf.d/nucleus-swift-compat-arm64.conf \
+    && ldconfig \
     && rm -rf \
         /tmp/swift-compat-arm64 \
-        /tmp/swift-compat-amd64 \
         /tmp/swift-libxml2-arm64.deb \
-        /tmp/swift-libxml2-amd64.deb \
-        /tmp/swift-libicu74-arm64.deb \
-        /tmp/swift-libicu74-amd64.deb
+        /tmp/swift-libicu74-arm64.deb
 
 COPY inputs/archives/swift-arm64.tar.gz /tmp/swift.tar.gz
 RUN echo 'd0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de  /tmp/swift.tar.gz' \
@@ -106,36 +93,16 @@ RUN echo 'd0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de  /tmp
         --directory /opt/swift \
         --strip-components=1 \
     && rm -f /tmp/swift.tar.gz \
+    && test -x /opt/swift/usr/bin/swift-package \
+    && readelf --file-header /opt/swift/usr/bin/swift-package \
+        | grep --fixed-strings AArch64 \
     && LD_LIBRARY_PATH=/opt/swift-compat/arm64 \
         /opt/swift/usr/bin/swift --version \
         | grep --fixed-strings 'Swift version 6.4-dev' \
-    && LD_LIBRARY_PATH=/opt/swift-compat/arm64 \
-        /opt/swift/usr/bin/swift-build --version \
+    && LD_LIBRARY_PATH=/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64 \
+        /opt/swift/usr/bin/swift-package --version \
     && /opt/swift/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'aarch64-unknown-linux-gnu'
-
-# SwiftPM builds macro and plugin executables for the compiler's host
-# architecture. Give the translated amd64 lane a matching official compiler
-# so its host tools and target SDK share one architecture.
-COPY inputs/archives/swift-amd64.tar.gz /tmp/swift-x86_64.tar.gz
-RUN echo 'fa3f1d9517068ead03518d6c9936814c2e1b588cb6e89c4c0284283d274f5d73  /tmp/swift-x86_64.tar.gz' \
-        | sha256sum --check --strict \
-    && mkdir -p /opt/swift-x86_64 \
-    && tar --extract --gzip \
-        --file /tmp/swift-x86_64.tar.gz \
-        --directory /opt/swift-x86_64 \
-        --strip-components=1 \
-    && rm -f /tmp/swift-x86_64.tar.gz \
-    && test ! -e /opt/swift-x86_64/usr/bin/ld \
-    && ln -s lld /opt/swift-x86_64/usr/bin/ld \
-    && LD_LIBRARY_PATH=/opt/swift-compat/amd64 \
-        /opt/swift-x86_64/usr/bin/swift --version \
-        | grep --fixed-strings 'Swift version 6.4-dev' \
-    && LD_LIBRARY_PATH=/opt/swift-compat/amd64 \
-        /opt/swift-x86_64/usr/bin/swift-build --version \
-    && test "$(readlink /opt/swift-x86_64/usr/bin/ld)" = lld \
-    && /opt/swift-x86_64/usr/bin/swiftc -print-target-info \
-        | grep --fixed-strings 'x86_64-unknown-linux-gnu'
 
 COPY inputs/archives/cmake-arm64.tar.gz /tmp/cmake.tar.gz
 RUN echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
@@ -189,6 +156,8 @@ RUN usermod \
         --comment 'Nucleus Linux Build' \
         nucleus-build
 
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-build
+
 USER nucleus-build
 WORKDIR /src
 
@@ -200,3 +169,5 @@ ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
     LC_ALL=C.UTF-8 \
     PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=UTC
+
+ENTRYPOINT ["/usr/local/bin/nucleus-build"]

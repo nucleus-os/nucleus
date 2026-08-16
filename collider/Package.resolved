@@ -1,5 +1,5 @@
 {
-  "originHash" : "97e5ba9d3cc977362896c0d9368f07328bba45f3add416e3d785816641d826a9",
+  "originHash" : "f6078a331457d964c570c4ff49c65e910c07a19b09221cb36d89e79728ffd152",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -241,7 +241,7 @@
       "location" : "https://github.com/nucleus-os/swift-subprocess.git",
       "state" : {
         "branch" : "nucleus-local-swift-system",
-        "revision" : "8709c8b6a9d1d367eedabb2e1410b96f4166329d"
+        "revision" : "d1704deb70cebd7fe2699b8c0c93ee7a4a626211"
       }
     },
     {

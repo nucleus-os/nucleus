@@ -253,6 +253,31 @@ import Testing
     #expect(try sourceCheckoutDigest(sources) != baseline)
 }
 
+@Test func sourceCheckoutDigestMatchesBeforeAndAfterCommit() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-checkout-commit-independent-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let sources = repository.appendingPathComponent("Sources")
+    try FileManager.default.createDirectory(
+        at: sources,
+        withIntermediateDirectories: true)
+    let tracked = sources.appendingPathComponent("Value.swift")
+    try Data("let value = 1\n".utf8).write(to: tracked)
+    let removed = sources.appendingPathComponent("Removed.swift")
+    try Data("let removed = true\n".utf8).write(to: removed)
+    try commitAll(repository)
+
+    try Data("let value = 2\n".utf8).write(to: tracked)
+    try FileManager.default.removeItem(at: removed)
+    let added = sources.appendingPathComponent("Added.swift")
+    try Data("let added = true\n".utf8).write(to: added)
+    let dirty = try sourceCheckoutDigest(sources)
+
+    try commitAll(repository)
+    #expect(try sourceCheckoutDigest(sources) == dirty)
+}
+
 @Test func sourceCheckoutDigestSupportsAnEntirelyNewSourceDirectory() throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-new-scope-\(UUID().uuidString)")
@@ -325,6 +350,74 @@ import Testing
     try Data("second\n".utf8).write(
         to: parent.appendingPathComponent("Dependency/value"))
     #expect(try sourceCheckoutDigest(parent) != baseline)
+}
+
+@Test func productSourceSnapshotSeparatesContentFromGitProvenance() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-product-source-snapshot-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let source = repository.appendingPathComponent("Source.swift")
+    try Data("let value = 1\n".utf8).write(to: source)
+    try commitAll(repository)
+
+    let clean = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment)
+    #expect(clean.provenance.baseCommit?.isEmpty == false)
+    #expect(clean.provenance.dirtyPaths.isEmpty)
+
+    try Data("let value = 2\n".utf8).write(to: source)
+    try Data("untracked\n".utf8).write(
+        to: repository.appendingPathComponent("New.txt"))
+    let dirty = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment)
+    #expect(dirty.closure != clean.closure)
+    #expect(dirty.provenance.dirtyPaths == ["New.txt", "Source.swift"])
+
+    try commitAll(repository)
+    let committed = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment)
+    #expect(committed.closure == dirty.closure)
+    #expect(committed.provenance.dirtyPaths.isEmpty)
+    #expect(committed.provenance.identity != dirty.provenance.identity)
+}
+
+@Test func productSourceSnapshotUsesItsDeclaredSourceClosure() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-scoped-product-source-snapshot-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let source = repository.appendingPathComponent("Source.swift")
+    let unrelated = repository.appendingPathComponent("Notes.md")
+    try Data("let value = 1\n".utf8).write(to: source)
+    try Data("first\n".utf8).write(to: unrelated)
+    try commitAll(repository)
+
+    let sourcePaths = [FilePath(source.path)]
+    let clean = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment,
+        sourcePaths: sourcePaths)
+
+    try Data("second\n".utf8).write(to: unrelated)
+    try Data("untracked\n".utf8).write(
+        to: repository.appendingPathComponent("Untracked.md"))
+    let unrelatedDirty = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment,
+        sourcePaths: sourcePaths)
+    #expect(unrelatedDirty == clean)
+
+    try Data("let value = 2\n".utf8).write(to: source)
+    let sourceDirty = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .localDevelopment,
+        sourcePaths: sourcePaths)
+    #expect(sourceDirty.closure != clean.closure)
+    #expect(sourceDirty.provenance.dirtyPaths == ["Source.swift"])
 }
 
 private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {

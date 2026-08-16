@@ -2,8 +2,7 @@ import ColliderCore
 import SystemPackage
 
 /// One Linux artifact lane produced inside the canonical ARM64 builder guest.
-/// The guest remains ARM64 for both lanes; x86_64 target execution opts into
-/// Intel binary translation explicitly.
+/// The produced architecture never determines which host executables run.
 package struct NativeLinuxTarget: Hashable, Sendable {
     package let architecture: PlatformArchitecture
 
@@ -37,10 +36,6 @@ package struct NativeLinuxTarget: Hashable, Sendable {
         }
     }
 
-    package var intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy {
-        architecture == .x86_64 ? .required : .disabled
-    }
-
     package var containerSwiftSDKRoot: String {
         "/swift-sdk/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
             + targetTriple + "/" + NucleusLinuxABI.sdkDirectoryName
@@ -60,24 +55,24 @@ package struct NativeLinuxTarget: Hashable, Sendable {
 /// bootstrap configuration deliberately does not name a target Swift SDK: the
 /// image is required to produce that SDK.
 package struct NativeOCIBaseConfiguration: Sendable {
-    package let context: FilePath
-    package let dependencyImage: ArtifactReference
     package let image: ArtifactReference
+    package let swiftPMOverlay: ArtifactReference
     package let ccache: FilePath
     package let environment: [String: String]
+    package let swiftPMOverlayRevision: String
 
     package init(
-        context: FilePath,
-        dependencyImage: ArtifactReference,
         image: ArtifactReference,
+        swiftPMOverlay: ArtifactReference,
         ccache: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        swiftPMOverlayRevision: String
     ) {
-        self.context = context
-        self.dependencyImage = dependencyImage
         self.image = image
+        self.swiftPMOverlay = swiftPMOverlay
         self.ccache = ccache
         self.environment = environment
+        self.swiftPMOverlayRevision = swiftPMOverlayRevision
     }
 
     package var imageID: FilePath { image.path }
@@ -98,18 +93,16 @@ package struct NativeOCIConfiguration: Sendable {
         self.swiftSDK = swiftSDK
     }
 
-    package var context: FilePath { base.context }
-    package var dependencyImage: ArtifactReference {
-        base.dependencyImage
-    }
     package var image: ArtifactReference { base.image }
     package var imageID: FilePath { base.imageID }
+    package var swiftPMOverlay: ArtifactReference { base.swiftPMOverlay }
     package var ccache: FilePath { base.ccache }
     package func ccache(for target: NativeLinuxTarget) -> FilePath {
         base.ccache.appending(target.identifier)
     }
     package var swiftSDKRoot: FilePath { swiftSDK.path }
     package var environment: [String: String] { base.environment }
+    package var swiftPMOverlayRevision: String { base.swiftPMOverlayRevision }
 }
 
 package struct NativeBuilderGraphConfiguration: RecipeConfiguration {

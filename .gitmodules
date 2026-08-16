@@ -101,6 +101,14 @@
 [submodule "swift-sdk/source/swift-testing"]
 	path = swift-sdk/source/swift-testing
 	url = https://github.com/swiftlang/swift-testing.git
+[submodule "swift-sdk/source/swift-build"]
+	path = swift-sdk/source/swift-build
+	url = git@github.com:nucleus-os/swift-build.git
+	branch = codex/linux-host-tool-sdk
+[submodule "swift-sdk/source/swift-package-manager"]
+	path = swift-sdk/source/swift-package-manager
+	url = git@github.com:nucleus-os/swift-package-manager.git
+	branch = codex/linux-swiftpm-overlay
 [submodule "swift-wayland/third-party/wayland"]
 	path = swift-wayland/third-party/wayland
 	url = https://gitlab.freedesktop.org/wayland/wayland.git

@@ -9,14 +9,12 @@ import Testing
 func macOSCommandCompositionContainsOnlyWorkspaceOperations() {
     let expectedRoot: [ParsableCommand.Type] = [
         Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self,
-        Install.self, Skill.self, Benchmark.self,
+        PackageArtifacts.self, Skill.self, Benchmark.self,
         Clean.self, Cache.self, Tasks.self, Graph.self, Runs.self, Logs.self,
         Status.self,
     ]
-    let expectedInstall: [ParsableCommand.Type] = [InstallBrowser.self]
 
     #expect(commandTypes(ColliderCommand.configuration.subcommands) == commandTypes(expectedRoot))
-    #expect(commandTypes(Install.configuration.subcommands) == commandTypes(expectedInstall))
 }
 
 private func commandTypes(

@@ -25,8 +25,11 @@ let package = Package(
     products: [
         .executable(name: "collider", targets: ["Collider"]),
         .executable(
-            name: "nucleus-runtime-assembler",
-            targets: ["NucleusRuntimeAssembler"]),
+            name: "nucleus-linux-assembler",
+            targets: ["NucleusLinuxAssembler"]),
+        .executable(
+            name: "nucleus-linux-package-qualifier",
+            targets: ["NucleusLinuxPackageQualifier"]),
     ],
     dependencies: packageDependencies,
     targets: [
@@ -34,9 +37,21 @@ let package = Package(
             name: "Collider",
             dependencies: ["ColliderCLI"]),
         .executableTarget(
-            name: "NucleusRuntimeAssembler",
+            name: "NucleusLinuxAssembler",
             dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
+                "ChromiumColliderRecipe",
+                "LinuxColliderRecipe",
+                "ShellColliderRecipe",
+            ]),
+        .executableTarget(
+            name: "NucleusLinuxPackageQualifier",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
+                "LinuxColliderRecipe",
                 "ShellColliderRecipe",
             ]),
         .target(
@@ -114,6 +129,8 @@ let package = Package(
             name: "LinuxColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
+                "ChromiumColliderRecipe",
                 "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
             ]),
@@ -193,6 +210,7 @@ let package = Package(
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(name: "ColliderTesting", package: "engine"),
                 "CoreColliderRecipe",
+                "LinuxColliderRecipe",
                 "NativeBuilderColliderRecipe",
                 "ReactNativeColliderRecipe",
                 "ReleaseGateColliderRecipe",
@@ -236,6 +254,14 @@ let package = Package(
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(name: "ColliderTesting", package: "engine"),
                 "SwiftTargetSDKColliderRecipe",
+            ]),
+        .testTarget(
+            name: "LinuxColliderRecipeTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "ChromiumColliderRecipe",
+                "LinuxColliderRecipe",
+                "ShellColliderRecipe",
             ]),
         .testTarget(
             name: "ShellColliderRecipeTests",

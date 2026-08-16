@@ -231,6 +231,20 @@ public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
     }
 }
 
+public struct OCIMountedEntrypointActionIdentity: ColliderActionIdentity {
+    public let entrypoint: OCIMountedEntrypoint
+
+    public init(_ entrypoint: OCIMountedEntrypoint) {
+        self.entrypoint = entrypoint
+    }
+
+    public func encode(into encoder: inout IdentityEncoder) {
+        encoder.append(path: entrypoint.image.path)
+        encoder.append(path: entrypoint.executable)
+        encoder.append(entrypoint.containerPath)
+    }
+}
+
 public struct OCIExecutionActionIdentity: ColliderActionIdentity {
     public let execution: OCIExecution
 
@@ -275,7 +289,17 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(execution.capabilityPolicy.rawValue)
         encoder.append(execution.privilegePolicy.rawValue)
         encoder.append(execution.processFilesystemPolicy.rawValue)
-        encoder.append(execution.intelBinaryTranslationPolicy.rawValue)
+        encoder.appendSequence(
+            execution.executableRequirements.sorted {
+                if $0.architecture != $1.architecture {
+                    return $0.architecture.rawValue < $1.architecture.rawValue
+                }
+                return $0.executable < $1.executable
+            }
+        ) { requirement, value in
+            requirement.appendEnum(value.architecture)
+            requirement.append(value.executable)
+        }
 
         // Resource limits schedule an execution but cannot change its declared
         // result. Tuning them must not invalidate otherwise clean artifacts.
@@ -284,6 +308,9 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
             entry, value in
             entry.append(value.key)
             entry.append(value.value)
+        }
+        encoder.appendOptional(execution.imageEntrypointOverride) {
+            $0.append($1)
         }
         encoder.appendSequence(execution.command) { $0.append($1) }
         encoder.append(ociActionOutputIdentity(execution.output))

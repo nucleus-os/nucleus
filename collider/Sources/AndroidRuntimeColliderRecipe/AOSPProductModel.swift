@@ -52,8 +52,8 @@ struct AOSPProductBuild: Hashable, Sendable {
     let sourceWorkspace: PersistentWorkspaceDeclaration
     let outputWorkspace: PersistentWorkspaceDeclaration
     let compilerCacheWorkspace: PersistentWorkspaceDeclaration
-    let buildImageID: FilePath
-    let artifactImageID: FilePath
+    let buildEntrypoint: OCIMountedEntrypoint
+    let artifactEntrypoint: OCIMountedEntrypoint
     let signingIdentity: FilePath
     let product: String
     let release: String
@@ -73,8 +73,8 @@ struct AOSPProductBuild: Hashable, Sendable {
         sourceWorkspace: PersistentWorkspaceDeclaration,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
-        buildImageID: FilePath,
-        artifactImageID: FilePath,
+        buildEntrypoint: OCIMountedEntrypoint,
+        artifactEntrypoint: OCIMountedEntrypoint,
         signingIdentity: FilePath,
         product: String,
         release: String,
@@ -93,8 +93,8 @@ struct AOSPProductBuild: Hashable, Sendable {
         self.sourceWorkspace = sourceWorkspace
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
-        self.buildImageID = buildImageID
-        self.artifactImageID = artifactImageID
+        self.buildEntrypoint = buildEntrypoint
+        self.artifactEntrypoint = artifactEntrypoint
         self.signingIdentity = signingIdentity
         self.product = product
         self.release = release

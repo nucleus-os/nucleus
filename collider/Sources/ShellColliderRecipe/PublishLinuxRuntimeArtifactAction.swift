@@ -22,6 +22,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
     package init(
         runtimeSwiftPM: SwiftPMInvocation,
         assemblerSwiftPM: SwiftPMInvocation,
+        architecture: PlatformArchitecture,
         artifactRoot: FilePath,
         generationsRoot: FilePath,
         packageManifestsRoot: FilePath,
@@ -70,17 +71,17 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         containerEnvironment["PATH"] =
             "/opt/swift/usr/bin:/usr/local/sbin:/usr/local/bin:"
             + "/usr/sbin:/usr/bin:/sbin:/bin"
-        let swiftRuntime = "/opt/swift/usr/lib/swift/linux"
-        containerEnvironment["LD_LIBRARY_PATH"] = [
-            runtimeOCI.containerEnvironment["LD_LIBRARY_PATH"],
-            swiftRuntime,
-        ].compactMap { $0 }.joined(separator: ":")
+        containerEnvironment["LD_LIBRARY_PATH"] =
+            assemblerOCI.containerEnvironment["LD_LIBRARY_PATH"]
 
         execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: .linuxARM64,
+            artifactTarget: ArtifactTarget(
+                operatingSystem: .linux,
+                architecture: architecture,
+                abi: "glibc"),
             imageID: runtimeOCI.imageID,
-            hostname: "nucleus-runtime-artifact",
+            hostname: "nucleus-runtime-artifact-\(architecture.rawValue)",
             workingDirectory: runtimeSwiftPM.context.packageRoot.string,
             hostWorkingDirectory: runtimeSwiftPM.context.packageRoot,
             mounts: mounts,
@@ -91,7 +92,8 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
             resourceLimits: .build,
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
-                assemblerSwiftPM.executable("nucleus-runtime-assembler").string,
+                assemblerSwiftPM.executable("nucleus-linux-assembler").string,
+                "runtime",
                 runtimeSwiftPM.productsDirectory.string,
                 artifactRoot.appending("current").string,
                 generationsRoot.string,
@@ -100,6 +102,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 sessionPackage.string,
                 kernelContract.string,
                 "release",
+                architecture.rawValue,
             ],
             environment: environment,
             output: .logged)

@@ -21,6 +21,7 @@ extension WorkspaceContext {
 
     package func swiftPMInvocation(
         packageRoot explicitPackageRoot: FilePath? = nil,
+        buildSystem: SwiftPMBuildSystem = .swiftbuild,
         configuration: SwiftBuildConfiguration = .debug,
         sanitizer: String? = nil,
         traits: [String] = [],
@@ -56,15 +57,14 @@ extension WorkspaceContext {
             resolvedToolchainIdentity =
                 "host-swift-\(hostSwiftTarget)-\(compilerSelection)"
         }
-        let maximumParallelism: UInt32
-        switch execution {
-        case .host:
-            maximumParallelism = SwiftBuildContext.defaultMaximumParallelism
-        case .oci:
-            maximumParallelism = SwiftBuildContext.concurrentOCIMaximumParallelism
-        }
+        let maximumParallelism =
+            switch execution {
+            case .host: SwiftBuildContext.defaultMaximumParallelism
+            case .oci: SwiftBuildContext.concurrentOCIMaximumParallelism
+            }
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
+            buildSystem: buildSystem,
             configuration: configuration,
             target: target ?? .host(identity: hostSwiftTarget),
             toolchainIdentity: resolvedToolchainIdentity,
@@ -89,6 +89,11 @@ extension WorkspaceContext {
                 return FileManager.default.fileExists(atPath: lock.string)
                     ? lock : nil
             }(),
+            dependencyConfigurationFiles: [
+                packageRoot.appending(".swiftpm/configuration/mirrors.json")
+            ].filter {
+                FileManager.default.fileExists(atPath: $0.string)
+            },
             sourceGraph: try swiftPackageGraphs.graph(
                 packageRoot: packageRoot,
                 swiftExecutable: graphSwiftPath()))

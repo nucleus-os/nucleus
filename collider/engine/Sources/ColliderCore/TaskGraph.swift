@@ -8,8 +8,8 @@ public enum ArtifactInput: Hashable, Sendable {
     case swiftBuildContext(SwiftBuildContext)
     case file(FilePath)
     case tree(FilePath)
-    /// Identifies Git-owned source from its committed tree plus the scoped
-    /// working-copy overlay. Ignored files are not source inputs.
+    /// Identifies the effective Git-owned tree independently of commit and
+    /// checkout placement. Ignored files are not source inputs.
     case sourceCheckout(FilePath)
     /// Identifies several target directories in one Git-owned package closure.
     /// The paths are assessed together so one package graph does not launch a
@@ -61,6 +61,8 @@ public struct DirectoryNamePattern: RawRepresentable, Hashable, Sendable {
     public static let contentIdentityCandidate = Self(
         rawValue: #"^\.[0-9a-f]{24}\.(prepared|preparing)$"#)
     public static let artifactDigestDirectory = Self(rawValue: #"^sha256-[0-9a-f]{64}$"#)
+    public static let artifactDigestCandidate = Self(
+        rawValue: #"^\.sha256-[0-9a-f]{64}\.prepared$"#)
 }
 
 public struct DirectoryRetentionRule: Hashable, Sendable {
@@ -162,6 +164,52 @@ public struct OCIMount: Hashable, Sendable {
     }
 
     public var isReadOnly: Bool { purpose == .input }
+}
+
+/// Selects an operational entrypoint without deriving another OCI image from
+/// an otherwise reusable dependency image. The executable remains a hashed
+/// host input and is exposed to the container read-only.
+public struct OCIMountedEntrypoint: Hashable, Sendable {
+    public let image: ArtifactReference
+    public let executable: FilePath
+    public let containerDirectory: String
+
+    public init(
+        image: ArtifactReference,
+        executable: FilePath,
+        containerDirectory: String
+    ) {
+        let normalized = FilePath(containerDirectory).lexicallyNormalized().string
+        precondition(
+            executable.isAbsolute && executable.isLexicallyNormal,
+            "OCI mounted entrypoint executable must be absolute and normalized")
+        precondition(
+            containerDirectory.hasPrefix("/")
+                && containerDirectory != "/"
+                && normalized == containerDirectory,
+            "OCI mounted entrypoint directory must be absolute and normalized")
+        precondition(
+            executable.lastComponent != nil,
+            "OCI mounted entrypoint executable must have a file name")
+        self.image = image
+        self.executable = executable
+        self.containerDirectory = containerDirectory
+    }
+
+    public var input: ArtifactInput { .file(executable) }
+
+    public var containerPath: String {
+        FilePath(containerDirectory).appending(
+            executable.lastComponent!.string
+        ).string
+    }
+
+    public var mount: OCIMount {
+        OCIMount(
+            source: executable.removingLastComponent(),
+            target: containerDirectory,
+            access: .readOnly)
+    }
 }
 
 public struct PersistentWorkspaceIdentity: Codable, Hashable, Sendable {
@@ -280,14 +328,23 @@ public enum OCIPrivilegePolicy: String, Codable, Hashable, Sendable {
 public enum OCIProcessFilesystemPolicy: String, Codable, Hashable, Sendable {
     case standard
     case unmasked
+    case writableRoot = "writable-root"
 }
 
-/// Controls whether the ARM Linux guest may execute Intel Linux binaries.
-/// This is independent of the OCI image architecture: an ARM64 Linux runner can
-/// enable translation only for tasks that execute x86_64 artifacts.
-public enum OCIIntelBinaryTranslationPolicy: String, Codable, Hashable, Sendable {
-    case disabled
-    case required
+/// Declares a non-native subprocess that an OCI action executes. Artifact target
+/// architecture never implies an executable requirement.
+public struct OCIExecutableRequirement: Codable, Hashable, Sendable {
+    public let architecture: PlatformArchitecture
+    public let executable: String
+
+    public init(
+        architecture: PlatformArchitecture,
+        executable: String
+    ) {
+        precondition(!executable.isEmpty)
+        self.architecture = architecture
+        self.executable = executable
+    }
 }
 
 public struct OCIResourceLimits: Codable, Hashable, Sendable {
@@ -334,7 +391,7 @@ public struct OCIExecution: Hashable, Sendable {
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
-    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
+    public let executableRequirements: Set<OCIExecutableRequirement>
     public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
     public let imageEntrypointOverride: String?
@@ -355,7 +412,7 @@ public struct OCIExecution: Hashable, Sendable {
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
         processFilesystemPolicy: OCIProcessFilesystemPolicy,
-        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
+        executableRequirements: Set<OCIExecutableRequirement> = [],
         resourceLimits: OCIResourceLimits,
         containerEnvironment: [String: String],
         imageEntrypointOverride: String? = nil,
@@ -375,7 +432,7 @@ public struct OCIExecution: Hashable, Sendable {
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy
         self.processFilesystemPolicy = processFilesystemPolicy
-        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
+        self.executableRequirements = executableRequirements
         self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
         self.imageEntrypointOverride = imageEntrypointOverride

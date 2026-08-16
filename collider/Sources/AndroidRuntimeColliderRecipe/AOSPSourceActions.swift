@@ -58,7 +58,7 @@ struct AOSPSourceMaterialization: Hashable, Sendable {
     let exportedResolvedManifest: FilePath
     let exportedProvenance: FilePath
     let script: FilePath
-    let imageID: FilePath
+    let entrypoint: OCIMountedEntrypoint
     let sourceWorkspace: PersistentWorkspaceDeclaration
     let syncJobs: UInt32
     let environment: [String: String]
@@ -205,7 +205,9 @@ struct MaterializeAOSPSourceAction: ColliderAction {
             encoder.append(path: materialization.resolvedManifest)
             encoder.append(path: materialization.provenance)
             encoder.append(path: materialization.script)
-            encoder.append(path: materialization.imageID)
+            encoder.append(path: materialization.entrypoint.image.path)
+            encoder.append(path: materialization.entrypoint.executable)
+            encoder.append(materialization.entrypoint.containerPath)
             encoder.append(materialization.sourceWorkspace.identity.key)
             encoder.append(materialization.sourceWorkspace.capacityBytes)
         }
@@ -240,7 +242,12 @@ struct MaterializeAOSPSourceAction: ColliderAction {
                 ActionEffect(.read, scope: .input(materialization.sourceInputs)),
                 ActionEffect(.read, scope: .input(sourceLockDirectory)),
                 ActionEffect(.read, scope: .input(toolingDirectory)),
-                ActionEffect(.read, scope: .input(materialization.imageID)),
+                ActionEffect(
+                    .read,
+                    scope: .input(materialization.entrypoint.image.path)),
+                ActionEffect(
+                    .read,
+                    scope: .input(materialization.entrypoint.executable)),
                 ActionEffect(.write, scope: .output(export)),
             ],
             persistentWorkspaceEffects: [
@@ -260,11 +267,12 @@ struct MaterializeAOSPSourceAction: ColliderAction {
         let execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: materialization.sourceWorkspace.identity.artifactTarget,
-            imageID: materialization.imageID,
+            imageID: materialization.entrypoint.image.path,
             hostname: "aosp-source",
             workingDirectory: "/src",
             hostWorkingDirectory: export,
             mounts: [
+                materialization.entrypoint.mount,
                 OCIMount(
                     source: launcherDirectory,
                     target: "/inputs/repo-launcher",
@@ -293,7 +301,6 @@ struct MaterializeAOSPSourceAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: .required,
             resourceLimits: .parallelBuild,
             containerEnvironment: [
                 "AOSP_SYNC_JOBS": String(materialization.syncJobs),
@@ -313,6 +320,7 @@ struct MaterializeAOSPSourceAction: ColliderAction {
                 "LC_ALL": "C.UTF-8",
                 "TZ": "UTC",
             ],
+            imageEntrypointOverride: materialization.entrypoint.containerPath,
             command: [
                 "source",
                 "/inputs/tooling/"

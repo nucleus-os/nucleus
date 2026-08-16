@@ -200,6 +200,7 @@ import Testing
         safetyRoot: FilePath("/cache"),
         retentionPolicy: .keepActiveAndRollback(count: 0),
         activeGenerationLink: FilePath("/outside/current"),
+        generationNaming: .contentIdentity,
         interruptedCandidateNaming: nil)
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate([declaration], forbiddenRemovalRoots: [])
@@ -244,6 +245,7 @@ import Testing
         safetyRoot: cache,
         retentionPolicy: .protected,
         activeGenerationLink: cache.appending("current"),
+        generationNaming: .contentIdentity,
         interruptedCandidateNaming: nil)
     #expect(throws: StorageCatalogFailure.self) {
         try StorageCatalog.validate([declaration], forbiddenRemovalRoots: [])
@@ -258,6 +260,7 @@ import Testing
         safetyRoot: cache,
         retentionPolicy: .keepActiveAndRollback(count: 1),
         activeGenerationLink: cache.appending("current"),
+        generationNaming: .contentIdentity,
         interruptedCandidateNaming: nil)
     #expect(throws: Never.self) {
         try StorageCatalog.validate([valid], forbiddenRemovalRoots: [])

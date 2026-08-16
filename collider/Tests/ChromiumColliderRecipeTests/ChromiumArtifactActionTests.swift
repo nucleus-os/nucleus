@@ -1,6 +1,7 @@
 import ChromiumColliderRecipe
 import ColliderCore
 import ColliderEngine
+import ColliderPersistence
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -25,6 +26,7 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
         withIntermediateDirectories: true)
     try Data("clang".utf8).write(to: clang)
     try Data("fixture-image".utf8).write(to: imageID)
+    let entrypoint = try fixtureEntrypoint(imageID: imageID)
     try JSONSerialization.data(
         withJSONObject: ["sourceID": "0123456789abcdef01234567"],
         options: [.sortedKeys]
@@ -46,7 +48,7 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
                 target: target),
             compilerCacheWorkspace: chromiumCompilerCacheWorkspace(
                 target: target),
-            containerImageID: FilePath(imageID.path),
+            entrypoint: entrypoint,
             gnArguments: "is_debug=false",
             targets: ["chrome"],
             jobs: 12,
@@ -77,10 +79,12 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
             "chrome",
         ])
     let materialization = try #require(recorded.first)
-    #expect(materialization.mounts.map(\.target) == ["/host-source"])
+    #expect(
+        materialization.mounts.map(\.target)
+            == ["/collider-entrypoints/fixture", "/host-source"])
     #expect(materialization.persistentWorkspaceMounts.map(\.target) == ["/source"])
     #expect(materialization.persistentWorkspaceMounts.first?.access == .readWrite)
-    #expect(materialization.intelBinaryTranslationPolicy == .disabled)
+    #expect(materialization.executableRequirements.isEmpty)
     for execution in recorded.dropFirst() {
         #expect(!execution.mounts.contains { $0.target == "/source" })
         #expect(
@@ -154,7 +158,7 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
         outputWorkspace: chromiumOutputWorkspace(
             product: .browser,
             target: target),
-        artifactImageID: FilePath(imageID.path),
+        entrypoint: try fixtureEntrypoint(imageID: imageID),
         distributionRoot: FilePath(distribution.path),
         launcher: FilePath(launcher.path),
         desktopTemplate: FilePath(desktop.path),
@@ -196,12 +200,43 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
     let validation = try #require(recorded.last)
     #expect(validation.executionPlatform == .linuxARM64OCI)
     #expect(validation.artifactTarget == target.artifactTarget)
-    #expect(validation.intelBinaryTranslationPolicy == .required)
+    #expect(validation.executableRequirements.isEmpty)
     #expect(validation.command == ["validate-browser", architecture.rawValue])
+    let payloadTarget = try FileManager.default.destinationOfSymbolicLink(
+        atPath: distribution.appendingPathComponent("current").path)
+    let payload = distribution.appendingPathComponent(payloadTarget)
+    let payloadDigest = try ArtifactHasher.digest(tree: FilePath(payload.path))
     #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: distribution.appendingPathComponent("current").path)
-            == "generations/\(buildID)")
+        payloadTarget
+            == "generations/sha256-\(payloadDigest.hexadecimal)")
+
+    let packageInputRoot = directory.appendingPathComponent("package-input")
+    let packagePublication = BrowserPackageInputPublication(
+        target: target,
+        distributionRoot: FilePath(distribution.path),
+        packageInputRoot: FilePath(packageInputRoot.path))
+    try await execute(
+        PublishBrowserPackageInputAction(publication: packagePublication),
+        recording: executions,
+        containerRun: { execution in
+            Issue.record(
+                "package-input publication must not execute a container: \(execution)")
+            return CommandResult(status: 64)
+        })
+    let packageInput = try validatedBrowserPackageInput(
+        packagePublication,
+        files: ColliderRuntime().actionFileSystem())
+    #expect(packageInput.packageName == "nucleus-browser")
+    #expect(packageInput.artifactTarget == target.artifactTarget)
+    #expect(packageInput.payloadDigest == payloadDigest)
+    #expect(packageInput.payloadGeneration == payloadTarget)
+    try Data("substituted".utf8).write(
+        to: payload.appendingPathComponent("runtime/icudtl.dat"))
+    #expect(throws: (any Error).self) {
+        try validatedBrowserPackageInput(
+            packagePublication,
+            files: ColliderRuntime().actionFileSystem())
+    }
 }
 
 @Test(arguments: PlatformArchitecture.allCases)
@@ -324,7 +359,7 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         outputWorkspace: chromiumOutputWorkspace(
             product: .cef,
             target: target),
-        artifactImageID: FilePath(imageID.path),
+        entrypoint: try fixtureEntrypoint(imageID: imageID),
         distributionRoot: FilePath(distribution.path),
         cefCheckout: checkout,
         chromiumVersion: version,
@@ -385,8 +420,10 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         recorded.allSatisfy {
             $0.executionPlatform == .linuxARM64OCI
                 && $0.artifactTarget == target.artifactTarget
-                && $0.intelBinaryTranslationPolicy == .required
         })
+    #expect(recorded[0].executableRequirements.isEmpty)
+    #expect(recorded[1].executableRequirements.isEmpty)
+    #expect(recorded[2].executableRequirements.isEmpty)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: distribution.appendingPathComponent(
@@ -402,98 +439,26 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         })
 }
 
-@Test func browserInstallationPublishesOneVersionedPrefixGeneration() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-browser-install-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let distribution = directory.appendingPathComponent("distribution")
-    let buildID = "fedcbafedcbafedcbafedcba"
-    let artifact = distribution.appendingPathComponent(
-        "generations/\(buildID)")
-    let runtime = artifact.appendingPathComponent("runtime")
-    let widevine = runtime.appendingPathComponent("WidevineCdm")
-    try FileManager.default.createDirectory(
-        at: widevine.appendingPathComponent(
-            "_platform_specific/linux_x64"),
-        withIntermediateDirectories: true)
-    for (path, value) in [
-        (runtime.appendingPathComponent("nucleus-browser-bin"), "browser"),
-        (runtime.appendingPathComponent("chrome_sandbox"), "sandbox"),
-        (widevine.appendingPathComponent("manifest.json"), "{}"),
-        (
-            widevine.appendingPathComponent(
-                "_platform_specific/linux_x64/libwidevinecdm.so"),
-            "widevine"
-        ),
-    ] {
-        try Data(value.utf8).write(to: path)
-    }
-    let launcher = artifact.appendingPathComponent("bin/nucleus-browser")
-    try FileManager.default.createDirectory(
-        at: launcher.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data("#!/bin/sh\nexit 0\n".utf8).write(to: launcher)
-    let desktop = artifact.appendingPathComponent(
-        "share/applications/dev.nucleus.Browser.desktop.in")
-    try FileManager.default.createDirectory(
-        at: desktop.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data(
-        "[Desktop Entry]\nType=Application\n"
-            .appending("Exec=@NUCLEUS_BROWSER_LAUNCHER@\n").utf8
-    ).write(to: desktop)
-    let icon = artifact.appendingPathComponent(
-        "share/icons/hicolor/128x128/apps/dev.nucleus.Browser.png")
-    try FileManager.default.createDirectory(
-        at: icon.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data("icon".utf8).write(to: icon)
-    try JSONSerialization.data(
-        withJSONObject: ["buildID": buildID],
-        options: [.sortedKeys]
-    ).write(
-        to: artifact.appendingPathComponent(
-            "nucleus-build-manifest.json"))
-    try FileManager.default.createSymbolicLink(
-        atPath: distribution.appendingPathComponent("current").path,
-        withDestinationPath: "generations/\(buildID)")
-
-    let tools = directory.appendingPathComponent("tools")
-    try FileManager.default.createDirectory(
-        at: tools, withIntermediateDirectories: true)
-    for (name, source) in [
-        ("ldd", "#!/bin/sh\nprintf 'all resolved\\n'\n"),
-        ("unshare", "#!/bin/sh\nexit 0\n"),
-        ("bash", "#!/bin/sh\nexec /bin/bash \"$@\"\n"),
-        ("sudo", "#!/bin/sh\nexit 0\n"),
-        ("stat", "#!/bin/sh\nexit 0\n"),
-        ("desktop-file-validate", "#!/bin/sh\nexit 0\n"),
-        ("update-desktop-database", "#!/bin/sh\nexit 0\n"),
-    ] {
-        let executable = tools.appendingPathComponent(name)
-        try Data(source.utf8).write(to: executable)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: executable.path)
-    }
-    let prefix = directory.appendingPathComponent("prefix")
-    try await ColliderRuntime().execute(
-        InstallBrowserAction(
-            installation: BrowserInstallation(
-                distributionRoot: FilePath(distribution.path),
-                prefix: FilePath(prefix.path),
-                environment: ["PATH": tools.path])))
-    let current = prefix.appendingPathComponent(
-        "lib/nucleus-browser/current")
-    let target = try FileManager.default.destinationOfSymbolicLink(
-        atPath: current.path)
-    #expect(target.hasPrefix("generations/"))
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: prefix.appendingPathComponent(
-                "bin/nucleus-browser"
-            ).path)
-            == "../lib/nucleus-browser/current/bin/nucleus-browser")
+private func fixtureEntrypoint(
+    imageID: URL
+) throws -> OCIMountedEntrypoint {
+    let executable = imageID.deletingLastPathComponent().appendingPathComponent(
+        "entrypoint.sh")
+    try Data("#!/bin/sh\nexec \"$@\"\n".utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    var builder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.container-image"),
+        component: ComponentID(rawValue: "fixture"))
+    let image = try builder.output(
+        "image-id",
+        path: FilePath(imageID.path),
+        validation: .regularFile)
+    return OCIMountedEntrypoint(
+        image: image,
+        executable: FilePath(executable.path),
+        containerDirectory: "/collider-entrypoints/fixture")
 }
 
 private actor OCIExecutionRecorder {

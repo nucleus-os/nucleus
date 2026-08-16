@@ -21,6 +21,20 @@ package struct LinuxPackageInstallation: Codable, Equatable, Sendable {
     package let target: String?
     package let contents: String?
 
+    package init(
+        source: String?,
+        destination: String,
+        kind: Kind,
+        target: String?,
+        contents: String?
+    ) {
+        self.source = source
+        self.destination = destination
+        self.kind = kind
+        self.target = target
+        self.contents = contents
+    }
+
     package static func file(
         _ destination: String,
         contents: String
@@ -57,6 +71,30 @@ package struct LinuxDistributionPackageManifest: Codable, Equatable, Sendable {
     package let dependencies: [String]
     package let installations: [LinuxPackageInstallation]
     package let removals: [String]
+
+    package init(
+        family: LinuxDistributionFamily,
+        architecture: String,
+        artifactDigest: String,
+        runtimeRoot: String,
+        runtimeGeneration: String,
+        seatPolicy: String,
+        capabilityPackages: [String: [String]],
+        dependencies: [String],
+        installations: [LinuxPackageInstallation],
+        removals: [String]
+    ) {
+        self.family = family
+        self.architecture = architecture
+        self.artifactDigest = artifactDigest
+        self.runtimeRoot = runtimeRoot
+        self.runtimeGeneration = runtimeGeneration
+        self.seatPolicy = seatPolicy
+        self.capabilityPackages = capabilityPackages
+        self.dependencies = dependencies
+        self.installations = installations
+        self.removals = removals
+    }
 }
 
 /// Translates the common runtime contract into package-manager vocabulary and
@@ -65,6 +103,10 @@ package struct LinuxDistributionPackageAdapter: Sendable {
     package static let runtimeRoot = "/opt/nucleus/current"
 
     package let family: LinuxDistributionFamily
+
+    package init(family: LinuxDistributionFamily) {
+        self.family = family
+    }
 
     package static var all: [Self] {
         LinuxDistributionFamily.allCases.map(Self.init(family:))
@@ -235,7 +277,7 @@ package struct LinuxDistributionPackageAdapter: Sendable {
                 pamPolicy: pamPolicy))
     }
 
-    private func packageArchitecture(_ architecture: PlatformArchitecture) -> String {
+    package func packageArchitecture(_ architecture: PlatformArchitecture) -> String {
         switch (family, architecture) {
         case (.debian, .arm64): "arm64"
         case (.debian, .x86_64): "amd64"

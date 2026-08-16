@@ -196,7 +196,7 @@
       "location" : "https://github.com/nucleus-os/swift-subprocess.git",
       "state" : {
         "branch" : "nucleus-local-swift-system",
-        "revision" : "8709c8b6a9d1d367eedabb2e1410b96f4166329d"
+        "revision" : "d1704deb70cebd7fe2699b8c0c93ee7a4a626211"
       }
     },
     {

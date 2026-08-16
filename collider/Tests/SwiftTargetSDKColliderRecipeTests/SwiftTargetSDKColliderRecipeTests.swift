@@ -82,7 +82,9 @@ import Testing
 
     let result = try SwiftTargetSDKColliderRecipe.generation(configuration)
 
-    #expect(result.selected.count == 2)
+    #expect(
+        result.selected
+            == [TaskID(rawValue: "swift-sdk.publish-active-generation")])
     #expect(result.activeSDK.path == configuration.active.appending("swift-sdks"))
     #expect(
         result.activeSwift.path
@@ -263,6 +265,12 @@ import Testing
         FileManager.default.createFile(
             atPath: activeSDKRoot.appending("info.json").string, contents: Data("{}".utf8)))
     #expect(FileManager.default.createFile(atPath: activeSwift.string, contents: Data()))
+    #expect(
+        FileManager.default.createFile(
+            atPath: configuration.generation.appending(
+                ".nucleus-target-sdk-generation"
+            ).string,
+            contents: Data()))
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755],
         ofItemAtPath: activeSwift.string)
@@ -271,8 +279,37 @@ import Testing
         withDestinationPath: configuration.generation.string)
 
     let reused = try SwiftTargetSDKColliderRecipe.prepare(configuration)
-    #expect(reused.component.tasks.count == 1)
-    #expect(reused.component.tasks[0].id.rawValue == "swift-sdk.use-active-generation")
+    #expect(reused.component.tasks.count == 4)
+    #expect(
+        Set(reused.component.tasks.map(\.id.rawValue))
+            == Set([
+                "swift-sdk.use-active-generation",
+                "swift-sdk.discover-\(inputs.linuxBundleID)",
+                "swift-sdk.discover-\(inputs.androidBundleID)",
+                "swift-sdk.publish-active-generation",
+            ]))
+    #expect(
+        reused.component.entrypoints[.build]?.roots
+            == [TaskID(rawValue: "swift-sdk.publish-active-generation")])
+    let discoveryTasks = reused.component.tasks.filter {
+        $0.id.rawValue.hasPrefix("swift-sdk.discover-")
+    }
+    #expect(discoveryTasks.allSatisfy { $0.assessmentPolicy == .always })
+    #expect(
+        discoveryTasks.allSatisfy {
+            $0.dependencies == [TaskID(rawValue: "swift-sdk.use-active-generation")]
+        })
+    let ready = try #require(
+        reused.component.tasks.first {
+            $0.id.rawValue == "swift-sdk.publish-active-generation"
+        })
+    #expect(
+        Set(ready.dependencies)
+            == Set([
+                TaskID(rawValue: "swift-sdk.use-active-generation"),
+                TaskID(rawValue: "swift-sdk.discover-\(inputs.linuxBundleID)"),
+                TaskID(rawValue: "swift-sdk.discover-\(inputs.androidBundleID)"),
+            ]))
     #expect(reused.activeSDK.path == configuration.active.appending("swift-sdks"))
     #expect(
         reused.activeSwift.path

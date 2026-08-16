@@ -193,13 +193,11 @@ struct PackageAndroidAddonAction: ColliderAction {
                         aospGeneration.appending("out/host/linux-x86/bin/avbtool")),
                     role: .semantic),
                 ActionToolRequirement(
-                    "ldd", executable: .named("ldd"), role: .semantic),
-                ActionToolRequirement(
                     "openssl", executable: .named("openssl"), role: .semantic),
                 ActionToolRequirement(
                     "patchelf", executable: .named("patchelf"), role: .semantic),
                 ActionToolRequirement(
-                    "strip", executable: .named("strip"), role: .semantic),
+                    "llvm-strip", executable: .named("llvm-strip"), role: .semantic),
             ],
             effects: effects,
             executionPlatform: ExecutionPlatform(
@@ -260,6 +258,8 @@ struct PackageAndroidAddonAction: ColliderAction {
                 prefix: resolvedRuntime,
                 environment: environment,
                 productSet: .androidAddon,
+                targetArchitecture:
+                    compatibility.architecture == .arm64 ? .arm64 : .x86_64,
                 context: context)
         }
 

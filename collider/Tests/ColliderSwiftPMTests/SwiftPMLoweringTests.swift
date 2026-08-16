@@ -63,7 +63,8 @@ private func executeWithSwiftPM(
                 invocation: invocation,
                 inputs: [],
                 environment: [:])
-        ])
+        ],
+        locks: [.checkout("fixture-capacity")])
 
     let lowered = try SwiftPMLowering().lower([
         AssessedTaskDeclaration(
@@ -78,12 +79,18 @@ private func executeWithSwiftPM(
     #expect(lowered[0].logicalOwners == [owner.id])
     #expect(lowered[0].prerequisites == [prerequisite.id])
     #expect(lowered[0].task.dependencies == [prerequisite.id])
+    #expect(
+        lowered[0].task.locks == [
+            invocation.lock,
+            .checkout("fixture-capacity"),
+        ])
 }
 
 @Test func ociLoweringMaterializesLockedDependenciesOnTheHost() throws {
     let packageRoot = FilePath("/fixture/package")
     let scratch = FilePath("/fixture/scratch")
     let lock = packageRoot.appending("Package.resolved")
+    let mirrors = packageRoot.appending(".swiftpm/configuration/mirrors.json")
     var imageBuilder = TaskBuilder(
         id: TaskID(rawValue: "fixture.image"),
         component: ComponentID(rawValue: "fixture"))
@@ -109,17 +116,20 @@ private func executeWithSwiftPM(
                     hostDependencyCache: FilePath("/fixture/cache"),
                     containerEnvironment: [:]))),
         scratchPath: scratch,
-        dependencyLock: lock)
+        dependencyLock: lock,
+        dependencyConfigurationFiles: [mirrors])
     let owner = TaskBuilder(
         id: TaskID(rawValue: "fixture.product"),
         component: ComponentID(rawValue: "fixture")
-    ).build(swiftProducts: [
-        invocation.product(
-            package: "fixture",
-            product: "FixtureProduct",
-            packageRoot: packageRoot,
-            environment: [:])
-    ])
+    ).build(
+        swiftProducts: [
+            invocation.product(
+                package: "fixture",
+                product: "FixtureProduct",
+                packageRoot: packageRoot,
+                environment: [:])
+        ],
+        locks: [.checkout("fixture-oci-capacity")])
 
     let lowered = try SwiftPMLowering().lower([
         AssessedTaskDeclaration(task: imageTask, isClean: false),
@@ -143,6 +153,10 @@ private func executeWithSwiftPM(
         container.task.action?.requirements.effects.contains(
             ActionEffect(.readWrite, scope: .scratch(scratch))) == true)
     #expect(container.prerequisites.contains(host.task.id))
+    #expect(host.task.inputs.contains(.file(mirrors)))
+    #expect(container.task.inputs.contains(.file(mirrors)))
+    #expect(host.task.locks.contains(.checkout("fixture-oci-capacity")))
+    #expect(container.task.locks.contains(.checkout("fixture-oci-capacity")))
     let execution = try invocation.ociExecution(
         arguments: ["build"],
         workingDirectory: packageRoot,
@@ -455,6 +469,69 @@ private func executeWithSwiftPM(
     #expect(report.swiftPMInvocationCount == 1)
     #expect(report.selectedInputHashingDurationNanoseconds > 0)
     #expect(report.executionDurationNanoseconds > 0)
+}
+
+@Test func duplicateProductOwnersRetainExactSwiftPMSelection() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-duplicate-product-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(
+        at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+
+    let arguments = directory.appendingPathComponent("arguments")
+    let swift = tools.appendingPathComponent("swift")
+    let script = """
+        #!/bin/sh
+        set -eu
+        \(fakeSwiftBinPathResponse)
+        printf '%s ' "$@" >> "\(arguments.path)"
+        printf '\n' >> "\(arguments.path)"
+        mkdir -p "\(scratch.path)"
+        """
+    try Data(script.utf8).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let tasks = (0..<2).map { index in
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.owner-\(index)"),
+            component: ComponentID(rawValue: "fixture"),
+            swiftProducts: [
+                invocation.product(
+                    package: "fixture",
+                    product: "SharedProduct",
+                    packageRoot: packageRoot,
+                    environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
+            ])
+    }
+
+    let report = try await executeWithSwiftPM(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    let received = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
+    #expect(received.count == 1)
+    #expect(received[0].first == "build")
+    #expect(Array(received[0].suffix(2)) == ["--product", "SharedProduct"])
+    #expect(report.swiftPMInvocationCount == 1)
 }
 
 @Test func distinctSwiftTestFiltersRemainDistinctInvocations() async throws {

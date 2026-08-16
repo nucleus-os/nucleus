@@ -9,13 +9,14 @@ import Testing
 @Test
 func linuxCommandCompositionAddsOnlyInstalledHostOperations() {
     let expectedRoot: [ParsableCommand.Type] = [
-        Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self, Run.self,
+        Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self,
+        PackageArtifacts.self, Run.self,
         Install.self, Skill.self, AndroidRuntime.self, Benchmark.self,
         Clean.self, Cache.self, Tasks.self, Graph.self, Runs.self, Logs.self,
         Status.self,
     ]
     let expectedInstall: [ParsableCommand.Type] = [
-        InstallSession.self, InstallAndroidAddon.self, InstallBrowser.self,
+        InstallSession.self, InstallAndroidAddon.self,
     ]
     let expectedAndroidRuntime: [ParsableCommand.Type] = [
         AndroidRuntimePackageAddon.self

@@ -37,6 +37,28 @@ struct NativeBuilderInputManifest: Decodable, Hashable, Sendable {
     }
 }
 
+struct SwiftPMOverlayInputManifest: Decodable, Hashable, Sendable {
+    let swiftPackageManagerRevision: String
+    let swiftBuildRevision: String
+    let sourceDateEpoch: UInt64
+
+    static func load(from path: FilePath) throws -> Self {
+        let data = try Data(contentsOf: URL(filePath: path.string))
+        let manifest = try JSONDecoder().decode(Self.self, from: data)
+        guard isGitRevision(manifest.swiftPackageManagerRevision),
+            isGitRevision(manifest.swiftBuildRevision),
+            manifest.sourceDateEpoch > 0
+        else {
+            throw NativeBuilderInputFailure.invalidManifest
+        }
+        return manifest
+    }
+
+    private static func isGitRevision(_ value: String) -> Bool {
+        value.count == 40 && value.allSatisfy(\.isHexDigit)
+    }
+}
+
 struct NativeBuilderDownload: Hashable, Sendable {
     enum Placement: Hashable, Sendable {
         case archive(String)

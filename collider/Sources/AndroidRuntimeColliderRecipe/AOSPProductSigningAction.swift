@@ -7,6 +7,7 @@ struct SignAOSPProductAction: ColliderAction {
         let sourceWorkspace: PersistentWorkspaceDeclaration
         let buildRoot: FilePath
         let containerImageID: FilePath
+        let entrypoint: OCIMountedEntrypoint
         let signingIdentity: FilePath
         let product: String
         let variant: String
@@ -17,6 +18,9 @@ struct SignAOSPProductAction: ColliderAction {
             encoder.append(sourceWorkspace.capacityBytes)
             encoder.append(path: buildRoot)
             encoder.append(path: containerImageID)
+            encoder.append(
+                nested: OCIMountedEntrypointActionIdentity(
+                    entrypoint))
             encoder.append(path: signingIdentity)
             encoder.append(product)
             encoder.append(variant)
@@ -32,7 +36,8 @@ struct SignAOSPProductAction: ColliderAction {
         Identity(
             sourceWorkspace: build.sourceWorkspace,
             buildRoot: build.artifactRoot,
-            containerImageID: build.artifactImageID,
+            containerImageID: build.artifactEntrypoint.image.path,
+            entrypoint: build.artifactEntrypoint,
             signingIdentity: build.signingIdentity,
             product: build.product,
             variant: build.variant,
@@ -42,7 +47,12 @@ struct SignAOSPProductAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(.read, scope: .input(build.artifactImageID)),
+                ActionEffect(
+                    .read,
+                    scope: .input(build.artifactEntrypoint.image.path)),
+                ActionEffect(
+                    .read,
+                    scope: .input(build.artifactEntrypoint.executable)),
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
             ],
@@ -117,6 +127,9 @@ struct SignAOSPProductAction: ColliderAction {
                     (build.signingIdentity, "/keys"),
                 ],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                executableRequirements: aospX86ExecutableRequirements([
+                    "/out/host/linux-x86/bin/sign_target_files_apks"
+                ]),
                 command: [
                     "/out/host/linux-x86/bin/sign_target_files_apks"
                 ] + arguments))

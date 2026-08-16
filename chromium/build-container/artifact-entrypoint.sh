@@ -111,6 +111,8 @@ case "${1:-}" in
       --release-build-dir=/build \
       "$2" \
       --minimal \
+      --no-docs \
+      --no-format \
       --no-archive
     ;;
   browser-stage)
@@ -155,7 +157,7 @@ case "${1:-}" in
 #include "include/cef_version_info.h"
 int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }
 EOF
-    /source/chromium/src/third_party/llvm-build/Linux_x64/bin/clang \
+    /usr/bin/clang \
       --target="$triple" \
       --sysroot="$sysroot" \
       -fuse-ld=lld \

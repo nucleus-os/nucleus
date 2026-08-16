@@ -86,7 +86,10 @@ private func inertActionFileSystem() -> ActionFileSystem {
 }
 
 @Test func ociResourceLimitsDoNotInvalidateActionResults() throws {
-    func identity(resourceLimits: OCIResourceLimits) throws -> [UInt8] {
+    func identity(
+        resourceLimits: OCIResourceLimits,
+        entrypoint: String? = nil
+    ) throws -> [UInt8] {
         let execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .linuxARM64,
@@ -101,6 +104,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
             processFilesystemPolicy: .standard,
             resourceLimits: resourceLimits,
             containerEnvironment: [:],
+            imageEntrypointOverride: entrypoint,
             command: ["build"],
             environment: [:],
             output: .logged)
@@ -110,6 +114,33 @@ private func inertActionFileSystem() -> ActionFileSystem {
     }
 
     #expect(try identity(resourceLimits: .build) == identity(resourceLimits: .parallelBuild))
+    #expect(
+        try identity(resourceLimits: .build)
+            != identity(
+                resourceLimits: .build,
+                entrypoint: "/collider-entrypoints/build"))
+}
+
+@Test func mountedOCIEntrypointBindsItsContainingDirectory() throws {
+    var builder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.image"),
+        component: ComponentID(rawValue: "fixture"))
+    let image = try builder.output(
+        "image-id",
+        path: FilePath("/cache/image-id"),
+        validation: .regularFile)
+    let entrypoint = OCIMountedEntrypoint(
+        image: image,
+        executable: FilePath("/workspace/tools/build-entrypoint.sh"),
+        containerDirectory: "/collider-entrypoints/build")
+
+    #expect(entrypoint.mount.source == FilePath("/workspace/tools"))
+    #expect(entrypoint.mount.target == "/collider-entrypoints/build")
+    #expect(entrypoint.mount.isReadOnly)
+    #expect(
+        entrypoint.containerPath
+            == "/collider-entrypoints/build/build-entrypoint.sh")
+    #expect(entrypoint.input == .file(entrypoint.executable))
 }
 
 @Test func ociExecutionPipelineRejectsANonzeroCommandStatus() async throws {

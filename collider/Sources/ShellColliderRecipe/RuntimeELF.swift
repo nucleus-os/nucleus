@@ -60,13 +60,11 @@ public struct StageRuntimeELFAction: ColliderAction {
         ActionRequirements(
             tools: [
                 ActionToolRequirement(
-                    "ldd", executable: .named("ldd"), role: .semantic),
-                ActionToolRequirement(
                     "patchelf", executable: .named("patchelf"), role: .semantic),
                 ActionToolRequirement(
                     "readelf", executable: .named("readelf"), role: .semantic),
                 ActionToolRequirement(
-                    "strip", executable: .named("strip"), role: .semantic),
+                    "llvm-strip", executable: .named("llvm-strip"), role: .semantic),
             ],
             effects: [
                 ActionEffect(.read, scope: .input(products)),
@@ -97,6 +95,7 @@ public struct StageRuntimeELFAction: ColliderAction {
             prefix: prefix,
             environment: environment,
             productSet: productSet,
+            targetArchitecture: executionPlatform.architecture,
             context: context)
     }
 }
@@ -106,6 +105,7 @@ package func stageRuntimeELF(
     prefix: FilePath,
     environment: [String: String],
     productSet: RuntimeELFProductSet,
+    targetArchitecture: PlatformArchitecture,
     context: ActionContext
 ) async throws {
     for directory in RuntimeELFLayout.stagingDirectories(root: prefix) {
@@ -131,6 +131,16 @@ package func stageRuntimeELF(
     while index < queue.count {
         let artifact = queue[index]
         index += 1
+        let header = try await run(
+            "readelf",
+            ["-h", artifact.string],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
+        try validateELFArchitecture(
+            header,
+            artifact: artifact,
+            expected: targetArchitecture)
         let dynamic = try await run(
             "readelf",
             ["-d", artifact.string],
@@ -138,17 +148,6 @@ package func stageRuntimeELF(
             environment: environment,
             context: context)
         let directDependencies = parseReadELFDynamic(dynamic).needed
-        let lddOutput = try await run(
-            "ldd",
-            [artifact.string],
-            workingDirectory: prefix,
-            environment: environment,
-            context: context)
-        let resolvedDependencies = Dictionary(
-            parseLDDResolvedDependencies(lddOutput).map {
-                ($0.soname, $0.path)
-            },
-            uniquingKeysWith: { first, _ in first })
         for soname in directDependencies.sorted() {
             guard let owner = NucleusLinuxABI.owner(ofSONAME: soname)
             else {
@@ -156,11 +155,24 @@ package func stageRuntimeELF(
                     "\(artifact) has unclassified dynamic dependency "
                         + soname)
             }
-            guard let resolvedPath = resolvedDependencies[soname] else {
-                throw RuntimeELFFailure(
-                    "\(artifact) has unresolved direct dynamic dependency "
-                        + "\(soname):\n\(lddOutput)")
-            }
+            let resolvedPath = try resolveELFDependency(
+                soname,
+                neededBy: artifact,
+                runpath: parseReadELFDynamic(dynamic).runpath,
+                environment: environment,
+                preferredArtifactLibraryRoot: nil,
+                owner: owner,
+                files: context.files)
+            let dependencyHeader = try await run(
+                "readelf",
+                ["-h", resolvedPath.string],
+                workingDirectory: prefix,
+                environment: environment,
+                context: context)
+            try validateELFArchitecture(
+                dependencyHeader,
+                artifact: resolvedPath,
+                expected: targetArchitecture)
             guard owner == .artifact else { continue }
             let name = soname
             let destination = prefix.appending("lib").appending(name)
@@ -213,7 +225,7 @@ package func stageRuntimeELF(
     }
     for artifact in queue {
         try await requireSuccess(
-            "strip",
+            "llvm-strip",
             ["--strip-debug", artifact.string],
             workingDirectory: prefix,
             environment: environment,
@@ -253,9 +265,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
         ActionRequirements(
             tools: [
                 ActionToolRequirement(
-                    "readelf", executable: .named("readelf"), role: .semantic),
-                ActionToolRequirement(
-                    "ldd", executable: .named("ldd"), role: .operational),
+                    "readelf", executable: .named("readelf"), role: .semantic)
             ],
             effects: [
                 ActionEffect(.read, scope: .input(root)),
@@ -285,6 +295,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
             report: report,
             environment: environment,
             productSet: productSet,
+            targetArchitecture: executionPlatform.architecture,
             context: context)
     }
 }
@@ -308,6 +319,7 @@ func validateRuntimeELF(
     report: FilePath,
     environment: [String: String],
     productSet: RuntimeELFProductSet,
+    targetArchitecture: PlatformArchitecture,
     context: ActionContext
 ) async throws {
     let staged =
@@ -319,6 +331,7 @@ func validateRuntimeELF(
             == .directory
     var inspections: [String: RuntimeELFInspection] = [:]
     var reportExecutables: [RuntimeELFReport.Executable] = []
+    var staticMetadataCache: [FilePath: RuntimeELFStaticMetadata] = [:]
 
     for executable in RuntimeELFLayout.executables(productSet: productSet) {
         let path = RuntimeELFLayout.path(
@@ -326,13 +339,16 @@ func validateRuntimeELF(
             under: root,
             staged: staged)
         try requireRegularExecutable(path, files: context.files)
-        try await requireSuccess(
+        let header = try await run(
             "readelf",
             ["-h", path.string],
             workingDirectory: root,
             environment: environment,
-            context: context,
-            failure: "\(executable.name) is not an ELF executable")
+            context: context)
+        try validateELFArchitecture(
+            header,
+            artifact: path,
+            expected: targetArchitecture)
         let dynamic = try await run(
             "readelf",
             ["-d", path.string],
@@ -346,31 +362,26 @@ func validateRuntimeELF(
             workingDirectory: root,
             environment: environment,
             context: context)
+        _ = try await run(
+            "readelf",
+            ["--relocs", "--wide", path.string],
+            workingDirectory: root,
+            environment: environment,
+            context: context)
         try validate(
             executable: executable,
             inspection: inspection,
             dynamicMetadata: dynamic,
             staged: staged)
         try validateGlibcImports(symbols, artifact: executable.name)
-        let relocation: String
-        do {
-            relocation = try await run(
-                "ldd",
-                ["-r", path.string],
-                workingDirectory: root,
-                environment: environment,
-                context: context)
-        } catch {
-            throw RuntimeELFFailure(
-                "\(executable.name) failed relocation validation: \(error)")
-        }
-        guard !relocation.contains("not found"),
-            !relocation.contains("undefined symbol")
-        else {
-            throw RuntimeELFFailure(
-                "\(executable.name) has an unresolved dependency:\n"
-                    + relocation)
-        }
+        try await validateStaticELFClosure(
+            root: path,
+            environment: environment,
+            targetArchitecture: targetArchitecture,
+            preferredArtifactLibraryRoot: staged ? root.appending("lib") : nil,
+            workingDirectory: root,
+            context: context,
+            metadataCache: &staticMetadataCache)
         inspections[executable.name] = inspection
         reportExecutables.append(
             RuntimeELFReport.Executable(
@@ -426,27 +437,185 @@ func parseReadELFDynamic(_ output: String) -> RuntimeELFInspection {
     return RuntimeELFInspection(runpath: runpath, needed: needed)
 }
 
-struct ResolvedELFDependency: Hashable, Sendable {
-    let soname: String
-    let path: FilePath
+struct RuntimeELFDynamicSymbols: Hashable, Sendable {
+    let defined: Set<String>
+    let undefined: Set<String>
 }
 
-func parseLDDResolvedDependencies(_ output: String) -> [ResolvedELFDependency] {
-    output.split(separator: "\n").compactMap { rawLine in
-        let line = rawLine.trimmingCharacters(in: .whitespaces)
-        if let arrow = line.range(of: "=> /") {
-            guard let soname = line[..<arrow.lowerBound].split(separator: " ").first
-            else { return nil }
-            let suffix = line[arrow.upperBound...]
-            let path = "/" + suffix.prefix { !$0.isWhitespace }
-            return ResolvedELFDependency(
-                soname: String(soname),
-                path: FilePath(String(path)))
+struct RuntimeELFStaticMetadata: Hashable, Sendable {
+    let dynamic: RuntimeELFInspection
+    let symbols: RuntimeELFDynamicSymbols
+}
+
+func parseReadELFDynamicSymbols(_ output: String) -> RuntimeELFDynamicSymbols {
+    var defined: Set<String> = []
+    var undefined: Set<String> = []
+    for line in output.split(separator: "\n") {
+        let fields = line.split(whereSeparator: { $0.isWhitespace })
+        guard fields.count >= 8,
+            fields[0].last == ":",
+            let symbol = normalizedELFSymbol(String(fields[7]))
+        else { continue }
+        let binding = fields[4]
+        let section = fields[6]
+        if section == "UND" {
+            if binding != "WEAK" { undefined.insert(symbol) }
+        } else {
+            defined.insert(symbol)
         }
-        guard line.hasPrefix("/") else { return nil }
-        let path = FilePath(String(line.prefix { !$0.isWhitespace }))
-        guard let soname = path.lastComponent?.string else { return nil }
-        return ResolvedELFDependency(soname: soname, path: path)
+    }
+    return RuntimeELFDynamicSymbols(
+        defined: defined,
+        undefined: undefined)
+}
+
+func validateELFArchitecture(
+    _ header: String,
+    artifact: FilePath,
+    expected: PlatformArchitecture
+) throws {
+    guard
+        let machineLine = header.split(separator: "\n").first(where: {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("Machine:")
+        })
+    else {
+        throw RuntimeELFFailure("\(artifact) has no ELF machine declaration")
+    }
+    let matches =
+        switch expected {
+        case .arm64:
+            machineLine.contains("AArch64")
+        case .x86_64:
+            machineLine.contains("X86-64")
+                || machineLine.contains("x86-64")
+        }
+    guard matches else {
+        throw RuntimeELFFailure(
+            "\(artifact) has \(machineLine.trimmingCharacters(in: .whitespaces)); "
+                + "expected \(expected.rawValue)")
+    }
+}
+
+private func normalizedELFSymbol(_ value: String) -> String? {
+    guard !value.isEmpty else { return nil }
+    return value.replacingOccurrences(of: "@@", with: "@")
+}
+
+private func resolveELFDependency(
+    _ soname: String,
+    neededBy artifact: FilePath,
+    runpath: String,
+    environment: [String: String],
+    preferredArtifactLibraryRoot: FilePath?,
+    owner: NucleusLinuxABI.ELFOwner,
+    files: ActionFileSystem
+) throws -> FilePath {
+    var roots: [FilePath] = []
+    if owner == .artifact, let preferredArtifactLibraryRoot {
+        roots.append(preferredArtifactLibraryRoot)
+    }
+    if let value = environment["NUCLEUS_TARGET_LIBRARY_PATH"] {
+        roots += value.split(separator: ":").map { FilePath(String($0)) }
+    }
+    let origin = artifact.removingLastComponent().string
+    for component in runpath.split(separator: ":") {
+        let expanded = String(component)
+            .replacingOccurrences(of: "${ORIGIN}", with: origin)
+            .replacingOccurrences(of: "$ORIGIN", with: origin)
+        let path = FilePath(expanded)
+        guard path.isAbsolute else { continue }
+        roots.append(path.lexicallyNormalized())
+    }
+    var searched: [String] = []
+    var unique: Set<FilePath> = []
+    for root in roots where unique.insert(root).inserted {
+        let candidate = root.appending(soname)
+        searched.append(candidate.string)
+        if try files.metadata(for: candidate)?.type == .regular {
+            return candidate
+        }
+    }
+    throw RuntimeELFFailure(
+        "\(artifact) has unresolved dynamic dependency \(soname); searched "
+            + searched.joined(separator: ", "))
+}
+
+private func validateStaticELFClosure(
+    root: FilePath,
+    environment: [String: String],
+    targetArchitecture: PlatformArchitecture,
+    preferredArtifactLibraryRoot: FilePath?,
+    workingDirectory: FilePath,
+    context: ActionContext,
+    metadataCache: inout [FilePath: RuntimeELFStaticMetadata]
+) async throws {
+    var queue = [root]
+    var visited: Set<FilePath> = []
+    var defined: Set<String> = []
+    var undefined: Set<String> = []
+
+    while let artifact = queue.popLast() {
+        guard visited.insert(artifact).inserted else { continue }
+        let metadata: RuntimeELFStaticMetadata
+        if let cached = metadataCache[artifact] {
+            metadata = cached
+        } else {
+            let header = try await run(
+                "readelf",
+                ["-h", artifact.string],
+                workingDirectory: workingDirectory,
+                environment: environment,
+                context: context)
+            try validateELFArchitecture(
+                header,
+                artifact: artifact,
+                expected: targetArchitecture)
+            let dynamic = parseReadELFDynamic(
+                try await run(
+                    "readelf",
+                    ["-d", artifact.string],
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    context: context))
+            let symbols = parseReadELFDynamicSymbols(
+                try await run(
+                    "readelf",
+                    ["--dyn-syms", "--wide", artifact.string],
+                    workingDirectory: workingDirectory,
+                    environment: environment,
+                    context: context))
+            _ = try await run(
+                "readelf",
+                ["--relocs", "--wide", artifact.string],
+                workingDirectory: workingDirectory,
+                environment: environment,
+                context: context)
+            metadata = RuntimeELFStaticMetadata(
+                dynamic: dynamic,
+                symbols: symbols)
+            metadataCache[artifact] = metadata
+        }
+        defined.formUnion(metadata.symbols.defined)
+        undefined.formUnion(metadata.symbols.undefined)
+        for soname in metadata.dynamic.needed.sorted() {
+            let owner = NucleusLinuxABI.owner(ofSONAME: soname) ?? .host
+            queue.append(
+                try resolveELFDependency(
+                    soname,
+                    neededBy: artifact,
+                    runpath: metadata.dynamic.runpath,
+                    environment: environment,
+                    preferredArtifactLibraryRoot: preferredArtifactLibraryRoot,
+                    owner: owner,
+                    files: context.files))
+        }
+    }
+
+    let unresolved = undefined.subtracting(defined).sorted()
+    guard unresolved.isEmpty else {
+        throw RuntimeELFFailure(
+            "\(root) has unresolved dynamic symbols: "
+                + unresolved.joined(separator: ", "))
     }
 }
 
@@ -683,16 +852,34 @@ private func run(
     environment: [String: String],
     context: ActionContext
 ) async throws -> String {
+    try await run(
+        .named(executable),
+        label: executable,
+        arguments,
+        workingDirectory: workingDirectory,
+        environment: environment,
+        context: context)
+}
+
+@discardableResult
+private func run(
+    _ executable: CommandSpec.Executable,
+    label: String,
+    _ arguments: [String],
+    workingDirectory: FilePath,
+    environment: [String: String],
+    context: ActionContext
+) async throws -> String {
     let result = try await context.commands.execute(
         CommandSpec(
-            executable: .named(executable),
+            executable: executable,
             arguments: arguments,
             workingDirectory: workingDirectory,
             environment: environment,
             output: .combined(limit: 64 * 1024 * 1024)))
     guard result.succeeded else {
         throw result.executionFailure(
-            reason: "\(executable) failed:\n" + result.standardOutput)
+            reason: "\(label) failed:\n" + result.standardOutput)
     }
     return result.standardOutput
 }

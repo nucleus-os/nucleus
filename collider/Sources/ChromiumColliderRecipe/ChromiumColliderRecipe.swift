@@ -2,23 +2,11 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
-private enum ChromiumBuildImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "browser.prepare-build-image"
-}
-
-private enum ChromiumArtifactImageActionKind: OCIEntrypointImageActionKind {
-    static let actionKind: ActionKind = "browser.prepare-artifact-image"
-}
-
 package enum ChromiumTaskIDs {
     package static let source = TaskID(rawValue: "browser.source")
     package static let builderDependencies = TaskID(
         rawValue: "browser.builder-dependencies")
-    package static let buildTools = TaskID(rawValue: "browser.build-tools")
-    package static let artifactTools = TaskID(
-        rawValue: "browser.artifact-tools")
     package static let retention = TaskID(rawValue: "browser.retention")
-    package static let install = TaskID(rawValue: "browser.install")
 
     package static func build(
         _ product: ChromiumProduct,
@@ -41,13 +29,18 @@ package enum ChromiumTaskIDs {
     package static func test(_ target: ChromiumLinuxTarget) -> TaskID {
         TaskID(rawValue: "browser.\(target.architecture.rawValue).test")
     }
+
+    package static func packageInput(_ target: ChromiumLinuxTarget) -> TaskID {
+        TaskID(
+            rawValue:
+                "browser.\(target.architecture.rawValue).package-input")
+    }
 }
 
 enum ChromiumRetention {
     static let sourceRollbackGenerationCount: UInt32 = 0
     static let cefRollbackGenerationCount: UInt32 = 1
     static let browserRollbackGenerationCount: UInt32 = 1
-    static let installationRollbackGenerationCount: UInt32 = 1
 }
 
 public struct ChromiumRecipeLayout: Hashable, Sendable {
@@ -55,7 +48,6 @@ public struct ChromiumRecipeLayout: Hashable, Sendable {
     public let cacheRoot: FilePath
     public let artifactRoot: FilePath
     public let logRoot: FilePath
-    public let installPrefix: FilePath
     public let jobs: Int
 
     public init(
@@ -63,19 +55,33 @@ public struct ChromiumRecipeLayout: Hashable, Sendable {
         cacheRoot: FilePath,
         artifactRoot: FilePath,
         logRoot: FilePath,
-        installPrefix: FilePath,
         jobs: Int
     ) {
         self.sourceID = sourceID
         self.cacheRoot = cacheRoot
         self.artifactRoot = artifactRoot
         self.logRoot = logRoot
-        self.installPrefix = installPrefix
         self.jobs = jobs
     }
 }
 
 public enum ChromiumColliderRecipe: ColliderComponent {
+    package struct PackageInput: Sendable {
+        package let reference: ArtifactReference
+        package let payloadReference: ArtifactReference
+        package let publication: BrowserPackageInputPublication
+    }
+
+    package struct PreparedComponent: Sendable {
+        package let component: ComponentDefinition
+        package let packageInputs: [ChromiumLinuxTarget: PackageInput]
+    }
+
+    private struct PreparedTasks {
+        let tasks: [TaskDeclaration]
+        let packageInputs: [ChromiumLinuxTarget: PackageInput]
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "browser"),
         canonicalName: "browser",
@@ -85,6 +91,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        try prepare(in: context).component
+    }
+
+    package static func prepare(
+        in context: RecipeContext
+    ) throws -> PreparedComponent {
         let lockData = try Data(
             contentsOf: URL(
                 fileURLWithPath: context.repositoryRoot.appending(
@@ -96,12 +108,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         try validateSourceLock(lock)
         let sourceID = String(
             ArtifactDigest.sha256(lockData).hexadecimal.prefix(24))
-        let prefix =
-            context.environment["PREFIX"]
-            ?? context.environment["HOME"].map { FilePath($0).appending(".local").string }
-            ?? "/tmp/nucleus-browser"
         let cacheRoot = context.cacheRoot.appending("cef")
-        let tasks = try tasks(
+        let preparedTasks = try prepareTasks(
             workspaceRoot: context.repositoryRoot,
             environment: context.environment,
             layout: ChromiumRecipeLayout(
@@ -109,14 +117,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 cacheRoot: cacheRoot,
                 artifactRoot: context.artifactRoot.appending("browser"),
                 logRoot: context.logRoot.appending("browser"),
-                installPrefix: FilePath(prefix),
                 jobs: Int(context.environment["NUCLEUS_CHROMIUM_JOBS"] ?? "")
                     ?? 12))
+        let tasks = preparedTasks.tasks
         func producers(_ ids: TaskID...) -> Set<StorageProducer> {
             Set(ids.map(StorageProducer.task))
         }
         let retention = ChromiumTaskIDs.retention
-        let installationRoot = FilePath(prefix).appending("lib/nucleus-browser")
         let buildTaskIDs = chromiumLinuxTargets.flatMap { target in
             ChromiumProduct.allCases.map { product in
                 ChromiumTaskIDs.build(product, target)
@@ -141,6 +148,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 retentionPolicy: .keepActiveAndRollback(
                     count: ChromiumRetention.sourceRollbackGenerationCount),
                 activeGenerationLink: cacheRoot.appending("source-generations/current"),
+                generationNaming: .contentIdentity,
                 interruptedCandidateNaming: .contentIdentityCandidate),
             StorageDeclaration(
                 id: "browser-build-metadata",
@@ -165,9 +173,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 id: "browser-builder-metadata",
                 owner: descriptor.id,
                 producers: producers(
-                    ChromiumTaskIDs.builderDependencies,
-                    ChromiumTaskIDs.buildTools,
-                    ChromiumTaskIDs.artifactTools),
+                    ChromiumTaskIDs.builderDependencies),
                 storageClass: .cache,
                 root: cacheRoot.appending("build-container"),
                 safetyRoot: cacheRoot,
@@ -188,23 +194,14 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 root: cacheRoot.appending("locks"),
                 safetyRoot: cacheRoot,
                 retentionPolicy: .protected),
-            StorageDeclaration(
-                id: "browser-installations",
-                owner: descriptor.id,
-                producers: producers(ChromiumTaskIDs.install),
-                storageClass: .generation,
-                root: installationRoot.appending("generations"),
-                safetyRoot: installationRoot,
-                retentionPolicy: .keepActiveAndRollback(
-                    count: ChromiumRetention.installationRollbackGenerationCount),
-                activeGenerationLink: installationRoot.appending("current"),
-                interruptedCandidateNaming: nil),
         ]
         for target in chromiumLinuxTargets {
             let identifier = target.identifier
             let cefRoot = context.artifactRoot.appending("browser/cef/\(identifier)")
             let browserRoot = context.artifactRoot.appending(
                 "browser/product/\(identifier)")
+            let packageInputRoot = context.artifactRoot.appending(
+                "browser/package-input/\(identifier)")
             storage.append(
                 StorageDeclaration(
                     id: "browser-cef-\(target.architecture.rawValue)-artifact-root",
@@ -226,6 +223,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     retentionPolicy: .keepActiveAndRollback(
                         count: ChromiumRetention.cefRollbackGenerationCount),
                     activeGenerationLink: cefRoot.appending("current-release"),
+                    generationNaming: .contentIdentity,
                     interruptedCandidateNaming: nil))
             storage.append(
                 StorageDeclaration(
@@ -248,23 +246,50 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     retentionPolicy: .keepActiveAndRollback(
                         count: ChromiumRetention.browserRollbackGenerationCount),
                     activeGenerationLink: browserRoot.appending("current"),
-                    interruptedCandidateNaming: nil))
+                    generationNaming: .artifactDigestDirectory,
+                    interruptedCandidateNaming: .contentIdentityCandidate))
+            storage.append(
+                StorageDeclaration(
+                    id: "browser-package-input-\(target.architecture.rawValue)-artifact-root",
+                    owner: descriptor.id,
+                    producers: producers(ChromiumTaskIDs.packageInput(target)),
+                    storageClass: .published,
+                    root: packageInputRoot,
+                    safetyRoot: packageInputRoot.removingLastComponent(),
+                    retentionPolicy: .protected))
+            storage.append(
+                StorageDeclaration(
+                    id: "browser-package-input-\(target.architecture.rawValue)-generations",
+                    owner: descriptor.id,
+                    producers: producers(
+                        ChromiumTaskIDs.packageInput(target), retention),
+                    storageClass: .generation,
+                    root: packageInputRoot.appending("generations"),
+                    safetyRoot: packageInputRoot,
+                    retentionPolicy: .keepActiveAndRollback(
+                        count: ChromiumRetention.browserRollbackGenerationCount),
+                    activeGenerationLink: packageInputRoot.appending("current"),
+                    generationNaming: .artifactDigestDirectory,
+                    interruptedCandidateNaming: .artifactDigestCandidate))
         }
-        return try ComponentDefinition(
-            descriptor: descriptor,
-            tasks: tasks,
-            entrypoints: [
-                ComponentEntrypoint(
-                    id: .bootstrap,
-                    roots: [ChromiumTaskIDs.source]),
-                ComponentEntrypoint(id: .build, roots: [ChromiumTaskIDs.retention]),
-                ComponentEntrypoint(
-                    id: .testDefault,
-                    roots: Set(
-                        chromiumLinuxTargets.map(ChromiumTaskIDs.test))),
-                ComponentEntrypoint(id: .install, roots: [ChromiumTaskIDs.install]),
-            ],
-            storage: storage)
+        return PreparedComponent(
+            component: try ComponentDefinition(
+                descriptor: descriptor,
+                tasks: tasks,
+                entrypoints: [
+                    ComponentEntrypoint(
+                        id: .bootstrap,
+                        roots: [ChromiumTaskIDs.source]),
+                    ComponentEntrypoint(
+                        id: .build,
+                        roots: [ChromiumTaskIDs.retention]),
+                    ComponentEntrypoint(
+                        id: .testDefault,
+                        roots: Set(
+                            chromiumLinuxTargets.map(ChromiumTaskIDs.test))),
+                ],
+                storage: storage),
+            packageInputs: preparedTasks.packageInputs)
     }
 
     public static func tasks(
@@ -272,6 +297,18 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         environment: [String: String],
         layout: ChromiumRecipeLayout
     ) throws -> [TaskDeclaration] {
+        try prepareTasks(
+            workspaceRoot: workspaceRoot,
+            environment: environment,
+            layout: layout
+        ).tasks
+    }
+
+    private static func prepareTasks(
+        workspaceRoot: FilePath,
+        environment: [String: String],
+        layout: ChromiumRecipeLayout
+    ) throws -> PreparedTasks {
         let chromium = workspaceRoot.appending("chromium")
         let sourceLockFile = chromium.appending("source.lock.json")
         let sourceLock = try JSONDecoder().decode(
@@ -315,15 +352,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let builderInputRoot = builderCache.appending("inputs")
         let generatedBuilderDependencyContext = builderCache.appending(
             "dependency-context")
-        let generatedBuilderContext = builderCache.appending("build-context")
-        let generatedArtifactContext = builderCache.appending(
-            "artifact-context")
         let builderResolverOutput = builderCache.appending("apt-resolution")
         let builderResolverImageID = builderCache.appending("resolver-image-id")
         let builderDependencyImageID = builderCache.appending(
             "dependency-image-id")
-        let buildImageID = builderCache.appending("build-image-id")
-        let artifactImageID = builderCache.appending("artifact-image-id")
         let builderInputManifest = try ChromiumBuilderInputManifest.load(
             from: builderContext.appending("builder-inputs.json"))
         let childEnvironment = environment.merging([
@@ -344,7 +376,6 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             "NUCLEUS_CHROMIUM_SRC_ROOT": chromiumSource.string,
             "NUCLEUS_CEF_LOG_DIR": logs.string,
             "NUCLEUS_CHROMIUM_JOBS": String(layout.jobs),
-            "PREFIX": layout.installPrefix.string,
         ]) { _, required in required }
         let depotEnvironment = childEnvironment.merging([
             "PATH": depotTools.string + ":"
@@ -465,71 +496,20 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             imageName:
                                 "localhost/nucleus-chromium-build-dependencies",
                             environment: childEnvironment))))
-        var buildImageBuilder = TaskBuilder(
-            id: ChromiumTaskIDs.buildTools,
-            component: ComponentID(rawValue: "browser"))
-        buildImageBuilder.consume(dependencyImage)
-        let buildImage: ArtifactReference =
-            try buildImageBuilder.output(
-                "image-id",
-                path: buildImageID,
-                validation: .regularFile)
-        let buildImageTask = buildImageBuilder.build(
-            inputs: [.file(builderContext.appending("build-entrypoint.sh"))],
-            locks: [.shared(cache.appending("locks/builder.lock"))],
-            action:
-                try AnyColliderAction(
-                    PrepareOCIEntrypointImageAction<ChromiumBuildImageActionKind>(
-                        baseImageID: builderDependencyImageID,
-                        entrypoint: builderContext.appending(
-                            "build-entrypoint.sh"),
-                        entrypointDestination:
-                            "/usr/local/bin/nucleus-chromium-build",
-                        generatedContext: generatedBuilderContext,
-                        preparation: OCIImagePreparation(
-                            executionPlatform: .linuxARM64OCI,
-                            context: generatedBuilderContext,
-                            containerFile: generatedBuilderContext.appending(
-                                "Containerfile"),
-                            imageID: buildImageID,
-                            imageName: "localhost/nucleus-chromium-build",
-                            baseImageSource: .local,
-                            localBaseImageID: builderDependencyImageID,
-                            environment: childEnvironment))))
-        var artifactImageBuilder = TaskBuilder(
-            id: ChromiumTaskIDs.artifactTools,
-            component: ComponentID(rawValue: "browser"))
-        artifactImageBuilder.consume(dependencyImage)
-        let artifactImage: ArtifactReference =
-            try artifactImageBuilder.output(
-                "image-id",
-                path: artifactImageID,
-                validation: .regularFile)
-        let artifactImageTask = artifactImageBuilder.build(
-            inputs: [.file(builderContext.appending("artifact-entrypoint.sh"))],
-            locks: [.shared(cache.appending("locks/builder.lock"))],
-            action:
-                try AnyColliderAction(
-                    PrepareOCIEntrypointImageAction<ChromiumArtifactImageActionKind>(
-                        baseImageID: builderDependencyImageID,
-                        entrypoint: builderContext.appending(
-                            "artifact-entrypoint.sh"),
-                        entrypointDestination:
-                            "/usr/local/bin/nucleus-chromium-artifact",
-                        generatedContext: generatedArtifactContext,
-                        preparation: OCIImagePreparation(
-                            executionPlatform: .linuxARM64OCI,
-                            context: generatedArtifactContext,
-                            containerFile: generatedArtifactContext.appending(
-                                "Containerfile"),
-                            imageID: artifactImageID,
-                            imageName: "localhost/nucleus-chromium-artifact",
-                            baseImageSource: .local,
-                            localBaseImageID: builderDependencyImageID,
-                            environment: childEnvironment))))
+        let buildTool = OCIMountedEntrypoint(
+            image: dependencyImage,
+            executable: builderContext.appending("build-entrypoint.sh"),
+            containerDirectory: "/collider-entrypoints/chromium-build")
+        let artifactTool = OCIMountedEntrypoint(
+            image: dependencyImage,
+            executable: builderContext.appending("artifact-entrypoint.sh"),
+            containerDirectory: "/collider-entrypoints/chromium-artifact")
         var buildTasks: [TaskDeclaration] = []
         var artifactTasks: [TaskDeclaration] = []
+        var packageInputTasks: [TaskDeclaration] = []
         var publications: [ArtifactReference] = []
+        var packageInputs: [ArtifactReference] = []
+        var preparedPackageInputs: [ChromiumLinuxTarget: PackageInput] = [:]
         var browserPublications: [ChromiumLinuxTarget: ArtifactReference] = [:]
         var browserManifests: [ChromiumLinuxTarget: ArtifactReference] = [:]
         var browserWorkspaces: [ChromiumLinuxTarget: PersistentWorkspaceDeclaration] = [:]
@@ -561,7 +541,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     sourceWorkspace: sourceWorkspace,
                     outputWorkspace: outputWorkspace,
                     compilerCacheWorkspace: compilerCacheWorkspace,
-                    containerImageID: buildImageID,
+                    entrypoint: buildTool,
                     gnArguments: chromiumGNArguments(
                         product: product,
                         target: target),
@@ -574,7 +554,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     id: ChromiumTaskIDs.build(product, target),
                     component: ComponentID(rawValue: "browser"))
                 buildBuilder.consume(sourceProvenance)
-                buildBuilder.consume(buildImage)
+                buildBuilder.consume(buildTool.image)
                 let buildArtifact: ArtifactReference =
                     try buildBuilder.output(
                         "build-manifest",
@@ -582,6 +562,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                         validation: .json)
                 buildTasks.append(
                     buildBuilder.build(
+                        inputs: [buildTool.input],
                         locks: [
                             .shared(
                                 cache.appending(
@@ -603,7 +584,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     component: ComponentID(rawValue: "browser"))
                 artifactBuilder.consume(sourceProvenance)
                 artifactBuilder.consume(buildArtifact)
-                artifactBuilder.consume(artifactImage)
+                artifactBuilder.consume(artifactTool.image)
                 let publication: ArtifactReference =
                     try artifactBuilder.output(
                         "publication",
@@ -623,7 +604,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 buildManifest: manifest,
                                 sourceWorkspace: sourceWorkspace,
                                 outputWorkspace: outputWorkspace,
-                                artifactImageID: artifactImageID,
+                                entrypoint: artifactTool,
                                 distributionRoot: distributionRoot,
                                 cefCheckout: cefRepository.commit,
                                 chromiumVersion: sourceLock.chromiumVersion,
@@ -637,7 +618,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 buildManifest: manifest,
                                 sourceWorkspace: sourceWorkspace,
                                 outputWorkspace: outputWorkspace,
-                                artifactImageID: artifactImageID,
+                                entrypoint: artifactTool,
                                 distributionRoot: distributionRoot,
                                 launcher: chromium.appending(
                                     "launcher/nucleus-browser"),
@@ -651,25 +632,67 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 }
                 artifactTasks.append(
                     artifactBuilder.build(
-                        inputs: product == .browser
-                            ? [
-                                .file(
-                                    chromium.appending(
-                                        "launcher/nucleus-browser")),
-                                .file(
-                                    chromium.appending(
-                                        "share/applications/"
-                                            + "dev.nucleus.Browser.desktop.in")),
-                            ] : [],
+                        inputs: [artifactTool.input]
+                            + (product == .browser
+                                ? [
+                                    .file(
+                                        chromium.appending(
+                                            "launcher/nucleus-browser")),
+                                    .file(
+                                        chromium.appending(
+                                            "share/applications/"
+                                                + "dev.nucleus.Browser.desktop.in")),
+                                ] : []),
                         locks: [.shared(publicationLock)],
                         action: artifactAction))
                 publications.append(publication)
             }
         }
+        for target in chromiumLinuxTargets {
+            let browserPublication = try required(browserPublications[target])
+            let distributionRoot = artifacts.appending(
+                "product/\(target.identifier)")
+            let packageInputRoot = artifacts.appending(
+                "package-input/\(target.identifier)")
+            var packageInputBuilder = TaskBuilder(
+                id: ChromiumTaskIDs.packageInput(target),
+                component: ComponentID(rawValue: "browser"))
+            packageInputBuilder.consume(browserPublication)
+            let packageInput: ArtifactReference = try packageInputBuilder.output(
+                "package-input",
+                path: packageInputRoot.appending("current"),
+                validation: .symlinkTarget)
+            packageInputTasks.append(
+                packageInputBuilder.build(
+                    locks: [
+                        .shared(
+                            cache.appending(
+                                "locks/browser-\(target.architecture.rawValue)-publication.lock"
+                            )),
+                        .shared(
+                            cache.appending(
+                                "locks/browser-\(target.architecture.rawValue)-package-input.lock"
+                            )),
+                    ],
+                    action: try AnyColliderAction(
+                        PublishBrowserPackageInputAction(
+                            publication: BrowserPackageInputPublication(
+                                target: target,
+                                distributionRoot: distributionRoot,
+                                packageInputRoot: packageInputRoot)))))
+            packageInputs.append(packageInput)
+            preparedPackageInputs[target] = PackageInput(
+                reference: packageInput,
+                payloadReference: browserPublication,
+                publication: BrowserPackageInputPublication(
+                    target: target,
+                    distributionRoot: distributionRoot,
+                    packageInputRoot: packageInputRoot))
+        }
         var retentionBuilder = TaskBuilder(
             id: ChromiumTaskIDs.retention,
             component: ComponentID(rawValue: "browser"))
-        for publication in publications {
+        for publication in publications + packageInputs {
             retentionBuilder.consume(publication)
         }
         let sourceRetentionRules = [
@@ -702,11 +725,23 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     root: browserDistribution.appending("generations"),
                     current: browserDistribution.appending("current"),
                     retain: ChromiumRetention.browserRollbackGenerationCount,
-                    naming: .contentIdentity),
+                    naming: .artifactDigestDirectory),
                 DirectoryRetentionRule(
                     root: browserDistribution.appending("generations"),
                     retain: 0,
                     naming: .contentIdentityCandidate),
+                DirectoryRetentionRule(
+                    root: artifacts.appending(
+                        "package-input/\(target.identifier)/generations"),
+                    current: artifacts.appending(
+                        "package-input/\(target.identifier)/current"),
+                    retain: ChromiumRetention.browserRollbackGenerationCount,
+                    naming: .artifactDigestDirectory),
+                DirectoryRetentionRule(
+                    root: artifacts.appending(
+                        "package-input/\(target.identifier)/generations"),
+                    retain: 0,
+                    naming: .artifactDigestCandidate),
             ]
         }
         let retention = retentionBuilder.build(
@@ -736,9 +771,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 component: ComponentID(rawValue: "browser"))
             testBuilder.consume(publication)
             testBuilder.consume(manifest)
-            testBuilder.consume(buildImage)
+            testBuilder.consume(buildTool.image)
             testTasks.append(
                 testBuilder.build(
+                    inputs: [buildTool.input],
                     assessmentPolicy: .always,
                     action:
                         try AnyColliderAction(
@@ -746,7 +782,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 executions: [
                                     chromiumBuildExecution(
                                         target: target,
-                                        imageID: buildImageID,
+                                        entrypoint: buildTool,
                                         source: source,
                                         inputRoot: manifest.path
                                             .removingLastComponent()
@@ -768,34 +804,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         environment: childEnvironment)
                                 ]))))
         }
-        let installTarget = ChromiumLinuxTarget(architecture: .x86_64)
-        let browserPublication = try required(
-            browserPublications[installTarget])
-        let browserDistribution = artifacts.appending(
-            "product/\(installTarget.identifier)")
-        var installBuilder = TaskBuilder(
-            id: ChromiumTaskIDs.install,
-            component: ComponentID(rawValue: "browser"))
-        installBuilder.consume(browserPublication)
-        let install = installBuilder.build(
-            locks: [
-                .shared(
-                    cache.appending(
-                        "locks/browser-\(installTarget.architecture.rawValue)-publication.lock"
-                    ))
-            ],
-            assessmentPolicy: .always,
-            action:
-                try AnyColliderAction(
-                    InstallBrowserAction(
-                        installation: BrowserInstallation(
-                            distributionRoot: browserDistribution,
-                            prefix: layout.installPrefix,
-                            environment: childEnvironment))))
-        return [
-            depotToolsTask, depotBootstrap,
-            sourceTask, builderDependencyTask, buildImageTask, artifactImageTask,
-        ] + buildTasks + artifactTasks + [retention] + testTasks + [install]
+        return PreparedTasks(
+            tasks: [
+                depotToolsTask, depotBootstrap,
+                sourceTask, builderDependencyTask,
+            ] + buildTasks + artifactTasks + packageInputTasks + [retention]
+                + testTasks,
+            packageInputs: preparedPackageInputs)
     }
 
     private static func validateSourceLock(
@@ -1371,7 +1386,7 @@ private struct BootstrapChromiumDepotToolsAction: ColliderAction {
 
 private func chromiumBuildExecution(
     target: ChromiumLinuxTarget,
-    imageID: FilePath,
+    entrypoint: OCIMountedEntrypoint,
     source: FilePath,
     inputRoot: FilePath,
     sourceWorkspace: PersistentWorkspaceDeclaration,
@@ -1385,15 +1400,16 @@ private func chromiumBuildExecution(
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
-        imageID: imageID,
+        imageID: entrypoint.image.path,
         hostname: "chromium-build",
         workingDirectory: "/source/chromium/src",
         hostWorkingDirectory: source.appending("chromium/src"),
         mounts: [
+            entrypoint.mount,
             OCIMount(
                 source: inputRoot,
                 target: "/inputs",
-                access: .readOnly)
+                access: .readOnly),
         ],
         persistentWorkspaceMounts: [
             OCIPersistentWorkspaceMount(
@@ -1413,7 +1429,7 @@ private func chromiumBuildExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        intelBinaryTranslationPolicy: .required,
+        executableRequirements: chromiumBuildExecutableRequirements,
         resourceLimits: .parallelBuild,
         containerEnvironment: [
             "DEPOT_TOOLS_UPDATE": "0",
@@ -1426,6 +1442,7 @@ private func chromiumBuildExecution(
             "CCACHE_MAXSIZE": "30G",
             "CCACHE_COMPILERCHECK": "content",
         ],
+        imageEntrypointOverride: entrypoint.containerPath,
         command: command ?? ["build", String(jobs)] + targets,
         environment: environment,
         output: .logged)

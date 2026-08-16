@@ -302,6 +302,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             atPath: configuration.active.appending("swift-sdks").string)
             && fileManager.fileExists(
                 atPath: configuration.active.appending("toolchain/usr/bin/swift").string)
+            && fileManager.fileExists(
+                atPath: configuration.generation.appending(
+                    ".nucleus-target-sdk-generation"
+                ).string)
     }
 
     private static func reusableActiveGeneration(
@@ -310,29 +314,40 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.use-active-generation"),
             component: component)
-        let activeSDK: ArtifactReference = try builder.output(
-            "active-sdk",
-            path: configuration.active.appending("swift-sdks"),
-            validation: .nonEmptyDirectory)
-        let activeSwift: ExecutableReference = try builder.executableOutput(
-            "active-swift",
-            path: configuration.active.appending("toolchain/usr/bin/swift"))
+        let generationMarker: ArtifactReference = try builder.output(
+            "generation-marker",
+            path: configuration.generation.appending(
+                ".nucleus-target-sdk-generation"),
+            validation: .regularFile)
         let task = builder.build(
             inputs: [.file(configuration.inputsFile)],
             locks: [
                 .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
             ],
             recordsActiveArtifact: true)
+        let activation = ActivationArtifact(
+            task: task,
+            generationMarker: generationMarker)
+        let discoveries = try discoveryTasks(
+            configuration,
+            activation: activation)
+        let ready = try readyTask(
+            configuration,
+            activation: activation,
+            discoveries: discoveries)
+        let tasks = [task] + discoveries.map(\.task) + [ready.task]
         return PreparedComponent(
             component: try ComponentDefinition(
                 descriptor: descriptor,
-                tasks: [task],
+                tasks: tasks,
                 entrypoints: [
-                    ComponentEntrypoint(id: .build, roots: [task.id])
+                    ComponentEntrypoint(
+                        id: .build,
+                        roots: [ready.task.id])
                 ],
-                storage: storage(configuration, tasks: [task])),
-            activeSDK: activeSDK,
-            activeSwift: activeSwift)
+                storage: storage(configuration, tasks: tasks)),
+            activeSDK: ready.activeSDK,
+            activeSwift: ready.activeSwift)
     }
 
     private static func storage(
@@ -416,6 +431,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 safetyRoot: artifactRoot,
                 retentionPolicy: .keepActiveAndRollback(count: 0),
                 activeGenerationLink: configuration.active,
+                generationNaming: .contentIdentity,
                 interruptedCandidateNaming: DirectoryNamePattern(
                     rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#)),
             StorageDeclaration(
@@ -475,6 +491,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let validation = try validationTasks(configuration, assembly: assembly)
         let activation = try activationTask(configuration, validation: validation)
         let discoveries = try discoveryTasks(configuration, activation: activation)
+        let ready = try readyTask(
+            configuration,
+            activation: activation,
+            discoveries: discoveries)
 
         let tasks =
             downloads.tasks
@@ -482,11 +502,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             + sysroots.map(\.task) + runtimes.map(\.task)
             + [generator.task, assembly.task] + validation.tasks + [activation.task]
             + discoveries.map(\.task)
+            + [ready.task]
         return SwiftTargetSDKTaskSet(
             tasks: tasks,
-            selected: discoveries.map(\.task.id),
-            activeSDK: activation.activeSDK,
-            activeSwift: activation.activeSwift)
+            selected: [ready.task.id],
+            activeSDK: ready.activeSDK,
+            activeSwift: ready.activeSwift)
     }
 
     private struct Downloads {
@@ -538,6 +559,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private struct ActivationArtifact {
         let task: TaskDeclaration
         let generationMarker: ArtifactReference
+    }
+
+    private struct ReadyArtifact {
+        let task: TaskDeclaration
         let activeSDK: ArtifactReference
         let activeSwift: ExecutableReference
     }
@@ -1187,13 +1212,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             path: configuration.generation.appending(
                 ".nucleus-target-sdk-generation"),
             validation: .regularFile)
-        let activeSDK: ArtifactReference = try builder.output(
-            "active-sdk",
-            path: configuration.active.appending("swift-sdks"),
-            validation: .nonEmptyDirectory)
-        let activeSwift: ExecutableReference = try builder.executableOutput(
-            "active-swift",
-            path: configuration.active.appending("toolchain/usr/bin/swift"))
         let task = builder.build(
             postconditions: [
                 PathPostcondition(
@@ -1213,9 +1231,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         active: configuration.active)))
         return ActivationArtifact(
             task: task,
-            generationMarker: marker,
-            activeSDK: activeSDK,
-            activeSwift: activeSwift)
+            generationMarker: marker)
     }
 
     private static func discoveryTasks(
@@ -1226,7 +1242,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             .map { bundleID in
                 let name = "\(bundleID).artifactbundle"
                 let link = configuration.sdkDiscoveryRoot.appending(name)
-                let target = configuration.generation.appending(
+                let target = configuration.active.appending(
                     "swift-sdks/\(name)")
                 var builder = TaskBuilder(
                     id: TaskID(rawValue: "swift-sdk.discover-\(bundleID)"),
@@ -1250,6 +1266,31 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                                 displacedItem: configuration.displacedRoot.appending(name))))
                 return DiscoveryArtifact(task: task, link: artifact)
             }
+    }
+
+    private static func readyTask(
+        _ configuration: SwiftTargetSDKGenerationConfiguration,
+        activation: ActivationArtifact,
+        discoveries: [DiscoveryArtifact]
+    ) throws -> ReadyArtifact {
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "swift-sdk.publish-active-generation"),
+            component: component)
+        builder.consume(activation.generationMarker)
+        for discovery in discoveries {
+            builder.consume(discovery.link)
+        }
+        let activeSDK: ArtifactReference = try builder.output(
+            "active-sdk",
+            path: configuration.active.appending("swift-sdks"),
+            validation: .nonEmptyDirectory)
+        let activeSwift: ExecutableReference = try builder.executableOutput(
+            "active-swift",
+            path: configuration.active.appending("toolchain/usr/bin/swift"))
+        return ReadyArtifact(
+            task: builder.build(recordsActiveArtifact: true),
+            activeSDK: activeSDK,
+            activeSwift: activeSwift)
     }
 
     private static func fileName(from value: String) throws -> String {

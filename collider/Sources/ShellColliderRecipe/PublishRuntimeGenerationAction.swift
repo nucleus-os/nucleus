@@ -15,6 +15,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         let kernelContract: FilePath
         let trustKey: FilePath?
         let buildMetadata: String
+        let targetArchitecture: PlatformArchitecture
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: products)
@@ -26,6 +27,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             encoder.append(path: kernelContract)
             encoder.append(trustKey?.string ?? "")
             encoder.append(buildMetadata)
+            encoder.append(targetArchitecture.rawValue)
         }
     }
 
@@ -40,6 +42,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
     let kernelContract: FilePath
     let trustKey: FilePath?
     let buildMetadata: String
+    let targetArchitecture: PlatformArchitecture
     package let environment: [String: String]
 
     package var identity: Identity {
@@ -52,7 +55,8 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             sessionPackage: sessionPackage,
             kernelContract: kernelContract,
             trustKey: trustKey,
-            buildMetadata: buildMetadata)
+            buildMetadata: buildMetadata,
+            targetArchitecture: targetArchitecture)
     }
 
     package var requirements: ActionRequirements {
@@ -76,15 +80,13 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
                 ActionToolRequirement(
                     "bash", executable: .named("bash"), role: .operational),
                 ActionToolRequirement(
-                    "ldd", executable: .named("ldd"), role: .semantic),
-                ActionToolRequirement(
                     "openssl", executable: .named("openssl"), role: .operational),
                 ActionToolRequirement(
                     "patchelf", executable: .named("patchelf"), role: .semantic),
                 ActionToolRequirement(
                     "readelf", executable: .named("readelf"), role: .semantic),
                 ActionToolRequirement(
-                    "strip", executable: .named("strip"), role: .semantic),
+                    "llvm-strip", executable: .named("llvm-strip"), role: .semantic),
                 ActionToolRequirement(
                     "systemd-analyze",
                     executable: .named("systemd-analyze"),
@@ -97,7 +99,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
                 architecture: RunnerPlatform.current.architecture),
             artifactTarget: ArtifactTarget(
                 operatingSystem: .linux,
-                architecture: RunnerPlatform.current.architecture,
+                architecture: targetArchitecture,
                 abi: "glibc"))
     }
 
@@ -111,6 +113,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         kernelContract = configuration.kernelContract
         trustKey = configuration.trustKey
         buildMetadata = configuration.buildMetadata
+        targetArchitecture = RunnerPlatform.current.architecture
         environment = configuration.environment
     }
 
@@ -124,6 +127,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         kernelContract: FilePath,
         trustKey: FilePath?,
         buildMetadata: String,
+        targetArchitecture: PlatformArchitecture,
         environment: [String: String]
     ) {
         self.products = products
@@ -135,6 +139,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         self.kernelContract = kernelContract
         self.trustKey = trustKey
         self.buildMetadata = buildMetadata
+        self.targetArchitecture = targetArchitecture
         self.environment = environment
     }
 
@@ -171,6 +176,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             prefix: candidate,
             environment: environment,
             productSet: .baseRuntime,
+            targetArchitecture: targetArchitecture,
             context: context)
         try await stageHostIntegration(candidate: candidate, context: context)
         try context.files.write(
@@ -185,6 +191,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             report: report,
             environment: environment,
             productSet: .baseRuntime,
+            targetArchitecture: targetArchitecture,
             context: context)
         try await validateRelocation(candidate: candidate, context: context)
         try writeCompatibility(candidate: candidate, files: context.files)
@@ -242,7 +249,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         try context.files.remove(candidate)
         try context.files.createDirectory(candidate)
         for manifest in try LinuxDistributionPackaging.encodedManifests(
-            architecture: RunnerPlatform.current.architecture,
+            architecture: targetArchitecture,
             artifactDigest: artifactDigest,
             systemdUnitTemplate: systemdUnitTemplate,
             desktopEntryTemplate: desktopEntryTemplate,
@@ -278,7 +285,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
 
         for file in try RuntimeHostIntegration.payload(
             source: source,
-            architecture: RunnerPlatform.current.architecture)
+            architecture: targetArchitecture)
         {
             let destination = candidate.appending(file.path)
             try context.files.write(file.bytes, to: destination)
@@ -389,6 +396,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
                     "share/nucleus/runtime-elf-report.json"),
                 environment: environment,
                 productSet: .baseRuntime,
+                targetArchitecture: targetArchitecture,
                 context: context)
             try context.files.move(from: relocated, to: candidate)
         } catch {
@@ -406,13 +414,11 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             tree: candidate,
             excluding: [relativePath])
         let kernelIdentity = try files.digest(file: kernelContract)
-        #if arch(arm64)
-        let architecture = AndroidAddonArchitecture.arm64
-        #elseif arch(x86_64)
-        let architecture = AndroidAddonArchitecture.x86_64
-        #else
-        #error("Nucleus supports Android add-ons only on arm64 and x86_64")
-        #endif
+        let architecture =
+            switch targetArchitecture {
+            case .arm64: AndroidAddonArchitecture.arm64
+            case .x86_64: AndroidAddonArchitecture.x86_64
+            }
         let compatibility = try AndroidAddonCompatibility(
             nucleusBuildIdentity: hex(buildIdentity.bytes),
             kernelCapabilityIdentity: hex(kernelIdentity.bytes),

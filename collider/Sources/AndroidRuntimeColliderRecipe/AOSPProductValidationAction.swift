@@ -12,6 +12,7 @@ struct ValidateAOSPProductAction: ColliderAction {
         let sourceProvenance: FilePath
         let buildRoot: FilePath
         let signingIdentity: FilePath
+        let entrypoint: OCIMountedEntrypoint
         let product: String
         let release: String
         let variant: String
@@ -27,6 +28,9 @@ struct ValidateAOSPProductAction: ColliderAction {
             encoder.append(path: sourceProvenance)
             encoder.append(path: buildRoot)
             encoder.append(path: signingIdentity)
+            encoder.append(
+                nested: OCIMountedEntrypointActionIdentity(
+                    entrypoint))
             encoder.append(product)
             encoder.append(release)
             encoder.append(variant)
@@ -58,6 +62,7 @@ struct ValidateAOSPProductAction: ColliderAction {
             sourceProvenance: build.sourceProvenance,
             buildRoot: build.artifactRoot,
             signingIdentity: build.signingIdentity,
+            entrypoint: build.artifactEntrypoint,
             product: build.product,
             release: build.release,
             variant: build.variant,
@@ -73,7 +78,12 @@ struct ValidateAOSPProductAction: ColliderAction {
         var effects = [
             ActionEffect(.read, scope: .input(build.productSource)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(.read, scope: .input(build.artifactImageID)),
+            ActionEffect(
+                .read,
+                scope: .input(build.artifactEntrypoint.image.path)),
+            ActionEffect(
+                .read,
+                scope: .input(build.artifactEntrypoint.executable)),
             ActionEffect(.read, scope: .input(build.signingIdentity)),
             ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
         ]
@@ -300,6 +310,11 @@ private struct AOSPProductValidationWorkflow {
                     (build.artifactRoot, "/export"),
                 ],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                executableRequirements: aospX86ExecutableRequirements([
+                    "/out/host/linux-x86/bin/apksigner",
+                    "/out/host/linux-x86/bin/avbtool",
+                    "/src/prebuilts/jdk/jdk21/linux-x86/bin/java",
+                ]),
                 command: [executablePath]
                     + arguments.map(containerPath),
                 workingDirectory: containerPath(directory.string),

@@ -292,7 +292,10 @@ import Testing
             exportedResolvedManifest: export.appending("resolved-manifest.xml"),
             exportedProvenance: export.appending("source-provenance.json"),
             script: FilePath(fixture.root.appendingPathComponent("materialize").path),
-            imageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
+            entrypoint: try fixtureMountedEntrypoint(
+                imageID: FilePath(
+                    fixture.root.appendingPathComponent("image-id").path),
+                role: "aosp-build"),
             sourceWorkspace: workspace,
             syncJobs: 4,
             environment: [:]))
@@ -398,8 +401,12 @@ import Testing
                     sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
                     outputWorkspace: aospOutputWorkspace(apiLevel: 37),
                     compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-                    buildImageID: root.appending("container-image-id"),
-                    artifactImageID: root.appending("container-image-id"),
+                    buildEntrypoint: try fixtureMountedEntrypoint(
+                        imageID: root.appending("container-image-id"),
+                        role: "aosp-build"),
+                    artifactEntrypoint: try fixtureMountedEntrypoint(
+                        imageID: root.appending("container-image-id"),
+                        role: "aosp-artifact"),
                     signingIdentity: root.appending("signing-identity"),
                     product: "nucleus_x86_64",
                     release: "cp2a",
@@ -452,8 +459,10 @@ import Testing
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-        buildImageID: FilePath(imageID.path),
-        artifactImageID: FilePath(imageID.path),
+        buildEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-build"),
+        artifactEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-artifact"),
         signingIdentity: FilePath(
             fixture.root.appendingPathComponent("signing").path),
         product: product,
@@ -543,8 +552,10 @@ import Testing
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-        buildImageID: FilePath(imageID.path),
-        artifactImageID: FilePath(imageID.path),
+        buildEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-build"),
+        artifactEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-artifact"),
         signingIdentity: FilePath(
             fixture.root.appendingPathComponent("signing").path),
         product: product,
@@ -612,8 +623,10 @@ import Testing
     #expect(
         recorded.allSatisfy {
             $0.artifactTarget == .androidX86_64(apiLevel: 37)
-                && $0.intelBinaryTranslationPolicy == .required
         })
+    #expect(!recorded[0].executableRequirements.isEmpty)
+    #expect(recorded[1].executableRequirements.isEmpty)
+    #expect(!recorded[2].executableRequirements.isEmpty)
 }
 
 @Test func aospProductSigningValidatesKeysAndUsesReleaseAVBArguments() async throws {
@@ -676,8 +689,10 @@ import Testing
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-        buildImageID: FilePath(imageID.path),
-        artifactImageID: FilePath(imageID.path),
+        buildEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-build"),
+        artifactEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(imageID.path), role: "aosp-artifact"),
         signingIdentity: FilePath(signing.path),
         product: product,
         release: "fixture",
@@ -755,8 +770,14 @@ import Testing
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
         outputWorkspace: aospOutputWorkspace(apiLevel: 37),
         compilerCacheWorkspace: aospCompilerCacheWorkspace(apiLevel: 37),
-        buildImageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
-        artifactImageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
+        buildEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(
+                fixture.root.appendingPathComponent("image-id").path),
+            role: "aosp-build"),
+        artifactEntrypoint: try fixtureMountedEntrypoint(
+            imageID: FilePath(
+                fixture.root.appendingPathComponent("image-id").path),
+            role: "aosp-artifact"),
         signingIdentity: FilePath(fixture.root.appendingPathComponent("signing").path),
         product: "nucleus_x86_64",
         release: "fixture",
