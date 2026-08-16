@@ -39,7 +39,7 @@ struct NucleusLinuxAssembler {
         else {
             throw LinuxAssemblerFailure.invalidArguments
         }
-        try await execute(
+        _ = try await execute(
             PublishRuntimeGenerationAction(
                 products: FilePath(arguments[0]),
                 prefix: FilePath(arguments[1]),
@@ -55,14 +55,14 @@ struct NucleusLinuxAssembler {
     }
 
     private static func assemblePackages(_ arguments: [String]) async throws {
-        guard arguments.count == 11,
+        guard arguments.count == 12,
             let architecture = PlatformArchitecture(rawValue: arguments[6]),
             let runnerOperatingSystem = PlatformOperatingSystem(rawValue: arguments[8]),
             let runnerArchitecture = PlatformArchitecture(rawValue: arguments[9])
         else {
             throw LinuxAssemblerFailure.invalidArguments
         }
-        try await execute(
+        let observations = try await execute(
             AssembleLinuxNativePackagesAction(
                 publication: LinuxNativePackagePublication(
                     architecture: architecture,
@@ -80,13 +80,19 @@ struct NucleusLinuxAssembler {
                         operatingSystem: runnerOperatingSystem,
                         architecture: runnerArchitecture),
                     environment: ProcessInfo.processInfo.environment)))
+        try Data(JSONEncoder().encode(observations.actionStages)).write(
+            to: URL(fileURLWithPath: arguments[11]),
+            options: .atomic)
     }
 
-    private static func execute<Action: ColliderAction>(_ action: Action) async throws {
+    private static func execute<Action: ColliderAction>(
+        _ action: Action
+    ) async throws -> TaskExecutionObservations {
         let runtime = ColliderRuntime()
         do {
-            try await runtime.execute(action)
+            let observations = try await runtime.execute(action)
             await runtime.shutdown()
+            return observations
         } catch {
             await runtime.shutdown()
             throw error

@@ -18,6 +18,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
     private let pipeline: OCIExecutionPipeline
     private let outputRoot: FilePath
     private let productStoreRoot: FilePath
+    private let stageObservationReport: FilePath
     private let architecture: PlatformArchitecture
 
     package var identity: Identity { Identity(execution: execution) }
@@ -36,6 +37,8 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
     ) throws {
         self.outputRoot = outputRoot
         self.productStoreRoot = productStoreRoot
+        stageObservationReport = outputRoot.appending(
+            ".package-stage-observations.json")
         self.architecture = architecture
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
@@ -133,6 +136,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
                 producerRunner.operatingSystem.rawValue,
                 producerRunner.architecture.rawValue,
                 assemblerOCI.imageID.string,
+                stageObservationReport.string,
             ],
             environment: environment,
             output: .logged)
@@ -142,7 +146,21 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
     package func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(outputRoot)
         try context.files.createDirectory(productStoreRoot)
+        try context.files.remove(stageObservationReport)
         try await context.containers.run(execution)
+        let observations = try JSONDecoder().decode(
+            [ActionStageObservation].self,
+            from: Data(context.files.read(stageObservationReport)))
+        guard
+            observations.map(\.name)
+                == LinuxNativePackageStage.allCases.map(\.observationName)
+        else {
+            throw LinuxNativePackageExecutionFailure.invalidStageObservationReport
+        }
+        try context.files.remove(stageObservationReport)
+        for observation in observations {
+            context.observations.record(observation)
+        }
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {
@@ -176,6 +194,7 @@ package enum LinuxNativePackageExecutionFailure: Error,
 {
     case requiresOCI
     case conflictingMount(String)
+    case invalidStageObservationReport
 
     package var description: String {
         switch self {
@@ -183,6 +202,8 @@ package enum LinuxNativePackageExecutionFailure: Error,
             "Linux native package assembly requires the Linux OCI builder"
         case .conflictingMount(let target):
             "Linux native package assembly has conflicting OCI mount '\(target)'"
+        case .invalidStageObservationReport:
+            "Linux native package assembly produced an incomplete stage observation report"
         }
     }
 }

@@ -408,7 +408,11 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         let action = try #require(task.action)
         #expect(action.kind == "linux.package-runtime-cohort")
         #expect(action.requirements.networkAccess == .none)
-        let execution = try #require(try await ociExecutions(in: action).first)
+        let execution = try #require(
+            try await ociExecutions(
+                in: action,
+                files: nativePackageObservationFileSystem()
+            ).first)
         #expect(execution.executionPlatform == .linuxARM64OCI)
         #expect(execution.artifactTarget.architecture == architecture)
         #expect(execution.executableRequirements.isEmpty)
@@ -481,6 +485,27 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
                 })
         }
     }
+}
+
+private func nativePackageObservationFileSystem() -> ActionFileSystem {
+    let observations = LinuxNativePackageStage.allCases.map {
+        ActionStageObservation(
+            name: $0.observationName,
+            durationNanoseconds: 1,
+            inputByteCount: 1,
+            outputByteCount: 1)
+    }
+    let bytes = try! Array(JSONEncoder().encode(observations))
+    return ActionFileSystem(
+        metadata: { _ in nil },
+        metadataNoFollow: { _ in nil },
+        contentsEqual: { _, _ in true },
+        createDirectory: { _ in },
+        copy: { _, _ in },
+        read: { _ in bytes },
+        remove: { _ in },
+        setPermissions: { _, _ in },
+        write: { _, _ in })
 }
 
 private func fixtureNativeBuilder(

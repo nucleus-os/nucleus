@@ -313,6 +313,13 @@ import Testing
                             processDurationNanoseconds: 4,
                             cleanupDurationNanoseconds: 5,
                             totalDurationNanoseconds: 15))
+                ],
+                actionStages: [
+                    ActionStageObservation(
+                        name: "fixture.materialization",
+                        durationNanoseconds: 6,
+                        inputByteCount: 7,
+                        outputByteCount: 8)
                 ]))
     ]
     manifest.resumedAt = ["2026-07-22T00:00:00.5Z"]
@@ -354,6 +361,14 @@ import Testing
     #expect(
         decodedTask.observations?.containerExecutions.first?.timings?
             .totalDurationNanoseconds == 15)
+    #expect(
+        decodedTask.observations?.actionStages == [
+            ActionStageObservation(
+                name: "fixture.materialization",
+                durationNanoseconds: 6,
+                inputByteCount: 7,
+                outputByteCount: 8)
+        ])
     #expect(decoded.resumedAt == manifest.resumedAt)
     #expect(decoded.resumeCount == manifest.resumeCount)
 }

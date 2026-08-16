@@ -49,6 +49,8 @@ costs without a cache wipe, synthetic workload, or relaxed validation.
 
 ## Phase 2: Record Native Package Stage Costs
 
+Status: complete.
+
 Record package payload materialization, Debian assembly and validation, RPM
 assembly and validation, Arch assembly and validation, product-envelope
 construction, product-store publication, and final generation publication as
@@ -59,6 +61,15 @@ product envelopes, or generation digests.
 Gate: a rebuilt arm64 and x86_64 package cohort exposes every declared stage in
 the run record, and repeated assembly still produces the same deterministic
 package and product identities.
+
+Gate satisfied: run `2026-08-16T19-38-50.660Z-92080` rebuilt and qualified both
+architecture cohorts. Each cohort persisted all ten declared observations with
+duration, input bytes, and output bytes. A same-input assembly audit isolated
+the only differing bytes to RPM's wall-clock header build time while confirming
+identical RPM payload bytes; RPM assembly now uses fixed nonzero source epoch
+`1`, because RPM treats epoch `0` as absent. Observation values remain confined
+to run manifests and do not participate in task, archive, envelope, product, or
+generation identity.
 
 ## Phase 3: Isolate Product-Store Publication
 

@@ -199,6 +199,20 @@ public struct ActionContainerExecutor: Sendable {
     }
 }
 
+public struct ActionObservationRecorder: Sendable {
+    private let recordBody: @Sendable (ActionStageObservation) -> Void
+
+    public init(
+        record: @escaping @Sendable (ActionStageObservation) -> Void = { _ in }
+    ) {
+        recordBody = record
+    }
+
+    public func record(_ observation: ActionStageObservation) {
+        recordBody(observation)
+    }
+}
+
 public enum ActionContainerExecutorFailure: Error, CustomStringConvertible, Sendable {
     case unavailable
 
@@ -792,6 +806,7 @@ public struct ActionContext: Sendable {
     public let commands: ActionCommandExecutor
     public let downloads: ActionDownloader
     public let containers: ActionContainerExecutor
+    public let observations: ActionObservationRecorder
 
     public init(
         files: ActionFileSystem,
@@ -799,7 +814,8 @@ public struct ActionContext: Sendable {
         logger: ActionLogger,
         commands: ActionCommandExecutor,
         downloads: ActionDownloader,
-        containers: ActionContainerExecutor = ActionContainerExecutor()
+        containers: ActionContainerExecutor = ActionContainerExecutor(),
+        observations: ActionObservationRecorder = ActionObservationRecorder()
     ) {
         self.files = files
         self.cancellation = cancellation
@@ -807,6 +823,7 @@ public struct ActionContext: Sendable {
         self.commands = commands
         self.downloads = downloads
         self.containers = containers
+        self.observations = observations
     }
 }
 

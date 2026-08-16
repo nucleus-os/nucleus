@@ -93,15 +93,67 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     }
 }
 
+public struct ActionStageObservation: Codable, Hashable, Sendable {
+    public let name: String
+    public let durationNanoseconds: UInt64
+    public let inputByteCount: UInt64
+    public let outputByteCount: UInt64
+
+    public init(
+        name: String,
+        durationNanoseconds: UInt64,
+        inputByteCount: UInt64,
+        outputByteCount: UInt64
+    ) {
+        precondition(!name.isEmpty)
+        self.name = name
+        self.durationNanoseconds = durationNanoseconds
+        self.inputByteCount = inputByteCount
+        self.outputByteCount = outputByteCount
+    }
+}
+
 public struct TaskExecutionObservations: Codable, Hashable, Sendable {
     public var containerExecutions: [OCIExecutionObservation]
+    public var actionStages: [ActionStageObservation]
 
-    public init(containerExecutions: [OCIExecutionObservation] = []) {
+    public init(
+        containerExecutions: [OCIExecutionObservation] = [],
+        actionStages: [ActionStageObservation] = []
+    ) {
         self.containerExecutions = containerExecutions
+        self.actionStages = actionStages
     }
 
     public var isEmpty: Bool {
-        containerExecutions.isEmpty
+        containerExecutions.isEmpty && actionStages.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case containerExecutions
+        case actionStages
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        containerExecutions =
+            try container.decodeIfPresent(
+                [OCIExecutionObservation].self,
+                forKey: .containerExecutions
+            ) ?? []
+        actionStages =
+            try container.decodeIfPresent(
+                [ActionStageObservation].self,
+                forKey: .actionStages
+            ) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(containerExecutions, forKey: .containerExecutions)
+        if !actionStages.isEmpty {
+            try container.encode(actionStages, forKey: .actionStages)
+        }
     }
 }
 

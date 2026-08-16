@@ -148,10 +148,11 @@ public actor ColliderRuntime {
         try await execute(command, stage: nil, operationName: nil, onStarted: nil)
     }
 
+    @discardableResult
     public func execute<Action: ColliderAction>(
         _ action: Action
-    ) async throws {
-        _ = try await execute(try AnyColliderAction(action), stage: nil)
+    ) async throws -> TaskExecutionObservations {
+        try await execute(try AnyColliderAction(action), stage: nil)
     }
 
     func execute(
@@ -221,7 +222,12 @@ public actor ColliderRuntime {
                                 timings: outcome.timings))
                     }
                     return result
-                })
+                }),
+            observations: ActionObservationRecorder { observation in
+                recordedObservations.withLock {
+                    $0.actionStages.append(observation)
+                }
+            }
         )
         try await action.execute(in: context)
         return recordedObservations.withLock { $0 }
