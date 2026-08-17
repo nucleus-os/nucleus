@@ -372,27 +372,49 @@ assigning artifacts to the earlier identity.
 
 The host contract now pins Actions runner `2.336.0`, its exact arm64 archive
 size and SHA-256, the runner group, label, name, service identity, account,
-home, repository, and authoritative checkout. Preparation has downloaded and
+home, organization, repository, and authoritative checkout. Preparation has
+downloaded and
 verified that archive in the interactive account's provisioning cache. The
 checked-in handoff creates or reconciles the workflow-restricted `nucleus`
-runner group, obtains a short-lived repository registration token, invokes one
+runner group, obtains a short-lived organization registration token, invokes one
 root provisioning boundary, and verifies the resulting GitHub registration.
 Before its first GitHub mutation it verifies the canonical checkout, executing
 user, complete pinned runner archive, provisioning executables, and local
 account/service state. Named handoff stages identify the exact failing control
 plane operation without printing credentials.
 Root provisioning is one-time and non-replacing: it creates the locked hidden
-account, applies the narrow source ACLs, installs a root-owned runner
+account by assigning the non-authenticating directory password marker directly,
+applies the narrow source ACLs, installs a root-owned runner
 LaunchDaemon and constrained local launcher, bootstraps the headless per-user
 Apple-container service, and executes the isolation probes. No organization or
 host mutation occurs before that explicit handoff.
 
 The handoff is resumable across GitHub API failures. Fresh local state combines
-only with an empty runner group and selects provisioning. Complete local state
-combines only with the exact configured runner and selects full re-verification
-without requesting another registration token or replacing any host state. A
-partial account/service pair, unexpected runner, multiple runners, or mismatch
-between local and GitHub state stops for explicit recovery.
+only with an empty runner group and selects provisioning. An exact pre-artifact
+state created before the runner, host contract, launcher, or service exists also
+combines only with an empty runner group and resumes provisioning. The source
+ACL pass never follows symbolic links, tolerates entries that vanish during a
+concurrent build, and installs inheritable directory entries so later source
+objects retain the read-only boundary.
+An extracted runner whose organization registration failed before `.runner`
+and `.credentials` exist is also resumable: provisioning recreates only that
+unregistered staging tree from the pinned archive, preserves the completed ACL
+boundary, and registers against the organization URL and runner group.
+Registration and local finalization are separate checkpoints. A runner with the
+exact `.runner` and credential contract but no host contract, launcher, or
+service resumes finalization without requesting another token or registering a
+second runner. Finalization explicitly materializes `_work` before assigning its
+ownership, normalizes only its exact derived per-user LaunchAgent target before
+the builder renders the complete plist in temporary storage and installs it in
+one operation. Exact matching derived service files remain in place; a partial
+derived file is normalized and replaced only within the dedicated builder
+service paths. Finalization then installs and verifies the local service
+boundary.
+Complete local state combines only with the exact configured runner and selects
+full re-verification without requesting another registration token or replacing
+any host state. Every other partial account/service pair, unexpected runner,
+multiple runners, or mismatch between local and GitHub state stops for explicit
+recovery.
 
 Collider launcher builds, fingerprints, SwiftPM configuration, resolution
 caches, security state, and scratch outputs now live under the invoking user's

@@ -43,6 +43,7 @@ struct MacOSBuilderContract: Codable, Sendable {
         let home: String
         let developerUser: String
         let authoritativeCheckout: String
+        let organization: String
         let repository: String
         let runnerGroup: String
         let runnerLabel: String
@@ -79,6 +80,7 @@ struct MacOSBuilderContract: Codable, Sendable {
         }
         guard builder.user == "nucleus-builder",
             builder.home == "/Users/nucleus-builder",
+            builder.organization == "https://github.com/nucleus-os",
             builder.runnerGroup == "nucleus",
             builder.runnerLabel == "nucleus-m2-ultra",
             builder.runnerArchiveSHA256.count == 64,

@@ -26,6 +26,7 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(contract.appleContainer.network == "nucleus-build-internal")
     #expect(contract.launchd.maximumOpenFileCount == 245_760)
     #expect(contract.builder.user == "nucleus-builder")
+    #expect(contract.builder.organization == "https://github.com/nucleus-os")
     #expect(contract.builder.runnerGroup == "nucleus")
     #expect(contract.builder.runnerVersion == "2.336.0")
     #expect(contract.builder.runnerArchiveSize == 127_389_671)
@@ -159,7 +160,7 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
 }
 
 @Test
-func builderHandoffReconcilesOnlyMatchingFreshOrCompleteState() throws {
+func builderHandoffReconcilesOnlySupportedLocalAndRunnerStates() throws {
     let root = try workspaceRootForMacOSBuilderTests()
     let stateLibrary = root.appendingPathComponent(
         "tools/macos-builder/handoff-state.sh")
@@ -171,14 +172,20 @@ func builderHandoffReconcilesOnlyMatchingFreshOrCompleteState() throws {
         "-c",
         """
         source "$1"
-        nucleus_handoff_local_state absent absent
-        nucleus_handoff_local_state present present
-        nucleus_handoff_local_state present absent
+        nucleus_handoff_local_state absent absent absent
+        nucleus_handoff_local_state present present absent
+        nucleus_handoff_local_state present absent pre-artifact
+        nucleus_handoff_local_state present absent unregistered
+        nucleus_handoff_local_state present absent registered
+        nucleus_handoff_local_state present absent absent
         nucleus_handoff_runner_state '' nucleus-m2-ultra
         nucleus_handoff_runner_state nucleus-m2-ultra nucleus-m2-ultra
         nucleus_handoff_runner_state foreign nucleus-m2-ultra
         nucleus_handoff_runner_state $'nucleus-m2-ultra\\nforeign' nucleus-m2-ultra
         nucleus_handoff_action fresh fresh
+        nucleus_handoff_action pre-artifact fresh
+        nucleus_handoff_action unregistered fresh
+        nucleus_handoff_action registered complete
         nucleus_handoff_action complete complete
         nucleus_handoff_action fresh complete
         nucleus_handoff_action complete fresh
@@ -200,16 +207,67 @@ func builderHandoffReconcilesOnlyMatchingFreshOrCompleteState() throws {
             == [
                 "fresh",
                 "complete",
+                "pre-artifact",
+                "unregistered",
+                "registered",
                 "inconsistent",
                 "fresh",
                 "complete",
                 "inconsistent",
                 "inconsistent",
                 "provision",
+                "provision",
+                "provision",
+                "finalize",
                 "verify",
                 "inconsistent",
                 "inconsistent",
             ])
+}
+
+@Test
+func builderACLTraversalDoesNotFollowSymbolicLinks() throws {
+    let root = try workspaceRootForMacOSBuilderTests()
+    let aclLibrary = root.appendingPathComponent(
+        "tools/macos-builder/builder-acl.sh")
+    let process = Process()
+    let standardOutput = Pipe()
+    let standardError = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+    process.arguments = [
+        "-c",
+        """
+        set -euo pipefail
+        source "$1"
+        fixture="$(mktemp -d /tmp/nucleus-builder-acl-test.XXXXXX)"
+        trap '/usr/bin/find "$fixture" -mindepth 1 -delete; /bin/rmdir "$fixture"' EXIT
+        /bin/mkdir "$fixture/checkout"
+        /usr/bin/touch "$fixture/checkout/file" "$fixture/outside"
+        /bin/ln -s ../outside "$fixture/checkout/live-link"
+        /bin/ln -s missing "$fixture/checkout/broken-link"
+        outside_before="$(/bin/ls -lde "$fixture/outside")"
+        user="$(/usr/bin/id -un)"
+        nucleus_apply_acl_tree \
+          "$fixture/checkout" \
+          "$user allow read,execute" \
+          "$user allow read,execute,file_inherit,directory_inherit"
+        [[ $(/bin/ls -lde "$fixture/outside") == "$outside_before" ]]
+        /bin/ls -lde "$fixture/checkout/broken-link" \
+          | /usr/bin/grep -q "user:$user allow read,execute"
+        """,
+        "builder-acl-test",
+        aclLibrary.path,
+    ]
+    process.standardOutput = standardOutput
+    process.standardError = standardError
+    try process.run()
+    let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
+    let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+
+    #expect(process.terminationStatus == 0)
+    #expect(output.isEmpty)
+    #expect(errorOutput.isEmpty)
 }
 
 private func loadMacOSBuilderContract() throws -> MacOSBuilderContract {

@@ -39,23 +39,23 @@ sudo_access="$(/usr/bin/sudo -n -l -U "$builder_user" 2>&1 || true)"
   || fail "$builder_user has a sudo path"
 
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-  /usr/bin/test -r "$checkout/Package.swift" || fail "builder cannot read checkout"
+  /bin/test -r "$checkout/Package.swift" || fail "builder cannot read checkout"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-  /usr/bin/test ! -w "$checkout" || fail "builder can mutate checkout root"
+  /bin/test ! -w "$checkout" || fail "builder can mutate checkout root"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-  /usr/bin/test ! -w "$checkout/.git" || fail "builder can mutate checkout Git metadata"
+  /bin/test ! -w "$checkout/.git" || fail "builder can mutate checkout Git metadata"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-  /usr/bin/test ! -r "/Users/$developer_user/.ssh" \
+  /bin/test ! -r "/Users/$developer_user/.ssh" \
   || fail "builder can read the developer SSH directory"
 while IFS= read -r -d '' unrelated_path; do
   /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-    /usr/bin/test ! -x "$unrelated_path" \
+    /bin/test ! -x "$unrelated_path" \
     || fail "builder can traverse unrelated developer state: $unrelated_path"
 done < <(/usr/bin/find "/Users/$developer_user" -mindepth 1 -maxdepth 1 \
   ! -name Developer -print0)
 while IFS= read -r -d '' unrelated_path; do
   /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
-    /usr/bin/test ! -x "$unrelated_path" \
+    /bin/test ! -x "$unrelated_path" \
     || fail "builder can traverse unrelated source: $unrelated_path"
 done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 1 \
   ! -path "$checkout" -print0)
@@ -70,7 +70,8 @@ done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 
   || fail "runner installation is not root-owned and immutable to jobs"
 [[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_root/_work") == "$builder_user:staff" ]] \
   || fail "runner work checkout is not builder-owned"
-[[ $("$runner_root/config.sh" --version) == "$runner_version" ]] \
+[[ $(/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  "$runner_root/bin/Runner.Listener" --version) == "$runner_version" ]] \
   || fail "runner version drifted"
 [[ $(/usr/bin/plutil -extract agentName raw -o - "$runner_root/.runner") == "$runner_name" ]] \
   || fail "runner name drifted"

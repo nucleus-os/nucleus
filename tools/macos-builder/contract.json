@@ -29,6 +29,7 @@
     "home": "/Users/nucleus-builder",
     "developerUser": "maddy",
     "authoritativeCheckout": "/Users/maddy/Developer/nucleus",
+    "organization": "https://github.com/nucleus-os",
     "repository": "https://github.com/nucleus-os/nucleus",
     "runnerGroup": "nucleus",
     "runnerLabel": "nucleus-m2-ultra",

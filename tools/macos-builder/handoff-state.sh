@@ -1,9 +1,12 @@
 #!/bin/bash
 
 nucleus_handoff_local_state() {
-  case "$1:$2" in
-    absent:absent) printf '%s\n' fresh ;;
-    present:present) printf '%s\n' complete ;;
+  case "$1:$2:$3" in
+    absent:absent:absent) printf '%s\n' fresh ;;
+    present:present:absent) printf '%s\n' complete ;;
+    present:absent:pre-artifact) printf '%s\n' pre-artifact ;;
+    present:absent:unregistered) printf '%s\n' unregistered ;;
+    present:absent:registered) printf '%s\n' registered ;;
     *) printf '%s\n' inconsistent ;;
   esac
 }
@@ -23,6 +26,9 @@ nucleus_handoff_runner_state() {
 nucleus_handoff_action() {
   case "$1:$2" in
     fresh:fresh) printf '%s\n' provision ;;
+    pre-artifact:fresh) printf '%s\n' provision ;;
+    unregistered:fresh) printf '%s\n' provision ;;
+    registered:complete) printf '%s\n' finalize ;;
     complete:complete) printf '%s\n' verify ;;
     *) printf '%s\n' inconsistent ;;
   esac

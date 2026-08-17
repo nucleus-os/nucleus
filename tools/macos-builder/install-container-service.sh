@@ -38,6 +38,23 @@ readonly standard_error_path="$service_logs/apple-container-apiserver.error.log"
 readonly agent_directory="$service_home/Library/LaunchAgents"
 readonly agent_target="$agent_directory/$service_label.plist"
 
+install_derived_file() {
+  local source_file="$1"
+  local destination_file="$2"
+  local destination_mode="$3"
+
+  if [[ -e "$destination_file" || -L "$destination_file" ]]; then
+    [[ -f "$destination_file" && ! -L "$destination_file" ]] \
+      || { echo "error: derived service target is not a regular file: $destination_file" >&2; exit 73; }
+    if /usr/bin/cmp -s "$source_file" "$destination_file"; then
+      /bin/chmod "$destination_mode" "$destination_file"
+      return
+    fi
+    /bin/rm -f "$destination_file"
+  fi
+  /usr/bin/install -m "$destination_mode" "$source_file" "$destination_file"
+}
+
 if [[ ! -d "$service_home" ]]; then
   echo "error: current-user home is absent: $service_home" >&2
   exit 72
@@ -122,16 +139,19 @@ done
 if /usr/local/bin/container system status --format json >/dev/null 2>&1; then
   /usr/local/bin/container system stop
 fi
-/usr/bin/install -m 0755 "$starter_source" "$starter_target"
-/usr/bin/install -m 0644 "$plist_template" "$agent_target"
-/usr/bin/plutil -remove ProgramArguments "$agent_target"
-/usr/bin/plutil -insert ProgramArguments -array "$agent_target"
-/usr/bin/plutil -insert ProgramArguments.0 -string "$starter_target" "$agent_target"
+install_derived_file "$starter_source" "$starter_target" 0755
+temporary_agent="$(/usr/bin/mktemp /tmp/nucleus-container-agent.XXXXXX)"
+trap '/bin/rm -f "$temporary_agent"' EXIT
+/bin/cp "$plist_template" "$temporary_agent"
+/usr/bin/plutil -remove ProgramArguments "$temporary_agent"
+/usr/bin/plutil -insert ProgramArguments -array "$temporary_agent"
+/usr/bin/plutil -insert ProgramArguments.0 -string "$starter_target" "$temporary_agent"
 /usr/bin/plutil -replace StandardOutPath -string "$standard_output_path" \
-  "$agent_target"
+  "$temporary_agent"
 /usr/bin/plutil -replace StandardErrorPath -string "$standard_error_path" \
-  "$agent_target"
-/usr/bin/plutil -lint "$agent_target" >/dev/null
+  "$temporary_agent"
+/usr/bin/plutil -lint "$temporary_agent" >/dev/null
+install_derived_file "$temporary_agent" "$agent_target" 0644
 
 /bin/launchctl bootstrap "$service_domain" "$agent_target"
 /bin/launchctl kickstart -k "$service_domain/$service_label"
