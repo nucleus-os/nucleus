@@ -72,10 +72,27 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(swiftBuild.identityBytes != native.identityBytes)
 }
 
+@Test func swiftBuildContextIncludesDebugInformationFormatInArtifactIdentity() {
+    let inherited = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .release,
+        target: .host(identity: "aarch64-linux"),
+        toolchainIdentity: "swiftc@fixture")
+    let none = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .release,
+        debugInformationFormat: SwiftDebugInformationFormat.none,
+        target: .host(identity: "aarch64-linux"),
+        toolchainIdentity: "swiftc@fixture")
+
+    #expect(inherited.identityBytes != none.identityBytes)
+}
+
 @Test func swiftPMInvocationOwnsArgumentsOutputAndSharedLock() {
     let context = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
         configuration: .release,
+        debugInformationFormat: SwiftDebugInformationFormat.none,
         target: .triple("aarch64-unknown-linux-gnu"),
         toolchainIdentity: "swiftc@fixture",
         sanitizer: "address",
@@ -102,6 +119,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", fixturePackageRoot.string,
+            "-debug-info-format", "none",
             "--triple", "aarch64-unknown-linux-gnu",
             "--sanitize", "address",
             "--traits", "diagnostics,renderer",
@@ -141,6 +159,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                 "--jobs", "10",
                 "--scratch-path", scratch.string,
                 "--package-path", fixturePackageRoot.string,
+                "-debug-info-format", "none",
                 "--triple", "aarch64-unknown-linux-gnu",
                 "--sanitize", "address",
                 "--traits", "diagnostics,renderer",

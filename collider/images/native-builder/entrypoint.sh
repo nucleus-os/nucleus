@@ -10,6 +10,36 @@ case "${1:-}" in
       products=${NUCLEUS_SWIFTPM_PRODUCTS:?}
       host_products=${NUCLEUS_SWIFTPM_HOST_PRODUCTS:?}
       mkdir -p "$scratch/.collider" "$products"
+      if [[ -n "${NUCLEUS_SWIFTPM_RETAIN_CONTEXTS:-}" ]]; then
+        retain_contexts=$NUCLEUS_SWIFTPM_RETAIN_CONTEXTS
+        workspace_root=${NUCLEUS_SWIFTPM_WORKSPACE_ROOT:-/swiftpm-workspace}
+        if [[ ! "$retain_contexts" =~ ^[1-9][0-9]*$ \
+            || "$workspace_root" != /* \
+            || "$workspace_root" == *..* \
+            || "$(dirname "$scratch")" != "$workspace_root" \
+            || ! "$(basename "$scratch")" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "error: invalid SwiftPM workspace retention configuration" >&2
+          exit 64
+        fi
+        touch "$scratch"
+        workspace_contexts=()
+        for workspace_context in "$workspace_root"/*; do
+          if [[ -d "$workspace_context" \
+              && "$(basename "$workspace_context")" =~ ^[0-9a-f]{64}$ ]]; then
+            workspace_contexts+=("$workspace_context")
+          fi
+        done
+        if (( ${#workspace_contexts[@]} > retain_contexts )); then
+          previous_ifs=$IFS
+          IFS=$'\n'
+          workspace_contexts=($(ls -dt "${workspace_contexts[@]}"))
+          IFS=$previous_ifs
+          for ((index = retain_contexts;
+              index < ${#workspace_contexts[@]}; index++)); do
+            rm -rf -- "${workspace_contexts[$index]}"
+          done
+        fi
+      fi
       if [[ -f "$input/.collider/dependencies-resolved" ]] \
           && ! cmp -s \
               "$input/.collider/dependencies-resolved" \

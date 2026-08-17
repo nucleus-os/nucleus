@@ -934,6 +934,8 @@ package struct ComponentRegistry {
         return try context.swiftPMInvocation(
             packageRoot: packageRoot,
             configuration: .release,
+            debugInformationFormat: SwiftDebugInformationFormat.none,
+            swiftFlags: ["-use-ld=lld"],
             target: .host(identity: "aarch64-unknown-linux-gnu"),
             execution: execution,
             toolchainIdentity: "nucleus-linux-builder-swiftpm-overlay-"

@@ -420,6 +420,11 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             Set(task.swiftProducts.map(\.qualifiedProduct)) == [
                 "collider-cli:nucleus-linux-assembler"
             ])
+        let assembler = try #require(task.swiftProducts.first)
+        #expect(
+            assembler.inputs.contains {
+                artifactInput($0, containsPathComponent: "LinuxPackageAssembly")
+            })
         let dependencies = Set(task.dependencies)
         #expect(task.assessmentPolicy == .incremental)
         #expect(dependencies.contains(sourceSnapshot.id))
@@ -1042,6 +1047,14 @@ private func fixtureReactNativeNodeModules(
         #expect(selected.contains(id))
         let task = try #require(catalog.tasks.first { $0.id == id })
         #expect(Set(task.swiftProducts.map(\.qualifiedProduct)) == expectedProducts)
+        let runtimePublisher = try #require(
+            task.swiftProducts.first {
+                $0.product == "nucleus-linux-runtime-publisher"
+            })
+        #expect(
+            !runtimePublisher.inputs.contains {
+                artifactInput($0, containsPathComponent: "LinuxPackageAssembly")
+            })
         #expect(task.outputs.count == 2)
         #expect(task.outputs.allSatisfy { $0.validation == .symlinkTarget })
         let action = try #require(task.action)
@@ -1065,6 +1078,22 @@ private func fixtureReactNativeNodeModules(
                 .contains(
                     "/swift-linux/\(architecture == .arm64 ? "aarch64" : "x86_64")"
                 ) == true)
+    }
+}
+
+private func artifactInput(
+    _ input: ArtifactInput,
+    containsPathComponent component: String
+) -> Bool {
+    switch input {
+    case .file(let path), .tree(let path), .sourceCheckout(let path):
+        path.components.contains { $0.string == component }
+    case .sourceCheckoutClosure(let paths):
+        paths.contains { path in
+            path.components.contains { $0.string == component }
+        }
+    default:
+        false
     }
 }
 

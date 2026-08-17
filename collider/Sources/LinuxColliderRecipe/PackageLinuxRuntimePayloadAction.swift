@@ -1,6 +1,7 @@
 import ChromiumColliderRecipe
 import ColliderCore
 import Foundation
+import LinuxPackageAssembly
 import LinuxPackageContracts
 import SystemPackage
 

@@ -91,6 +91,16 @@ development-host, and complete adapter tasks used 44.14 seconds of summed task
 time even though each archive assembly took less than 0.2 seconds; container
 bootstrap and teardown dominate those tasks.
 
+Run `2026-08-17T01-48-28.948Z-19896` is the Linux packaging-tool gate. The
+packaging-tool SwiftPM action completed in 271.91 seconds from a clean tool
+context, including 269.76 seconds in the build command and 2.12 seconds in
+product publication. The preceding warm LLD run completed in 234.72 seconds,
+versus the 262.43-second pre-Phase-8 action. The final assembler is linked by
+LLD 21, has no DWARF classification, and fell from 25 MiB to 9.2 MiB. An
+instrumentation experiment that issued separate target and product commands
+took 1,144.99 seconds because SwiftBuild repeated dependency planning for all
+six commands; the retained implementation keeps one planning pass.
+
 ## Phase 1: Establish the Measured Critical Paths
 
 Status: complete.
@@ -263,6 +273,8 @@ Collider suite with graph assertions for every payload and adapter task.
 
 ## Phase 7: Accelerate Debian Archive Compression
 
+Status: complete.
+
 Split Debian assembly into control-tree construction, the `dpkg-deb` subprocess,
 archive publication, and cleanup observations. Record the exact compressor,
 level, and thread count selected by the pinned builder's `dpkg-deb`. Replace the
@@ -277,25 +289,49 @@ logical input/output bytes. Both architecture lifecycle qualifications pass
 with the explicit compressor, package metadata and installed payload bytes
 match the current contract, and the plan records the measured time/size trade.
 
+Gate satisfied: run `2026-08-17T00-21-19.477Z-57263` used explicit zstd level
+7 with two threads and passed both architecture lifecycle qualifications.
+Browser `dpkg-deb` fell from 98.31 and 120.13 seconds to 3.84 and 4.29 seconds;
+runtime fell from 26.30 and 27.35 seconds to 1.23 and 1.20 seconds. Control-tree
+construction, archive publication, and cleanup each remained below 5
+milliseconds. Browser archives grew from 142.04/148.36 MB to 172.57/178.33 MB,
+and runtime archives grew from 43.57/44.19 MB to 53.27/53.52 MB. The measured
+20–22 percent size increase matches the accepted RPM throughput trade.
+
 ## Phase 8: Accelerate Linux Packaging Tool Builds
 
-Record compile and link substages for the Linux packaging-tool SwiftPM build.
-Use LLVM `lld` instead of GNU `ld.bfd` when the pinned native builder proves the
-tool is present, and disable release DWARF for internal assembler, publisher,
-and qualifier executables. Split schema-only contracts from assembly
-implementation so an adapter or compression edit does not relink the runtime
-publisher or schema-only qualification code. Give independently invoked tools
-narrow SwiftPM product requirements while retaining one persistent Linux build
-workspace.
+Status: complete.
 
-Make each tool-build scratch directory transaction-scoped and retain failure
-diagnostics outside disposable scratch. A failed relink or package-tool build
-must not leave a source or build tree that a retry can reinterpret as current.
+The SwiftPM action records each requested target build, product build, broad
+multi-product build, and product publication as a named action stage. The
+instrumented target/product split proved that separate SwiftPM commands repeat
+planning rather than expose cheap compile and link phases, so the retained
+multi-product path performs one broad build command. Product selection remains
+exact when only one product owner is dirty.
 
-Gate: the tool build record distinguishes compilation from linking, the linker
-identity is explicit, package-tool diagnostics remain adequate without release
-DWARF, and an adapter-only edit rebuilds only its implementation closure. The
-complete Collider suite and native package lifecycle graph pass.
+The pinned builder supplies LLD 21. Linux packaging tools pass
+`-use-ld=lld` and SwiftPM's typed `-debug-info-format none` setting. Debug-info
+format participates in build-context identity, so a no-DWARF product cannot
+reuse a DWARF context. `LinuxPackageContracts` now contains only package and
+observation contracts; the 2,400-line assembly implementation lives in
+`LinuxPackageAssembly`. Graph tests prove the assembler closure contains that
+implementation target while the runtime publisher closure does not.
+
+Persistent SwiftPM intermediates remain task-identity scoped. The native
+SwiftPM overlay and SwiftBuild regression workspaces retain only their newest
+identity context before executing a command. The retention path validates the
+workspace root and 64-character context name, removes only older generated
+siblings, and leaves failure diagnostics in the external run log. This closes
+the 49.4/50 GiB accumulation discovered during the gate without periodic broad
+cache wipes.
+
+Gate satisfied: run `2026-08-17T01-48-28.948Z-19896` passed both architecture
+package lifecycle qualifications with the LLD/no-DWARF tools. The executable
+contains the LLD 21 linker marker, is no longer classified as carrying debug
+information, and is 63 percent smaller. The complete Collider suite passed,
+the graph asserts the assembly/publisher closure boundary, and a behavior gate
+proved that bounded workspace retention preserves the current context while
+removing a stale sibling.
 
 ## Phase 9: Batch Control-Only Package Work
 

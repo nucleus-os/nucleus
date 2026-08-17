@@ -470,20 +470,24 @@ public struct SwiftPMLowering: TaskPlanLowering {
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
             hostEnvironment.removeValue(
                 forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
-            processes = arguments.map {
-                .host(
-                    invocation.command(
-                        arguments: $0,
-                        workingDirectory: invocation.context.packageRoot,
-                        environment: hostEnvironment))
+            processes = arguments.map { arguments in
+                SwiftPMProcess(
+                    stageName: SwiftPMAction.stageName(arguments: arguments),
+                    execution: .host(
+                        invocation.command(
+                            arguments: arguments,
+                            workingDirectory: invocation.context.packageRoot,
+                            environment: hostEnvironment)))
             }
         case .oci:
-            processes = try arguments.map {
-                .oci(
-                    try invocation.ociExecution(
-                        arguments: $0,
-                        workingDirectory: invocation.context.packageRoot,
-                        environment: environment))
+            processes = try arguments.map { arguments in
+                SwiftPMProcess(
+                    stageName: SwiftPMAction.stageName(arguments: arguments),
+                    execution: .oci(
+                        try invocation.ociExecution(
+                            arguments: arguments,
+                            workingDirectory: invocation.context.packageRoot,
+                            environment: environment)))
             }
         }
         let binPathQuery: SwiftPMProcess
@@ -493,19 +497,23 @@ public struct SwiftPMLowering: TaskPlanLowering {
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
             hostEnvironment.removeValue(
                 forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
-            binPathQuery = .host(
-                invocation.command(
-                    arguments: ["build", "--show-bin-path"],
-                    workingDirectory: invocation.context.packageRoot,
-                    environment: hostEnvironment,
-                    output: .captured(limit: 64 * 1_024)))
+            binPathQuery = SwiftPMProcess(
+                stageName: "swift-package.products-publication",
+                execution: .host(
+                    invocation.command(
+                        arguments: ["build", "--show-bin-path"],
+                        workingDirectory: invocation.context.packageRoot,
+                        environment: hostEnvironment,
+                        output: .captured(limit: 64 * 1_024))))
         case .oci:
-            binPathQuery = .oci(
-                try invocation.ociExecution(
-                    arguments: ["build", "--show-bin-path"],
-                    workingDirectory: invocation.context.packageRoot,
-                    environment: environment,
-                    output: .captured(limit: 64 * 1_024)))
+            binPathQuery = SwiftPMProcess(
+                stageName: "swift-package.products-publication",
+                execution: .oci(
+                    try invocation.ociExecution(
+                        arguments: ["build", "--show-bin-path"],
+                        workingDirectory: invocation.context.packageRoot,
+                        environment: environment,
+                        output: .captured(limit: 64 * 1_024))))
         }
         return try AnyColliderAction(
             SwiftPMAction(
@@ -563,9 +571,14 @@ public struct SwiftPMLowering: TaskPlanLowering {
     }
 }
 
-private enum SwiftPMProcess: Hashable, Sendable {
+private enum SwiftPMProcessExecution: Hashable, Sendable {
     case host(CommandSpec)
     case oci(OCIExecution)
+}
+
+private struct SwiftPMProcess: Hashable, Sendable {
+    let stageName: String
+    let execution: SwiftPMProcessExecution
 }
 
 private struct SwiftPMAction: ColliderAction {
@@ -576,7 +589,7 @@ private struct SwiftPMAction: ColliderAction {
         func encode(into encoder: inout IdentityEncoder) {
             encoder.append(UInt64(processes.count))
             for process in processes {
-                switch process {
+                switch process.execution {
                 case .host(let command):
                     encoder.append(nested: HostSwiftPMCommandIdentity(command: command))
                 case .oci(let execution):
@@ -608,13 +621,16 @@ private struct SwiftPMAction: ColliderAction {
         self.scratchPath = scratchPath
         environment =
             processes.first.map {
-                switch $0 {
+                switch $0.execution {
                 case .host(let command): command.environment
                 case .oci(let execution): execution.environment
                 }
             } ?? [:]
         switch processes.first {
-        case .host(let command):
+        case .some(let process) where process.execution.isHost:
+            guard case .host(let command) = process.execution else {
+                throw SwiftPMLoweringFailure.emptyInvocation
+            }
             requirements = ActionRequirements(
                 tools: [
                     ActionToolRequirement(
@@ -628,10 +644,10 @@ private struct SwiftPMAction: ColliderAction {
                 ],
                 lane: .hostExclusive,
                 executionPlatform: .macOSARM64Native)
-        case .oci:
+        case .some:
             let pipelineRequirements = try OCIExecutionPipeline(
                 processes.compactMap {
-                    guard case .oci(let execution) = $0 else { return nil }
+                    guard case .oci(let execution) = $0.execution else { return nil }
                     return execution
                 }
             ).requirements
@@ -653,7 +669,7 @@ private struct SwiftPMAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         if identity.processes.contains(where: {
-            guard case .oci = $0 else { return false }
+            guard case .oci = $0.execution else { return false }
             return true
         }) {
             try context.files.createDirectory(scratchPath)
@@ -662,13 +678,20 @@ private struct SwiftPMAction: ColliderAction {
         }
         for (index, process) in identity.processes.enumerated() {
             try context.cancellation.check()
+            let start = ContinuousClock.now
             let result: CommandResult
-            switch process {
+            switch process.execution {
             case .host(let command):
                 result = try await context.commands.execute(command)
             case .oci(let execution):
                 result = try await context.containers.execute(execution)
             }
+            context.observations.record(
+                ActionStageObservation(
+                    name: process.stageName,
+                    durationNanoseconds: elapsedNanoseconds(since: start),
+                    inputByteCount: 0,
+                    outputByteCount: 0))
             guard result.succeeded else {
                 throw result.executionFailure(reason: "Swift package command failed")
             }
@@ -678,6 +701,26 @@ private struct SwiftPMAction: ColliderAction {
                     context: context)
             }
         }
+    }
+
+    fileprivate static func stageName(arguments: [String]) -> String {
+        if let index = arguments.firstIndex(of: "--target"),
+            arguments.indices.contains(index + 1)
+        {
+            return "swift-package.compile.\(arguments[index + 1])"
+        }
+        if let index = arguments.firstIndex(of: "--product"),
+            arguments.indices.contains(index + 1)
+        {
+            return "swift-package.build-product.\(arguments[index + 1])"
+        }
+        if arguments.contains("--show-bin-path") {
+            return "swift-package.products-publication"
+        }
+        if arguments.first == "build" {
+            return "swift-package.build-all-products"
+        }
+        return "swift-package.\(arguments.first ?? "invoke")"
     }
 
     private func publishProductsDirectory(
@@ -697,6 +740,13 @@ private struct SwiftPMAction: ColliderAction {
         try context.files.replaceSymlink(
             at: productsDirectory,
             target: path.string)
+    }
+}
+
+extension SwiftPMProcessExecution {
+    fileprivate var isHost: Bool {
+        guard case .host = self else { return false }
+        return true
     }
 }
 

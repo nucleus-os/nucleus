@@ -44,6 +44,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
+                "LinuxPackageAssembly",
                 "LinuxPackageContracts",
             ]),
         .executableTarget(
@@ -59,6 +60,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
+                "LinuxPackageAssembly",
                 "LinuxPackageContracts",
             ]),
         .target(
@@ -142,9 +144,17 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 "ChromiumColliderRecipe",
+                "LinuxPackageAssembly",
                 "LinuxPackageContracts",
                 "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
+            ]),
+        .target(
+            name: "LinuxPackageAssembly",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
+                "LinuxPackageContracts",
             ]),
         .target(
             name: "LinuxPackageContracts",
@@ -281,6 +291,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 "ChromiumColliderRecipe",
                 "LinuxColliderRecipe",
+                "LinuxPackageAssembly",
                 "LinuxPackageContracts",
                 "ShellColliderRecipe",
             ]),

@@ -135,6 +135,7 @@ public enum NativeBuilderColliderRecipe {
                             "HOME": "/home/nucleus-build",
                             "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
                                 + "/opt/swift-compat/arm64",
+                            "NUCLEUS_SWIFTPM_RETAIN_CONTEXTS": "1",
                         ],
                         commandPrefix: ["swiftpm"]))),
             scratchPath: cacheRoot.appending("swiftbuild-regression/scratch"),
@@ -197,6 +198,7 @@ public enum NativeBuilderColliderRecipe {
                             "HOME": "/home/nucleus-build",
                             "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
                                 + "/opt/swift-compat/arm64",
+                            "NUCLEUS_SWIFTPM_RETAIN_CONTEXTS": "1",
                         ],
                         commandPrefix: ["swiftpm"]))),
             scratchPath: cacheRoot.appending("swiftpm-overlay/scratch"),

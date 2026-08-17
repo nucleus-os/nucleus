@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 
 package struct LinuxNativePackagePublication: Hashable, Sendable {
@@ -1151,6 +1152,8 @@ extension AssembleLinuxNativePackagesAction {
                 package: package,
                 root: root,
                 archive: archive,
+                workRoot: workRoot,
+                stageRecorder: stageRecorder,
                 context: context)
         case .rpm:
             try await assembleRPM(
@@ -1174,9 +1177,18 @@ extension AssembleLinuxNativePackagesAction {
         package: LinuxNativePackageManifest,
         root: FilePath,
         archive: FilePath,
+        workRoot: FilePath,
+        stageRecorder: LinuxNativePackageStageRecorder,
         context: ActionContext
     ) async throws {
+        let payloadByteCount = try linuxNativePackageLogicalByteCount(
+            at: root,
+            files: context.files)
+        let top = workRoot.appending("debian-\(package.name.rawValue)")
         let control = root.appending("DEBIAN")
+        try context.files.remove(top)
+        try context.files.createDirectory(top)
+        let controlStart = ContinuousClock().now
         try context.files.createDirectory(control)
         try context.files.write(
             Array(debianControl(package).utf8),
@@ -1187,12 +1199,61 @@ extension AssembleLinuxNativePackagesAction {
                 to: control.appending("conffiles"))
         }
         try writeMaintainerScripts(package, to: control, files: context.files)
+        let controlByteCount = try linuxNativePackageLogicalByteCount(
+            at: control,
+            files: context.files)
+        stageRecorder.record(
+            .debianControlTreeConstruction,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: controlStart),
+            inputByteCount: payloadByteCount,
+            outputByteCount: controlByteCount)
+        let built = top.appending(nativeArchiveName(package))
+        let buildStart = ContinuousClock().now
         try await requireSuccess(
             .named("dpkg-deb"),
-            ["--root-owner-group", "--build", root.string, archive.string],
+            [
+                "--root-owner-group",
+                "--uniform-compression",
+                "--compression=zstd",
+                "--compression-level=7",
+                "--threads-max=2",
+                "--build",
+                root.string,
+                built.string,
+            ],
             environment: reproducibleEnvironment,
             context: context)
+        let builtByteCount = try linuxNativePackageLogicalByteCount(
+            at: built,
+            files: context.files)
+        stageRecorder.record(
+            .debianBuild,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: buildStart),
+            inputByteCount: payloadByteCount + controlByteCount,
+            outputByteCount: builtByteCount)
+        let publicationStart = ContinuousClock().now
+        try context.files.move(from: built, to: archive)
+        stageRecorder.record(
+            .debianArchivePublication,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: publicationStart),
+            inputByteCount: builtByteCount,
+            outputByteCount: builtByteCount)
+        let cleanupStart = ContinuousClock().now
         try context.files.remove(control)
+        try context.files.remove(top)
+        stageRecorder.record(
+            .debianCleanup,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: cleanupStart),
+            inputByteCount: controlByteCount,
+            outputByteCount: 0)
     }
 
     private static func assembleRPM(

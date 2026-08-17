@@ -23,6 +23,7 @@ extension WorkspaceContext {
         packageRoot explicitPackageRoot: FilePath? = nil,
         buildSystem: SwiftPMBuildSystem = .swiftbuild,
         configuration: SwiftBuildConfiguration = .debug,
+        debugInformationFormat: SwiftDebugInformationFormat? = nil,
         sanitizer: String? = nil,
         traits: [String] = [],
         swiftFlags: [String] = [],
@@ -66,6 +67,7 @@ extension WorkspaceContext {
             packageRoot: packageRoot,
             buildSystem: buildSystem,
             configuration: configuration,
+            debugInformationFormat: debugInformationFormat,
             target: target ?? .host(identity: hostSwiftTarget),
             toolchainIdentity: resolvedToolchainIdentity,
             sanitizer: sanitizer,
@@ -100,6 +102,7 @@ extension WorkspaceContext {
         let isDefaultContext =
             packageRoot == layout.root
             && configuration == .debug
+            && debugInformationFormat == nil
             && sanitizer == nil
             && target == nil
             && traits.isEmpty

@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import LinuxPackageAssembly
 import LinuxPackageContracts
 import SystemPackage
 

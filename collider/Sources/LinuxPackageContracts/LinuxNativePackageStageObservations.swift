@@ -28,6 +28,10 @@ package enum LinuxNativePackageChildStage: String, CaseIterable, Sendable {
     case assembly
     case validation
     case productEnvelopeConstruction = "product-envelope-construction"
+    case debianControlTreeConstruction = "debian-control-tree-construction"
+    case debianBuild = "dpkg-deb-zstd-level-7-threads-2"
+    case debianArchivePublication = "debian-archive-publication"
+    case debianCleanup = "debian-cleanup"
     case rpmSourceViewConstruction = "rpm-source-view-construction"
     case rpmBuild = "rpmbuild"
     case rpmArchivePublication = "rpm-archive-publication"

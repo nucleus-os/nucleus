@@ -10,6 +10,12 @@ public enum SwiftPMBuildSystem: String, Codable, Hashable, Sendable {
     case swiftbuild
 }
 
+public enum SwiftDebugInformationFormat: String, Codable, Hashable, Sendable {
+    case dwarf
+    case codeview
+    case none
+}
+
 public enum SwiftBuildTarget: Hashable, Sendable {
     /// Uses SwiftPM's default host target. The identity names the resolved host
     /// platform without forcing a `--triple` argument.
@@ -133,6 +139,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public let packageRoot: FilePath
     public let buildSystem: SwiftPMBuildSystem
     public let configuration: SwiftBuildConfiguration
+    public let debugInformationFormat: SwiftDebugInformationFormat?
     public let target: SwiftBuildTarget
     public let toolchainIdentity: String
     public let sanitizer: String?
@@ -150,6 +157,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
         packageRoot: FilePath,
         buildSystem: SwiftPMBuildSystem = .swiftbuild,
         configuration: SwiftBuildConfiguration,
+        debugInformationFormat: SwiftDebugInformationFormat? = nil,
         target: SwiftBuildTarget,
         toolchainIdentity: String,
         sanitizer: String? = nil,
@@ -168,6 +176,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
         self.packageRoot = packageRoot
         self.buildSystem = buildSystem
         self.configuration = configuration
+        self.debugInformationFormat = debugInformationFormat
         self.target = target
         self.toolchainIdentity = toolchainIdentity
         self.sanitizer = sanitizer
@@ -193,6 +202,9 @@ public struct SwiftBuildContext: Hashable, Sendable {
         encoder.append(path: packageRoot)
         encoder.append(buildSystem.rawValue)
         encoder.append(configuration.rawValue)
+        encoder.appendOptional(debugInformationFormat) {
+            $0.append($1.rawValue)
+        }
         switch target {
         case .host(let identity):
             encoder.append("host")
@@ -543,6 +555,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             "--scratch-path", executionScratchPath.string,
             "--package-path", context.packageRoot.string,
         ]
+        if let debugInformationFormat = context.debugInformationFormat {
+            arguments += ["-debug-info-format", debugInformationFormat.rawValue]
+        }
         if case .triple(let triple) = context.target {
             arguments += ["--triple", triple]
         }
