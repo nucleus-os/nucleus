@@ -803,20 +803,22 @@ private func fixtureReactNativeNodeModules(
             "/usr/lib/x86_64-linux-gnu") == false)
     #expect(
         armExecution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
-            "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64:"
-                + SwiftPMInvocation.ociSwiftSDKDirectory.string
+            SwiftPMInvocation.ociSwiftSDKDirectory.string
                 + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
                 + NativeLinuxTarget(architecture: .arm64).targetTriple + "/"
                 + NucleusLinuxABI.sdkDirectoryName
-                + "/usr/lib/swift/linux:") == true)
+                + "/usr/lib/swift/linux:"
+                + "/opt/swift/usr/lib/swift/linux:"
+                + "/opt/swift-compat/arm64:") == true)
     #expect(
         x86Execution.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
-            "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64:"
-                + SwiftPMInvocation.ociSwiftSDKDirectory.string
+            SwiftPMInvocation.ociSwiftSDKDirectory.string
                 + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
                 + NativeLinuxTarget(architecture: .x86_64).targetTriple + "/"
                 + NucleusLinuxABI.sdkDirectoryName
-                + "/usr/lib/swift/linux:") == true)
+                + "/usr/lib/swift/linux:"
+                + "/opt/swift/usr/lib/swift/linux:"
+                + "/opt/swift-compat/arm64:") == true)
     #expect(
         armExecution.containerEnvironment["PATH"]?.hasPrefix(
             "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:") == true)

@@ -854,9 +854,9 @@ package struct ComponentRegistry {
                         "/usr/lib/\(target.gnuArchitecture)",
                     ].joined(separator: ":"),
                     "LD_LIBRARY_PATH": [
+                        guestTargetSDK + "/usr/lib/swift/linux",
                         hostSwiftRuntimeLibraryDirectory,
                         hostSwiftCompatibilityLibraryDirectory,
-                        guestTargetSDK + "/usr/lib/swift/linux",
                         waylandSDK.appending("lib").string,
                     ].joined(separator: ":"),
                     "SWIFTPM_CUSTOM_BIN_DIR": hostSwiftBinaryDirectory,
