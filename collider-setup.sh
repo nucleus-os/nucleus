@@ -27,9 +27,6 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NUCLEUS_WORKSPACE_ROOT="$root"
 
 host_env="$root/tools/host-env.sh"
-pkg="$root/collider"
-bin="$pkg/.build/release/collider"
-
 source "$root/tools/host-platform-env.sh"
 
 # Collider builds a complete monorepo checkout. Initialize only absent

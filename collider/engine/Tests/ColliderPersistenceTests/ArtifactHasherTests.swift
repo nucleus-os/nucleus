@@ -420,6 +420,53 @@ import Testing
     #expect(sourceDirty.provenance.dirtyPaths == ["Source.swift"])
 }
 
+@Test func protectedMainSourceSnapshotRequiresAnExactCleanCheckout() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-protected-main-source-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let source = repository.appendingPathComponent("Source.swift")
+    try Data("let value = 1\n".utf8).write(to: source)
+    try commitAll(repository)
+    let commit = try gitOutput(at: repository, arguments: ["rev-parse", "HEAD"])
+
+    let snapshot = try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: FilePath(repository.path),
+        sourceAuthority: .protectedMain,
+        assertedCommit: commit,
+        assertedBranch: "refs/heads/main",
+        sourcePaths: [FilePath(source.path)])
+    #expect(snapshot.provenance.baseCommit == commit)
+    #expect(snapshot.provenance.branch == "refs/heads/main")
+    #expect(snapshot.provenance.dirtyPaths.isEmpty)
+
+    #expect(throws: ProductArtifactStoreFailure.self) {
+        try ProductArtifactSourceSnapshot.capture(
+            repositoryRoot: FilePath(repository.path),
+            sourceAuthority: .protectedMain,
+            assertedCommit: String(commit.prefix(12)),
+            assertedBranch: "refs/heads/main")
+    }
+    #expect(throws: ProductArtifactStoreFailure.self) {
+        try ProductArtifactSourceSnapshot.capture(
+            repositoryRoot: FilePath(repository.path),
+            sourceAuthority: .protectedMain,
+            assertedCommit: commit,
+            assertedBranch: "refs/heads/topic")
+    }
+
+    try Data("untracked\n".utf8).write(
+        to: repository.appendingPathComponent("OutsideDeclaredClosure.txt"))
+    #expect(throws: ProductArtifactContractFailure.self) {
+        try ProductArtifactSourceSnapshot.capture(
+            repositoryRoot: FilePath(repository.path),
+            sourceAuthority: .protectedMain,
+            assertedCommit: commit,
+            assertedBranch: "refs/heads/main",
+            sourcePaths: [FilePath(source.path)])
+    }
+}
+
 private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
     try PlanningArtifactDigestCache().digest(
         sourceCheckout: FilePath(url.path))
@@ -465,4 +512,24 @@ private func runGit(at repository: URL, arguments: [String]) throws {
     guard process.terminationStatus == 0 else {
         throw CocoaError(.fileWriteUnknown)
     }
+}
+
+private func gitOutput(at repository: URL, arguments: [String]) throws -> String {
+    let process = Process()
+    let standardOutput = Pipe()
+    let standardError = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.currentDirectoryURL = repository
+    process.arguments = arguments
+    process.standardOutput = standardOutput
+    process.standardError = standardError
+    try process.run()
+    let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
+    _ = standardError.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileReadUnknown)
+    }
+    return String(decoding: output, as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }

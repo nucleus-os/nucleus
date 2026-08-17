@@ -42,8 +42,13 @@ if [[ ! -d "$service_home" ]]; then
   echo "error: current-user home is absent: $service_home" >&2
   exit 72
 fi
-if ! /bin/launchctl print "gui/$service_uid" >/dev/null 2>&1; then
-  echo "error: $service_user must have an active login session" >&2
+if /bin/launchctl print "gui/$service_uid" >/dev/null 2>&1; then
+  readonly service_domain="gui/$service_uid"
+elif /bin/launchctl print "user/$service_uid" >/dev/null 2>&1; then
+  readonly service_domain="user/$service_uid"
+else
+  echo "error: no per-user launchd domain exists for $service_user" >&2
+  echo "error: root provisioning must bootstrap user/$service_uid first" >&2
   exit 69
 fi
 
@@ -113,7 +118,7 @@ done
 # The starter exits after Apple Container launches its detached user services.
 # Booting out the LaunchAgent alone therefore does not restart the API server or
 # reload its persisted image and volume metadata.
-/bin/launchctl bootout "gui/$service_uid/$service_label" >/dev/null 2>&1 || true
+/bin/launchctl bootout "$service_domain/$service_label" >/dev/null 2>&1 || true
 if /usr/local/bin/container system status --format json >/dev/null 2>&1; then
   /usr/local/bin/container system stop
 fi
@@ -128,10 +133,10 @@ fi
   "$agent_target"
 /usr/bin/plutil -lint "$agent_target" >/dev/null
 
-/bin/launchctl bootstrap "gui/$service_uid" "$agent_target"
-/bin/launchctl kickstart -k "gui/$service_uid/$service_label"
+/bin/launchctl bootstrap "$service_domain" "$agent_target"
+/bin/launchctl kickstart -k "$service_domain/$service_label"
 
-echo "waiting for the login-session Apple container API server..."
+echo "waiting for the per-user Apple container API server..."
 for attempt in {1..60}; do
   if /usr/local/bin/container system status --format json >/dev/null 2>&1; then
     echo "installed persistent Apple container launch agent for $service_user"
@@ -143,8 +148,8 @@ for attempt in {1..60}; do
   /bin/sleep 1
 done
 
-echo "error: Apple container did not become healthy in the login session" >&2
-/bin/launchctl print "gui/$service_uid/$service_label" >&2 || true
+echo "error: Apple container did not become healthy in $service_domain" >&2
+/bin/launchctl print "$service_domain/$service_label" >&2 || true
 echo "--- $standard_error_path ---" >&2
 /usr/bin/tail -100 "$standard_error_path" >&2 \
   || true

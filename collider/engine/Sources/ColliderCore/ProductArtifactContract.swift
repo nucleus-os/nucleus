@@ -59,7 +59,7 @@ public struct ProductArtifactProvenance: Codable, Hashable, Sendable {
             try requirePortableRelativePath(path, allowsRoot: false)
         }
         if sourceAuthority == .protectedMain {
-            guard baseCommit?.isEmpty == false else {
+            guard let baseCommit, isFullGitCommit(baseCommit) else {
                 throw ProductArtifactContractFailure(
                     "protected-main provenance requires an exact base commit")
             }
@@ -620,6 +620,16 @@ public struct ProductArtifactContractFailure: Error, CustomStringConvertible,
     public init(_ description: String) {
         self.description = "product artifact contract failed: \(description)"
     }
+}
+
+private func isFullGitCommit(_ value: String) -> Bool {
+    value.count == 40
+        && value.utf8.allSatisfy { byte in
+            switch byte {
+            case 48...57, 97...102: true
+            default: false
+            }
+        }
 }
 
 private func requireDigest(_ digest: ArtifactDigest, name: String) throws {

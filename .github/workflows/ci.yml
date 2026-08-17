@@ -1,28 +1,95 @@
-name: monorepo-ci
+name: protected-main-verification
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact protected main commit to verify
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: monorepo-ci-${{ github.ref }}
+  group: protected-main-verification-${{ github.event_name == 'workflow_dispatch' && inputs.revision || github.sha }}
   cancel-in-progress: true
 
 jobs:
-  pr-verify:
-    if: github.event_name == 'pull_request'
+  admission:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    outputs:
+      revision: ${{ steps.admit.outputs.revision }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Admit an exact protected main revision
+        id: admit
+        shell: bash
+        env:
+          REQUESTED_REVISION: ${{ inputs.revision }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          expected_repository='nucleus-os/nucleus'
+          expected_ref='refs/heads/main'
+          expected_workflow_ref="${expected_repository}/.github/workflows/ci.yml@${expected_ref}"
+
+          test "${GITHUB_REPOSITORY}" = "${expected_repository}"
+          test "${GITHUB_REF}" = "${expected_ref}"
+          test "${WORKFLOW_REF}" = "${expected_workflow_ref}"
+
+          case "${GITHUB_EVENT_NAME}" in
+            push)
+              revision="${GITHUB_SHA}"
+              ;;
+            workflow_dispatch)
+              revision="${REQUESTED_REVISION}"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 1
+          fi
+
+          comparison="$(
+            curl --fail-with-body --silent --show-error --location \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/compare/${revision}...main"
+          )"
+          merge_base="$(
+            printf '%s' "${comparison}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["merge_base_commit"]["sha"])'
+          )"
+          test "${merge_base}" = "${revision}"
+
+          printf 'revision=%s\n' "${revision}" >> "${GITHUB_OUTPUT}"
+
+  verify:
+    needs: admission
+    runs-on:
+      group: nucleus
+      labels: nucleus-m2-ultra
+    env:
+      NUCLEUS_PRODUCT_SOURCE_AUTHORITY: protected-main
+      NUCLEUS_PRODUCT_SOURCE_COMMIT: ${{ needs.admission.outputs.revision }}
+      NUCLEUS_PRODUCT_SOURCE_REF: refs/heads/main
+      NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN: nucleus-builder
+    steps:
+      - name: Check out the admitted revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate changed-file whitespace
-        env:
-          BASE_REVISION: ${{ github.event.pull_request.base.sha }}
-        run: git diff --check "$BASE_REVISION" HEAD
-      - name: Validate submodule declarations
-        run: git config --file .gitmodules --get-regexp '^submodule\..*\.path$'
+          ref: ${{ needs.admission.outputs.revision }}
+          submodules: recursive
+      - name: Verify protected main provenance
+        run: collider check protected-main-source

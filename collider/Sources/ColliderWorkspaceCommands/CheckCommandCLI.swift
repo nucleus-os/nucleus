@@ -10,6 +10,7 @@ enum CheckTarget: String, CaseIterable, ExpressibleByArgument {
     case undefinedBehaviorSanitizer = "undefined-behavior-sanitizer"
     case threadSanitizer = "thread-sanitizer"
     case androidSourceLock = "android-source-lock"
+    case protectedMainSource = "protected-main-source"
 }
 
 struct Check: TaskControlledCommand {
@@ -34,6 +35,10 @@ struct Check: TaskControlledCommand {
             case .androidSourceLock:
                 try await ComponentRegistry(context: context)
                     .verifyAndroidRuntimeSourceLock(controls: taskOptions.controls)
+            case .protectedMainSource:
+                try ProtectedMainSourceAssertion(
+                    environment: context.environment
+                ).validate(repositoryRoot: context.root)
             }
         }
     }

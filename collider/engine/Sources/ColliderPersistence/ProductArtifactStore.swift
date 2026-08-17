@@ -319,11 +319,17 @@ public struct LocalProductArtifactStore: Sendable {
             throw ProductArtifactStoreFailure(
                 "artifact does not declare qualification role \(role.rawValue)")
         }
-        if role == .release,
-            stored.envelope.provenance.sourceAuthority != .protectedMain
-        {
-            throw ProductArtifactStoreFailure(
-                "release qualification requires protected-main provenance")
+        if role == .release {
+            guard stored.envelope.provenance.sourceAuthority == .protectedMain else {
+                throw ProductArtifactStoreFailure(
+                    "release qualification requires protected-main provenance")
+            }
+            guard
+                stored.envelope.manifest.producerTrustDomain == .nucleusBuilder
+            else {
+                throw ProductArtifactStoreFailure(
+                    "release qualification requires nucleus-builder production")
+            }
         }
         let record = try ProductArtifactQualificationRecord(
             envelope: envelope,

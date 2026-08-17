@@ -40,6 +40,35 @@ func interruptedCommandsReturnTheConventionalSignalExitStatus() {
     #expect(
         commandExitCode(status: .failed, interruptionSignal: nil)
             == .failure)
+    #expect(
+        commandExitCode(status: .superseded, interruptionSignal: nil)
+            == .failure)
+}
+
+@Test
+func changedEffectiveSourceSupersedesTheRun() throws {
+    let provenance = try ProductArtifactProvenance(
+        baseCommit: String(repeating: "a", count: 40),
+        branch: "refs/heads/main",
+        dirtyPaths: [],
+        sourceAuthority: .localDevelopment)
+    let initial = ProductArtifactSourceSnapshot(
+        closure: ArtifactDigest(bytes: [1]),
+        submoduleClosures: [],
+        provenance: provenance)
+    let unchanged = ProductArtifactSourceSnapshot(
+        closure: ArtifactDigest(bytes: [1]),
+        submoduleClosures: [],
+        provenance: provenance)
+    let changed = ProductArtifactSourceSnapshot(
+        closure: ArtifactDigest(bytes: [2]),
+        submoduleClosures: [],
+        provenance: provenance)
+
+    #expect(!sourceIdentityWasSuperseded(initial, unchanged))
+    #expect(sourceIdentityWasSuperseded(initial, changed))
+    #expect(sourceIdentityWasSuperseded(initial, nil))
+    #expect(!sourceIdentityWasSuperseded(nil, changed))
 }
 
 @Test
@@ -120,6 +149,7 @@ func everyRetiredOperationHasOneNormalizedSpelling() throws {
         ["build", "android-native"],
         ["test", "android"],
         ["check", "android-source-lock"],
+        ["check", "protected-main-source"],
         ["bootstrap", "android-source"],
         ["build", "android-image"],
         ["doctor", "browser"],

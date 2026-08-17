@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+directory="$PWD"
+workspace=""
+while [[ "$directory" != / ]]; do
+  if [[ -f "$directory/collider-setup.sh" && -f "$directory/collider/Package.swift" ]]; then
+    workspace="$directory"
+    break
+  fi
+  directory="$(/usr/bin/dirname "$directory")"
+done
+if [[ -z "$workspace" ]]; then
+  echo "collider: not inside a Nucleus workspace" >&2
+  exit 72
+fi
+
+export NUCLEUS_WORKSPACE_ROOT="$workspace"
+exec "$workspace/tools/collider-launcher.sh" "$@"

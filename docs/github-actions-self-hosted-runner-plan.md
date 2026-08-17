@@ -49,10 +49,14 @@ remote-execution protocol.
 
 ## Current State
 
-The only current workflow runs whitespace and submodule-declaration checks for
-pull requests on a GitHub-hosted Ubuntu worker. It does not invoke Collider.
-There is no automated `main` build until this plan establishes the main-only,
-self-hosted M2 Ultra execution contract.
+The checked-in workflow admits only pushes to `refs/heads/main` and manual
+requests naming an exact commit already reachable from protected `main`. A
+GitHub-hosted preflight validates the repository, event, workflow ref, full
+revision, and main reachability before checkout. The admitted revision alone
+may address the fixed `nucleus` runner group and `nucleus-m2-ultra` label, where
+Collider independently validates the protected-main provenance contract. The
+runner group and builder account are not provisioned yet, so no automated
+`main` build executes until Phase 3 establishes that host identity.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
@@ -106,7 +110,7 @@ persistent state later used by CI.
 
 The existing retained M2 Ultra state belongs to the interactive account. The
 `nucleus-builder` account, its clean checkout, its persistent Apple-container
-login service, the one-time retained-state cutover, and the complete `main`
+per-user service, the one-time retained-state cutover, and the complete `main`
 workflow do not yet exist.
 
 ## Threat Model and Host Roles
@@ -256,6 +260,34 @@ and rejection of cross, translated, and nonphysical qualification capabilities.
 
 ## Phase 2: Establish the Main-Only Workflow Boundary
 
+Status: active.
+
+The checked-in workflow now has only `main` push and exact-revision manual
+triggers. Its admission job executes no checkout or repository-controlled code,
+rejects foreign repositories, non-main workflow refs, unsupported events,
+mutable revisions, branch-only commits, and pull-request merge commits, and
+passes its immutable revision to a fixed self-hosted runner group and label.
+The self-hosted job checks out that revision with credentials removed and passes
+the complete protected-main provenance environment to `collider check
+protected-main-source`.
+
+Collider requires a full lowercase commit, `refs/heads/main`, the
+`protected-main` authority, and the `nucleus-builder` producer trust domain. It
+rechecks `HEAD`, rejects tracked or untracked dirtiness anywhere in the checkout
+even when a product declares a narrower source closure, and refuses release
+qualification unless both protected-main provenance and nucleus-builder
+production are present.
+
+Local gate evidence: the admission script accepted push and manual forms for an
+exact commit reachable from `main` and rejected foreign-repository,
+mutable-revision, and non-main-ref probes before its API request or checkout.
+Collider run `2026-08-17T17-07-08.878Z-34486` passed the complete CLI and engine
+suites, including exact-commit, whole-checkout cleanliness, complete environment,
+generated grammar, and release trust-domain coverage. The phase remains active
+until the workflow and runner-group restriction are exercised on GitHub; Phase 3
+provides the account and runner required for the self-hosted half of that live
+gate.
+
 Create one protected verification workflow loaded only from `main`. Its normal
 trigger is a push to `refs/heads/main`. Its manual trigger accepts only an exact
 commit already reachable from protected `main`. It rejects a mutable branch
@@ -299,6 +331,8 @@ equals the protected `main` commit selected by the event.
 
 ## Phase 3: Provision One Trusted Builder Identity
 
+Status: active
+
 Provision a hidden standard macOS account named `nucleus-builder` on the M2
 Ultra. It is not an administrator and has no Secure Token, FileVault unlock
 authority, sudo path, remote-login membership, interactive GUI use, iCloud
@@ -314,7 +348,7 @@ account also owns a separate clean checkout whose automated executable revision
 is the exact protected `main` commit admitted by Phase 2. The interactive
 account installs or runs no Actions service.
 
-Install the pinned GitHub Actions runner and persistent Apple-container login
+Install the pinned GitHub Actions runner and persistent Apple-container per-user
 service for `nucleus-builder`. Keep runner configuration and service bootstrap
 outside the checkout-controlled work directory. Disable automatic runner
 replacement by job code; host provisioning owns runner upgrades after their
@@ -336,6 +370,47 @@ effective source identity before accepting local outputs; if the developer
 changes the working tree during execution, mark the run superseded instead of
 assigning artifacts to the earlier identity.
 
+The host contract now pins Actions runner `2.336.0`, its exact arm64 archive
+size and SHA-256, the runner group, label, name, service identity, account,
+home, repository, and authoritative checkout. Preparation has downloaded and
+verified that archive in the interactive account's provisioning cache. The
+checked-in handoff creates or reconciles the workflow-restricted `nucleus`
+runner group, obtains a short-lived repository registration token, invokes one
+root provisioning boundary, and verifies the resulting GitHub registration.
+Before its first GitHub mutation it verifies the canonical checkout, executing
+user, complete pinned runner archive, provisioning executables, and local
+account/service state. Named handoff stages identify the exact failing control
+plane operation without printing credentials.
+Root provisioning is one-time and non-replacing: it creates the locked hidden
+account, applies the narrow source ACLs, installs a root-owned runner
+LaunchDaemon and constrained local launcher, bootstraps the headless per-user
+Apple-container service, and executes the isolation probes. No organization or
+host mutation occurs before that explicit handoff.
+
+The handoff is resumable across GitHub API failures. Fresh local state combines
+only with an empty runner group and selects provisioning. Complete local state
+combines only with the exact configured runner and selects full re-verification
+without requesting another registration token or replacing any host state. A
+partial account/service pair, unexpected runner, multiple runners, or mismatch
+between local and GitHub state stops for explicit recovery.
+
+Collider launcher builds, fingerprints, SwiftPM configuration, resolution
+caches, security state, and scratch outputs now live under the invoking user's
+conventional Library roots. Local account-switched invocations enable effective
+source revalidation; a changed or unreadable effective tree finishes the
+durable run as `superseded` and returns failure. The launcher accepts only the
+canonical checkout and the declared build, test, or package/configuration
+pairs.
+
+Runnable gate evidence: the root-owned checkout shim resolves and executes the
+externally built Collider, all provisioning scripts pass shell syntax and diff
+validation, and handoff execution reaches GitHub reconciliation only after the
+complete local preflight. Collider run
+`2026-08-17T18-01-08.931Z-63312` passed all four Collider test tasks, including
+fresh, complete, partial, unexpected-runner, superseded-run, and per-user service
+contracts. The pinned runner archive is present and verified;
+`nucleus-builder` and its LaunchDaemon remain absent by design until handoff.
+
 Gate: account and filesystem probes prove that the builder lacks admin, Secure
 Token, sudo, remote-login, GUI, TCC, Keychain, signing, publication, and
 personal-home access; it can read but not mutate the Nucleus development
@@ -344,6 +419,10 @@ invocations report `nucleus-builder` as their effective user and the same
 Apple-container application root; a dirty-tree build observes every declared
 working-copy change; source mutation supersedes the run; and unsupported remote
 revisions fail before account switching or checkout.
+
+Handoff: the interactive owner grants the existing `gh` login the `admin:org`
+scope and runs `tools/macos-builder/handoff-nucleus-builder.sh`. Phase 3 becomes
+complete only after that command's local and GitHub verification gates pass.
 
 ## Phase 4: Unify Persistent Cache and Host Admission
 

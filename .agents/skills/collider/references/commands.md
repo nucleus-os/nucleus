@@ -122,7 +122,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
-- `<target>` — values: `sanitizers`, `address-sanitizer`, `undefined-behavior-sanitizer`, `thread-sanitizer`, `android-source-lock`
+- `<target>` — values: `sanitizers`, `address-sanitizer`, `undefined-behavior-sanitizer`, `thread-sanitizer`, `android-source-lock`, `protected-main-source`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # Make every SwiftPM edge to a root-owned source dependency resolve to the
-# checkout pinned by the Nucleus gitlink. The generated configuration is local
-# to the clone because file URLs are necessarily absolute.
+# checkout pinned by the Nucleus gitlink. The generated configuration lives in
+# caller-owned host state because a builder may consume the checkout read-only.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+configuration_root="${NUCLEUS_SWIFTPM_CONFIG_ROOT:-}"
+if [[ -z "$configuration_root" ]]; then
+  if [[ "$(uname -s)" == Darwin ]]; then
+    configuration_root="$HOME/Library/Application Support/Nucleus/Collider/swiftpm/configuration"
+  else
+    configuration_root="${XDG_CONFIG_HOME:-$HOME/.config}/nucleus/collider/swiftpm"
+  fi
+fi
+mkdir -p "$configuration_root"
 
 configure_package() {
   local package="$1"
-  local configuration="$package/.swiftpm/configuration/mirrors.json"
+  local configuration="$configuration_root/mirrors.json"
   if [[ -f "$configuration" ]] \
       && grep -Fq "file://$root/third-party/containerization" "$configuration" \
       && grep -Fq "file://$root/third-party/swift-argument-parser" "$configuration" \
@@ -22,9 +31,11 @@ configure_package() {
   fi
   local original mirror
   while IFS='|' read -r original mirror; do
-    swift package --package-path "$package" config unset-mirror \
+    swift package --package-path "$package" --config-path "$configuration_root" \
+      config unset-mirror \
       --original "$original" >/dev/null 2>&1 || true
-    swift package --package-path "$package" config set-mirror \
+    swift package --package-path "$package" --config-path "$configuration_root" \
+      config set-mirror \
       --original "$original" \
       --mirror "file://$root/third-party/$mirror" >/dev/null
   done <<'MIRRORS'

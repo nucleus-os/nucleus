@@ -29,8 +29,28 @@ fi
 source "$host_env"
 
 pkg="$root/collider"
-bin="$pkg/.build/release/collider"
-fingerprint_file="$pkg/.build/collider-release-source.sha256"
+if [[ "$(uname -s)" == Darwin ]]; then
+  application_support_root="$HOME/Library/Application Support/Nucleus/Collider"
+  cache_root="$HOME/Library/Caches/Nucleus/Collider"
+  developer_root="$HOME/Library/Developer/Nucleus/Collider"
+else
+  application_support_root="${XDG_CONFIG_HOME:-$HOME/.config}/nucleus/collider"
+  cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/collider"
+  developer_root="${XDG_STATE_HOME:-$HOME/.local/state}/nucleus/collider"
+fi
+swiftpm_config_root="$application_support_root/swiftpm/configuration"
+swiftpm_security_root="$application_support_root/swiftpm/security"
+swiftpm_cache_root="$cache_root/swiftpm"
+scratch_root="$developer_root/build/collider-cli"
+bin="$scratch_root/release/collider"
+fingerprint_file="$application_support_root/launcher/collider-release-source.sha256"
+mkdir -p \
+  "$swiftpm_config_root" \
+  "$swiftpm_security_root" \
+  "$swiftpm_cache_root" \
+  "$scratch_root" \
+  "$(dirname "$fingerprint_file")"
+export NUCLEUS_SWIFTPM_CONFIG_ROOT="$swiftpm_config_root"
 "$root/tools/configure-swiftpm-mirrors.sh"
 
 hash_standard_input() {
@@ -99,8 +119,15 @@ if [[ -r "$fingerprint_file" ]]; then
   recorded_fingerprint="$(<"$fingerprint_file")"
 fi
 if [[ ! -x "$bin" || "$fingerprint" != "$recorded_fingerprint" ]]; then
-  swift build --package-path "$pkg" -c release --product collider >&2
-  mkdir -p "$(dirname "$fingerprint_file")"
+  swift build \
+    --package-path "$pkg" \
+    --cache-path "$swiftpm_cache_root" \
+    --config-path "$swiftpm_config_root" \
+    --security-path "$swiftpm_security_root" \
+    --scratch-path "$scratch_root" \
+    --only-use-versions-from-resolved-file \
+    -c release \
+    --product collider >&2
   fingerprint="$(collider_source_fingerprint)"
   temporary_fingerprint="$fingerprint_file.$$"
   printf '%s\n' "$fingerprint" >"$temporary_fingerprint"

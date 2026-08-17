@@ -49,6 +49,16 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         let head = try gitText(
             at: repositoryRoot,
             arguments: ["rev-parse", "HEAD"])
+        if sourceAuthority == .protectedMain {
+            guard let assertedCommit, isFullGitCommit(assertedCommit) else {
+                throw ProductArtifactStoreFailure(
+                    "protected-main source requires an exact 40-character commit")
+            }
+            guard assertedBranch == "refs/heads/main" else {
+                throw ProductArtifactStoreFailure(
+                    "protected-main source requires refs/heads/main")
+            }
+        }
         let checkoutBranch = try gitText(
             at: repositoryRoot,
             arguments: ["symbolic-ref", "-q", "HEAD"],
@@ -63,17 +73,19 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             throw ProductArtifactStoreFailure(
                 "asserted source branch does not match the checked-out branch")
         }
+        let provenanceScopes =
+            sourceAuthority == .protectedMain ? [""] : scopes
         let changed = try gitPaths(
             at: repositoryRoot,
             arguments: ["diff", "--name-only", "-z", "HEAD", "--"]
         ).filter { path in
-            scopes.contains { sourcePath(path, isWithin: $0) }
+            provenanceScopes.contains { sourcePath(path, isWithin: $0) }
         }
         let untracked = try gitPaths(
             at: repositoryRoot,
             arguments: ["ls-files", "--others", "--exclude-standard", "-z"]
         ).filter { path in
-            scopes.contains { sourcePath(path, isWithin: $0) }
+            provenanceScopes.contains { sourcePath(path, isWithin: $0) }
         }
         return try Self(
             closure: closure,
@@ -84,6 +96,16 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
                 dirtyPaths: Array(Set(changed).union(untracked)).sorted(),
                 sourceAuthority: sourceAuthority))
     }
+}
+
+private func isFullGitCommit(_ value: String) -> Bool {
+    value.count == 40
+        && value.utf8.allSatisfy { byte in
+            switch byte {
+            case 48...57, 97...102: true
+            default: false
+            }
+        }
 }
 
 private func sourceDigest(_ checkouts: [FilePath]) throws -> ArtifactDigest {

@@ -477,6 +477,12 @@ import Testing
             dirtyPaths: [],
             sourceAuthority: .protectedMain),
         requiredRoles: [.release])
+    let locallyProducedProtectedMain = try productEnvelope(
+        fixture: fixture,
+        placement: fixture.root,
+        provenance: protectedMain.provenance,
+        requiredRoles: [.release],
+        producerTrustDomain: .localDeveloper)
     #expect(local.identity == protectedMain.identity)
     #expect(local.provenanceIdentity != protectedMain.provenanceIdentity)
 
@@ -488,6 +494,10 @@ import Testing
         archive: fixture.archive)
     _ = try store.publish(
         protectedMain,
+        payloadRoot: fixture.payload,
+        archive: fixture.archive)
+    _ = try store.publish(
+        locallyProducedProtectedMain,
         payloadRoot: fixture.payload,
         archive: fixture.archive)
     _ = try store.validatedArtifact(
@@ -514,6 +524,14 @@ import Testing
             evidence: FilePath(evidence.path),
             qualifierTrustDomain: "fixture-native-qualifier")
     }
+    #expect(throws: ProductArtifactStoreFailure.self) {
+        _ = try store.qualify(
+            locallyProducedProtectedMain,
+            role: .release,
+            capability: capability,
+            evidence: FilePath(evidence.path),
+            qualifierTrustDomain: "fixture-native-qualifier")
+    }
     let record = try store.qualify(
         protectedMain,
         role: .release,
@@ -523,6 +541,18 @@ import Testing
     try store.validateRequiredQualifications(
         for: protectedMain,
         records: [record.identity])
+}
+
+@Test func protectedMainProvenanceRequiresAFullLowercaseCommit() {
+    for commit in ["main", String(repeating: "A", count: 40)] {
+        #expect(throws: ProductArtifactContractFailure.self) {
+            try ProductArtifactProvenance(
+                baseCommit: commit,
+                branch: "refs/heads/main",
+                dirtyPaths: [],
+                sourceAuthority: .protectedMain)
+        }
+    }
 }
 
 private struct ProductFixture {
@@ -607,7 +637,8 @@ private func productEnvelope(
     artifactTarget: ArtifactTarget = .linuxARM64,
     additionalArgument: String? = nil,
     targetFilesystemRoots: [FilePath] = [],
-    requiredRoles: [ProductArtifactQualificationRole] = [.bundleIntegrity]
+    requiredRoles: [ProductArtifactQualificationRole] = [.bundleIntegrity],
+    producerTrustDomain: ProductArtifactProducerTrustDomain = .nucleusBuilder
 ) throws -> ProductArtifactEnvelope {
     let checkout = FilePath(placement.appendingPathComponent("checkout").path)
     let cache = FilePath(placement.appendingPathComponent("cache").path)
@@ -657,7 +688,7 @@ private func productEnvelope(
                 architecture: artifactTarget.architecture,
                 dynamicLibraries: ["libc.so.6", "libnucleus.so"])
         ],
-        producerTrustDomain: .nucleusBuilder,
+        producerTrustDomain: producerTrustDomain,
         requiredQualificationRoles: requiredRoles,
         provenance: provenance,
         identityPathMap: IdentityPathMap(roots: [

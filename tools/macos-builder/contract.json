@@ -24,6 +24,21 @@
     "label": "com.nucleus.container-system-start",
     "maximumOpenFileCount": 245760
   },
+  "builder": {
+    "user": "nucleus-builder",
+    "home": "/Users/nucleus-builder",
+    "developerUser": "maddy",
+    "authoritativeCheckout": "/Users/maddy/Developer/nucleus",
+    "repository": "https://github.com/nucleus-os/nucleus",
+    "runnerGroup": "nucleus",
+    "runnerLabel": "nucleus-m2-ultra",
+    "runnerName": "nucleus-m2-ultra",
+    "runnerVersion": "2.336.0",
+    "runnerArchiveURL": "https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-osx-arm64-2.336.0.tar.gz",
+    "runnerArchiveSHA256": "8e8839c49b7060b6b2154f4931f815df330c27f167d53ef2239ee3dfce28b079",
+    "runnerArchiveSize": 127389671,
+    "runnerServiceLabel": "com.nucleus.github-actions-runner"
+  },
   "resources": {
     "physicalCPUCount": 24,
     "memoryBytes": 137438953472

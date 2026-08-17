@@ -14,6 +14,7 @@ private let taskControlledLeaves: [[String]] = [
     ["check", "undefined-behavior-sanitizer"],
     ["check", "thread-sanitizer"],
     ["check", "android-source-lock"],
+    ["check", "protected-main-source"],
     ["generate", "vulkan"],
     ["package", "linux-runtime"],
     ["benchmark"],

@@ -25,6 +25,10 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
     #expect(contract.launchd.maximumOpenFileCount == 245_760)
+    #expect(contract.builder.user == "nucleus-builder")
+    #expect(contract.builder.runnerGroup == "nucleus")
+    #expect(contract.builder.runnerVersion == "2.336.0")
+    #expect(contract.builder.runnerArchiveSize == 127_389_671)
 }
 
 @Test
@@ -117,7 +121,7 @@ func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
             standardErrorPath:
                 "/Users/builder/Library/Logs/Nucleus/Collider/service/apple-container-apiserver.error.log",
             contract: contract)
-            == "login-session/com.nucleus.container-system-start")
+            == "per-user/com.nucleus.container-system-start")
 
     #expect(
         MacOSBuilderDoctor.persistentServiceDetail(
@@ -152,6 +156,60 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
         scope: .ciMacOSBuilder,
         dryRun: true,
         quiet: true)
+}
+
+@Test
+func builderHandoffReconcilesOnlyMatchingFreshOrCompleteState() throws {
+    let root = try workspaceRootForMacOSBuilderTests()
+    let stateLibrary = root.appendingPathComponent(
+        "tools/macos-builder/handoff-state.sh")
+    let process = Process()
+    let standardOutput = Pipe()
+    let standardError = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+    process.arguments = [
+        "-c",
+        """
+        source "$1"
+        nucleus_handoff_local_state absent absent
+        nucleus_handoff_local_state present present
+        nucleus_handoff_local_state present absent
+        nucleus_handoff_runner_state '' nucleus-m2-ultra
+        nucleus_handoff_runner_state nucleus-m2-ultra nucleus-m2-ultra
+        nucleus_handoff_runner_state foreign nucleus-m2-ultra
+        nucleus_handoff_runner_state $'nucleus-m2-ultra\\nforeign' nucleus-m2-ultra
+        nucleus_handoff_action fresh fresh
+        nucleus_handoff_action complete complete
+        nucleus_handoff_action fresh complete
+        nucleus_handoff_action complete fresh
+        """,
+        "handoff-state-test",
+        stateLibrary.path,
+    ]
+    process.standardOutput = standardOutput
+    process.standardError = standardError
+    try process.run()
+    let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
+    let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+
+    #expect(process.terminationStatus == 0)
+    #expect(errorOutput.isEmpty)
+    #expect(
+        String(decoding: output, as: UTF8.self).split(separator: "\n")
+            == [
+                "fresh",
+                "complete",
+                "inconsistent",
+                "fresh",
+                "complete",
+                "inconsistent",
+                "inconsistent",
+                "provision",
+                "verify",
+                "inconsistent",
+                "inconsistent",
+            ])
 }
 
 private func loadMacOSBuilderContract() throws -> MacOSBuilderContract {

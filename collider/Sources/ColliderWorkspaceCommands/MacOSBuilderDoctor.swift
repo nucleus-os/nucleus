@@ -38,10 +38,27 @@ struct MacOSBuilderContract: Codable, Sendable {
         let memoryBytes: UInt64
     }
 
+    struct Builder: Codable, Sendable {
+        let user: String
+        let home: String
+        let developerUser: String
+        let authoritativeCheckout: String
+        let repository: String
+        let runnerGroup: String
+        let runnerLabel: String
+        let runnerName: String
+        let runnerVersion: String
+        let runnerArchiveURL: String
+        let runnerArchiveSHA256: String
+        let runnerArchiveSize: UInt64
+        let runnerServiceLabel: String
+    }
+
     let operatingSystem: OperatingSystem
     let xcode: Xcode
     let appleContainer: AppleContainer
     let launchd: Launchd
+    let builder: Builder
     let resources: Resources
 
     static let relativePath = "tools/macos-builder/contract.json"
@@ -59,6 +76,16 @@ struct MacOSBuilderContract: Codable, Sendable {
         guard launchd.maximumOpenFileCount > 0 else {
             throw MacOSBuilderContractFailure.invalid(
                 "launchd maximum open-file count must be positive")
+        }
+        guard builder.user == "nucleus-builder",
+            builder.home == "/Users/nucleus-builder",
+            builder.runnerGroup == "nucleus",
+            builder.runnerLabel == "nucleus-m2-ultra",
+            builder.runnerArchiveSHA256.count == 64,
+            builder.runnerArchiveSize > 0
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "builder identity and pinned runner contract are invalid")
         }
     }
 }
@@ -229,9 +256,9 @@ struct MacOSBuilderDoctor {
         HostPrerequisite(
             id: "macos-builder:persistent-container-service",
             scope: scope,
-            description: "persistent login-session Apple container service",
+            description: "persistent per-user Apple container service",
             remediation:
-                "stop the login-session service, then run tools/macos-builder/install-container-service.sh"
+                "stop the per-user service, then run tools/macos-builder/install-container-service.sh"
         ) {
             let fileManager = FileManager.default
             let starterPath = storageLayout.containerServiceStarter.string
@@ -245,10 +272,10 @@ struct MacOSBuilderDoctor {
                     atPath: plistPath),
                 let uid = try? await context.run(
                     "/usr/bin/id", ["-u"], capture: true),
-                let launchd = try? await context.run(
-                    "/bin/launchctl",
-                    ["print", "gui/\(uid)/\(contract.launchd.label)"],
-                    capture: true),
+                let launchd = try? await Self.launchdServiceOutput(
+                    context: context,
+                    uid: uid,
+                    label: contract.launchd.label),
                 let serviceDetail = Self.persistentServiceDetail(
                     plistData,
                     launchdOutput: launchd,
@@ -272,7 +299,7 @@ struct MacOSBuilderDoctor {
             description:
                 "Apple container \(contract.appleContainer.version) at the declared application root",
             remediation:
-                "install the signed pinned package and provision the persistent login-session service"
+                "install the signed pinned package and provision the persistent per-user service"
         ) {
             guard
                 let health = try? await context.runtime.ociRuntimeHealth(),
@@ -363,7 +390,25 @@ struct MacOSBuilderDoctor {
             launchdOutput.contains(
                 "maxfiles (hard) => \(contract.launchd.maximumOpenFileCount)")
         else { return nil }
-        return "login-session/\(plist.label)"
+        return "per-user/\(plist.label)"
+    }
+
+    private static func launchdServiceOutput(
+        context: WorkspaceContext,
+        uid: String,
+        label: String
+    ) async throws -> String {
+        if let output = try? await context.run(
+            "/bin/launchctl",
+            ["print", "gui/\(uid)/\(label)"],
+            capture: true)
+        {
+            return output
+        }
+        return try await context.run(
+            "/bin/launchctl",
+            ["print", "user/\(uid)/\(label)"],
+            capture: true)
     }
 
     static func containerSystemDetail(

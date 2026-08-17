@@ -1,0 +1,58 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly builder_user="nucleus-builder"
+readonly checkout_record="/Library/Application Support/Nucleus/Builder/authoritative-checkout"
+
+if [[ $EUID -ne 0 ]]; then
+  echo "error: invoke this root-owned launcher through sudo" >&2
+  exit 77
+fi
+if [[ $# -ne 3 ]]; then
+  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package> <debug|release>" >&2
+  exit 64
+fi
+if [[ ! -f "$checkout_record" ]]; then
+  echo "error: builder checkout contract is not installed" >&2
+  exit 72
+fi
+
+readonly requested_checkout="$1"
+readonly operation="$2"
+readonly configuration="$3"
+readonly checkout="$(/usr/bin/sed -n '1p' "$checkout_record")"
+readonly canonical_requested="$(cd "$requested_checkout" 2>/dev/null && /bin/pwd -P)" || {
+  echo "error: requested checkout does not exist" >&2
+  exit 72
+}
+if [[ "$canonical_requested" != "$requested_checkout" || "$requested_checkout" != "$checkout" ]]; then
+  echo "error: launcher accepts only the canonical authoritative checkout: $checkout" >&2
+  exit 77
+fi
+if [[ ! -f "$checkout/Package.swift" || ! -x "$checkout/tools/collider-launcher.sh" ]]; then
+  echo "error: authoritative checkout is incomplete" >&2
+  exit 72
+fi
+
+case "$configuration:$operation" in
+  debug:build) command=(build) ;;
+  debug:test) command=(test) ;;
+  release:build) command=(build linux-runtime) ;;
+  release:test) command=(test release-gate) ;;
+  release:package) command=(package linux-runtime) ;;
+  *)
+    echo "error: unsupported operation/configuration pair: $operation/$configuration" >&2
+    exit 64
+    ;;
+esac
+
+readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+exec /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  /usr/bin/env -i \
+    HOME="/Users/$builder_user" \
+    USER="$builder_user" \
+    LOGNAME="$builder_user" \
+    PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    NUCLEUS_WORKSPACE_ROOT="$checkout" \
+    NUCLEUS_REVALIDATE_SOURCE=1 \
+    "$checkout/tools/collider-launcher.sh" "${command[@]}"

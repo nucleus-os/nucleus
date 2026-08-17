@@ -134,6 +134,9 @@ public struct ColliderCommand: AsyncParsableCommand {
                 hostPhases: hostPhases,
                 ociConfiguration: ociConfiguration),
             signals: signals)
+        let sourceAtStart = try revalidatedSourceSnapshot(
+            workspace: workspace,
+            environment: environment)
         defer {
             application.signals.cancel()
         }
@@ -158,6 +161,10 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try await workspaceCommand.run(in: application.workspace)
             }
             await application.runtime.shutdown()
+            try rejectSupersededSource(
+                sourceAtStart,
+                workspace: workspace,
+                environment: environment)
             if let run = application.run {
                 try await application.registry.finish(run, status: .succeeded)
                 await observationTask?.value
@@ -190,9 +197,14 @@ public struct ColliderCommand: AsyncParsableCommand {
             let wasInterrupted = await application.cancellation.wasInterrupted()
             let interruptionSignal =
                 await application.cancellation.receivedInterruptionSignal()
-            let status = commandFailureStatus(
-                error,
-                wasInterrupted: wasInterrupted)
+            let sourceWasSuperseded = sourceIdentityChanged(
+                sourceAtStart,
+                workspace: workspace,
+                environment: environment)
+            let status =
+                sourceWasSuperseded
+                ? .superseded
+                : commandFailureStatus(error, wasInterrupted: wasInterrupted)
             let contextualFailure = reportedExecutionFailure(
                 error,
                 status: status,
@@ -304,6 +316,55 @@ func commandFailureStatus(
         return .interrupted
     }
     return .failed
+}
+
+private struct SupersededSourceFailure: Error {}
+
+private func revalidatedSourceSnapshot(
+    workspace: FilePath,
+    environment: [String: String]
+) throws -> ProductArtifactSourceSnapshot? {
+    guard environment["NUCLEUS_REVALIDATE_SOURCE"] == "1" else { return nil }
+    return try ProductArtifactSourceSnapshot.capture(
+        repositoryRoot: workspace,
+        sourceAuthority: .localDevelopment)
+}
+
+private func sourceIdentityChanged(
+    _ initial: ProductArtifactSourceSnapshot?,
+    workspace: FilePath,
+    environment: [String: String]
+) -> Bool {
+    guard let initial else { return false }
+    guard
+        let current = try? revalidatedSourceSnapshot(
+            workspace: workspace,
+            environment: environment)
+    else { return true }
+    return sourceIdentityWasSuperseded(initial, current)
+}
+
+func sourceIdentityWasSuperseded(
+    _ initial: ProductArtifactSourceSnapshot?,
+    _ current: ProductArtifactSourceSnapshot?
+) -> Bool {
+    guard let initial else { return false }
+    guard let current else { return true }
+    return current.closure != initial.closure
+}
+
+private func rejectSupersededSource(
+    _ initial: ProductArtifactSourceSnapshot?,
+    workspace: FilePath,
+    environment: [String: String]
+) throws {
+    guard
+        sourceIdentityChanged(
+            initial,
+            workspace: workspace,
+            environment: environment)
+    else { return }
+    throw SupersededSourceFailure()
 }
 
 func recordedExecutionFailure(

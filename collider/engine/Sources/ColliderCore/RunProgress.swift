@@ -6,6 +6,7 @@ public enum RunProgressPhase: String, Codable, Hashable, Sendable {
     case succeeded
     case failed
     case interrupted
+    case superseded
 }
 
 public enum RunProgressDetail: Codable, Hashable, Sendable {
@@ -293,6 +294,7 @@ struct RunProgressReductionState: Sendable {
         case .succeeded: .succeeded
         case .failed: .failed
         case .interrupted: .interrupted
+        case .superseded: .superseded
         case .running: plan.isEmpty ? .planning : .executing
         case nil: .planning
         }

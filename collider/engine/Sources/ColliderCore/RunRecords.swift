@@ -13,6 +13,7 @@ public enum RunStatus: String, Codable, Hashable, Sendable {
     case succeeded
     case failed
     case interrupted
+    case superseded
 }
 
 public enum TaskRunOutcome: String, Codable, Sendable {
