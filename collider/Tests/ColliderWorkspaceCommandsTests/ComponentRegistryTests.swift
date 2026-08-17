@@ -125,6 +125,22 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
     #expect(
         androidRuntimeBootstrap.contains(
             TaskID(rawValue: "android-runtime.gfxstream.linux-x86_64")))
+    #expect(
+        try selectedTasks(
+            in: catalog,
+            entrypoint: .generate,
+            selection: "android-runtime") == [
+                AndroidRuntimeTaskIDs.apexManifestGenerate
+            ])
+    #expect(
+        try selectedTasks(
+            in: catalog,
+            entrypoint: .testDefault,
+            selection: "android-runtime"
+        ).map(\.rawValue) == [
+            "android-runtime.apex-manifest.verify",
+            "linux.arm64.test",
+        ])
 }
 
 @Test func macOSCacheOwnershipIgnoresProcessWideXDGOverrides() throws {

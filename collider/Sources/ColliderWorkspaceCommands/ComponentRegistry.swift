@@ -259,6 +259,9 @@ package struct ComponentRegistry {
         let linuxTest = ComponentEntrypointReference(
             component: linux,
             entrypoint: .testDefault)
+        let androidGeneratedSourceVerification = ComponentEntrypointReference(
+            component: AndroidRuntimeColliderRecipe.descriptor.id,
+            entrypoint: AndroidRuntimeEntrypoints.verifyGeneratedSources)
         var shellBootstrapDestinations = [
             ComponentEntrypointReference(
                 component: core,
@@ -285,7 +288,10 @@ package struct ComponentRegistry {
                 ComponentEntrypointRoute(
                     spelling: spelling,
                     requestedEntrypoint: .testDefault,
-                    destinations: [linuxTest]),
+                    destinations:
+                        spelling == "android-runtime"
+                        ? [linuxTest, androidGeneratedSourceVerification]
+                        : [linuxTest]),
             ]
         }
         routes += [
@@ -492,7 +498,7 @@ package struct ComponentRegistry {
         ]
         if includeLinuxOperations { bootstrapSpellings.append("tracy") }
         expose(.bootstrap, to: bootstrapSpellings)
-        expose(.generate, to: ["vulkan", "wayland"])
+        expose(.generate, to: ["android-runtime", "vulkan", "wayland"])
         expose(LinuxEntrypoints.packageRuntime, to: ["linux-runtime"])
         if includeLinuxOperations { expose(.install, to: ["shell"]) }
         expose(BenchmarkEntrypoints.run, to: ["benchmark"])

@@ -141,7 +141,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
-- `<target>` — Generator target: vulkan or wayland.
+- `<target>` — Generator target: android-runtime, vulkan, or wayland.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

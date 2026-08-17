@@ -6,6 +6,8 @@ import SystemPackage
 package enum AndroidRuntimeEntrypoints {
     package static let packageInput = ComponentEntrypointID(
         rawValue: "package.android-input")
+    package static let verifyGeneratedSources = ComponentEntrypointID(
+        rawValue: "verify.generated-sources")
 }
 
 package enum AndroidRuntimeTaskIDs {
@@ -15,6 +17,10 @@ package enum AndroidRuntimeTaskIDs {
     package static let aospSourceInputs = TaskID(
         rawValue: "android-runtime.aosp-source-inputs")
     package static let aospImage = TaskID(rawValue: "android-runtime.aosp-image")
+    package static let apexManifestGenerate = TaskID(
+        rawValue: "android-runtime.apex-manifest.generate")
+    package static let apexManifestVerify = TaskID(
+        rawValue: "android-runtime.apex-manifest.verify")
     package static func gfxstream(_ target: NativeLinuxTarget) -> TaskID {
         TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)")
     }
@@ -120,6 +126,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             NativeBuilderGraphConfiguration.self,
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
+        let protobuf = try apexManifestProtobufTasks(
+            root: root,
+            packageRoot: context.repositoryRoot,
+            buildRoot: context.buildRoot,
+            environment: context.environment,
+            swiftPM: try context.swiftPM(.hostDebug))
         let aospBuildRoot = context.artifactRoot.appending("android-runtime/aosp")
         let aospContainers = aospContainerArtifacts(
             root: root,
@@ -135,7 +147,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let gfxstreamContainer = gfxstreamContainerArtifacts(
             root: root,
             image: native.builder.image)
-        var tasks = aosp.tasks
+        var tasks = aosp.tasks + [protobuf.generation, protobuf.verification]
         var gfxstreamRoots: Set<TaskID> = []
         var gfxstreamArtifacts: [NativeLinuxTarget: GfxstreamArtifacts] = [:]
         for architecture in PlatformArchitecture.allCases {
@@ -154,6 +166,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         }
         var entrypoints = [
             ComponentEntrypoint(id: .bootstrap, roots: gfxstreamRoots),
+            ComponentEntrypoint(
+                id: .generate,
+                roots: [protobuf.generation.id]),
+            ComponentEntrypoint(
+                id: AndroidRuntimeEntrypoints.verifyGeneratedSources,
+                roots: [protobuf.verification.id]),
             ComponentEntrypoint(
                 id: ComponentEntrypointID(rawValue: "aosp.source-lock"),
                 roots: [AndroidRuntimeTaskIDs.aospSourceLock]),
@@ -208,6 +226,25 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 AndroidRuntimeTaskIDs.aospImage.rawValue,
             ].map { StorageProducer.task(TaskID(rawValue: $0)) })
         var storage = [
+            StorageDeclaration(
+                id: "android-apex-manifest-generated-source",
+                owner: descriptor.id,
+                producers: [.task(protobuf.generation.id)],
+                storageClass: .source,
+                root: protobuf.generatedSource,
+                safetyRoot: root,
+                retentionPolicy: .protected),
+            StorageDeclaration(
+                id: "android-apex-manifest-generation-state",
+                owner: descriptor.id,
+                producers: [
+                    .task(protobuf.generation.id),
+                    .task(protobuf.verification.id),
+                ],
+                storageClass: .cache,
+                root: protobuf.verificationRoot,
+                safetyRoot: context.buildRoot,
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-source-inputs",
                 owner: descriptor.id,

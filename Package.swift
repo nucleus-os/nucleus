@@ -14,6 +14,7 @@ func linuxPkgConfig(_ name: String) -> String? {
 }
 
 let products: [Product] = [
+    .plugin(name: "GenerateApexManifest", targets: ["GenerateApexManifestPlugin"]),
     .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
     .executable(name: "nucleus-android-runtime", targets: ["NucleusAndroidRuntime"]),
     .executable(
@@ -116,6 +117,21 @@ let reactNativeRuntimeLinkerSettings: [LinkerSetting] = [
 ]
 
 let targets: [Target] = [
+    .plugin(
+        name: "GenerateApexManifestPlugin",
+        capability: .command(
+            intent: .custom(
+                verb: "generate-apex-manifest",
+                description: "Generate or verify the checked-in APEX manifest Swift source"),
+            permissions: [
+                .writeToPackageDirectory(
+                    reason: "Publish the generated APEX manifest Swift source")
+            ]),
+        dependencies: [
+            .product(name: "protoc", package: "swift-protobuf"),
+            .product(name: "protoc-gen-swift", package: "swift-protobuf"),
+        ],
+        path: "tools/generate-apex-manifest"),
     .target(
         name: "NucleusAndroidProcessLifecycleC",
         path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC"),
