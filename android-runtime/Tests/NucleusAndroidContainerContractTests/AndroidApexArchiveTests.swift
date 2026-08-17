@@ -27,12 +27,77 @@ import Testing
     }
 }
 
-private func apexArchive(payloadMagic: [UInt8]) -> Data {
-    var manifest = Data([0x0A])
-    let name = Array("com.android.runtime".utf8)
-    manifest.append(UInt8(name.count))
-    manifest.append(contentsOf: name)
-    manifest.append(contentsOf: [0x10, 37])
+@Test func apexArchiveRejectsMalformedManifest() throws {
+    let malformedManifests = [
+        Data([0x0A, 0x80]),
+        Data([0x0A] + Array(repeating: 0xFF, count: 10) + [0x02]),
+        Data([0x0B]),
+        Data([0x0A, 0x01, 0x61]),
+        Data([0x0A, 0x01, 0x61, 0x10] + Array(repeating: 0xFF, count: 9) + [0x01]),
+    ]
+    for manifest in malformedManifests {
+        let archive = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "nucleus-apex-\(UUID().uuidString).apex")
+        defer { try? FileManager.default.removeItem(at: archive) }
+        try apexArchive(payloadMagic: [0xE2, 0xE1, 0xF5, 0xE0], manifest: manifest).write(
+            to: archive)
+
+        #expect(throws: AndroidApexArchiveError.invalidManifest) {
+            _ = try AndroidApexArchive.metadata(in: archive)
+        }
+    }
+}
+
+@Test func apexArchiveUsesProtobufSingularFieldSemantics() throws {
+    let archive = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "nucleus-apex-\(UUID().uuidString).apex")
+    defer { try? FileManager.default.removeItem(at: archive) }
+    let manifest = Data([
+        0x0A, 0x03, 0x6F, 0x6C, 0x64,
+        0x10, 0x01,
+        0x0A, 0x03, 0x6E, 0x65, 0x77,
+        0x10, 0x25,
+        0x98, 0x06, 0x01,
+    ])
+    try apexArchive(
+        payloadMagic: [0xE2, 0xE1, 0xF5, 0xE0],
+        manifest: manifest
+    ).write(to: archive)
+
+    let metadata = try AndroidApexArchive.metadata(in: archive)
+
+    #expect(metadata.name == "new")
+    #expect(metadata.version == 37)
+}
+
+@Test func apexArchiveRejectsTruncatedCentralDirectoryRecord() throws {
+    let archive = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "nucleus-apex-\(UUID().uuidString).apex")
+    defer { try? FileManager.default.removeItem(at: archive) }
+    var data = apexArchive(payloadMagic: [0xE2, 0xE1, 0xF5, 0xE0])
+    let endRecordOffset = data.count - 22
+    let centralSize = data.littleEndianUInt32(at: endRecordOffset + 12)
+    data.replaceSubrange((endRecordOffset - 1)..<endRecordOffset, with: [])
+    data.replaceLittleEndian(centralSize - 1, at: endRecordOffset - 1 + 12)
+    try data.write(to: archive)
+
+    #expect(throws: AndroidApexArchiveError.invalidArchive) {
+        _ = try AndroidApexArchive.metadata(in: archive)
+    }
+}
+
+private func apexArchive(payloadMagic: [UInt8], manifest suppliedManifest: Data? = nil) -> Data {
+    let manifest: Data
+    if let suppliedManifest {
+        manifest = suppliedManifest
+    } else {
+        var generated = Data([0x0A])
+        let name = Array("com.android.runtime".utf8)
+        generated.append(UInt8(name.count))
+        generated.append(contentsOf: name)
+        generated.append(contentsOf: [0x10, 37])
+        manifest = generated
+    }
 
     var payload = Data(repeating: 0, count: 2_048)
     payload.replaceSubrange(1_024..<1_028, with: payloadMagic)
@@ -123,5 +188,17 @@ extension Data {
         append(UInt8(truncatingIfNeeded: value >> 8))
         append(UInt8(truncatingIfNeeded: value >> 16))
         append(UInt8(truncatingIfNeeded: value >> 24))
+    }
+
+    fileprivate mutating func replaceLittleEndian(_ value: UInt32, at offset: Int) {
+        self[offset] = UInt8(truncatingIfNeeded: value)
+        self[offset + 1] = UInt8(truncatingIfNeeded: value >> 8)
+        self[offset + 2] = UInt8(truncatingIfNeeded: value >> 16)
+        self[offset + 3] = UInt8(truncatingIfNeeded: value >> 24)
+    }
+
+    fileprivate func littleEndianUInt32(at offset: Int) -> UInt32 {
+        UInt32(self[offset]) | (UInt32(self[offset + 1]) << 8)
+            | (UInt32(self[offset + 2]) << 16) | (UInt32(self[offset + 3]) << 24)
     }
 }

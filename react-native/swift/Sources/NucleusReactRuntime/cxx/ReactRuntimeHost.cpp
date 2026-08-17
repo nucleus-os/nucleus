@@ -14,6 +14,8 @@
 #include <NucleusReactRuntime/TextLayoutManager.hpp>
 #include <NucleusReactRuntime/TurboModuleRegistry.hpp>
 
+#include "NucleusBlobModules.hpp"
+
 #include <hermes/hermes.h>
 #include <folly/dynamic.h>
 #include <folly/json.h>
@@ -248,6 +250,7 @@ class ReactRuntimeHostImpl final {
  public:
   explicit ReactRuntimeHostImpl(NetworkTransport networkTransport)
       : networkTransport_(makeNetworkTransportOwner(std::move(networkTransport))),
+        blobStore_(makeBlobStore()),
         runtime_(facebook::hermes::makeHermesRuntime(
             ::hermes::vm::RuntimeConfig::Builder()
                 .withMicrotaskQueue(true)
@@ -260,6 +263,7 @@ class ReactRuntimeHostImpl final {
     }
     jsThreadId_ = std::this_thread::get_id();
     jsInvoker_ = std::make_shared<RuntimeJSCallInvoker>(*runtime_, jsThreadId_);
+    installBlobCollectorProvider(*runtime_, blobStore_);
     animationFrameClock_ =
         std::make_shared<NucleusAnimationFrameClock>(*runtime_);
     deviceEventEmitter_ =
@@ -1501,15 +1505,31 @@ class ReactRuntimeHostImpl final {
         });
     turboModuleRegistry_.add(
         "Networking",
-        [transport = networkTransport_](
+        [transport = networkTransport_, store = blobStore_](
             std::shared_ptr<facebook::react::CallInvoker> invoker) {
-          return makeNetworkingModule(std::move(invoker), transport);
+          auto delegate = makeNetworkingModule(invoker, transport);
+          return makeBlobNetworkingModule(
+              std::move(invoker), std::move(delegate), store, transport);
         });
     turboModuleRegistry_.add(
         "WebSocketModule",
-        [transport = networkTransport_](
+        [transport = networkTransport_, store = blobStore_](
             std::shared_ptr<facebook::react::CallInvoker> invoker) {
-          return makeWebSocketModule(std::move(invoker), transport);
+          auto delegate = makeWebSocketModule(invoker, transport);
+          return makeBlobWebSocketModule(
+              std::move(invoker), std::move(delegate), store, transport);
+        });
+    turboModuleRegistry_.add(
+        "BlobModule",
+        [transport = networkTransport_, store = blobStore_](
+            std::shared_ptr<facebook::react::CallInvoker> invoker) {
+          return makeBlobModule(std::move(invoker), store, transport);
+        });
+    turboModuleRegistry_.add(
+        "FileReaderModule",
+        [store = blobStore_](
+            std::shared_ptr<facebook::react::CallInvoker> invoker) {
+          return makeFileReaderModule(std::move(invoker), store);
         });
     // `PlatformConstants` stays on the iOS-shape hand-rolled implementation:
     // the bundle's `Platform.nucleus.js` derives from `Platform.ios.js`, so
@@ -2102,6 +2122,7 @@ class ReactRuntimeHostImpl final {
   // pointer to the registry; the registry must remain valid until that
   // lambda is destroyed (which happens when `runtime_` is destroyed).
   std::shared_ptr<NetworkTransportOwner> networkTransport_;
+  std::shared_ptr<BlobStore> blobStore_;
   TurboModuleRegistry turboModuleRegistry_;
   std::unique_ptr<facebook::jsi::Runtime> runtime_;
   // Declared after `runtime_` so both registries destroy their live

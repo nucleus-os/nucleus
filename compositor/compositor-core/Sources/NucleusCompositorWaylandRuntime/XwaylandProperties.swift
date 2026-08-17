@@ -9,32 +9,53 @@
 // XwaylandPropertyIO owns the connection-bound subscribe/refresh/writeback
 // mechanics; this file is the pure reply→state parsing.
 
+import BinaryParsing
+internal import Foundation
 @unsafe import NucleusCompositorXcbC
 
 typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 
+@unsafe private func withPropertyValue<T>(
+    _ reply: PropReply,
+    format: UInt8,
+    _ body: (inout ParserSpan) throws -> T
+) -> T? {
+    guard unsafe reply.pointee.format == format,
+        let unitCount = Int(exactly: unsafe reply.pointee.value_len),
+        let responseUnits = Int(exactly: unsafe reply.pointee.length)
+    else { return nil }
+    let unitByteCount = max(1, Int(format) / 8)
+    let (byteCount, byteCountOverflow) = unitCount.multipliedReportingOverflow(by: unitByteCount)
+    let (availableByteCount, availableByteCountOverflow) =
+        responseUnits.multipliedReportingOverflow(by: 4)
+    guard !byteCountOverflow, !availableByteCountOverflow,
+        byteCount <= availableByteCount,
+        byteCount > 0,
+        let raw = unsafe xcb_get_property_value(reply)
+    else { return nil }
+    let bytes = unsafe UnsafeRawBufferPointer(start: raw, count: byteCount)
+    var input = unsafe ParserSpan(_unsafeBytes: bytes)
+    return try? body(&input)
+}
+
 /// Copy a STRING / UTF8_STRING / COMPOUND_TEXT property (format 8) into a String,
 /// or nil if empty / not an 8-bit property.
 @unsafe func parseTextProperty(_ reply: PropReply) -> String? {
-    guard unsafe reply.pointee.format == 8,
-        unsafe reply.pointee.value_len > 0,
-        let raw = unsafe xcb_get_property_value(reply)
-    else { return nil }
-    let bytes = unsafe UnsafeRawBufferPointer(
-        start: raw, count: Int(reply.pointee.value_len))
-    return unsafe String(decoding: bytes, as: UTF8.self)
+    unsafe withPropertyValue(reply, format: 8) { input in
+        String(decoding: Data(parsingRemainingBytes: &input), as: UTF8.self)
+    }
 }
 
 /// WM_CLASS: two NUL-terminated strings back-to-back, `instance\0class\0`
 /// (ICCCM §4.1.2.5).
 @unsafe func parseWmClass(_ reply: PropReply) -> (instance: String?, className: String?) {
-    guard unsafe reply.pointee.format == 8,
-        unsafe reply.pointee.value_len > 0,
-        let raw = unsafe xcb_get_property_value(reply)
+    guard
+        let b = unsafe withPropertyValue(
+            reply, format: 8,
+            { input in
+                [UInt8](parsingRemainingBytes: &input)
+            })
     else { return (nil, nil) }
-    let b = unsafe Array(
-        UnsafeRawBufferPointer(
-            start: raw, count: Int(reply.pointee.value_len)))
 
     let split = b.firstIndex(of: 0) ?? b.count
     let instance = split > 0 ? String(decoding: b[0..<split], as: UTF8.self) : nil
@@ -52,25 +73,22 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 /// A single CARDINAL (u32) — _NET_WM_PID, _NET_WM_USER_TIME,
 /// _NET_WM_SYNC_REQUEST_COUNTER. Nil if not a non-empty 32-bit property.
 @unsafe func parseCardinal(_ reply: PropReply) -> UInt32? {
-    guard unsafe reply.pointee.format == 32,
-        unsafe reply.pointee.value_len > 0,
-        let raw = unsafe xcb_get_property_value(reply)
-    else { return nil }
-    return unsafe raw.loadUnaligned(as: UInt32.self)
+    unsafe withPropertyValue(reply, format: 32) { input in
+        try UInt32(parsingLittleEndian: &input)
+    }
 }
 
 /// _MOTIF_WM_HINTS: flags bit 1 (DECORATIONS present) with a 0 decorations field
 /// (vals[2]) means the client wants no decorations.
 @unsafe func parseMotifDecorationsOff(_ reply: PropReply) -> Bool {
-    guard unsafe reply.pointee.format == 32,
-        unsafe reply.pointee.value_len >= 5,
-        let raw = unsafe xcb_get_property_value(reply)
-    else { return false }
-    let flags = unsafe raw.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
-    let decorations = unsafe raw.loadUnaligned(
-        fromByteOffset: 8, as: UInt32.self)  // vals[2]
-    let MWM_HINTS_DECORATIONS: UInt32 = 1 << 1
-    return (flags & MWM_HINTS_DECORATIONS) != 0 && decorations == 0
+    unsafe withPropertyValue(reply, format: 32) { input in
+        guard unsafe reply.pointee.value_len >= 5 else { return false }
+        let flags = try UInt32(parsingLittleEndian: &input)
+        _ = try UInt32(parsingLittleEndian: &input)
+        let decorations = try UInt32(parsingLittleEndian: &input)
+        let MWM_HINTS_DECORATIONS: UInt32 = 1 << 1
+        return (flags & MWM_HINTS_DECORATIONS) != 0 && decorations == 0
+    } ?? false
 }
 
 /// An ATOM list (_NET_WM_WINDOW_TYPE, _NET_WM_STATE). Returns nil to mean "leave
@@ -88,14 +106,15 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
         return []
     }
     if unsafe reply.pointee.value_len == 0 { return [] }
-    guard let raw = unsafe xcb_get_property_value(reply) else { return [] }
     let count = unsafe Int(reply.pointee.value_len)
-    var out = [xcb_atom_t](repeating: 0, count: count)
-    for i in 0..<count {
-        out[i] = unsafe raw.loadUnaligned(
-            fromByteOffset: i * 4, as: xcb_atom_t.self)
+    return unsafe withPropertyValue(reply, format: 32) { input in
+        var out: [xcb_atom_t] = []
+        out.reserveCapacity(count)
+        while !input.isEmpty {
+            out.append(try xcb_atom_t(parsingLittleEndian: &input))
+        }
+        return out
     }
-    return out
 }
 
 /// WM_PROTOCOLS: an ATOM list mapped to the bits the compositor honors. Returns
@@ -110,24 +129,28 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
     }
 
     var p = WmProtocols()
-    if type != XCB_ATOM_NONE.rawValue,
-        unsafe reply.pointee.value_len > 0,
-        let raw = unsafe xcb_get_property_value(reply)
-    {
-        let count = unsafe Int(reply.pointee.value_len)
-        for i in 0..<count {
-            let a = unsafe raw.loadUnaligned(
-                fromByteOffset: i * 4, as: xcb_atom_t.self)
-            if a == atoms[.WM_DELETE_WINDOW] {
-                p.deleteWindow = true
-            } else if a == atoms[.WM_TAKE_FOCUS] {
-                p.takeFocus = true
-            } else if a == atoms[._NET_WM_PING] {
-                p.ping = true
-            } else if a == atoms[._NET_WM_SYNC_REQUEST] {
-                p.syncRequest = true
-            }
-        }
+    if type != XCB_ATOM_NONE.rawValue, unsafe reply.pointee.value_len > 0 {
+        guard
+            let parsed = unsafe withPropertyValue(
+                reply, format: 32,
+                { input in
+                    var parsed = WmProtocols()
+                    while !input.isEmpty {
+                        let a = try xcb_atom_t(parsingLittleEndian: &input)
+                        if a == atoms[.WM_DELETE_WINDOW] {
+                            parsed.deleteWindow = true
+                        } else if a == atoms[.WM_TAKE_FOCUS] {
+                            parsed.takeFocus = true
+                        } else if a == atoms[._NET_WM_PING] {
+                            parsed.ping = true
+                        } else if a == atoms[._NET_WM_SYNC_REQUEST] {
+                            parsed.syncRequest = true
+                        }
+                    }
+                    return parsed
+                })
+        else { return nil }
+        p = parsed
     }
     return p
 }

@@ -1,6 +1,6 @@
 # AppKit API completion plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -32,7 +32,7 @@ done batches in the Wayland runtime. Keep editor state in NucleusUI.
 Gate: wire tests cover valid and hostile sequencing, focus changes, client and
 IME destruction, stale serials, byte/code-unit conversion, and cancellation.
 
-## Phase 2 — Qualify the complete text-input path
+## Phase 2 — Qualify the complete text-input path — complete
 
 Exercise a real IME against native editor surfaces and the shell lock screen.
 Verify key repeat, preedit replacement, commit, focus transfer, failed
@@ -41,3 +41,14 @@ teardown.
 
 Gate: all agent-runnable behavior and wire tests pass. Interactive IME and
 lock-screen validation is a user-run handoff.
+
+Achieved state: editor behavior, secure credential handling, shell lock-screen
+failure/reset behavior, text-input-v3, and input-method-v2 mediation are covered
+by the repository's behavior and wire suites. Interactive validation remains a
+user-owned handoff because it requires a real IME and running lock screen; it
+does not keep the implementation phase open.
+
+Gate evidence: `collider test core` passes the complete root Swift package test
+graph, covering key repeat, preedit replacement and commit, focus and
+cancellation, UTF-8/UTF-16 conversion, secure-field redaction and zeroization,
+authentication reset, hostile protocol sequencing, and teardown.

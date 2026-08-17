@@ -55,12 +55,16 @@ let products: [Product] = [
     .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidDeployment"]),
 ]
 let dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/apple/swift-binary-parsing.git", exact: "0.0.2"),
+    .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
     .package(url: "https://github.com/swift-server/async-http-client.git", branch: "main"),
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
     .package(name: "swift-java", path: "third-party/swift-java"),
     .package(url: "https://github.com/apple/swift-nio.git", branch: "main"),
     .package(url: "https://github.com/apple/swift-nio-ssl.git", branch: "main"),
-    .package(name: "swift-syntax", path: "third-party/swift-syntax"),
+    .package(
+        url: "https://github.com/swiftlang/swift-syntax.git",
+        revision: "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf"),
     .package(url: "https://github.com/nucleus-os/swift-system.git", branch: "nucleus"),
 ]
 
@@ -180,6 +184,10 @@ let targets: [Target] = [
         ], path: "android-runtime/Sources/NucleusAndroidGpuBrokerCore"),
     .target(
         name: "NucleusAndroidContainerContract",
+        dependencies: [
+            .product(name: "BinaryParsing", package: "swift-binary-parsing"),
+            .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+        ],
         path: "android-runtime/Sources/NucleusAndroidContainerContract"),
     .target(
         name: "NucleusAndroidRuntimeCore",
@@ -417,6 +425,7 @@ let targets: [Target] = [
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
             "NucleusSessionProtocol",
+            .product(name: "BinaryParsing", package: "swift-binary-parsing"),
         ], path: "compositor/compositor-core/Sources/NucleusCompositorPolicy"),
     .target(
         name: "NucleusCompositorWaylandRuntime",
@@ -433,6 +442,7 @@ let targets: [Target] = [
             "NucleusLinuxReactor", "NucleusLinuxReactorC", "NucleusLinuxDBus",
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "NucleusConfig", "Tracy",
+            .product(name: "BinaryParsing", package: "swift-binary-parsing"),
         ], path: "compositor/compositor-core/Sources/NucleusCompositorWaylandRuntime",
         swiftSettings: [
             .enableUpcomingFeature("InternalImportsByDefault"),
@@ -475,6 +485,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "VulkanC", "Vulkan", "Tracy", "NucleusCompositorDrmC",
+            .product(name: "BinaryParsing", package: "swift-binary-parsing"),
         ], path: "compositor/compositor-core/Sources/NucleusCompositorRendererLinux"),
     .target(
         name: "NucleusCompositorRenderRuntime",

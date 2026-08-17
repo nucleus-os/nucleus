@@ -46,9 +46,9 @@ void NetworkRequestToken::cancel() const noexcept {
 }
 
 NetworkWebSocketCallbacks::NetworkWebSocketCallbacks(
-    Connect connect, Text text, Close close) noexcept
+    Connect connect, Text text, Binary binary, Close close) noexcept
     : connect_(std::move(connect)), text_(std::move(text)),
-      close_(std::move(close)) {}
+      binary_(std::move(binary)), close_(std::move(close)) {}
 
 void NetworkWebSocketCallbacks::didConnect(
     bool connected, const std::string &error) const noexcept {
@@ -60,15 +60,22 @@ void NetworkWebSocketCallbacks::didReceiveText(
   try { if (text_) text_(text); } catch (...) {}
 }
 
+void NetworkWebSocketCallbacks::didReceiveBinary(
+    const NetworkBytes &bytes) const noexcept {
+  try { if (binary_) binary_(bytes); } catch (...) {}
+}
+
 void NetworkWebSocketCallbacks::didClose(
     const std::string &reason) const noexcept {
   try { if (close_) close_(reason); } catch (...) {}
 }
 
 NetworkWebSocket::NetworkWebSocket(
-    Connect connect, Send send, Ping ping, Close close) noexcept
+    Connect connect, Send send, SendBinary sendBinary, Ping ping,
+    Close close) noexcept
     : connect_(std::move(connect)), send_(std::move(send)),
-      ping_(std::move(ping)), close_(std::move(close)) {}
+      sendBinary_(std::move(sendBinary)), ping_(std::move(ping)),
+      close_(std::move(close)) {}
 
 void NetworkWebSocket::connect(const std::string &url) const noexcept {
   try { if (connect_) connect_(url); } catch (...) {}
@@ -76,6 +83,10 @@ void NetworkWebSocket::connect(const std::string &url) const noexcept {
 
 void NetworkWebSocket::send(const std::string &text) const noexcept {
   try { if (send_) send_(text); } catch (...) {}
+}
+
+void NetworkWebSocket::sendBinary(const NetworkBytes &bytes) const noexcept {
+  try { if (sendBinary_) sendBinary_(bytes); } catch (...) {}
 }
 
 void NetworkWebSocket::ping() const noexcept {

@@ -1,6 +1,6 @@
 # Wayland protocol coverage plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -114,7 +114,7 @@ two-endpoint generation handoff, replacement, and teardown. The complete
 `collider test compositor` gate passes, including malformed-readiness precedence
 and shell-restart coverage.
 
-## Phase 4 — Close current desktop consumer gaps
+## Future consumer-driven protocol additions
 
 Implement remaining protocols only when a current product or supported
 application requires them. The initial candidate set is primary selection,
@@ -122,8 +122,10 @@ output power management, pointer warp, DRM lease, ext-foreign-toplevel-list,
 and the modern color-management family. Prefer the current stable or staging
 protocol and do not add obsolete aliases without a demonstrated consumer.
 
-Gate: each protocol lands with a named consumer, a complete behavioral
-contract, registry coverage, hostile-client tests, and destruction tests.
+This candidate inventory is not an executable phase and does not block other
+component plans. A named consumer starts a new implementation phase or plan
+with a complete behavioral contract, registry coverage, hostile-client tests,
+and destruction tests.
 
 ## Explicit exclusions
 

@@ -126,7 +126,10 @@ struct WebSocketCallbackState final {
 };
 
 NetworkWebSocketCallbacks makeWebSocketCallbacks(
-    const std::shared_ptr<WebSocketCallbackState> &state) {
+    const std::shared_ptr<WebSocketCallbackState> &state,
+    const std::shared_ptr<NetworkTransportOwner> &transport,
+    std::optional<std::int32_t> socketID) {
+  std::weak_ptr<NetworkTransportOwner> weakTransport = transport;
   return NetworkWebSocketCallbacks{
       [state](bool connected, const std::string &error) {
         facebook::react::IWebSocketClient::OnConnectCallback callback;
@@ -144,6 +147,13 @@ NetworkWebSocketCallbacks makeWebSocketCallbacks(
         }
         if (callback) callback(message);
       },
+      [weakTransport, socketID](const NetworkBytes &bytes) {
+        if (socketID) {
+          if (auto transport = weakTransport.lock()) {
+            transport->didReceiveWebSocketBinary(*socketID, bytes);
+          }
+        }
+      },
       [state](const std::string &reason) {
         facebook::react::IWebSocketClient::OnClosedCallback callback;
         {
@@ -156,15 +166,91 @@ NetworkWebSocketCallbacks makeWebSocketCallbacks(
 
 } // namespace
 
-class NetworkTransportOwner final {
-public:
-  explicit NetworkTransportOwner(NetworkTransport value)
-      : value_(std::move(value)) {}
-  const NetworkTransport &value() const noexcept { return value_; }
+NetworkTransportOwner::NetworkTransportOwner(NetworkTransport value)
+    : value_(std::move(value)) {}
 
-private:
-  NetworkTransport value_;
-};
+const NetworkTransport &NetworkTransportOwner::value() const noexcept {
+  return value_;
+}
+
+void NetworkTransportOwner::prepareWebSocket(
+    std::int32_t id, BinaryHandler handler) {
+  std::optional<PreparedWebSocket> replaced;
+  {
+    std::lock_guard lock(mutex_);
+    replaced = std::move(preparedWebSocket_);
+    preparedWebSocket_ = PreparedWebSocket{id, std::move(handler)};
+  }
+}
+
+std::optional<std::int32_t>
+NetworkTransportOwner::consumePreparedWebSocket() {
+  std::optional<PreparedWebSocket> prepared;
+  {
+    std::lock_guard lock(mutex_);
+    prepared = std::move(preparedWebSocket_);
+    preparedWebSocket_.reset();
+    if (prepared) {
+      binaryHandlers_.insert_or_assign(
+          prepared->id, std::move(prepared->handler));
+    }
+  }
+  return prepared ? std::optional(prepared->id) : std::nullopt;
+}
+
+void NetworkTransportOwner::registerWebSocket(
+    std::int32_t id, NetworkWebSocket socket) {
+  std::optional<NetworkWebSocket> replaced;
+  {
+    std::lock_guard lock(mutex_);
+    if (auto it = webSockets_.find(id); it != webSockets_.end()) {
+      replaced.emplace(std::move(it->second));
+      it->second = std::move(socket);
+    } else {
+      webSockets_.emplace(id, std::move(socket));
+    }
+  }
+}
+
+void NetworkTransportOwner::unregisterWebSocket(std::int32_t id) {
+  std::optional<NetworkWebSocket> socket;
+  BinaryHandler handler;
+  {
+    std::lock_guard lock(mutex_);
+    if (auto it = webSockets_.find(id); it != webSockets_.end()) {
+      socket.emplace(std::move(it->second));
+      webSockets_.erase(it);
+    }
+    if (auto it = binaryHandlers_.find(id); it != binaryHandlers_.end()) {
+      handler = std::move(it->second);
+      binaryHandlers_.erase(it);
+    }
+  }
+}
+
+void NetworkTransportOwner::sendWebSocketBinary(
+    std::int32_t id, const NetworkBytes &bytes) {
+  std::optional<NetworkWebSocket> socket;
+  {
+    std::lock_guard lock(mutex_);
+    if (auto it = webSockets_.find(id); it != webSockets_.end()) {
+      socket.emplace(it->second);
+    }
+  }
+  if (socket) socket->sendBinary(bytes);
+}
+
+void NetworkTransportOwner::didReceiveWebSocketBinary(
+    std::int32_t id, const NetworkBytes &bytes) {
+  BinaryHandler handler;
+  {
+    std::lock_guard lock(mutex_);
+    if (auto it = binaryHandlers_.find(id); it != binaryHandlers_.end()) {
+      handler = it->second;
+    }
+  }
+  if (handler) handler(id, bytes);
+}
 
 std::shared_ptr<NetworkTransportOwner>
 makeNetworkTransportOwner(NetworkTransport transport) {
@@ -230,10 +316,16 @@ public:
       std::shared_ptr<NetworkTransportOwner> transport)
       : transport_(std::move(transport)),
         state_(std::make_shared<WebSocketCallbackState>()),
+        socketID_(transport_->consumePreparedWebSocket()),
         socket_(transport_->value().createWebSocket(
-            makeWebSocketCallbacks(state_))) {}
+            makeWebSocketCallbacks(state_, transport_, socketID_))) {
+    if (socketID_) transport_->registerWebSocket(*socketID_, socket_);
+  }
 
-  ~NetworkWebSocketClient() override { socket_.close("runtime shutdown"); }
+  ~NetworkWebSocketClient() override {
+    if (socketID_) transport_->unregisterWebSocket(*socketID_);
+    socket_.close("runtime shutdown");
+  }
 
   void setOnClosedCallback(OnClosedCallback &&callback) noexcept override {
     std::lock_guard lock(state_->mutex);
@@ -258,6 +350,7 @@ public:
 private:
   std::shared_ptr<NetworkTransportOwner> transport_;
   std::shared_ptr<WebSocketCallbackState> state_;
+  std::optional<std::int32_t> socketID_;
   NetworkWebSocket socket_;
 };
 

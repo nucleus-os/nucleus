@@ -41,7 +41,7 @@ RN device events, and destroys the host cleanly under `collider test runtime`.
 
 ## Phase 2 — Supply production HTTP and WebSocket clients
 
-Status: active.
+Status: complete.
 
 Implement `IHttpClient` with AsyncHTTPClient and `IWebSocketClient` with
 NIOWebSocket. Both clients share SwiftNIO's singleton event-loop group. Swift
@@ -68,7 +68,22 @@ Gate: local HTTP/HTTPS and WebSocket fixtures cover success, malformed peers,
 redirects, cancellation, backpressure, disconnect, runtime shutdown, and
 reconnect behavior.
 
+Achieved state: the runtime-owned AsyncHTTPClient and NIOWebSocket transports
+share SwiftNIO's singleton event-loop group behind one typed C++ façade. They
+enforce TLS verification, bounded redirect and response handling, cookie rules,
+streaming demand, cancellation, text and base64 request bodies, WebSocket text
+and control frames, and deterministic runtime teardown.
+
+Gate evidence: `collider test runtime` passes local HTTP, HTTPS, and WebSocket
+fixtures covering headers, text and base64 bodies, redirect cookies,
+incremental response delivery, explicit cancellation, deadline timeouts,
+truncated HTTP bodies, rejected and malformed WebSocket peers, remote
+disconnect, close/reconnect behavior, and shutdown with requests and sockets in
+flight.
+
 ## Phase 3 — Complete Blob integration
+
+Status: complete.
 
 Inventory the JS Blob/File/FormData contract not supplied by the portable C++
 modules. Implement only the missing store, slice, URI, request-body, response,
@@ -80,7 +95,25 @@ Gate: RN compatibility tests cover text, binary, multipart, upload/download
 progress, blob slicing, blob-backed requests, blob responses, and WebSocket
 binary delivery.
 
+Achieved state: one runtime-scoped, memory-bounded Blob store now supplies the
+missing RN `BlobModule` and `FileReaderModule` contracts. Composite Networking
+and WebSocket TurboModules continue to delegate ordinary operations to RN's
+portable modules and intercept only Blob descriptors, Blob response types,
+multipart Blob URLs, and binary socket frames. Blob data is capped at 64 MiB
+per runtime, multipart assembly at 64 MiB, and WebSocket messages at 16 MiB.
+The typed Swift/C++ transport carries owned byte vectors and supports bounded
+fragmented-binary reassembly without exposing NIO state or borrowed storage.
+
+Gate evidence: `collider test runtime` passes a local integration fixture that
+creates, slices, reads, and releases Blob data; checks data URLs; sends raw and
+multipart Blob-backed HTTP bodies with upload progress; materializes a Blob
+HTTP response with download progress; and round-trips both Blob-mode and
+base64-mode WebSocket binary messages, including a fragmented binary response.
+The runtime-shutdown gate also passes with HTTP and WebSocket work in flight.
+
 ## Phase 4 — Qualify Linux and Android
+
+Status: active.
 
 Run one contract suite on Linux/arm64, Linux/x86_64, and Android/arm64. Measure
 large-transfer memory, callback latency, idle wakeups, cancellation latency, and

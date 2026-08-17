@@ -18,6 +18,7 @@ extension ReactNetworkTransport {
         return unsafe nucleus.react.NetworkWebSocket(
             .init { [socket] url in socket.connect(url: String(url)) },
             .init { [socket] text in socket.send(text: String(text)) },
+            .init { [socket] bytes in socket.send(bytes: Array(bytes)) },
             .init { [socket] in socket.ping() },
             .init { [socket] reason in socket.close(reason: String(reason)) }
         )
@@ -32,6 +33,7 @@ extension ReactNetworkTransport {
         var closeRequested = false
         var closeReported = false
         var fragmentedText: ByteBuffer?
+        var fragmentedBinary: ByteBuffer?
     }
 
     private let eventLoopGroup: MultiThreadedEventLoopGroup
@@ -131,6 +133,18 @@ extension ReactNetworkTransport {
         channel.writeAndFlush(frame, promise: nil)
     }
 
+    func send(bytes: [UInt8]) {
+        guard bytes.count <= Self.maximumMessageBytes,
+            let channel = state.withLock({ $0.channel })
+        else { return }
+        let frame = WebSocketFrame(
+            fin: true,
+            opcode: .binary,
+            data: channel.allocator.buffer(bytes: bytes)
+        )
+        channel.writeAndFlush(frame, promise: nil)
+    }
+
     func ping() {
         guard let channel = state.withLock({ $0.channel }) else { return }
         let frame = WebSocketFrame(
@@ -170,7 +184,7 @@ extension ReactNetworkTransport {
                 deliverText(frame.data, context: context)
             } else {
                 let accepted = state.withLock { state -> Bool in
-                    guard state.fragmentedText == nil,
+                    guard state.fragmentedText == nil, state.fragmentedBinary == nil,
                         frame.data.readableBytes <= Self.maximumMessageBytes
                     else { return false }
                     state.fragmentedText = frame.data
@@ -181,9 +195,11 @@ extension ReactNetworkTransport {
                 }
             }
         case .continuation:
-            let continuation = state.withLock { state -> (valid: Bool, message: ByteBuffer?) in
-                guard var accumulated = state.fragmentedText else {
-                    return (false, nil)
+            let continuation = state.withLock {
+                state -> (valid: Bool, text: ByteBuffer?, binary: ByteBuffer?) in
+                let isText = state.fragmentedText != nil
+                guard var accumulated = state.fragmentedText ?? state.fragmentedBinary else {
+                    return (false, nil, nil)
                 }
                 var fragment = frame.data
                 guard
@@ -191,23 +207,28 @@ extension ReactNetworkTransport {
                         <= Self.maximumMessageBytes
                 else {
                     state.fragmentedText = nil
-                    return (false, nil)
+                    state.fragmentedBinary = nil
+                    return (false, nil, nil)
                 }
                 accumulated.writeBuffer(&fragment)
                 if frame.fin {
                     state.fragmentedText = nil
-                    return (true, accumulated)
+                    state.fragmentedBinary = nil
+                    return isText ? (true, accumulated, nil) : (true, nil, accumulated)
                 }
-                state.fragmentedText = accumulated
-                return (true, nil)
+                if isText {
+                    state.fragmentedText = accumulated
+                } else {
+                    state.fragmentedBinary = accumulated
+                }
+                return (true, nil, nil)
             }
             guard continuation.valid else {
                 closeProtocolError(context: context)
                 return
             }
-            if let message = continuation.message {
-                deliverText(message, context: context)
-            }
+            if let text = continuation.text { deliverText(text, context: context) }
+            if let binary = continuation.binary { deliverBinary(binary, context: context) }
         case .ping:
             context.writeAndFlush(
                 NIOAny(WebSocketFrame(fin: true, opcode: .pong, data: frame.data)),
@@ -215,7 +236,24 @@ extension ReactNetworkTransport {
             )
         case .connectionClose:
             context.close(promise: nil)
-        case .binary, .pong:
+        case .binary:
+            guard frame.data.readableBytes <= Self.maximumMessageBytes else {
+                closeProtocolError(context: context)
+                return
+            }
+            if frame.fin {
+                deliverBinary(frame.data, context: context)
+            } else {
+                let accepted = state.withLock { state -> Bool in
+                    guard state.fragmentedText == nil, state.fragmentedBinary == nil else {
+                        return false
+                    }
+                    state.fragmentedBinary = frame.data
+                    return true
+                }
+                if !accepted { closeProtocolError(context: context) }
+            }
+        case .pong:
             break
         default:
             context.close(promise: nil)
@@ -234,6 +272,19 @@ extension ReactNetworkTransport {
             return
         }
         callbacks.didReceiveText(std.string(text))
+    }
+
+    private func deliverBinary(_ data: ByteBuffer, context: ChannelHandlerContext) {
+        guard data.readableBytes <= Self.maximumMessageBytes else {
+            closeProtocolError(context: context)
+            return
+        }
+        let bytes =
+            data.getBytes(at: data.readerIndex, length: data.readableBytes) ?? []
+        var cxxBytes = nucleus.react.NetworkBytes()
+        cxxBytes.reserve(bytes.count)
+        for byte in bytes { cxxBytes.push_back(byte) }
+        callbacks.didReceiveBinary(cxxBytes)
     }
 
     private func closeProtocolError(context: ChannelHandlerContext) {

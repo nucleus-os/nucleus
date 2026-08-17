@@ -14,19 +14,21 @@
 
 ## Active plans, in dependency order
 
-1. [AppKit API completion](appkit-api-plan.md)
-2. [Wayland protocol coverage](wayland_protocol_coverage_plan.md)
-3. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
-4. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
-5. [Android render stack](android-render-stack-plan.md)
-6. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
-7. [Screen capture and recording](screen_recording_plan.md)
-8. [View pixel alignment](view-pixel-alignment-plan.md)
-9. [Glyph dilation](text-glyph-dilation-plan.md)
+1. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
+2. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
+3. [Android render stack](android-render-stack-plan.md)
+4. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
+5. [Screen capture and recording](screen_recording_plan.md)
+6. [View pixel alignment](view-pixel-alignment-plan.md)
+7. [Glyph dilation](text-glyph-dilation-plan.md)
 
 ## Superseded and completed plans
 
 - [Bar-first shell work](bar-first-port-order.md) is superseded by the native shell completion plan.
+- [AppKit API completion](appkit-api-plan.md) is complete; real-IME and lock-screen
+  interaction remains an explicit user qualification handoff.
+- [Wayland protocol coverage](wayland_protocol_coverage_plan.md) is complete for
+  current consumers; future protocols require a named product consumer.
 - [Trackpad gestures](compositor-trackpad-gestures.md) are complete.
 - [RN animation backend](rn-animation-backend-plan.md) is complete.
 

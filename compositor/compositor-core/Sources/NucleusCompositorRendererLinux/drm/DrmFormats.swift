@@ -6,6 +6,7 @@
 // noncopyable result owners; `selectScanoutFormat` intersects the plane's and the
 // renderer's importable formats into one scanout choice.
 
+import BinaryParsing
 import NucleusCompositorDrmC
 
 // MARK: - fourcc constants
@@ -195,44 +196,42 @@ struct FormatModifierPair: Sendable, Equatable {
 /// Pure — the blob layout (`drm_format_modifier_blob` header + format array +
 /// modifier-bitmask table) decoded from raw bytes, mirroring `collectPlaneFormats`.
 func parseInFormatsBlob(_ bytes: [UInt8]) -> [FormatModifierPair] {
-    // Header: version(u32) flags(u32) count_formats(u32) formats_offset(u32)
-    //         count_modifiers(u32) modifiers_offset(u32) = 24 bytes.
-    guard bytes.count >= 24 else { return [] }
-    return bytes.withUnsafeBytes { raw -> [FormatModifierPair] in
-        func u32(_ off: Int) -> UInt32 {
-            unsafe raw.loadUnaligned(fromByteOffset: off, as: UInt32.self)
+    (try? bytes.withParserSpan { input in
+        // Header: version(u32) flags(u32) count_formats(u32) formats_offset(u32)
+        //         count_modifiers(u32) modifiers_offset(u32) = 24 bytes.
+        _ = try UInt32(parsingLittleEndian: &input)
+        _ = try UInt32(parsingLittleEndian: &input)
+        let countFormats = try UInt32(parsingLittleEndian: &input)
+        let formatsOffset = try UInt32(parsingLittleEndian: &input)
+        let countModifiers = try UInt32(parsingLittleEndian: &input)
+        let modifiersOffset = try UInt32(parsingLittleEndian: &input)
+
+        var formatsInput = try input.seeking(toAbsoluteOffset: formatsOffset)
+        formatsInput = try formatsInput.extract(objectStride: 4, objectCount: countFormats)
+        var formats: [UInt32] = []
+        formats.reserveCapacity(Int(countFormats))
+        for _ in 0..<countFormats {
+            formats.append(try UInt32(parsingLittleEndian: &formatsInput))
         }
-        func u64(_ off: Int) -> UInt64 {
-            unsafe raw.loadUnaligned(fromByteOffset: off, as: UInt64.self)
-        }
 
-        let countFormats = Int(u32(8))
-        let formatsOffset = Int(u32(12))
-        let countModifiers = Int(u32(16))
-        let modifiersOffset = Int(u32(20))
-
-        // Bounds-check the two tables before walking them.
-        guard formatsOffset + countFormats * 4 <= bytes.count,
-            modifiersOffset + countModifiers * 24 <= bytes.count
-        else { return [] }
-
-        func formatAt(_ index: Int) -> UInt32 { u32(formatsOffset + index * 4) }
-
+        var modifiersInput = try input.seeking(toAbsoluteOffset: modifiersOffset)
+        modifiersInput = try modifiersInput.extract(objectStride: 24, objectCount: countModifiers)
         var pairs: [FormatModifierPair] = []
-        for mi in 0..<countModifiers {
+        for _ in 0..<countModifiers {
             // drm_format_modifier: formats(u64) offset(u32) pad(u32) modifier(u64).
-            let base = modifiersOffset + mi * 24
-            let formatsMask = u64(base)
-            let bitOffset = Int(u32(base + 8))
-            let modifier = u64(base + 16)
+            let formatsMask = try UInt64(parsingLittleEndian: &modifiersInput)
+            let bitOffset = try UInt32(parsingLittleEndian: &modifiersInput)
+            _ = try UInt32(parsingLittleEndian: &modifiersInput)
+            let modifier = try UInt64(parsingLittleEndian: &modifiersInput)
             for bit in 0..<64 where (formatsMask & (UInt64(1) << bit)) != 0 {
-                let formatIndex = bitOffset + bit
-                guard formatIndex < countFormats else { continue }
-                pairs.append(FormatModifierPair(format: formatAt(formatIndex), modifier: modifier))
+                let (formatIndex, overflow) = bitOffset.addingReportingOverflow(UInt32(bit))
+                guard !overflow, formatIndex < countFormats else { continue }
+                pairs.append(
+                    FormatModifierPair(format: formats[Int(formatIndex)], modifier: modifier))
             }
         }
         return pairs
-    }
+    }) ?? []
 }
 
 /// Collect a plane's advertised formats and IN_FORMATS modifiers into a `FormatSet`.

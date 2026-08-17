@@ -19,21 +19,33 @@ enum XwaylandPropertiesFixture {
     /// Synthesize a property reply: a zeroed xcb_get_property_reply_t header
     /// followed by `value` bytes (xcb_get_property_value returns the bytes right
     /// after the struct). `value_len` is set in element units (format/8).
-    static func withReply(type: xcb_atom_t, format: UInt8, value: [UInt8], _ body: (PropReply) -> Void) {
+    static func withReply(
+        type: xcb_atom_t,
+        format: UInt8,
+        value: [UInt8],
+        valueLength: UInt32? = nil,
+        responseUnits: UInt32? = nil,
+        _ body: (PropReply) -> Void
+    ) {
         let stride = MemoryLayout<xcb_get_property_reply_t>.stride
+        let units = responseUnits ?? UInt32((value.count + 3) / 4)
+        let payloadCapacity = max(value.count, Int(units) * 4)
         let raw = UnsafeMutableRawPointer.allocate(
-            byteCount: stride + value.count,
+            byteCount: stride + payloadCapacity,
             alignment: MemoryLayout<xcb_get_property_reply_t>.alignment)
         defer { raw.deallocate() }
-        raw.initializeMemory(as: UInt8.self, repeating: 0, count: stride + value.count)
+        raw.initializeMemory(as: UInt8.self, repeating: 0, count: stride + payloadCapacity)
         let reply = raw.bindMemory(to: xcb_get_property_reply_t.self, capacity: 1)
         reply.pointee.response_type = 1
         reply.pointee.format = format
         reply.pointee.type = type
+        reply.pointee.length = units
         let unit = format >= 8 ? Int(format) / 8 : 1
-        reply.pointee.value_len = UInt32(value.count / unit)
+        reply.pointee.value_len = valueLength ?? UInt32(value.count / unit)
         if !value.isEmpty {
-            value.withUnsafeBytes { (raw + stride).copyMemory(from: $0.baseAddress!, byteCount: value.count) }
+            value.withUnsafeBytes {
+                (raw + stride).copyMemory(from: $0.baseAddress!, byteCount: value.count)
+            }
         }
         body(UnsafePointer(reply))
     }
@@ -41,8 +53,10 @@ enum XwaylandPropertiesFixture {
     static func u32le(_ vals: [UInt32]) -> [UInt8] {
         var b: [UInt8] = []
         for v in vals {
-            b.append(UInt8(v & 0xff)); b.append(UInt8((v >> 8) & 0xff))
-            b.append(UInt8((v >> 16) & 0xff)); b.append(UInt8((v >> 24) & 0xff))
+            b.append(UInt8(v & 0xff))
+            b.append(UInt8((v >> 8) & 0xff))
+            b.append(UInt8((v >> 16) & 0xff))
+            b.append(UInt8((v >> 24) & 0xff))
         }
         return b
     }
@@ -55,9 +69,13 @@ enum XwaylandPropertiesFixture {
         withReply(type: XCB_ATOM_STRING.rawValue, format: 8, value: []) {
             if parseTextProperty($0) != nil { fail("text empty") }
         }
-        withReply(type: XCB_ATOM_STRING.rawValue, format: 8, value: Array("xterm\u{0}XTerm\u{0}".utf8)) {
+        withReply(
+            type: XCB_ATOM_STRING.rawValue, format: 8, value: Array("xterm\u{0}XTerm\u{0}".utf8)
+        ) {
             let (inst, cls) = parseWmClass($0)
-            if inst != "xterm" || cls != "XTerm" { fail("wm_class = (\(inst ?? "nil"), \(cls ?? "nil"))") }
+            if inst != "xterm" || cls != "XTerm" {
+                fail("wm_class = (\(inst ?? "nil"), \(cls ?? "nil"))")
+            }
         }
 
         // ── cardinal ──────────────────────────────────────────────────────────
@@ -67,6 +85,18 @@ enum XwaylandPropertiesFixture {
         withReply(type: XCB_ATOM_CARDINAL.rawValue, format: 8, value: [1]) {
             if parseCardinal($0) != nil { fail("cardinal wrong format") }
         }
+        withReply(
+            type: XCB_ATOM_CARDINAL.rawValue, format: 32, value: [], valueLength: 1,
+            responseUnits: 0
+        ) {
+            if parseCardinal($0) != nil { fail("cardinal short payload") }
+        }
+        withReply(
+            type: XCB_ATOM_CARDINAL.rawValue, format: 32, value: u32le([1]),
+            valueLength: .max
+        ) {
+            if parseCardinal($0) != nil { fail("cardinal oversized payload") }
+        }
 
         // ── motif decorations ─────────────────────────────────────────────────
         // flags = MWM_HINTS_DECORATIONS(2), decorations field (vals[2]) = 0 → off.
@@ -75,6 +105,12 @@ enum XwaylandPropertiesFixture {
         }
         withReply(type: XCB_ATOM_CARDINAL.rawValue, format: 32, value: u32le([2, 0, 1, 0, 0])) {
             if parseMotifDecorationsOff($0) { fail("motif on") }
+        }
+        withReply(
+            type: XCB_ATOM_CARDINAL.rawValue, format: 32, value: u32le([2, 0, 0, 0]),
+            valueLength: 5
+        ) {
+            if parseMotifDecorationsOff($0) { fail("motif truncated payload") }
         }
 
         // ── atom list (type gating) ───────────────────────────────────────────
@@ -87,6 +123,11 @@ enum XwaylandPropertiesFixture {
         withReply(type: XCB_ATOM_STRING.rawValue, format: 8, value: [1]) {
             if parseAtomList($0) != nil { fail("atom list type mismatch → unchanged") }
         }
+        withReply(
+            type: XCB_ATOM_ATOM.rawValue, format: 32, value: u32le([10]), valueLength: .max
+        ) {
+            if parseAtomList($0) != nil { fail("atom list oversized payload → unchanged") }
+        }
 
         // ── WM_PROTOCOLS classification ───────────────────────────────────────
         var atoms = AtomTable()
@@ -96,7 +137,9 @@ enum XwaylandPropertiesFixture {
         atoms[._NET_WM_SYNC_REQUEST] = 103
         withReply(type: XCB_ATOM_ATOM.rawValue, format: 32, value: u32le([100, 102])) {
             let p = parseProtocols($0, atoms)
-            if p != WmProtocols(deleteWindow: true, takeFocus: false, ping: true, syncRequest: false) {
+            if p
+                != WmProtocols(deleteWindow: true, takeFocus: false, ping: true, syncRequest: false)
+            {
                 fail("protocols \(String(describing: p))")
             }
         }
@@ -108,10 +151,10 @@ enum XwaylandPropertiesFixture {
         atoms[._NET_WM_PID] = 203
         let surface = XwaylandSurface(windowID: 0x42, overrideRedirect: false)
         withReply(type: XCB_ATOM_STRING.rawValue, format: 8, value: Array("Editor".utf8)) {
-            readSurfaceProperty(atoms, surface, 201, $0) // _NET_WM_NAME
+            readSurfaceProperty(atoms, surface, 201, $0)  // _NET_WM_NAME
         }
         withReply(type: XCB_ATOM_CARDINAL.rawValue, format: 32, value: u32le([4242])) {
-            readSurfaceProperty(atoms, surface, 203, $0) // _NET_WM_PID
+            readSurfaceProperty(atoms, surface, 203, $0)  // _NET_WM_PID
         }
         if surface.title != "Editor" || surface.pid != 4242 {
             fail("dispatch title=\(surface.title ?? "nil") pid=\(String(describing: surface.pid))")
@@ -129,10 +172,15 @@ enum XwaylandPropertiesFixture {
         let P_MAX: UInt32 = 1 << 5
         var hints = [UInt32](repeating: 0, count: 18)
         hints[0] = P_MIN | P_MAX
-        hints[5] = 100; hints[6] = 200; hints[7] = 300; hints[8] = 400
+        hints[5] = 100
+        hints[6] = 200
+        hints[7] = 300
+        hints[8] = 400
         withReply(type: XCB_ATOM_WM_SIZE_HINTS.rawValue, format: 32, value: u32le(hints)) {
             let sh = parseNormalHints($0)
-            if sh.minWidth != 100 || sh.minHeight != 200 || sh.maxWidth != 300 || sh.maxHeight != 400 {
+            if sh.minWidth != 100 || sh.minHeight != 200 || sh.maxWidth != 300
+                || sh.maxHeight != 400
+            {
                 fail("size hints \(sh)")
             }
         }

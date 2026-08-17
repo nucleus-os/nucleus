@@ -192,9 +192,47 @@ private final class TestPresentationFrameSource:
                         self.end_headers()
                         self.wfile.write(body)
                         return
+                    if self.path == "/stream":
+                        chunks = [("stream-%02d\n" % index).encode() for index in range(64)]
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/plain")
+                        self.send_header("Content-Length", str(sum(map(len, chunks))))
+                        self.end_headers()
+                        for chunk in chunks:
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                            time.sleep(0.002)
+                        return
+                    if self.path == "/truncated":
+                        self.send_response(200)
+                        self.send_header("Content-Length", "128")
+                        self.end_headers()
+                        self.wfile.write(b"truncated")
+                        self.wfile.flush()
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                        self.connection.close()
+                        return
+                    if self.path == "/binary":
+                        body = b"binary-response"
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/octet-stream")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                     self.send_response(404)
                     self.send_header("Content-Length", "0")
                     self.end_headers()
+
+                def do_POST(self):
+                    length = int(self.headers.get("Content-Length", "0"))
+                    request_body = self.rfile.read(length)
+                    body = self.headers.get("X-Nucleus", "missing").encode() + b":" + request_body
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
 
             class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
                 daemon_threads = True
@@ -208,8 +246,8 @@ private final class TestPresentationFrameSource:
                     data += chunk
                 return data
 
-            def send_frame(stream, opcode, payload=b""):
-                header = bytes([0x80 | opcode])
+            def send_frame(stream, opcode, payload=b"", fin=True):
+                header = bytes([(0x80 if fin else 0) | opcode])
                 if len(payload) < 126:
                     header += bytes([len(payload)])
                 elif len(payload) < 65536:
@@ -223,6 +261,10 @@ private final class TestPresentationFrameSource:
                     request = b""
                     while b"\r\n\r\n" not in request:
                         request += self.request.recv(4096)
+                    path = request.decode("latin1").split("\r\n", 1)[0].split(" ")[1]
+                    if path == "/reject":
+                        self.request.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+                        return
                     headers = {}
                     for line in request.decode("latin1").split("\r\n")[1:]:
                         if ":" in line:
@@ -230,6 +272,12 @@ private final class TestPresentationFrameSource:
                             headers[name.lower()] = value.strip()
                     accept = base64.b64encode(hashlib.sha1((headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
                     self.request.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n").encode())
+                    if path == "/disconnect":
+                        return
+                    if path == "/malformed":
+                        send_frame(self.request, 0, b"unexpected-continuation")
+                        time.sleep(0.05)
+                        return
                     while True:
                         first, second = read_exact(self.request, 2)
                         opcode = first & 0x0f
@@ -242,8 +290,12 @@ private final class TestPresentationFrameSource:
                         payload = read_exact(self.request, length)
                         if mask:
                             payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
-                        if opcode == 1:
-                            send_frame(self.request, 1, payload)
+                        if opcode == 2 and path == "/fragmented-binary":
+                            midpoint = len(payload) // 2
+                            send_frame(self.request, 2, payload[:midpoint], False)
+                            send_frame(self.request, 0, payload[midpoint:])
+                        elif opcode == 1 or opcode == 2:
+                            send_frame(self.request, opcode, payload)
                         elif opcode == 8:
                             send_frame(self.request, 8, payload)
                             return
@@ -428,7 +480,65 @@ private final class TestPresentationFrameSource:
               5000,
               false
             );
+            networking.sendRequest(
+              'GET',
+              'http://127.0.0.1:\(fixture.httpPort)/stream',
+              47,
+              [],
+              {},
+              'text',
+              true,
+              5000,
+              false
+            );
+            networking.sendRequest(
+              'GET',
+              'http://127.0.0.1:\(fixture.httpPort)/slow',
+              49,
+              [],
+              {},
+              'text',
+              false,
+              50,
+              false
+            );
+            networking.sendRequest(
+              'POST',
+              'http://127.0.0.1:\(fixture.httpPort)/echo',
+              51,
+              [['X-Nucleus', 'header']],
+              {string: 'text-body'},
+              'text',
+              false,
+              5000,
+              false
+            );
+            networking.sendRequest(
+              'POST',
+              'http://127.0.0.1:\(fixture.httpPort)/echo',
+              53,
+              [['X-Nucleus', 'header']],
+              {base64: 'YmFzZTY0LWJvZHk='},
+              'text',
+              false,
+              5000,
+              false
+            );
+            networking.sendRequest(
+              'GET',
+              'http://127.0.0.1:\(fixture.httpPort)/truncated',
+              55,
+              [],
+              {},
+              'text',
+              false,
+              5000,
+              false
+            );
             webSocket.connect('ws://127.0.0.1:\(fixture.webSocketPort)', null, {}, 42);
+            webSocket.connect('ws://127.0.0.1:\(fixture.webSocketPort)/reject', null, {}, 46);
+            webSocket.connect('ws://127.0.0.1:\(fixture.webSocketPort)/malformed', null, {}, 48);
+            webSocket.connect('ws://127.0.0.1:\(fixture.webSocketPort)/disconnect', null, {}, 50);
             """,
             sourceUrl: "portable-networking-modules.js")
 
@@ -445,10 +555,28 @@ private final class TestPresentationFrameSource:
                       tlsRejected: globalThis.nucleusNetworkEvents.some(
                         event => event[0] === 'didCompleteNetworkResponse' &&
                           event[1][0] === 45 && event[1][1].length > 0),
+                      stream: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 47),
+                      timeout: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' &&
+                          event[1][0] === 49 && event[1][2] === true),
+                      textBody: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 51),
+                      base64Body: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 53),
+                      truncated: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' &&
+                          event[1][0] === 55 && event[1][1].length > 0),
+                      rejectedSocket: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'websocketFailed' && event[1].id === 46),
+                      malformedSocket: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'websocketClosed' && event[1].id === 48),
+                      disconnectedSocket: globalThis.nucleusNetworkEvents.some(
+                        event => event[0] === 'websocketClosed' && event[1].id === 50),
                     })
                     """,
                     sourceUrl: "portable-networking-completion.js")
-                == #"{"redirect":true,"socket":true,"tlsRejected":true}"#
+                == #"{"redirect":true,"socket":true,"tlsRejected":true,"stream":true,"timeout":true,"textBody":true,"base64Body":true,"truncated":true,"rejectedSocket":true,"malformedSocket":true,"disconnectedSocket":true}"#
             if complete { break }
             usleep(10_000)
         }
@@ -462,6 +590,10 @@ private final class TestPresentationFrameSource:
             "JSON.stringify(globalThis.nucleusNetworkEvents)",
             sourceUrl: "portable-networking-events.js")
         #expect(events.contains("redirected-with-cookie"))
+        #expect(events.contains("stream-00"))
+        #expect(events.contains("stream-63"))
+        #expect(events.contains("header:text-body"))
+        #expect(events.contains("header:base64-body"))
         #expect(events.contains("echo-me"))
         #expect(events.contains("didCompleteNetworkResponse"))
         #expect(events.contains("websocketClosed"))
@@ -473,6 +605,221 @@ private final class TestPresentationFrameSource:
                 """,
                 sourceUrl: "portable-networking-cancellation.js")
                 == "false")
+    }
+
+    @Test func productionNetworkTransportsCancelPendingWorkDuringRuntimeShutdown() throws {
+        let fixture = try NetworkFixture()
+        do {
+            let host = try RuntimeHost()
+            try host.evaluateJavaScriptSource(
+                """
+                globalThis.__rctDeviceEventEmitter = { emit() {} };
+                global.__turboModuleProxy('Networking').sendRequest(
+                  'GET',
+                  'http://127.0.0.1:\(fixture.httpPort)/slow',
+                  57,
+                  [],
+                  {},
+                  'text',
+                  false,
+                  5000,
+                  false
+                );
+                global.__turboModuleProxy('WebSocketModule').connect(
+                  'ws://127.0.0.1:\(fixture.webSocketPort)', null, {}, 58);
+                """,
+                sourceUrl: "network-runtime-shutdown.js")
+            _ = try host.drainPendingJSCalls()
+        }
+        usleep(50_000)
+    }
+
+    @Test func blobModulesIntegrateWithHTTPMultipartAndWebSockets() throws {
+        let fixture = try NetworkFixture()
+        let host = try RuntimeHost()
+        try host.evaluateJavaScriptSource(
+            """
+            globalThis.nucleusBlobEvents = [];
+            globalThis.nucleusBlobResults = {};
+
+            const blob = global.__turboModuleProxy('BlobModule');
+            const fileReader = global.__turboModuleProxy('FileReaderModule');
+            const networking = global.__turboModuleProxy('Networking');
+            const webSocket = global.__turboModuleProxy('WebSocketModule');
+            const descriptor = {
+              blobId: 'nucleus-blob-test',
+              offset: 0,
+              size: 9,
+              type: 'text/plain',
+            };
+
+            blob.createFromParts([{type: 'string', data: 'blob-body'}], descriptor.blobId);
+            globalThis.nucleusBlobResults.constants = blob.getConstants();
+            fileReader.readAsText(
+              {...descriptor, offset: 5, size: 4},
+              'UTF-8'
+            ).then(value => globalThis.nucleusBlobResults.slice = value);
+            fileReader.readAsDataURL(descriptor).then(
+              value => globalThis.nucleusBlobResults.dataURL = value
+            );
+
+            globalThis.__rctDeviceEventEmitter = {
+              emit(name, payload) {
+                globalThis.nucleusBlobEvents.push([name, payload]);
+                if (name === 'didReceiveNetworkData' && payload[0] === 67) {
+                  fileReader.readAsText(payload[1], 'utf8').then(
+                    value => globalThis.nucleusBlobResults.httpBlob = value
+                  );
+                } else if (name === 'websocketOpen' && payload.id === 71) {
+                  blob.addWebSocketHandler(71);
+                  blob.sendOverSocket(descriptor, 71);
+                } else if (name === 'websocketOpen' && payload.id === 73) {
+                  webSocket.sendBinary('YmluYXJ5LXJhdw==', 73);
+                } else if (name === 'websocketMessage' && payload.id === 71) {
+                  globalThis.nucleusBlobResults.socketBlobType = payload.type;
+                  fileReader.readAsText(
+                    {...payload.data, type: 'text/plain'}, 'UTF-8'
+                  ).then(value => {
+                    globalThis.nucleusBlobResults.socketBlob = value;
+                    blob.removeWebSocketHandler(71);
+                    webSocket.close(1000, 'complete', 71);
+                  });
+                } else if (name === 'websocketMessage' && payload.id === 73) {
+                  globalThis.nucleusBlobResults.socketBinaryType = payload.type;
+                  globalThis.nucleusBlobResults.socketBinary = payload.data;
+                  webSocket.close(1000, 'complete', 73);
+                }
+              },
+            };
+
+            networking.sendRequest(
+              'POST',
+              'http://127.0.0.1:\(fixture.httpPort)/echo',
+              61,
+              [['X-Nucleus', 'blob']],
+              {blob: descriptor},
+              'text',
+              false,
+              5000,
+              false
+            );
+            networking.sendRequest(
+              'POST',
+              'http://127.0.0.1:\(fixture.httpPort)/echo',
+              65,
+              [],
+              {formData: [
+                {
+                  string: 'field-value',
+                  headers: {'Content-Disposition': 'form-data; name="field"'},
+                },
+                {
+                  uri: 'blob://nucleus/nucleus-blob-test?offset=0&size=9',
+                  headers: {
+                    'Content-Disposition': 'form-data; name="file"; filename="blob.txt"',
+                    'Content-Type': 'text/plain',
+                  },
+                },
+              ]},
+              'text',
+              false,
+              5000,
+              false
+            );
+            networking.sendRequest(
+              'GET',
+              'http://127.0.0.1:\(fixture.httpPort)/binary',
+              67,
+              [],
+              {},
+              'blob',
+              true,
+              5000,
+              false
+            );
+            webSocket.connect(
+              'ws://127.0.0.1:\(fixture.webSocketPort)/fragmented-binary', null, {}, 71
+            );
+            webSocket.connect('ws://127.0.0.1:\(fixture.webSocketPort)', null, {}, 73);
+            """,
+            sourceUrl: "blob-integration.js")
+
+        for _ in 0..<500 {
+            _ = try host.drainPendingJSCalls()
+            let complete =
+                try host.evaluateJavaScriptForString(
+                    """
+                    String(
+                      globalThis.nucleusBlobResults.slice === 'body' &&
+                      globalThis.nucleusBlobResults.dataURL ===
+                        'data:text/plain;base64,YmxvYi1ib2R5' &&
+                      globalThis.nucleusBlobResults.httpBlob === 'binary-response' &&
+                      globalThis.nucleusBlobResults.socketBlob === 'blob-body' &&
+                      globalThis.nucleusBlobResults.socketBlobType === 'blob' &&
+                      globalThis.nucleusBlobResults.socketBinary === 'YmluYXJ5LXJhdw==' &&
+                      globalThis.nucleusBlobResults.socketBinaryType === 'binary' &&
+                      globalThis.nucleusBlobEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 61) &&
+                      globalThis.nucleusBlobEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 65) &&
+                      globalThis.nucleusBlobEvents.some(
+                        event => event[0] === 'didCompleteNetworkResponse' && event[1][0] === 67)
+                    )
+                    """,
+                    sourceUrl: "blob-integration-completion.js") == "true"
+            if complete { break }
+            usleep(10_000)
+        }
+
+        let events = try host.evaluateJavaScriptForString(
+            "JSON.stringify(globalThis.nucleusBlobEvents)",
+            sourceUrl: "blob-integration-events.js")
+        #expect(events.contains("blob:blob-body"))
+        #expect(events.contains("field-value"))
+        #expect(events.contains("blob-body"))
+        #expect(events.contains(#"["didSendNetworkData",[61,9,9]]"#))
+        #expect(events.contains(#"["didSendNetworkData",[65,"#))
+        #expect(events.contains(#"["didReceiveNetworkDataProgress",[67,"#))
+        #expect(
+            try host.evaluateJavaScriptForString(
+                """
+                JSON.stringify({
+                  constants: globalThis.nucleusBlobResults.constants,
+                  slice: globalThis.nucleusBlobResults.slice,
+                  dataURL: globalThis.nucleusBlobResults.dataURL,
+                  httpBlob: globalThis.nucleusBlobResults.httpBlob,
+                  socketBlob: globalThis.nucleusBlobResults.socketBlob,
+                  socketBlobType: globalThis.nucleusBlobResults.socketBlobType,
+                  socketBinary: globalThis.nucleusBlobResults.socketBinary,
+                  socketBinaryType: globalThis.nucleusBlobResults.socketBinaryType,
+                })
+                """,
+                sourceUrl: "blob-integration-results.js")
+                == #"{"constants":{"BLOB_URI_SCHEME":"blob","BLOB_URI_HOST":"nucleus"},"slice":"body","dataURL":"data:text/plain;base64,YmxvYi1ib2R5","httpBlob":"binary-response","socketBlob":"blob-body","socketBlobType":"blob","socketBinary":"YmluYXJ5LXJhdw==","socketBinaryType":"binary"}"#
+        )
+
+        try host.evaluateJavaScriptSource(
+            """
+            global.__turboModuleProxy('BlobModule').release('nucleus-blob-test');
+            global.__turboModuleProxy('FileReaderModule').readAsText({
+              blobId: 'nucleus-blob-test',
+              offset: 0,
+              size: 9,
+              type: 'text/plain',
+            }, 'UTF-8').then(
+              () => globalThis.nucleusBlobResults.released = false,
+              () => globalThis.nucleusBlobResults.released = true
+            );
+            """,
+            sourceUrl: "blob-release.js")
+        for _ in 0..<20 {
+            _ = try host.drainPendingJSCalls()
+            usleep(1_000)
+        }
+        #expect(
+            try host.evaluateJavaScriptForString(
+                "String(globalThis.nucleusBlobResults.released)",
+                sourceUrl: "blob-release-result.js") == "true")
     }
 
     @Test func runtimeFailureCrossesTheCxxBoundary() {

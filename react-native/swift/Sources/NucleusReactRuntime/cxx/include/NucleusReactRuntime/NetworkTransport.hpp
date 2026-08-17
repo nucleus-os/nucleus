@@ -81,16 +81,20 @@ class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkWebSocketCallbacks final {
 public:
   using Connect = std::function<void(bool, const std::string &)>;
   using Text = std::function<void(const std::string &)>;
+  using Binary = std::function<void(const NetworkBytes &)>;
   using Close = std::function<void(const std::string &)>;
 
-  NetworkWebSocketCallbacks(Connect connect, Text text, Close close) noexcept;
+  NetworkWebSocketCallbacks(Connect connect, Text text, Binary binary,
+                            Close close) noexcept;
   void didConnect(bool connected, const std::string &error) const noexcept;
   void didReceiveText(const std::string &text) const noexcept;
+  void didReceiveBinary(const NetworkBytes &bytes) const noexcept;
   void didClose(const std::string &reason) const noexcept;
 
 private:
   Connect connect_;
   Text text_;
+  Binary binary_;
   Close close_;
 };
 
@@ -98,19 +102,23 @@ class SWIFT_ESCAPABLE SWIFT_SELF_CONTAINED NetworkWebSocket final {
 public:
   using Connect = std::function<void(const std::string &)>;
   using Send = std::function<void(const std::string &)>;
+  using SendBinary = std::function<void(const NetworkBytes &)>;
   using Ping = std::function<void()>;
   using Close = std::function<void(const std::string &)>;
 
   NetworkWebSocket() noexcept = default;
-  NetworkWebSocket(Connect connect, Send send, Ping ping, Close close) noexcept;
+  NetworkWebSocket(Connect connect, Send send, SendBinary sendBinary, Ping ping,
+                   Close close) noexcept;
   void connect(const std::string &url) const noexcept;
   void send(const std::string &text) const noexcept;
+  void sendBinary(const NetworkBytes &bytes) const noexcept;
   void ping() const noexcept;
   void close(const std::string &reason) const noexcept;
 
 private:
   Connect connect_;
   Send send_;
+  SendBinary sendBinary_;
   Ping ping_;
   Close close_;
 };

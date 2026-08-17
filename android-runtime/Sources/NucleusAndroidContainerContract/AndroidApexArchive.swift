@@ -1,4 +1,6 @@
+import BinaryParsing
 import Foundation
+import SwiftProtobuf
 
 package struct AndroidApexPayload: Equatable, Sendable {
     package let offset: UInt64
@@ -59,132 +61,102 @@ package enum AndroidApexArchive {
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        guard endOffset + 22 <= tail.count else {
+        let endRecord: ZipEndRecord
+        do {
+            endRecord = try tail.withParserSpan { input in
+                try input.seek(toAbsoluteOffset: endOffset)
+                return try ZipEndRecord(parsing: &input)
+            }
+        } catch {
             throw AndroidApexArchiveError.invalidArchive
         }
-
-        let disk = try tail.littleEndianUInt16(at: endOffset + 4)
-        let centralDirectoryDisk =
-            try tail.littleEndianUInt16(at: endOffset + 6)
-        let entriesOnDisk = try tail.littleEndianUInt16(at: endOffset + 8)
-        let entryCount = try tail.littleEndianUInt16(at: endOffset + 10)
-        let centralDirectorySize =
-            try tail.littleEndianUInt32(at: endOffset + 12)
-        let centralDirectoryOffset =
-            try tail.littleEndianUInt32(at: endOffset + 16)
-        let commentLength =
-            try tail.littleEndianUInt16(at: endOffset + 20)
-        guard disk == 0,
-            centralDirectoryDisk == 0,
-            entriesOnDisk == entryCount,
-            endOffset + 22 + Int(commentLength) == tail.count
+        guard endRecord.disk == 0,
+            endRecord.centralDirectoryDisk == 0,
+            endRecord.entriesOnDisk == endRecord.entryCount,
+            endOffset + 22 + Int(endRecord.commentLength) == tail.count
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        guard entriesOnDisk != UInt16.max,
-            centralDirectorySize != UInt32.max,
-            centralDirectoryOffset != UInt32.max
+        guard endRecord.entriesOnDisk != UInt16.max,
+            endRecord.centralDirectorySize != UInt32.max,
+            endRecord.centralDirectoryOffset != UInt32.max
         else {
             throw AndroidApexArchiveError.zip64Unsupported
         }
         let directoryEnd =
-            UInt64(centralDirectoryOffset) + UInt64(centralDirectorySize)
+            UInt64(endRecord.centralDirectoryOffset) + UInt64(endRecord.centralDirectorySize)
         guard directoryEnd <= fileSize else {
             throw AndroidApexArchiveError.invalidArchive
         }
 
-        try handle.seek(toOffset: UInt64(centralDirectoryOffset))
+        try handle.seek(toOffset: UInt64(endRecord.centralDirectoryOffset))
         guard
             let centralDirectory = try handle.read(
-                upToCount: Int(centralDirectorySize)),
-            centralDirectory.count == Int(centralDirectorySize)
+                upToCount: Int(endRecord.centralDirectorySize)),
+            centralDirectory.count == Int(endRecord.centralDirectorySize)
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
 
-        var cursor = 0
         var payload: AndroidApexPayload?
         var manifest: Data?
-        for _ in 0..<entryCount {
-            guard cursor + 46 <= centralDirectory.count,
-                try centralDirectory.littleEndianUInt32(at: cursor)
-                    == 0x0201_4B50
-            else {
-                throw AndroidApexArchiveError.invalidArchive
+        do {
+            try centralDirectory.withParserSpan { input in
+                for _ in 0..<endRecord.entryCount {
+                    let entry = try ZipCentralDirectoryEntry(parsing: &input)
+                    guard entry.diskStart == 0 else {
+                        throw AndroidApexArchiveError.invalidArchive
+                    }
+                    if entry.name == "apex_payload.img" {
+                        guard payload == nil else {
+                            throw AndroidApexArchiveError.duplicatePayload
+                        }
+                        guard entry.compression == 0,
+                            entry.compressedSize == entry.uncompressedSize
+                        else {
+                            throw AndroidApexArchiveError.compressedPayload
+                        }
+                        guard entry.compressedSize != UInt32.max,
+                            entry.localOffset != UInt32.max
+                        else {
+                            throw AndroidApexArchiveError.zip64Unsupported
+                        }
+                        payload = try readPayload(
+                            handle: handle,
+                            fileSize: fileSize,
+                            localOffset: UInt64(entry.localOffset),
+                            expectedName: entry.name,
+                            expectedSize: UInt64(entry.uncompressedSize))
+                    } else if entry.name == "apex_manifest.pb" {
+                        guard manifest == nil else {
+                            throw AndroidApexArchiveError.duplicateManifest
+                        }
+                        guard entry.compression == 0,
+                            entry.compressedSize == entry.uncompressedSize
+                        else {
+                            throw AndroidApexArchiveError.compressedManifest
+                        }
+                        guard entry.compressedSize != UInt32.max,
+                            entry.localOffset != UInt32.max,
+                            entry.uncompressedSize <= 64 * 1_024
+                        else {
+                            throw AndroidApexArchiveError.invalidManifest
+                        }
+                        manifest = try readStoredEntry(
+                            handle: handle,
+                            fileSize: fileSize,
+                            localOffset: UInt64(entry.localOffset),
+                            expectedName: entry.name,
+                            expectedSize: UInt64(entry.uncompressedSize))
+                    }
+                }
+                guard input.isEmpty else {
+                    throw AndroidApexArchiveError.invalidArchive
+                }
             }
-            let compression =
-                try centralDirectory.littleEndianUInt16(at: cursor + 10)
-            let compressedSize =
-                try centralDirectory.littleEndianUInt32(at: cursor + 20)
-            let uncompressedSize =
-                try centralDirectory.littleEndianUInt32(at: cursor + 24)
-            let nameLength = Int(
-                try centralDirectory.littleEndianUInt16(at: cursor + 28))
-            let extraLength = Int(
-                try centralDirectory.littleEndianUInt16(at: cursor + 30))
-            let commentLength = Int(
-                try centralDirectory.littleEndianUInt16(at: cursor + 32))
-            let diskStart =
-                try centralDirectory.littleEndianUInt16(at: cursor + 34)
-            let localOffset =
-                try centralDirectory.littleEndianUInt32(at: cursor + 42)
-            let end = cursor + 46 + nameLength + extraLength + commentLength
-            guard end <= centralDirectory.count,
-                diskStart == 0
-            else {
-                throw AndroidApexArchiveError.invalidArchive
-            }
-            let nameBytes = centralDirectory[
-                (cursor + 46)..<(cursor + 46 + nameLength)]
-            guard let name = String(bytes: nameBytes, encoding: .utf8) else {
-                throw AndroidApexArchiveError.invalidArchive
-            }
-
-            if name == "apex_payload.img" {
-                guard payload == nil else {
-                    throw AndroidApexArchiveError.duplicatePayload
-                }
-                guard compression == 0,
-                    compressedSize == uncompressedSize
-                else {
-                    throw AndroidApexArchiveError.compressedPayload
-                }
-                guard compressedSize != UInt32.max,
-                    localOffset != UInt32.max
-                else {
-                    throw AndroidApexArchiveError.zip64Unsupported
-                }
-                payload = try readPayload(
-                    handle: handle,
-                    fileSize: fileSize,
-                    localOffset: UInt64(localOffset),
-                    expectedName: name,
-                    expectedSize: UInt64(uncompressedSize))
-            } else if name == "apex_manifest.pb" {
-                guard manifest == nil else {
-                    throw AndroidApexArchiveError.duplicateManifest
-                }
-                guard compression == 0,
-                    compressedSize == uncompressedSize
-                else {
-                    throw AndroidApexArchiveError.compressedManifest
-                }
-                guard compressedSize != UInt32.max,
-                    localOffset != UInt32.max,
-                    uncompressedSize <= 64 * 1_024
-                else {
-                    throw AndroidApexArchiveError.invalidManifest
-                }
-                manifest = try readStoredEntry(
-                    handle: handle,
-                    fileSize: fileSize,
-                    localOffset: UInt64(localOffset),
-                    expectedName: name,
-                    expectedSize: UInt64(uncompressedSize))
-            }
-            cursor = end
-        }
-        guard cursor == centralDirectory.count else {
+        } catch let error as AndroidApexArchiveError {
+            throw error
+        } catch {
             throw AndroidApexArchiveError.invalidArchive
         }
         guard let payload else {
@@ -218,26 +190,29 @@ package enum AndroidApexArchive {
             throw AndroidApexArchiveError.invalidArchive
         }
         try handle.seek(toOffset: localOffset)
-        guard let header = try handle.read(upToCount: 30),
-            header.count == 30,
-            try header.littleEndianUInt32(at: 0) == 0x0403_4B50
+        guard let headerData = try handle.read(upToCount: 30),
+            headerData.count == 30
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        let compression = try header.littleEndianUInt16(at: 8)
-        let nameLength = Int(try header.littleEndianUInt16(at: 26))
-        let extraLength = Int(try header.littleEndianUInt16(at: 28))
-        guard compression == 0 else {
+        let header: ZipLocalFileHeader
+        do {
+            header = try headerData.withParserSpan { input in
+                try ZipLocalFileHeader(parsing: &input)
+            }
+        } catch {
+            throw AndroidApexArchiveError.invalidArchive
+        }
+        guard header.compression == 0 else {
             throw AndroidApexArchiveError.compressedPayload
         }
-        guard let nameData = try handle.read(upToCount: nameLength),
-            nameData.count == nameLength,
+        guard let nameData = try handle.read(upToCount: header.nameLength),
+            nameData.count == header.nameLength,
             String(bytes: nameData, encoding: .utf8) == expectedName
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        let offset =
-            localOffset + 30 + UInt64(nameLength) + UInt64(extraLength)
+        let offset = localOffset + 30 + UInt64(header.nameLength) + UInt64(header.extraLength)
         guard offset <= fileSize,
             expectedSize <= fileSize - offset
         else {
@@ -257,22 +232,27 @@ package enum AndroidApexArchive {
             throw AndroidApexArchiveError.invalidArchive
         }
         try handle.seek(toOffset: localOffset)
-        guard let header = try handle.read(upToCount: 30),
-            header.count == 30,
-            try header.littleEndianUInt32(at: 0) == 0x0403_4B50,
-            try header.littleEndianUInt16(at: 8) == 0
+        guard let headerData = try handle.read(upToCount: 30),
+            headerData.count == 30
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        let nameLength = Int(try header.littleEndianUInt16(at: 26))
-        let extraLength = Int(try header.littleEndianUInt16(at: 28))
-        guard let nameData = try handle.read(upToCount: nameLength),
-            nameData.count == nameLength,
+        let header: ZipLocalFileHeader
+        do {
+            header = try headerData.withParserSpan { input in
+                try ZipLocalFileHeader(parsing: &input)
+            }
+        } catch {
+            throw AndroidApexArchiveError.invalidArchive
+        }
+        guard header.compression == 0,
+            let nameData = try handle.read(upToCount: header.nameLength),
+            nameData.count == header.nameLength,
             String(bytes: nameData, encoding: .utf8) == expectedName
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        let offset = localOffset + 30 + UInt64(nameLength) + UInt64(extraLength)
+        let offset = localOffset + 30 + UInt64(header.nameLength) + UInt64(header.extraLength)
         guard offset <= fileSize,
             expectedSize <= fileSize - offset,
             expectedSize <= UInt64(Int.max)
@@ -291,50 +271,17 @@ package enum AndroidApexArchive {
     private static func parseManifest(
         _ data: Data
     ) throws -> (name: String, version: UInt64) {
-        var cursor = 0
-        var name: String?
-        var version: UInt64?
-        while cursor < data.count {
-            let tag = try data.protobufVarint(at: &cursor)
-            let field = tag >> 3
-            let wire = tag & 0x7
-            guard field != 0 else {
+        do {
+            let manifest = try Apex_Proto_ApexManifest(serializedBytes: data)
+            guard !manifest.name.isEmpty, manifest.version > 0 else {
                 throw AndroidApexArchiveError.invalidManifest
             }
-            switch (field, wire) {
-            case (1, 2):
-                guard name == nil else {
-                    throw AndroidApexArchiveError.invalidManifest
-                }
-                let length = try data.protobufVarint(at: &cursor)
-                guard length <= UInt64(data.count - cursor),
-                    length <= UInt64(Int.max)
-                else {
-                    throw AndroidApexArchiveError.invalidManifest
-                }
-                let end = cursor + Int(length)
-                guard
-                    let value = String(
-                        data: data[cursor..<end], encoding: .utf8),
-                    !value.isEmpty
-                else {
-                    throw AndroidApexArchiveError.invalidManifest
-                }
-                name = value
-                cursor = end
-            case (2, 0):
-                guard version == nil else {
-                    throw AndroidApexArchiveError.invalidManifest
-                }
-                version = try data.protobufVarint(at: &cursor)
-            default:
-                try data.skipProtobufField(wire: wire, cursor: &cursor)
-            }
-        }
-        guard let name, let version, version > 0 else {
+            return (manifest.name, UInt64(manifest.version))
+        } catch let error as AndroidApexArchiveError {
+            throw error
+        } catch {
             throw AndroidApexArchiveError.invalidManifest
         }
-        return (name, version)
     }
 
     private static func payloadFileSystem(
@@ -354,13 +301,22 @@ package enum AndroidApexArchive {
         else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        if try superblock.littleEndianUInt32(at: 0) == 0xE0F5_E1E2 {
-            return .erofs
+        do {
+            return try superblock.withParserSpan { input in
+                if try UInt32(parsingLittleEndian: &input) == 0xE0F5_E1E2 {
+                    return .erofs
+                }
+                try input.seek(toAbsoluteOffset: 56)
+                if try UInt16(parsingLittleEndian: &input) == 0xEF53 {
+                    return .ext4
+                }
+                throw AndroidApexArchiveError.unsupportedPayloadFileSystem
+            }
+        } catch let error as AndroidApexArchiveError {
+            throw error
+        } catch {
+            throw AndroidApexArchiveError.invalidArchive
         }
-        if try superblock.littleEndianUInt16(at: 56) == 0xEF53 {
-            return .ext4
-        }
-        throw AndroidApexArchiveError.unsupportedPayloadFileSystem
     }
 }
 
@@ -369,70 +325,92 @@ private func lastSignature(
     in data: Data
 ) -> Int? {
     guard data.count >= 4 else { return nil }
+    let bytes = [
+        UInt8(truncatingIfNeeded: signature),
+        UInt8(truncatingIfNeeded: signature >> 8),
+        UInt8(truncatingIfNeeded: signature >> 16),
+        UInt8(truncatingIfNeeded: signature >> 24),
+    ]
     for index in stride(from: data.count - 4, through: 0, by: -1) {
-        if (try? data.littleEndianUInt32(at: index)) == signature {
+        if data[index] == bytes[0], data[index + 1] == bytes[1],
+            data[index + 2] == bytes[2], data[index + 3] == bytes[3]
+        {
             return index
         }
     }
     return nil
 }
 
-extension Data {
-    fileprivate func protobufVarint(at cursor: inout Int) throws -> UInt64 {
-        var value: UInt64 = 0
-        for shift in stride(from: 0, through: 63, by: 7) {
-            guard cursor < count else {
-                throw AndroidApexArchiveError.invalidManifest
-            }
-            let byte = self[cursor]
-            cursor += 1
-            if shift == 63, byte > 1 {
-                throw AndroidApexArchiveError.invalidManifest
-            }
-            value |= UInt64(byte & 0x7f) << UInt64(shift)
-            if byte & 0x80 == 0 {
-                return value
-            }
-        }
-        throw AndroidApexArchiveError.invalidManifest
-    }
+private struct ZipEndRecord {
+    let disk: UInt16
+    let centralDirectoryDisk: UInt16
+    let entriesOnDisk: UInt16
+    let entryCount: UInt16
+    let centralDirectorySize: UInt32
+    let centralDirectoryOffset: UInt32
+    let commentLength: UInt16
 
-    fileprivate func skipProtobufField(wire: UInt64, cursor: inout Int) throws {
-        let length: UInt64
-        switch wire {
-        case 0:
-            _ = try protobufVarint(at: &cursor)
-            return
-        case 1:
-            length = 8
-        case 2:
-            length = try protobufVarint(at: &cursor)
-        case 5:
-            length = 4
-        default:
-            throw AndroidApexArchiveError.invalidManifest
-        }
-        guard length <= UInt64(count - cursor), length <= UInt64(Int.max) else {
-            throw AndroidApexArchiveError.invalidManifest
-        }
-        cursor += Int(length)
-    }
-
-    fileprivate func littleEndianUInt16(at offset: Int) throws -> UInt16 {
-        guard offset >= 0, offset + 2 <= count else {
+    init(parsing input: inout ParserSpan) throws {
+        guard try UInt32(parsingLittleEndian: &input) == 0x0605_4B50 else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        return UInt16(self[offset])
-            | (UInt16(self[offset + 1]) << 8)
+        disk = try UInt16(parsingLittleEndian: &input)
+        centralDirectoryDisk = try UInt16(parsingLittleEndian: &input)
+        entriesOnDisk = try UInt16(parsingLittleEndian: &input)
+        entryCount = try UInt16(parsingLittleEndian: &input)
+        centralDirectorySize = try UInt32(parsingLittleEndian: &input)
+        centralDirectoryOffset = try UInt32(parsingLittleEndian: &input)
+        commentLength = try UInt16(parsingLittleEndian: &input)
     }
+}
 
-    fileprivate func littleEndianUInt32(at offset: Int) throws -> UInt32 {
-        guard offset >= 0, offset + 4 <= count else {
+private struct ZipCentralDirectoryEntry {
+    let compression: UInt16
+    let compressedSize: UInt32
+    let uncompressedSize: UInt32
+    let diskStart: UInt16
+    let localOffset: UInt32
+    let name: String
+
+    init(parsing input: inout ParserSpan) throws {
+        guard try UInt32(parsingLittleEndian: &input) == 0x0201_4B50 else {
             throw AndroidApexArchiveError.invalidArchive
         }
-        return UInt32(self[offset])
-            | (UInt32(self[offset + 1]) << 8)
-            | (UInt32(self[offset + 2]) << 16)
-            | (UInt32(self[offset + 3]) << 24)
+        try input.seek(toRelativeOffset: 6)
+        compression = try UInt16(parsingLittleEndian: &input)
+        try input.seek(toRelativeOffset: 8)
+        compressedSize = try UInt32(parsingLittleEndian: &input)
+        uncompressedSize = try UInt32(parsingLittleEndian: &input)
+        let nameLength = try UInt16(parsingLittleEndian: &input)
+        let extraLength = try UInt16(parsingLittleEndian: &input)
+        let commentLength = try UInt16(parsingLittleEndian: &input)
+        diskStart = try UInt16(parsingLittleEndian: &input)
+        try input.seek(toRelativeOffset: 6)
+        localOffset = try UInt32(parsingLittleEndian: &input)
+
+        let nameData = try Data(parsing: &input, byteCount: Int(nameLength))
+        guard let parsedName = String(data: nameData, encoding: .utf8) else {
+            throw AndroidApexArchiveError.invalidArchive
+        }
+        name = parsedName
+        _ = try input.extract(byteCount: extraLength)
+        _ = try input.extract(byteCount: commentLength)
+    }
+}
+
+private struct ZipLocalFileHeader {
+    let compression: UInt16
+    let nameLength: Int
+    let extraLength: Int
+
+    init(parsing input: inout ParserSpan) throws {
+        guard try UInt32(parsingLittleEndian: &input) == 0x0403_4B50 else {
+            throw AndroidApexArchiveError.invalidArchive
+        }
+        try input.seek(toRelativeOffset: 4)
+        compression = try UInt16(parsingLittleEndian: &input)
+        try input.seek(toRelativeOffset: 16)
+        nameLength = Int(try UInt16(parsingLittleEndian: &input))
+        extraLength = Int(try UInt16(parsingLittleEndian: &input))
     }
 }
