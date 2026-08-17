@@ -107,7 +107,7 @@ private func terminalReportsRemainScriptableForEveryOutcome(
         try JSONDecoder().decode(
             RunTerminalSummary.self,
             from: Data(jsonLines[0].utf8)) == summary)
-    #expect(jsonError.text == "working\n")
+    #expect(jsonError.text.isEmpty)
     #expect(!jsonOutput.text.contains("\u{001B}"))
     #expect(!jsonError.text.contains("\u{001B}"))
 
@@ -128,6 +128,62 @@ private func terminalReportsRemainScriptableForEveryOutcome(
     #expect(textOutput.text.isEmpty)
     #expect(textError.text == summary.text + "\n")
     #expect(!textError.text.contains("\u{001B}"))
+
+    let dynamicError = TerminalConsoleCapture()
+    let dynamicConsole = CommandConsole(
+        progress: .always,
+        standardErrorIsTerminal: true,
+        standardOutput: { _ in },
+        standardError: dynamicError.write)
+    try dynamicConsole.progress("working")
+    try dynamicConsole.completeProgress(summary)
+    try dynamicConsole.finishProgress()
+    #expect(dynamicError.text.components(separatedBy: summary.text).count == 2)
+    #expect(dynamicError.text.hasSuffix(summary.text + "\n"))
+
+    let machineOutput = TerminalConsoleCapture()
+    let machineError = TerminalConsoleCapture()
+    let machineConsole = CommandConsole(
+        progress: .always,
+        progressFormat: .json,
+        standardErrorIsTerminal: false,
+        standardOutput: machineOutput.write,
+        standardError: machineError.write)
+    try machineConsole.completeProgress(summary)
+    let machineObject = try #require(
+        JSONSerialization.jsonObject(with: Data(machineError.text.utf8))
+            as? [String: Any])
+    #expect(machineObject["kind"] as? String == "summary")
+    #expect(machineOutput.text.isEmpty)
+}
+
+@Test func githubActionsAppendsExactlyOneMarkdownStepSummary() async throws {
+    let summary = try await terminalSummary(.succeeded)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-github-summary-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    let path = directory.appendingPathComponent("summary.md")
+    let standardError = TerminalConsoleCapture()
+    let console = CommandConsole(
+        progress: .always,
+        environment: [
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_STEP_SUMMARY": path.path,
+        ],
+        standardOutput: { _ in },
+        standardError: standardError.write)
+
+    try console.completeProgress(summary)
+    try console.completeProgress(summary)
+
+    let markdown = try String(contentsOf: path, encoding: .utf8)
+    #expect(console.progressPresentation == .githubActions)
+    #expect(markdown.components(separatedBy: "## Collider run").count == 2)
+    #expect(markdown.contains("**Status:** succeeded"))
+    #expect(markdown.contains(summary.text))
 }
 
 private func terminalSummary(

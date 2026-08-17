@@ -1,10 +1,70 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
 @testable import ColliderRuntime
+
+@Test func commandOutputSinkPersistsBeforePresentationAndScrubsFiles() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-output-sink-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["fixture"])
+    let logging = CommandLogging(registry: registry, run: run)
+    let stage = TaskID(rawValue: "fixture.output")
+    let stageLog = await registry.stageLogPath(for: stage, in: run)
+    let file = FilePath(directory.appendingPathComponent("output.txt").path)
+    let persistedBeforePresentation = Mutex(false)
+    let sink = try CommandOutputSink(
+        logging: logging,
+        stage: stage,
+        file: file,
+        presentation: .default,
+        observer: TaskOutputObserver(output: { event in
+            guard case .chunk = event,
+                let data = try? Data(contentsOf: URL(fileURLWithPath: stageLog.string)),
+                String(decoding: data, as: UTF8.self).contains("token=<redacted>")
+            else { return }
+            persistedBeforePresentation.withLock { $0 = true }
+        }))
+
+    try await sink.write(
+        Array("token=secret\n".utf8),
+        stream: .standardOutput)
+    try await sink.finish()
+
+    #expect(persistedBeforePresentation.withLock { $0 })
+    #expect(try String(contentsOfFile: file.string, encoding: .utf8) == "token=<redacted>\n")
+}
+
+@Test func rawTerminalExecutionBracketsUnmodifiedInheritedDescriptors() async throws {
+    let callbacks = Mutex((willBegin: 0, didEnd: 0))
+    let runtime = ColliderRuntime(
+        taskOutputObserver: TaskOutputObserver(
+            terminalWillBegin: {
+                callbacks.withLock { $0.willBegin += 1 }
+            },
+            terminalDidEnd: {
+                callbacks.withLock { $0.didEnd += 1 }
+            }))
+    let result = try await runtime.execute(
+        CommandSpec(
+            executable: .named("true"),
+            arguments: [],
+            workingDirectory: FilePath(FileManager.default.temporaryDirectory.path),
+            environment: [
+                "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+            ],
+            input: .terminal,
+            output: .captured(limit: 1_024)))
+
+    #expect(result.status == 0)
+    #expect(callbacks.withLock { $0.willBegin } == 1)
+    #expect(callbacks.withLock { $0.didEnd } == 1)
+}
 
 @Test func runtimeTransportsDeclaredStandardInputBytesLiterally() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(

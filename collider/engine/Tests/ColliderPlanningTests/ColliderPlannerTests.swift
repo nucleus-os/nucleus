@@ -33,6 +33,43 @@ import Testing
     #expect(try encoder.encode(first.reportedEntries) == encoder.encode(second.reportedEntries))
 }
 
+@Test func plannerFreezesStableDurationWorkloadAndSelectedEstimate() throws {
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.release"),
+        component: ComponentID(rawValue: "fixture"),
+        durationEstimationMode: "release")
+    let digest = ArtifactDigest(bytes: Array(repeating: 12, count: 32))
+    let services = TaskPlanningServices(
+        digestBytes: { _ in digest },
+        digestFile: { _ in digest },
+        digestTree: { _ in digest },
+        digestSourceCheckout: { _ in digest },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+        },
+        taskState: { _ in .missing },
+        durationEstimate: { workload in
+            #expect(workload.task == task.id)
+            #expect(workload.lane == .lightweight)
+            #expect(workload.coordinates == nil)
+            #expect(workload.mode == "release")
+            return 42_000
+        },
+        validateOutputs: { _ in })
+
+    let plan = try ColliderPlanner().plan(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        rebuildSelected: false,
+        lowerings: [],
+        services: services)
+    let entry = try #require(plan.declaredEntries.first)
+
+    #expect(entry.durationWorkload?.task == task.id)
+    #expect(entry.durationEstimate?.workload == entry.durationWorkload)
+    #expect(entry.durationEstimate?.durationNanoseconds == 42_000)
+}
+
 @Test func planningDoesNotReadUnselectedInputsOrValidateUnselectedOutputs() throws {
     let selected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.selected"),

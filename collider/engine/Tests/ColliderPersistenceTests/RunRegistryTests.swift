@@ -5,6 +5,211 @@ import Testing
 
 @testable import ColliderPersistence
 
+private enum ObservationFixtureFailure: Error {
+    case stopped
+}
+
+@Test func hostPhaseRecorderPersistsStartedProgressAndTerminalEvents() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-host-phase-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "cache", "status"])
+    let recorder = HostPhaseRecorder(registry: registry, run: run)
+    let phase = try await recorder.begin("measuring storage", totalItems: 3)
+    try await recorder.advance(phase, completedItems: 2, totalItems: 3)
+    try await recorder.finish(phase)
+    try await registry.finish(run, status: .succeeded)
+
+    let eventsURL = directory.appendingPathComponent(
+        "runs/\(run.id.rawValue)/events.jsonl")
+    let events = try String(decoding: Data(contentsOf: eventsURL), as: UTF8.self)
+        .split(separator: "\n")
+        .map { try JSONDecoder().decode(RunEvent.self, from: Data($0.utf8)) }
+    #expect(events.count == 5)
+    #expect(
+        events[1].payload
+            == .hostPhase(
+                .started(id: phase, name: "measuring storage", totalItems: 3)))
+    #expect(
+        events[2].payload
+            == .hostPhase(.advanced(id: phase, completedItems: 2, totalItems: 3)))
+    #expect(events[3].payload == .hostPhase(.finished(phase)))
+}
+
+@Test func independentProgressReplayIsReadOnlyForActiveAndFinishedRuns() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-progress-replay-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let writer = RunRegistry(root: FilePath(directory.path))
+    let run = try await writer.begin(command: ["collider", "build", "fixture"])
+    let task = TaskID(rawValue: "fixture.build")
+    try await writer.recordPlan(
+        [
+            TaskPlanEntry(
+                task: task,
+                identity: ArtifactDigest(bytes: [1]),
+                isClean: false,
+                explanation: "fixture",
+                coordinates: nil,
+                lane: .hostExclusive)
+        ],
+        in: run)
+    try await writer.record(.task(.started(task)), in: run)
+    let manifestURL = directory.appendingPathComponent(
+        "runs/\(run.id.rawValue)/manifest.json")
+    let eventsURL = directory.appendingPathComponent(
+        "runs/\(run.id.rawValue)/events.jsonl")
+    let manifestBefore = try Data(contentsOf: manifestURL)
+    let eventsBefore = try Data(contentsOf: eventsURL)
+
+    let reader = RunRegistry(root: FilePath(directory.path))
+    let activeRecord = try await reader.recordedRun(run.id)
+    let active = try await reader.progressSnapshot(
+        in: activeRecord,
+        at: Date(timeIntervalSinceNow: 60))
+
+    #expect(active.phase == .executing)
+    #expect(active.activeRows.map(\.task) == [task])
+    #expect(active.activeRows.first?.lane == .hostExclusive)
+    #expect(try Data(contentsOf: manifestURL) == manifestBefore)
+    #expect(try Data(contentsOf: eventsURL) == eventsBefore)
+
+    try await writer.record(.task(.succeeded(task)), in: run)
+    try await writer.finish(run, status: .succeeded)
+    let finishedRecord = try await reader.recordedRun(run.id)
+    let first = try await reader.progressSnapshot(
+        in: finishedRecord,
+        at: Date(timeIntervalSinceNow: 120))
+    let later = try await reader.progressSnapshot(
+        in: finishedRecord,
+        at: Date(timeIntervalSinceNow: 1_200))
+    #expect(first.phase == .succeeded)
+    #expect(first.completionFraction == 1)
+    #expect(first.elapsedNanoseconds == later.elapsedNanoseconds)
+}
+
+@Test func runRegistryPublishesPersistedPlanAndEventsInOrder() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-observation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let stream = try await registry.observations()
+    let collector = Task {
+        var observed: [RunObservation] = []
+        for await observation in stream { observed.append(observation) }
+        return observed
+    }
+
+    let run = try await registry.begin(command: ["collider", "build", "fixture"])
+    let task = TaskID(rawValue: "fixture.build")
+    let plan = TaskPlanEntry(
+        task: task,
+        identity: ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32)),
+        isClean: false,
+        explanation: "fixture",
+        coordinates: nil)
+    try await registry.recordPlan([plan], in: run)
+    try await registry.record(.task(.started(task)), in: run)
+    try await registry.finish(run, status: .succeeded)
+
+    let observed = await collector.value
+    #expect(observed.count == 4)
+    guard case .event(let started) = observed[0],
+        case .runStarted(resumed: false) = started.payload
+    else {
+        Issue.record("the persisted run-start event was not observed first")
+        return
+    }
+    guard case .plan(let frozenPlan) = observed[1] else {
+        Issue.record("the frozen plan was not observed after persistence")
+        return
+    }
+    #expect(frozenPlan.runID == run.id)
+    #expect(frozenPlan.entries.count == 1)
+    #expect(frozenPlan.entries[0].task == task)
+    guard case .event(let taskStarted) = observed[2],
+        case .task(.started(let observedTask)) = taskStarted.payload
+    else {
+        Issue.record("the task event was not observed")
+        return
+    }
+    #expect(observedTask == task)
+    guard case .event(let terminal) = observed[3],
+        case .terminal(let terminalEvent) = terminal.payload
+    else {
+        Issue.record("the terminal event was not observed last")
+        return
+    }
+    #expect(terminalEvent.status == .succeeded)
+
+    let eventsURL = directory.appendingPathComponent(
+        "runs/\(run.id.rawValue)/events.jsonl")
+    let durableData = try Data(contentsOf: eventsURL)
+    let durableEvents = try String(decoding: durableData, as: UTF8.self)
+        .split(separator: "\n")
+        .map { try JSONDecoder().decode(RunEvent.self, from: Data($0.utf8)) }
+    let observedEvents = observed.compactMap { observation -> RunEvent? in
+        guard case .event(let event) = observation else { return nil }
+        return event
+    }
+    #expect(observedEvents == durableEvents)
+    #expect(try Data(contentsOf: eventsURL) == durableData)
+}
+
+@Test func slowAndFailingRunObserversCannotAffectPersistence() async throws {
+    let slowDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-slow-observation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: slowDirectory) }
+    let slowRegistry = RunRegistry(root: FilePath(slowDirectory.path))
+    let slowStream = try await slowRegistry.observations()
+    let slowRun = try await slowRegistry.begin(command: ["collider", "doctor"])
+    for index in 0..<64 {
+        try await slowRegistry.record(
+            .operation(
+                .started(
+                    OperationContext(
+                        task: nil,
+                        operation: "fixture-\(index)",
+                        command: ["true"],
+                        invocation: "true",
+                        workingDirectory: "/tmp",
+                        logPath: nil))),
+            in: slowRun)
+    }
+    try await slowRegistry.finish(slowRun, status: .succeeded)
+    var slowObservations: [RunObservation] = []
+    for await observation in slowStream { slowObservations.append(observation) }
+    #expect(slowObservations.count == 66)
+    #expect(try await slowRegistry.recordedRun(slowRun.id).manifest.status == .succeeded)
+
+    let failingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-failing-observation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: failingDirectory) }
+    let failingRegistry = RunRegistry(root: FilePath(failingDirectory.path))
+    let failingStream = try await failingRegistry.observations()
+    let failingConsumer = Task<Void, any Error> {
+        for await _ in failingStream { throw ObservationFixtureFailure.stopped }
+    }
+    let failingRun = try await failingRegistry.begin(command: ["collider", "doctor"])
+    await #expect(throws: ObservationFixtureFailure.self) {
+        try await failingConsumer.value
+    }
+    try await failingRegistry.record(
+        .task(.started(TaskID(rawValue: "doctor.host"))),
+        in: failingRun)
+    try await failingRegistry.finish(failingRun, status: .succeeded)
+    let recordedRun = try await failingRegistry.recordedRun(failingRun.id)
+    #expect(recordedRun.manifest.status == .succeeded)
+    let eventsData = try Data(
+        contentsOf: failingDirectory.appendingPathComponent(
+            "runs/\(failingRun.id.rawValue)/events.jsonl"))
+    let events = try String(decoding: eventsData, as: UTF8.self)
+        .split(separator: "\n")
+        .map { try JSONDecoder().decode(RunEvent.self, from: Data($0.utf8)) }
+    #expect(events.count == 3)
+}
+
 @Test func runRegistryPublishesManifestEventsAndLatest() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-registry-\(UUID().uuidString)")

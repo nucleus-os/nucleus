@@ -37,7 +37,7 @@ Subcommands:
 
 Report missing tools and repository prerequisites.
 
-Usage: `collider doctor [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [<scope>] [--version] [--help]`
+Usage: `collider doctor [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<scope>] [--version] [--help]`
 
 Arguments and options:
 
@@ -45,19 +45,21 @@ Arguments and options:
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<scope>` — Prerequisite group: all, runtime, swift-sdk, android, browser, or ci-macos-builder.; values: `all`, `runtime`, `swift-sdk`, `android`, `browser`, `ci-macos-builder`; default: `all`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider bootstrap`
 
-Usage: `collider bootstrap [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider bootstrap [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -69,13 +71,14 @@ Arguments and options:
 
 ## `collider build`
 
-Usage: `collider build [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider build [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -87,13 +90,14 @@ Arguments and options:
 
 ## `collider test`
 
-Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -105,13 +109,14 @@ Arguments and options:
 
 ## `collider check`
 
-Usage: `collider check [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
+Usage: `collider check [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -123,13 +128,14 @@ Arguments and options:
 
 ## `collider generate`
 
-Usage: `collider generate [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
+Usage: `collider generate [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -158,13 +164,14 @@ Subcommands:
 
 Assemble the complete Linux runtime package cohort.
 
-Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
+Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -228,13 +235,14 @@ Arguments and options:
 
 ## `collider benchmark`
 
-Usage: `collider benchmark [--format <format>] [--color <color>] [--progress <progress>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
+Usage: `collider benchmark [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--dry-run` — Print the resolved task graph without executing it.
 - `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
 - `--verbose` — Print each leaf command before executing it.
@@ -247,7 +255,7 @@ Arguments and options:
 
 Remove a component's graph-declared rebuildable storage.
 
-Usage: `collider clean <component> [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
+Usage: `collider clean <component> [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
 
 Arguments and options:
 
@@ -256,6 +264,7 @@ Arguments and options:
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
@@ -279,7 +288,7 @@ Subcommands:
 
 Report ownership, retention, allocation, and reclaimability for declared storage.
 
-Usage: `collider cache status [--measure-allocations] [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
+Usage: `collider cache status [--measure-allocations] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
 
 Arguments and options:
 
@@ -287,6 +296,7 @@ Arguments and options:
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
@@ -294,7 +304,7 @@ Arguments and options:
 
 Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images.
 
-Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--version] [--help]`
+Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
 
 Arguments and options:
 
@@ -302,6 +312,7 @@ Arguments and options:
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
@@ -309,13 +320,14 @@ Arguments and options:
 
 List declared tasks from the current component catalog.
 
-Usage: `collider tasks [--format <format>] [--color <color>] [--progress <progress>] [--component <component>] [--matching <matching>] [--version] [--help]`
+Usage: `collider tasks [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--component <component>] [--matching <matching>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--component` `<component>` — Restrict tasks to one component name or alias.
 - `--matching` `<matching>` — Restrict tasks to identifiers containing this text.
 - `--version` — Show the version.
@@ -325,13 +337,14 @@ Arguments and options:
 
 Print the resolved declared task graph for an operation.
 
-Usage: `collider graph [--format <format>] [--color <color>] [--progress <progress>] <operation> [<target>] [--version] [--help]`
+Usage: `collider graph [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] <operation> [<target>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<operation>` — values: `bootstrap`, `build`, `test`, `generate`, `install`
 - `<target>` — Selection spelling such as all, runtime, core, or browser.
 - `--version` — Show the version.
@@ -355,26 +368,28 @@ Subcommands:
 
 ## `collider runs list`
 
-Usage: `collider runs list [--format <format>] [--color <color>] [--progress <progress>] [--limit <limit>] [--version] [--help]`
+Usage: `collider runs list [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--limit <limit>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `--limit`, `-l` `<limit>` — Maximum number of runs to return.; default: `20`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider runs show`
 
-Usage: `collider runs show [--format <format>] [--color <color>] [--progress <progress>] [<run-id>] [--version] [--help]`
+Usage: `collider runs show [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<run-id>` — Run identifier, or latest.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
@@ -398,26 +413,28 @@ Subcommands:
 
 ## `collider logs list`
 
-Usage: `collider logs list [--format <format>] [--color <color>] [--progress <progress>] [<run-id>] [--version] [--help]`
+Usage: `collider logs list [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<run-id>` — Run identifier, or latest.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider logs path`
 
-Usage: `collider logs path [--format <format>] [--color <color>] [--progress <progress>] [<run-id>] [--task <task>] [--version] [--help]`
+Usage: `collider logs path [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--task <task>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<run-id>` — Run identifier, or latest.
 - `--task` `<task>` — Select a task stage log instead of the complete run log.
 - `--version` — Show the version.
@@ -425,13 +442,14 @@ Arguments and options:
 
 ## `collider logs tail`
 
-Usage: `collider logs tail [--format <format>] [--color <color>] [--progress <progress>] [<run-id>] [--task <task>] [--lines <lines>] [--follow] [--version] [--help]`
+Usage: `collider logs tail [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--task <task>] [--lines <lines>] [--follow] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<run-id>` — Run identifier, or latest.
 - `--task` `<task>` — Select a task stage log instead of the complete run log.
 - `--lines`, `-l` `<lines>` — Number of trailing lines to print.; default: `200`
@@ -441,13 +459,14 @@ Arguments and options:
 
 ## `collider status`
 
-Usage: `collider status [--format <format>] [--color <color>] [--progress <progress>] [<target>] [--version] [--help]`
+Usage: `collider status [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<target>] [--version] [--help]`
 
 Arguments and options:
 
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<target>` — values: `repository`, `swift-sdk`; default: `repository`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.

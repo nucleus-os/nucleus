@@ -131,6 +131,8 @@ public struct OCIRuntimeExecutionRequest: Sendable {
     public let stage: TaskID?
     public let cancellation: RuntimeCancellation
     public let configuration: OCIRuntimeConfiguration
+    public let taskOutputPresentation: TaskOutputPresentation
+    public let taskOutputObserver: TaskOutputObserver
 
     public init(
         execution: OCIExecution,
@@ -139,7 +141,9 @@ public struct OCIRuntimeExecutionRequest: Sendable {
         logging: CommandLogging?,
         stage: TaskID?,
         cancellation: RuntimeCancellation,
-        configuration: OCIRuntimeConfiguration
+        configuration: OCIRuntimeConfiguration,
+        taskOutputPresentation: TaskOutputPresentation = .verbose,
+        taskOutputObserver: TaskOutputObserver = TaskOutputObserver()
     ) {
         self.execution = execution
         self.imageReference = imageReference
@@ -148,6 +152,8 @@ public struct OCIRuntimeExecutionRequest: Sendable {
         self.stage = stage
         self.cancellation = cancellation
         self.configuration = configuration
+        self.taskOutputPresentation = taskOutputPresentation
+        self.taskOutputObserver = taskOutputObserver
     }
 }
 

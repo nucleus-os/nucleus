@@ -170,7 +170,9 @@ extension ColliderRuntime {
             logging: logging,
             stage: stage,
             cancellation: cancellation,
-            configuration: ociConfiguration)
+            configuration: ociConfiguration,
+            taskOutputPresentation: taskOutputPresentation ?? .verbose,
+            taskOutputObserver: taskOutputObserver)
         do {
             let outcome = try await ociBackend.execute(request)
             let result = outcome.result.recordingExecutionContext(context)

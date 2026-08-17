@@ -274,7 +274,7 @@ struct RepositoryCache {
         }
         let measurements: [String: StorageAllocationMeasurement] =
             if measureAllocations {
-                try allocationMeasurements(
+                try await allocationMeasurements(
                     declarations: declarations,
                     reclaimableTargets: reclaimableTargets)
             } else {
@@ -760,28 +760,39 @@ struct RepositoryCache {
     private func allocationMeasurements(
         declarations: [StorageDeclaration],
         reclaimableTargets: [String: [URL]]
-    ) throws -> [String: StorageAllocationMeasurement] {
+    ) async throws -> [String: StorageAllocationMeasurement] {
         let declaredRoots = declarations.map {
             $0.root.normalizedForComparison()
         }
         var result: [String: StorageAllocationMeasurement] = [:]
-        defer { try? context.console.finishProgress() }
-        for declaration in declarations.sorted(by: { $0.id < $1.id }) {
-            try Task.checkCancellation()
-            try context.console.progress(
-                "measuring storage allocation: \(declaration.id)")
-            let root = declaration.root.normalizedForComparison()
-            let exclusions = declaredRoots.filter {
-                $0 != root && $0.isContained(in: root)
+        let sortedDeclarations = declarations.sorted(by: { $0.id < $1.id })
+        let phase = try await context.hostPhases.begin(
+            "measuring storage allocation",
+            totalItems: sortedDeclarations.count)
+        do {
+            for (index, declaration) in sortedDeclarations.enumerated() {
+                try Task.checkCancellation()
+                let root = declaration.root.normalizedForComparison()
+                let exclusions = declaredRoots.filter {
+                    $0 != root && $0.isContained(in: root)
+                }
+                result[declaration.id] = try allocatedSize(
+                    URL(fileURLWithPath: root.string),
+                    excluding: exclusions,
+                    reclaimableRoots: (reclaimableTargets[declaration.id] ?? []).map {
+                        FilePath($0.path).normalizedForComparison()
+                    })
+                try await context.hostPhases.advance(
+                    phase,
+                    completedItems: index + 1,
+                    totalItems: sortedDeclarations.count)
             }
-            result[declaration.id] = try allocatedSize(
-                URL(fileURLWithPath: root.string),
-                excluding: exclusions,
-                reclaimableRoots: (reclaimableTargets[declaration.id] ?? []).map {
-                    FilePath($0.path).normalizedForComparison()
-                })
+            try await context.hostPhases.finish(phase)
+            return result
+        } catch {
+            try? await context.hostPhases.fail(phase)
+            throw error
         }
-        return result
     }
 
     func containerImageRetention(

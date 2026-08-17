@@ -225,6 +225,35 @@ output policy. Machine output goes to stdout. Human progress and diagnostics go
 to stderr. Complete child output remains in durable per-run logs. Interactive
 children retain direct terminal ownership.
 
+Every executing invocation renders progress from `RunObservation` values that
+`RunRegistry` publishes only after the corresponding plan or event is durable.
+`RunEventReducer` combines that stream with the frozen plan into one bounded
+`RunProgressSnapshot`: lifecycle phase, task-duration-weighted completion,
+elapsed time, an optional nested host phase with item counters, and start-ordered
+active task rows carrying lane, operation, wait, and download detail. Planning,
+input hashing, phase commands, storage measurement, taskless subprocesses, and
+taskless waits use that same model. Host phases contribute no task workload.
+Historical and in-flight snapshot queries replay the manifest and complete
+JSONL records without acquiring the run lease or changing either file.
+
+`CommandConsole` owns one bounded stderr region, serializes stdout and stderr
+writes around it, and restores the cursor across completion, failure,
+interruption, resize, suspension, and interactive-child terminal ownership.
+Attributed child chunks land in the run and stage logs before presentation.
+Terminal output shows the current task rows; redirected output emits bounded
+semantic changes and liveness messages; explicit machine progress emits JSONL
+snapshots and one terminal summary. Inspection commands disable progress, and
+JSON reports remain pure stdout values.
+
+GitHub Actions is a separate consumer selected only by
+`GITHUB_ACTIONS=true`. It emits each executed task's already-durable stage log
+as one atomic collapsible group, neutralizes workflow-command injection, emits
+one error annotation with the task, reason, and stage-log path for each failed
+task, and appends one markdown run summary to `GITHUB_STEP_SUMMARY` when that
+path exists. Unrecognized non-terminal environments retain the plain
+append-only bytes. Artifact upload remains workflow policy; Collider only
+exports the run directory and logs.
+
 Planning, task inventory, runs, logs, cache state, and active status are
 read-only views of the task graph and run records. They do not implement a
 second scheduler, cache, resumability system, daemon, or observer protocol.

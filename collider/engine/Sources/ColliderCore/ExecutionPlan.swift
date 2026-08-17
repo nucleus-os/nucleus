@@ -1,5 +1,38 @@
 import SystemPackage
 
+public struct TaskDurationWorkload: Codable, Hashable, Sendable {
+    public let task: TaskID
+    public let lane: TaskExecutionLane
+    public let coordinates: TaskExecutionCoordinates?
+    public let mode: String?
+
+    public init(
+        task: TaskID,
+        lane: TaskExecutionLane,
+        coordinates: TaskExecutionCoordinates?,
+        mode: String?
+    ) {
+        self.task = task
+        self.lane = lane
+        self.coordinates = coordinates
+        self.mode = mode
+    }
+}
+
+public struct TaskDurationEstimate: Codable, Hashable, Sendable {
+    public let workload: TaskDurationWorkload
+    public let durationNanoseconds: UInt64
+
+    public init(
+        workload: TaskDurationWorkload,
+        durationNanoseconds: UInt64
+    ) {
+        precondition(durationNanoseconds > 0)
+        self.workload = workload
+        self.durationNanoseconds = durationNanoseconds
+    }
+}
+
 public struct TaskPlanEntry: Codable, Sendable {
     public let task: TaskID
     public let identity: ArtifactDigest
@@ -10,6 +43,8 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let claims: [PlannedTaskClaim]
     public let logicalOwners: [TaskID]
     public let attribution: String?
+    public let durationWorkload: TaskDurationWorkload?
+    public let durationEstimate: TaskDurationEstimate?
 
     public init(
         task: TaskID,
@@ -20,7 +55,9 @@ public struct TaskPlanEntry: Codable, Sendable {
         lane: TaskExecutionLane = .lightweight,
         claims: [PlannedTaskClaim] = [],
         logicalOwners: [TaskID] = [],
-        attribution: String? = nil
+        attribution: String? = nil,
+        durationWorkload: TaskDurationWorkload? = nil,
+        durationEstimate: TaskDurationEstimate? = nil
     ) {
         self.task = task
         self.identity = identity
@@ -31,6 +68,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.claims = claims
         self.logicalOwners = logicalOwners
         self.attribution = attribution
+        self.durationWorkload = durationWorkload
+        self.durationEstimate = durationEstimate
     }
 }
 
@@ -154,6 +193,7 @@ public struct TaskPlanningServices {
     public let semanticToolIdentity:
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
+    public let durationEstimate: (TaskDurationWorkload) -> UInt64?
     public let validateOutputs: (TaskDeclaration) throws -> Void
 
     public init(
@@ -168,6 +208,7 @@ public struct TaskPlanningServices {
         semanticToolIdentity:
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
+        durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
         validateOutputs: @escaping (TaskDeclaration) throws -> Void
     ) {
         self.runnerPlatform = runnerPlatform
@@ -188,6 +229,7 @@ public struct TaskPlanningServices {
             }
         self.semanticToolIdentity = semanticToolIdentity
         self.taskState = taskState
+        self.durationEstimate = durationEstimate
         self.validateOutputs = validateOutputs
     }
 }

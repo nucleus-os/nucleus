@@ -31,6 +31,10 @@ private let reportLeaves: [[String]] = [
     ["cache", "status"],
 ]
 
+private let phaseReportLeaves: [[String]] = [
+    ["cache", "status"]
+]
+
 private let diagnosticLeaves: [[String]] = [
     ["doctor"],
     ["doctor", "browser"],
@@ -41,6 +45,24 @@ private let diagnosticLeaves: [[String]] = [
 private let controlFreeLeaves: [[String]] = [
     ["logs", "tail"]
 ]
+
+@Test func commandClassesProvidePresentationWithoutLeafOptIn() throws {
+    for path in taskControlledLeaves {
+        let command = try #require(
+            try ColliderCommand.parseAsRoot(path) as? any ColliderWorkspaceCommand)
+        #expect(command.presentationKind == .taskGraph)
+    }
+    for path in reportLeaves.filter({ !phaseReportLeaves.contains($0) }) + controlFreeLeaves {
+        let command = try #require(
+            try ColliderCommand.parseAsRoot(path) as? any ColliderWorkspaceCommand)
+        #expect(command.presentationKind == .none)
+    }
+    for path in diagnosticLeaves + phaseReportLeaves {
+        let command = try #require(
+            try ColliderCommand.parseAsRoot(path) as? any ColliderWorkspaceCommand)
+        #expect(command.presentationKind == .phase)
+    }
+}
 
 @Test
 func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
@@ -53,6 +75,7 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
                 "--format", "json",
                 "--color", "never",
                 "--progress", "never",
+                "--progress-format", "json",
                 "--run-id", "run-capability-test",
             ])
         let command = try #require(parsed as? any TaskControlledCommand)
@@ -63,6 +86,7 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
         #expect(command.outputOptions.format == .json)
         #expect(command.outputOptions.color == .never)
         #expect(command.outputOptions.progress == .never)
+        #expect(command.outputOptions.progressFormat == .json)
         #expect(
             command.taskOptions.runID?.value
                 == RunID(rawValue: "run-capability-test"))
@@ -103,11 +127,15 @@ func quietAndVerboseTaskOutputAreMutuallyExclusive() {
 func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
     for path in reportLeaves {
         let parsed = try ColliderCommand.parseAsRoot(
-            path + ["--format", "json", "--color", "always", "--progress", "never"])
+            path + [
+                "--format", "json", "--color", "always", "--progress", "never",
+                "--progress-format", "json",
+            ])
         let command = try #require(parsed as? any OutputConfiguredCommand)
         #expect(command.outputOptions.format == .json)
         #expect(command.outputOptions.color == .always)
         #expect(command.outputOptions.progress == .never)
+        #expect(command.outputOptions.progressFormat == .json)
         awaitRejects(
             path,
             options: [
@@ -176,7 +204,9 @@ private func optionInvocations(_ options: [String]) -> [[String]] {
     var result: [[String]] = []
     var index = options.startIndex
     while index < options.endIndex {
-        if ["--run-id", "--format", "--color", "--progress"].contains(options[index]) {
+        if ["--run-id", "--format", "--color", "--progress", "--progress-format"].contains(
+            options[index])
+        {
             result.append([options[index], options[index + 1]])
             index += 2
         } else {

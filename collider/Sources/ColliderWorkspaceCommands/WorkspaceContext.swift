@@ -77,6 +77,7 @@ package struct WorkspaceContext: Sendable {
     package let logRoot: FilePath
     package let runtime: ColliderRuntime
     package let console: CommandConsole
+    package let hostPhases: HostPhaseRecorder
     package let ociConfiguration: OCIRuntimeConfiguration
     let swiftPackageGraphs: SwiftPackageGraphResolver
 
@@ -85,6 +86,7 @@ package struct WorkspaceContext: Sendable {
         environment: [String: String],
         runtime: ColliderRuntime,
         console: CommandConsole = .processDefault,
+        hostPhases: HostPhaseRecorder = HostPhaseRecorder(registry: nil, run: nil),
         ociConfiguration: OCIRuntimeConfiguration? = nil,
         cacheRoot: FilePath? = nil,
         hostBuildRoot requestedHostBuildRoot: FilePath? = nil,
@@ -130,6 +132,7 @@ package struct WorkspaceContext: Sendable {
         self.nativeSDKRoot = resolvedNativeSDKRoot
         self.runtime = runtime
         self.console = console
+        self.hostPhases = hostPhases
         self.ociConfiguration =
             ociConfiguration ?? nucleusOCIRuntimeConfiguration(workspaceRoot: root)
         swiftPackageGraphs = SwiftPackageGraphResolver(

@@ -253,6 +253,7 @@ public struct RunEvent: Codable, Hashable, Sendable {
 
     public enum Payload: Codable, Hashable, Sendable {
         case runStarted(resumed: Bool)
+        case hostPhase(HostPhaseEvent)
         case task(TaskEvent)
         case operation(OperationEvent)
         case download(DownloadEvent)
@@ -261,6 +262,22 @@ public struct RunEvent: Codable, Hashable, Sendable {
         case interruption(InterruptionEvent)
         case terminal(TerminalRunEvent)
     }
+}
+
+public struct HostPhaseID: Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        precondition(!rawValue.isEmpty)
+        self.rawValue = rawValue
+    }
+}
+
+public enum HostPhaseEvent: Codable, Hashable, Sendable {
+    case started(id: HostPhaseID, name: String, totalItems: Int?)
+    case advanced(id: HostPhaseID, completedItems: Int, totalItems: Int?)
+    case finished(HostPhaseID)
+    case failed(HostPhaseID)
 }
 
 public enum TaskEvent: Codable, Hashable, Sendable {
@@ -329,15 +346,18 @@ public struct OperationResult: Codable, Hashable, Sendable {
 }
 
 public struct DownloadEvent: Codable, Hashable, Sendable {
+    public let task: TaskID?
     public let digest: ArtifactDigest
     public let receivedBytes: Int64
     public let expectedBytes: Int64?
 
     public init(
+        task: TaskID? = nil,
         digest: ArtifactDigest,
         receivedBytes: Int64,
         expectedBytes: Int64?
     ) {
+        self.task = task
         self.digest = digest
         self.receivedBytes = receivedBytes
         self.expectedBytes = expectedBytes
@@ -497,9 +517,37 @@ public enum RunEventReductionFailure: Error, Hashable, Sendable,
 
 public struct RunEventReducer: Sendable {
     public private(set) var state = ReducedRunState()
-    private var nextSequence: UInt64 = 0
+    private var nextSequence: UInt64
+    private var progress = RunProgressReductionState()
 
-    public init() {}
+    public init(startingAtSequence: UInt64 = 0) {
+        nextSequence = startingAtSequence
+    }
+
+    public mutating func consumePlan(
+        _ entries: [TaskPlanEntry],
+        runID: RunID
+    ) throws {
+        if let observedRunID = state.runID, observedRunID != runID {
+            throw RunEventReductionFailure.mixedRuns(
+                expected: observedRunID,
+                actual: runID)
+        }
+        state.runID = runID
+        progress.consumePlan(entries)
+    }
+
+    public func progressSnapshot(
+        at date: Date,
+        maximumRows: Int = 7
+    ) -> RunProgressSnapshot {
+        progress.snapshot(
+            runID: state.runID,
+            status: state.status,
+            tasks: state.tasks,
+            date: date,
+            maximumRows: maximumRows)
+    }
 
     public mutating func consume(_ event: RunEvent) throws {
         guard event.sequence == nextSequence else {
@@ -519,23 +567,37 @@ public struct RunEventReducer: Sendable {
             state.status = .running
             state.failedTask = nil
             if resumed { state.resumeCount += 1 }
+            progress.consumeRunStarted(event.timestamp)
+        case .hostPhase(let phase):
+            progress.consumeHostPhase(phase)
         case .task(let taskEvent):
             switch taskEvent {
-            case .started(let task): state.tasks[task] = .running
+            case .started(let task):
+                state.tasks[task] = .running
+                progress.consumeTaskStarted(task, timestamp: event.timestamp)
             case .skipped(let task, let explanation):
                 state.tasks[task] = .skipped(explanation: explanation)
+                progress.consumeTaskTerminal(task)
             case .succeeded(let task): state.tasks[task] = .succeeded
-            case .cancelled(let task): state.tasks[task] = .cancelled
+            case .cancelled(let task):
+                state.tasks[task] = .cancelled
+                progress.consumeTaskTerminal(task)
             case .failed(let task, let failure):
                 state.tasks[task] = .failed(failure)
                 state.failedTask = task
+                progress.consumeTaskTerminal(task)
+            }
+            if case .succeeded(let task) = taskEvent {
+                progress.consumeTaskTerminal(task)
             }
         case .interruption:
             state.status = .interrupted
         case .terminal(let terminal):
             state.status = terminal.status
             state.failedTask = terminal.failedTask ?? state.failedTask
+            progress.consumeRunTerminal(event.timestamp)
         case .wait(let wait):
+            progress.consumeWait(wait)
             switch wait {
             case .started(let task, let resource):
                 state.activeWaits.insert(
@@ -544,7 +606,11 @@ public struct RunEventReducer: Sendable {
                 state.activeWaits.remove(
                     ActiveWait(task: task, resource: resource))
             }
-        case .operation, .download, .artifact:
+        case .operation(let operation):
+            progress.consumeOperation(operation)
+        case .download(let download):
+            progress.consumeDownload(download)
+        case .artifact:
             break
         }
     }

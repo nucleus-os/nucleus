@@ -211,7 +211,13 @@ extension ColliderRuntime {
     ) async throws -> TaskExecutionReport {
         let previousOutputPresentation = taskOutputPresentation
         taskOutputPresentation =
-            options.quiet || options.machineReadable ? .quiet : .stream
+            if options.quiet || options.machineReadable {
+                .quiet
+            } else if options.verbose {
+                .verbose
+            } else {
+                .default
+            }
         defer { taskOutputPresentation = previousOutputPresentation }
 
         try FileManager.default.createDirectory(

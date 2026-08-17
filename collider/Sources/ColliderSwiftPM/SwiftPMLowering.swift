@@ -205,6 +205,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         ".collider.lock")),
             ],
             assessmentPolicy: .incremental,
+            durationEstimationMode: invocation.context.configuration.rawValue,
             action: try AnyColliderAction(
                 SwiftPMDependencyMaterializationAction(
                     command: command,
@@ -354,6 +355,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 + uniqued(requirements.flatMap(\.expectedOutputs)),
             locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
             assessmentPolicy: assessmentPolicy(for: first.invocation),
+            durationEstimationMode: first.invocation.context.configuration.rawValue,
             action: try swiftPMAction(
                 invocation: first.invocation,
                 environment: first.environment,
@@ -419,6 +421,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 + uniqued(requirements.flatMap(\.expectedBuildOutputs)),
             locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
             assessmentPolicy: assessmentPolicy(for: first.invocation),
+            durationEstimationMode: first.invocation.context.configuration.rawValue,
             action: try swiftPMAction(
                 invocation: first.invocation,
                 environment: environment,

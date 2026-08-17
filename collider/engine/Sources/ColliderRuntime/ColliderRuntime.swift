@@ -67,6 +67,7 @@ public actor ColliderRuntime {
     let logging: CommandLogging?
     let downloads: ColliderDownloads
     var taskOutputPresentation: TaskOutputPresentation?
+    let taskOutputObserver: TaskOutputObserver
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
     let ociBackend: any OCIRuntimeBackend
@@ -74,11 +75,13 @@ public actor ColliderRuntime {
 
     public init(
         logging: CommandLogging? = nil,
-        cancellation: RuntimeCancellation = RuntimeCancellation()
+        cancellation: RuntimeCancellation = RuntimeCancellation(),
+        taskOutputObserver: TaskOutputObserver = TaskOutputObserver()
     ) {
         self.init(
             logging: logging,
             cancellation: cancellation,
+            taskOutputObserver: taskOutputObserver,
             downloadCacheRoot: defaultColliderDownloadCacheRoot(),
             ociConfiguration: .engineDefault,
             ociBackend: nil)
@@ -87,23 +90,14 @@ public actor ColliderRuntime {
     public init(
         logging: CommandLogging? = nil,
         cancellation: RuntimeCancellation = RuntimeCancellation(),
+        taskOutputObserver: TaskOutputObserver = TaskOutputObserver(),
         downloadCacheRoot: FilePath,
         ociConfiguration: OCIRuntimeConfiguration,
         ociBackend: (any OCIRuntimeBackend)? = nil
     ) {
         self.logging = logging
-        downloads = ColliderDownloads(cacheRoot: downloadCacheRoot) { progress in
-            guard let logging else { return }
-            Task {
-                try? await logging.registry.record(
-                    .download(
-                        DownloadEvent(
-                            digest: progress.digest,
-                            receivedBytes: progress.receivedBytes,
-                            expectedBytes: progress.expectedBytes)),
-                    in: logging.run)
-            }
-        }
+        self.taskOutputObserver = taskOutputObserver
+        downloads = ColliderDownloads(cacheRoot: downloadCacheRoot)
         self.cancellation = cancellation
         self.ociConfiguration = ociConfiguration
         hasOCIRuntimeBackend = ociBackend != nil
@@ -160,6 +154,7 @@ public actor ColliderRuntime {
         stage: TaskID?
     ) async throws -> TaskExecutionObservations {
         let recordedObservations = Mutex(TaskExecutionObservations())
+        let downloadProgress = downloadProgressRecorder(stage: stage)
         let context = ActionContext(
             files: actionFileSystem().scoped(to: action.requirements.effects),
             cancellation: ActionCancellation {
@@ -179,7 +174,10 @@ public actor ColliderRuntime {
                     operationName: action.kind.rawValue)
             },
             downloads: ActionDownloader { specification, path in
-                try await self.downloads.download(specification, to: path)
+                try await self.downloads.download(
+                    specification,
+                    to: path,
+                    progress: downloadProgress)
             },
             containers: ActionContainerExecutor(
                 prepareImage: { preparation in
@@ -237,7 +235,28 @@ public actor ColliderRuntime {
         _ specification: DownloadSpec,
         to candidate: FilePath
     ) async throws {
-        try await downloads.download(specification, to: candidate)
+        try await downloads.download(
+            specification,
+            to: candidate,
+            progress: downloadProgressRecorder(stage: nil))
+    }
+
+    private func downloadProgressRecorder(
+        stage: TaskID?
+    ) -> @Sendable (DownloadProgress) -> Void {
+        guard let logging else { return { _ in } }
+        return { progress in
+            Task {
+                try? await logging.registry.record(
+                    .download(
+                        DownloadEvent(
+                            task: stage,
+                            digest: progress.digest,
+                            receivedBytes: progress.receivedBytes,
+                            expectedBytes: progress.expectedBytes)),
+                    in: logging.run)
+            }
+        }
     }
 
     public func shutdown() async {
@@ -564,10 +583,15 @@ public actor ColliderRuntime {
         onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
+        let presentation: TaskOutputPresentation? =
+            switch command.input {
+            case .terminal: .raw
+            case .none, .bytes: taskOutputPresentation
+            }
         let command =
-            if let taskOutputPresentation {
+            if let presentation {
                 command.withOutput(
-                    taskOutputPresentation.output(for: command.output))
+                    presentation.output(for: command.output))
             } else {
                 command
             }
@@ -648,6 +672,8 @@ public actor ColliderRuntime {
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
         if command.output == .terminal {
+            taskOutputObserver.terminalWillBegin()
+            defer { taskOutputObserver.terminalDidEnd() }
             let result = try await Subprocess.run(
                 executable,
                 arguments: Arguments(command.arguments),
@@ -697,9 +723,11 @@ public actor ColliderRuntime {
             default: nil
             }
         let sink = try CommandOutputSink(
-            logging: file == nil ? logging : nil,
+            logging: logging,
             stage: stage,
-            file: file)
+            file: file,
+            presentation: taskOutputPresentation ?? .verbose,
+            observer: taskOutputObserver)
         let commandResult: CommandResult
         do {
             switch command.output {
@@ -724,7 +752,7 @@ public actor ColliderRuntime {
                         let bytes = try await collect(
                             execution.standardOutput,
                             limit: limit,
-                            mirror: nil,
+                            stream: .standardOutput,
                             sink: sink)
                         await self.cancellation.unregisterProcessGroup(registration)
                         return bytes
@@ -770,8 +798,7 @@ public actor ColliderRuntime {
                                     bytes: try await collect(
                                         execution.standardOutput,
                                         limit: captureLimit,
-                                        mirror: command.output == .inherited
-                                            ? .standardOutput : nil,
+                                        stream: .standardOutput,
                                         sink: sink))
                             }
                             group.addTask {
@@ -780,9 +807,7 @@ public actor ColliderRuntime {
                                     bytes: try await collect(
                                         execution.standardError,
                                         limit: nil,
-                                        mirror: command.output == .logged
-                                            || file != nil
-                                            ? nil : .standardError,
+                                        stream: .standardError,
                                         sink: sink))
                             }
                             var captured: [UInt8] = []
@@ -829,25 +854,6 @@ private func commandArguments(_ command: CommandSpec) -> [String] {
         case .taskOutput(let path): path.string
         }
     return [executable] + command.arguments
-}
-
-enum TaskOutputPresentation: Sendable {
-    case stream
-    case quiet
-
-    func output(for output: CommandSpec.Output) -> CommandSpec.Output {
-        switch (self, output) {
-        case (.stream, .logged):
-            .inherited
-        case (.quiet, .inherited):
-            .logged
-        case (.stream, .inherited), (.stream, .terminal), (.stream, .file),
-            (.stream, .captured), (.stream, .combined), (.quiet, .logged),
-            (.quiet, .terminal), (.quiet, .file), (.quiet, .captured),
-            (.quiet, .combined):
-            output
-        }
-    }
 }
 
 extension CommandSpec {
@@ -995,15 +1001,22 @@ private struct StreamResult: Sendable {
 package actor CommandOutputSink {
     let logging: CommandLogging?
     let stage: TaskID?
+    let presentation: TaskOutputPresentation
+    let observer: TaskOutputObserver
     var file: FileDescriptor?
+    var isFinished = false
 
     package init(
         logging: CommandLogging?,
         stage: TaskID?,
-        file path: FilePath?
+        file path: FilePath?,
+        presentation: TaskOutputPresentation,
+        observer: TaskOutputObserver
     ) throws {
         self.logging = logging
         self.stage = stage
+        self.presentation = presentation
+        self.observer = observer
         file =
             if let path {
                 try FileDescriptor.open(
@@ -1018,7 +1031,7 @@ package actor CommandOutputSink {
 
     package func write(
         _ bytes: [UInt8],
-        mirror: FileDescriptor?
+        stream: TaskOutputStream
     ) async throws {
         if let logging {
             try await logging.registry.appendLog(bytes, stage: stage, in: logging.run)
@@ -1026,10 +1039,18 @@ package actor CommandOutputSink {
         if let file {
             try file.writeAll(CredentialScrubber.bytes(bytes))
         }
-        if let mirror { try mirror.writeAll(bytes) }
+        observer.output(
+            .chunk(
+                task: stage,
+                stream: stream,
+                bytes: bytes,
+                presentation: presentation))
     }
 
     package func finish() throws {
+        guard !isFinished else { return }
+        isFinished = true
+        observer.output(.finished(task: stage, presentation: presentation))
         guard let file else {
             return
         }
@@ -1049,7 +1070,7 @@ package actor CommandOutputSink {
 private func collect(
     _ sequence: SubprocessOutputSequence,
     limit: Int?,
-    mirror: FileDescriptor?,
+    stream: TaskOutputStream,
     sink: CommandOutputSink
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
@@ -1063,7 +1084,7 @@ private func collect(
             }
             exceededLimit = exceededLimit || bytes.count > remaining
         }
-        try await sink.write(bytes, mirror: mirror)
+        try await sink.write(bytes, stream: stream)
     }
     if let limit, exceededLimit {
         throw RuntimeFailure.outputLimitExceeded(limit)

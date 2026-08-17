@@ -74,8 +74,20 @@ public actor RunRegistry {
     private let root: FilePath
     private var sequences: [RunID: UInt64] = [:]
     private var leases: [RunID: RunLease] = [:]
+    private var observationContinuation: AsyncStream<RunObservation>.Continuation?
 
     public init(root: FilePath) { self.root = root }
+
+    public func observations() throws -> AsyncStream<RunObservation> {
+        guard observationContinuation == nil else {
+            throw RunRegistryFailure.observationAlreadyInstalled
+        }
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: RunObservation.self,
+            bufferingPolicy: .unbounded)
+        observationContinuation = continuation
+        return stream
+    }
 
     public func begin(command: [String]) throws -> RunHandle {
         let id = RunID(rawValue: runIdentifier())
@@ -156,6 +168,11 @@ public actor RunRegistry {
                 )
             })
         try writeJSON(manifest, to: path)
+        publish(
+            .plan(
+                RunPlanObservation(
+                    runID: run.id,
+                    entries: plan)))
     }
 
     public func record(
@@ -428,13 +445,45 @@ public actor RunRegistry {
         in snapshot: RecordedRunSnapshot,
         maximumEventBytes: Int = 1_048_576
     ) throws -> ReducedRunState {
+        try eventReducer(
+            in: snapshot,
+            includePlan: false,
+            maximumEventBytes: maximumEventBytes
+        ).state
+    }
+
+    public func progressSnapshot(
+        in snapshot: RecordedRunSnapshot,
+        at date: Date = Date(),
+        maximumRows: Int = 7,
+        maximumEventBytes: Int = 1_048_576
+    ) throws -> RunProgressSnapshot {
+        try eventReducer(
+            in: snapshot,
+            includePlan: true,
+            maximumEventBytes: maximumEventBytes
+        ).progressSnapshot(at: date, maximumRows: maximumRows)
+    }
+
+    private func eventReducer(
+        in snapshot: RecordedRunSnapshot,
+        includePlan: Bool,
+        maximumEventBytes: Int
+    ) throws -> RunEventReducer {
         let path = snapshot.run.directory.appending("events.jsonl")
+        var reducer = RunEventReducer()
+        if includePlan, let tasks = snapshot.manifest.tasks {
+            try reducer.consumePlan(
+                tasks.values.map(\.plan).sorted {
+                    $0.task.rawValue < $1.task.rawValue
+                },
+                runID: snapshot.run.id)
+        }
         guard FileManager.default.fileExists(atPath: path.string) else {
-            return ReducedRunState()
+            return reducer
         }
         let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path.string))
         defer { try? handle.close() }
-        var reducer = RunEventReducer()
         var pending = Data()
         while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
             pending.append(chunk)
@@ -457,7 +506,7 @@ public actor RunRegistry {
                 throw RunRegistryFailure.eventTooLarge(snapshot.run.id)
             }
         }
-        return reducer.state
+        return reducer
     }
 
     /// Terminal run history the registry may reclaim, oldest first. The newest
@@ -541,6 +590,11 @@ public actor RunRegistry {
             Array(data),
             to: run.directory.appending("events.jsonl"),
             synchronized: false)
+        publish(.event(event))
+        if case .terminal = event.payload {
+            observationContinuation?.finish()
+            observationContinuation = nil
+        }
     }
 
     private func append(_ payload: RunEvent.Payload, to run: RunHandle) throws {
@@ -555,10 +609,28 @@ public actor RunRegistry {
         sequences[run.id] = sequence + 1
     }
 
+    private func publish(_ observation: RunObservation) {
+        guard let observationContinuation else { return }
+        if case .terminated = observationContinuation.yield(observation) {
+            self.observationContinuation = nil
+        }
+    }
+
     private func scrubbed(_ payload: RunEvent.Payload) -> RunEvent.Payload {
         switch payload {
         case .runStarted, .download, .artifact, .terminal:
             payload
+        case .hostPhase(let event):
+            switch event {
+            case .started(let id, let name, let totalItems):
+                .hostPhase(
+                    .started(
+                        id: id,
+                        name: CredentialScrubber.text(name),
+                        totalItems: totalItems))
+            case .advanced, .finished, .failed:
+                payload
+            }
         case .task(let event):
             switch event {
             case .started, .succeeded, .cancelled:
@@ -661,6 +733,7 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
     case activeRunOwned(RunID)
     case resumptionIdentityChanged(RunID)
     case unplannedTaskMetadata(TaskID)
+    case observationAlreadyInstalled
 
     public var description: String {
         switch self {
@@ -680,6 +753,8 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
             "run '\(id)' cannot resume because its resolved task identities changed"
         case .unplannedTaskMetadata(let task):
             "cannot record execution metadata for unplanned task '\(task)'"
+        case .observationAlreadyInstalled:
+            "a run observation stream is already installed"
         }
     }
 }

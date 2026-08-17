@@ -33,6 +33,7 @@ public struct DownloadProgress: Sendable {
 public actor ColliderDownloads {
     private let cacheRoot: FilePath
     private let delegate: DownloadDelegate
+    private let progress: @Sendable (DownloadProgress) -> Void
     private let session: URLSession
 
     public init(
@@ -40,7 +41,8 @@ public actor ColliderDownloads {
         progress: @escaping @Sendable (DownloadProgress) -> Void = { _ in }
     ) {
         self.cacheRoot = cacheRoot
-        let delegate = DownloadDelegate(progress: progress)
+        self.progress = progress
+        let delegate = DownloadDelegate()
         self.delegate = delegate
         session = URLSession(
             configuration: Self.configuration(),
@@ -54,7 +56,8 @@ public actor ColliderDownloads {
         progress: @escaping @Sendable (DownloadProgress) -> Void = { _ in }
     ) {
         self.cacheRoot = cacheRoot
-        let delegate = DownloadDelegate(progress: progress)
+        self.progress = progress
+        let delegate = DownloadDelegate()
         self.delegate = delegate
         session = URLSession(
             configuration: configuration,
@@ -79,7 +82,8 @@ public actor ColliderDownloads {
 
     public func download(
         _ specification: DownloadSpec,
-        to candidate: FilePath
+        to candidate: FilePath,
+        progress: (@Sendable (DownloadProgress) -> Void)? = nil
     ) async throws {
         if FileManager.default.fileExists(atPath: candidate.string) {
             if try digest(file: candidate) == specification.expectedDigest {
@@ -104,7 +108,8 @@ public actor ColliderDownloads {
                 let result = try await transfer(
                     specification,
                     partial: partial,
-                    paths: state)
+                    paths: state,
+                    progress: progress ?? self.progress)
                 try consume(
                     result,
                     specification: specification,
@@ -127,7 +132,8 @@ public actor ColliderDownloads {
     private func transfer(
         _ specification: DownloadSpec,
         partial: PartialMetadata?,
-        paths: DownloadStatePaths
+        paths: DownloadStatePaths,
+        progress: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws -> TransferResult {
         try? FileManager.default.removeItem(atPath: paths.transfer.string)
         var request = URLRequest(url: specification.url)
@@ -147,7 +153,8 @@ public actor ColliderDownloads {
                 try await self.delegate.run(
                     task: task,
                     specification: specification,
-                    transfer: paths.transfer)
+                    transfer: paths.transfer,
+                    progress: progress)
             }
             group.addTask {
                 try await ContinuousClock().sleep(
@@ -554,6 +561,7 @@ private struct TransferResult: Sendable {
 private final class DownloadState: @unchecked Sendable {
     let specification: DownloadSpec
     let transfer: FilePath
+    let progress: @Sendable (DownloadProgress) -> Void
     var continuation: CheckedContinuation<TransferResult, any Error>?
     var response: HTTPURLResponse?
     var redirects: [URL] = []
@@ -562,10 +570,20 @@ private final class DownloadState: @unchecked Sendable {
     var receivedBytes: Int64 = 0
     var transferComplete = false
 
-    init(specification: DownloadSpec, transfer: FilePath) {
+    init(
+        specification: DownloadSpec,
+        transfer: FilePath,
+        progress: @escaping @Sendable (DownloadProgress) -> Void
+    ) {
         self.specification = specification
         self.transfer = transfer
+        self.progress = progress
     }
+}
+
+private struct QueuedDownloadProgress: Sendable {
+    let progress: @Sendable (DownloadProgress) -> Void
+    let update: DownloadProgress
 }
 
 private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
@@ -579,12 +597,6 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
 
     private let states = Mutex<[Int: DownloadState]>([:])
     private let invalidation = Mutex(Invalidation())
-    private let progress: @Sendable (DownloadProgress) -> Void
-
-    init(progress: @escaping @Sendable (DownloadProgress) -> Void) {
-        self.progress = progress
-    }
-
     func invalidate(_ session: URLSession) async {
         await withCheckedContinuation { continuation in
             let shouldStart = invalidation.withLock { state -> Bool in
@@ -621,9 +633,13 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
     func run(
         task: URLSessionDataTask,
         specification: DownloadSpec,
-        transfer: FilePath
+        transfer: FilePath,
+        progress: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws -> TransferResult {
-        let state = DownloadState(specification: specification, transfer: transfer)
+        let state = DownloadState(
+            specification: specification,
+            transfer: transfer,
+            progress: progress)
         try? FileManager.default.removeItem(atPath: transfer.string)
         state.descriptor = try FileDescriptor.open(
             transfer,
@@ -705,7 +721,7 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        let update = states.withLock { states -> DownloadProgress? in
+        let queued = states.withLock { states -> QueuedDownloadProgress? in
             guard let state = states[dataTask.taskIdentifier],
                 state.policyError == nil,
                 let descriptor = state.descriptor
@@ -726,12 +742,14 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
                 return nil
             }
             let expected = state.response?.expectedContentLength ?? -1
-            return DownloadProgress(
-                digest: state.specification.expectedDigest,
-                receivedBytes: state.receivedBytes,
-                expectedBytes: expected >= 0 ? expected : nil)
+            return QueuedDownloadProgress(
+                progress: state.progress,
+                update: DownloadProgress(
+                    digest: state.specification.expectedDigest,
+                    receivedBytes: state.receivedBytes,
+                    expectedBytes: expected >= 0 ? expected : nil))
         }
-        if let update { progress(update) }
+        if let queued { queued.progress(queued.update) }
         _ = session
     }
 

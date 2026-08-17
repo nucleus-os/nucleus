@@ -146,13 +146,16 @@ func inspectionCommandsDoNotCreateRunRecords() throws {
         ["logs", "tail"],
         ["tasks"],
         ["graph", "build", "all"],
-        ["cache", "status"],
     ] {
         let parsed = try ColliderCommand.parseAsRoot(arguments)
         let command = try #require(parsed as? any ColliderWorkspaceCommand)
         #expect(!command.recordsRun)
         #expect(!command.requiresExecutionAdmission)
     }
+    let cacheStatus = try ColliderCommand.parseAsRoot(["cache", "status"])
+    let cacheStatusCommand = try #require(cacheStatus as? any ColliderWorkspaceCommand)
+    #expect(cacheStatusCommand.recordsRun)
+    #expect(!cacheStatusCommand.requiresExecutionAdmission)
     let build = try ColliderCommand.parseAsRoot(["build", "core"])
     let buildCommand = try #require(build as? any ColliderWorkspaceCommand)
     #expect(buildCommand.recordsRun)

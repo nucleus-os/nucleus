@@ -467,6 +467,7 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let locks: [TaskLock]
     public let assessmentPolicy: TaskAssessmentPolicy
     public let recordsActiveArtifact: Bool
+    public let durationEstimationMode: String?
     public let action: AnyColliderAction?
 
     public init(
@@ -484,6 +485,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
         recordsActiveArtifact: Bool = false,
+        durationEstimationMode: String? = nil,
         action: AnyColliderAction? = nil
     ) {
         let swiftArtifactReferences =
@@ -506,6 +508,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.locks = locks
         self.assessmentPolicy = assessmentPolicy
         self.recordsActiveArtifact = recordsActiveArtifact
+        self.durationEstimationMode = durationEstimationMode
         self.action = action
     }
 
@@ -539,6 +542,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             locks: locks,
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
+            durationEstimationMode: durationEstimationMode,
             action: action)
     }
 
@@ -558,6 +562,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             locks: locks + additionalLocks.filter { !locks.contains($0) },
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
+            durationEstimationMode: durationEstimationMode,
             action: action)
     }
 }

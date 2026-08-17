@@ -106,6 +106,8 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             output: request.output,
             logging: request.logging,
             stage: request.stage,
+            taskOutputPresentation: request.taskOutputPresentation,
+            taskOutputObserver: request.taskOutputObserver,
             persistentWorkspaceNames: resolution.names)
     }
 
@@ -340,6 +342,8 @@ struct AppleContainerLifecycle: Sendable {
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?,
+        taskOutputPresentation: TaskOutputPresentation = .verbose,
+        taskOutputObserver: TaskOutputObserver = TaskOutputObserver(),
         persistentWorkspaceNames: [PersistentWorkspaceIdentity: String] = [:],
         addedCapabilities: [String] = []
     ) async throws -> OCIRuntimeExecutionOutcome {
@@ -353,6 +357,8 @@ struct AppleContainerLifecycle: Sendable {
                 output: output,
                 logging: logging,
                 stage: stage,
+                taskOutputPresentation: taskOutputPresentation,
+                taskOutputObserver: taskOutputObserver,
                 persistentWorkspaceNames: persistentWorkspaceNames,
                 addedCapabilities: addedCapabilities)
         }
@@ -417,6 +423,8 @@ struct AppleContainerLifecycle: Sendable {
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?,
+        taskOutputPresentation: TaskOutputPresentation,
+        taskOutputObserver: TaskOutputObserver,
         persistentWorkspaceNames: [PersistentWorkspaceIdentity: String],
         addedCapabilities: [String]
     ) async throws -> CreatedContainerExecution {
@@ -458,7 +466,9 @@ struct AppleContainerLifecycle: Sendable {
         let outputSession = try AppleContainerOutputSession(
             output: output,
             logging: logging,
-            stage: stage)
+            stage: stage,
+            presentation: taskOutputPresentation,
+            observer: taskOutputObserver)
         do {
             let process = try await client.bootstrap(
                 id: name,
@@ -698,13 +708,16 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
     let stdio: [FileHandle?]
 
     private let pipes: [AppleContainerPipe]
+    private let sink: CommandOutputSink
     private let outputTask: Task<[UInt8], any Error>
     private let errorTask: Task<[UInt8], any Error>?
 
     init(
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID?
+        stage: TaskID?,
+        presentation: TaskOutputPresentation,
+        observer: TaskOutputObserver
     ) throws {
         guard output != .terminal else {
             throw AppleContainerFailure.unsupportedTerminalOutput
@@ -715,9 +728,12 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
             default: nil
             }
         let sink = try CommandOutputSink(
-            logging: file == nil ? logging : nil,
+            logging: logging,
             stage: stage,
-            file: file)
+            file: file,
+            presentation: presentation,
+            observer: observer)
+        self.sink = sink
 
         if case .combined(let limit) = output {
             let pipe = try AppleContainerPipe()
@@ -727,7 +743,7 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
                 try await collectAppleContainerOutput(
                     pipe.stream,
                     limit: limit,
-                    mirror: nil,
+                    stream: .standardOutput,
                     sink: sink)
             }
             errorTask = nil
@@ -747,15 +763,14 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
             try await collectAppleContainerOutput(
                 stdout.stream,
                 limit: captureLimit,
-                mirror: output == .inherited ? .standardOutput : nil,
+                stream: .standardOutput,
                 sink: sink)
         }
         errorTask = Task {
             try await collectAppleContainerOutput(
                 stderr.stream,
                 limit: nil,
-                mirror: output == .inherited || output.isCaptured
-                    ? .standardError : nil,
+                stream: .standardError,
                 sink: sink)
         }
     }
@@ -776,6 +791,7 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
         if let errorTask {
             _ = try await errorTask.value
         }
+        try await sink.finish()
         return CommandResult(
             status: status,
             standardOutput: String(decoding: bytes, as: UTF8.self))
@@ -789,6 +805,7 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
         if let errorTask {
             _ = try? await errorTask.value
         }
+        try? await sink.finish()
     }
 
     private func outputDrainedWithinLimit() async -> Bool {
@@ -806,13 +823,6 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
                 race.resolve(false, continuation: continuation)
             }
         }
-    }
-}
-
-extension CommandSpec.Output {
-    fileprivate var isCaptured: Bool {
-        if case .captured = self { return true }
-        return false
     }
 }
 
@@ -922,7 +932,7 @@ private final class AppleContainerPipe: @unchecked Sendable {
 private func collectAppleContainerOutput(
     _ chunks: AsyncStream<Data>,
     limit: Int?,
-    mirror: FileDescriptor?,
+    stream: TaskOutputStream,
     sink: CommandOutputSink
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
@@ -937,9 +947,8 @@ private func collectAppleContainerOutput(
             }
             exceededLimit = exceededLimit || bytes.count > remaining
         }
-        try await sink.write(bytes, mirror: mirror)
+        try await sink.write(bytes, stream: stream)
     }
-    try await sink.finish()
     if let limit, exceededLimit {
         throw RuntimeFailure.outputLimitExceeded(limit)
     }

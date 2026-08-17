@@ -7,6 +7,7 @@ import SystemPackage
 extension ConsoleOutputFormat: ExpressibleByArgument {}
 extension ConsoleColorPolicy: ExpressibleByArgument {}
 extension ConsoleProgressPolicy: ExpressibleByArgument {}
+extension ConsoleProgressFormat: ExpressibleByArgument {}
 
 package struct CommandOutputOptions: ParsableArguments, Sendable {
     @Option(help: "Output format.")
@@ -17,6 +18,9 @@ package struct CommandOutputOptions: ParsableArguments, Sendable {
 
     @Option(help: "Progress rendering policy.")
     package var progress: ConsoleProgressPolicy = .auto
+
+    @Option(name: .customLong("progress-format"), help: "Progress stream format.")
+    package var progressFormat: ConsoleProgressFormat?
 
     package init() {}
 }
@@ -75,12 +79,14 @@ package protocol OutputConfiguredCommand {
 }
 
 package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfiguredCommand {
+    var presentationKind: CommandPresentationKind { get }
     var recordsRun: Bool { get }
     var requiresExecutionAdmission: Bool { get }
     mutating func run(in context: WorkspaceContext) async throws
 }
 
 extension ColliderWorkspaceCommand {
+    package var presentationKind: CommandPresentationKind { .phase }
     package var recordsRun: Bool { true }
     package var requiresExecutionAdmission: Bool { true }
 
@@ -93,6 +99,7 @@ extension ColliderWorkspaceCommand {
 package protocol ColliderInspectionCommand: ColliderWorkspaceCommand {}
 
 extension ColliderInspectionCommand {
+    package var presentationKind: CommandPresentationKind { .none }
     package var recordsRun: Bool { false }
     package var requiresExecutionAdmission: Bool { false }
 }
@@ -102,6 +109,7 @@ package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {
 }
 
 extension TaskControlledCommand {
+    package var presentationKind: CommandPresentationKind { .taskGraph }
     package var requestedRunID: RunID? { taskOptions.runID?.value }
     package var outputOptions: CommandOutputOptions { taskOptions.outputOptions }
     package var requiresExecutionAdmission: Bool { !taskOptions.dryRun }

@@ -97,10 +97,32 @@ public struct SignalForwardingResult: Sendable {
     public let failures: [Int32: Int32]
 }
 
+public struct RuntimeTerminalSignalCallbacks: Sendable {
+    public let willInterrupt: @Sendable () -> Void
+    public let didResize: @Sendable () -> Void
+    public let willSuspend: @Sendable () -> Void
+    public let didResume: @Sendable () -> Void
+
+    public init(
+        willInterrupt: @escaping @Sendable () -> Void = {},
+        didResize: @escaping @Sendable () -> Void = {},
+        willSuspend: @escaping @Sendable () -> Void = {},
+        didResume: @escaping @Sendable () -> Void = {}
+    ) {
+        self.willInterrupt = willInterrupt
+        self.didResize = didResize
+        self.willSuspend = willSuspend
+        self.didResume = didResume
+    }
+}
+
 public final class RuntimeSignalHandlers: @unchecked Sendable {
     private let sources: [DispatchSourceSignal]
 
-    public init(cancellation: RuntimeCancellation) {
+    public init(
+        cancellation: RuntimeCancellation,
+        terminal: RuntimeTerminalSignalCallbacks = RuntimeTerminalSignalCallbacks()
+    ) {
         var sources: [DispatchSourceSignal] = []
         for number in [SIGINT, SIGTERM, SIGHUP] {
             signal(number, SIG_IGN)
@@ -108,6 +130,7 @@ public final class RuntimeSignalHandlers: @unchecked Sendable {
                 signal: number,
                 queue: .global(qos: .userInitiated))
             source.setEventHandler {
+                terminal.willInterrupt()
                 Task { await cancellation.handleInterruption(signal: number) }
             }
             source.resume()
@@ -119,6 +142,11 @@ public final class RuntimeSignalHandlers: @unchecked Sendable {
                 signal: number,
                 queue: .global(qos: .userInitiated))
             source.setEventHandler {
+                if number == SIGWINCH {
+                    terminal.didResize()
+                } else {
+                    terminal.didResume()
+                }
                 Task { await cancellation.forward(signal: number) }
             }
             source.resume()
@@ -129,6 +157,7 @@ public final class RuntimeSignalHandlers: @unchecked Sendable {
             signal: SIGTSTP,
             queue: .global(qos: .userInitiated))
         suspendSource.setEventHandler {
+            terminal.willSuspend()
             Task {
                 await cancellation.forward(signal: SIGTSTP)
                 _ = kill(getpid(), SIGSTOP)

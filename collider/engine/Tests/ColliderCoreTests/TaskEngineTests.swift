@@ -634,19 +634,64 @@ private struct FailAfterWriteAction: ColliderAction {
     #expect(first.plan.map(\.identity) == second.plan.map(\.identity))
 }
 
-@Test func taskOutputStreamsLoggedCommandsByDefaultAndQuietSuppressesInheritedOutput() {
+@Test func completedExecutionFeedsTheNextStableWorkloadEstimate() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-duration-history-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let output = root.appending("output")
+    let taskID = TaskID(rawValue: "fixture.duration-history")
+    func task(identity: String) throws -> TaskDeclaration {
+        TaskDeclaration(
+            id: taskID,
+            component: ComponentID(rawValue: "fixture"),
+            assessmentPolicy: .always,
+            durationEstimationMode: "release",
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: identity),
+                    probe: ParallelismProbe(),
+                    output: output)))
+    }
+
+    let first = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph([try task(identity: "source-a")]),
+        selected: [taskID],
+        stateRoot: stateRoot)
+    #expect(first.plan.first?.durationEstimate == nil)
+    let firstDuration = try #require(first.taskTimings.first?.durationNanoseconds)
+
+    let second = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph([try task(identity: "source-b")]),
+        selected: [taskID],
+        stateRoot: stateRoot)
+    #expect(second.plan.first?.identity != first.plan.first?.identity)
+    #expect(second.plan.first?.durationEstimate?.durationNanoseconds == firstDuration)
+}
+
+@Test func taskOutputPresentationMapsDefaultVerboseQuietAndRawOutput() {
     #expect(
-        TaskOutputPresentation.stream.output(for: .logged)
+        TaskOutputPresentation.default.output(for: .inherited)
+            == CommandSpec.Output.logged)
+    #expect(
+        TaskOutputPresentation.verbose.output(for: .logged)
             == CommandSpec.Output.inherited)
     #expect(
         TaskOutputPresentation.quiet.output(for: .inherited)
             == CommandSpec.Output.logged)
     #expect(
-        TaskOutputPresentation.stream.output(for: .captured(limit: 4096))
+        TaskOutputPresentation.default.output(for: .captured(limit: 4096))
             == CommandSpec.Output.captured(limit: 4096))
     #expect(
         TaskOutputPresentation.quiet.output(for: .file(FilePath("/tmp/output")))
             == CommandSpec.Output.file(FilePath("/tmp/output")))
+    #expect(
+        TaskOutputPresentation.raw.output(for: .terminal)
+            == CommandSpec.Output.terminal)
+    #expect(
+        TaskOutputPresentation.raw.output(for: .captured(limit: 4096))
+            == CommandSpec.Output.terminal)
 }
 
 @Test func taskIdentitySurvivesAShellSearchPathThatChangesEveryInvocation()

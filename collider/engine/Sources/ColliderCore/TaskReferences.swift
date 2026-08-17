@@ -191,6 +191,7 @@ public struct TaskBuilder: Sendable {
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
         recordsActiveArtifact: Bool = false,
+        durationEstimationMode: String? = nil,
         action: AnyColliderAction? = nil
     ) -> TaskDeclaration {
         TaskDeclaration(
@@ -210,6 +211,7 @@ public struct TaskBuilder: Sendable {
             locks: locks,
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
+            durationEstimationMode: durationEstimationMode,
             action: action)
     }
 }

@@ -36,12 +36,15 @@ public struct ColliderCommand: AsyncParsableCommand {
                 "parsed Collider command did not exit or accept application composition")
         }
         let taskCommand = workspaceCommand as? any TaskControlledCommand
-        let suppressTerminalSummary = taskCommand?.taskOptions.dryRun == true
+        let dryRun = taskCommand?.taskOptions.dryRun == true
+        let suppressTerminalSummary = dryRun
         let suppressHumanSummary =
             taskCommand?.taskOptions.quiet == true
             && taskCommand?.outputOptions.format == .text
         let console = CommandConsole.process(
             options: workspaceCommand.outputOptions,
+            presentationKind: workspaceCommand.presentationKind,
+            dryRun: dryRun,
             environment: processEnvironment,
             standardOutputIsTerminal: isatty(STDOUT_FILENO) == 1,
             standardErrorIsTerminal: isatty(STDERR_FILENO) == 1)
@@ -54,6 +57,12 @@ public struct ColliderCommand: AsyncParsableCommand {
         let registry = RunRegistry(
             root: nucleusRunRegistryRoot(workspaceRoot: workspace))
         try await registry.reconcileAbandonedRuns()
+        let observations: AsyncStream<RunObservation>? =
+            if workspaceCommand.recordsRun {
+                try await registry.observations()
+            } else {
+                nil
+            }
         let requestedRunID = requestedRunID(for: command)
         let run: RunHandle?
         if workspaceCommand.recordsRun {
@@ -67,8 +76,19 @@ public struct ColliderCommand: AsyncParsableCommand {
         } else {
             run = nil
         }
+        let observationTask: Task<Void, Never>? = observations.map { observations in
+            Task {
+                await consumeRunObservations(
+                    observations,
+                    console: console,
+                    registry: registry,
+                    run: run)
+            }
+        }
+        defer { observationTask?.cancel() }
         let cancellation = RuntimeCancellation()
         let logging = run.map { CommandLogging(registry: registry, run: $0) }
+        let hostPhases = HostPhaseRecorder(registry: registry, run: run)
         if let run {
             environment["NUCLEUS_RUN_DIR"] = run.directory.string
             environment["NUCLEUS_RUN_LOG"] = run.directory.appending("run.log").string
@@ -83,10 +103,23 @@ public struct ColliderCommand: AsyncParsableCommand {
         let runtime = ColliderRuntime(
             logging: logging,
             cancellation: cancellation,
+            taskOutputObserver: TaskOutputObserver(
+                output: { try? console.taskOutput($0) },
+                terminalWillBegin: { try? console.terminalWillSuspend() },
+                terminalDidEnd: { try? console.terminalDidResume() }),
             downloadCacheRoot: cacheLayout.downloads,
             ociConfiguration: ociConfiguration,
             ociBackend: ociBackend)
-        let signals = RuntimeSignalHandlers(cancellation: cancellation)
+        let signals = RuntimeSignalHandlers(
+            cancellation: cancellation,
+            terminal: RuntimeTerminalSignalCallbacks(
+                willInterrupt: {
+                    observationTask?.cancel()
+                    try? console.terminalWillInterrupt()
+                },
+                didResize: { try? console.terminalDidResize() },
+                willSuspend: { try? console.terminalWillSuspend() },
+                didResume: { try? console.terminalDidResume() }))
         let application = ColliderApplicationComposition(
             registry: registry,
             run: run,
@@ -98,6 +131,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 environment: environment,
                 runtime: runtime,
                 console: console,
+                hostPhases: hostPhases,
                 ociConfiguration: ociConfiguration),
             signals: signals)
         defer {
@@ -116,10 +150,17 @@ public struct ColliderCommand: AsyncParsableCommand {
                     registry: registry,
                     cancellation: cancellation)
             }
-            try await workspaceCommand.run(in: application.workspace)
+            if workspaceCommand.presentationKind == .phase {
+                try await hostPhases.withPhase(commandPhaseName(arguments)) {
+                    try await workspaceCommand.run(in: application.workspace)
+                }
+            } else {
+                try await workspaceCommand.run(in: application.workspace)
+            }
             await application.runtime.shutdown()
             if let run = application.run {
                 try await application.registry.finish(run, status: .succeeded)
+                await observationTask?.value
                 if !suppressTerminalSummary {
                     try await reportTerminalSummary(
                         run: run,
@@ -134,6 +175,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try? await application.registry.finish(
                     run,
                     status: .succeeded)
+                await observationTask?.value
                 if !suppressTerminalSummary {
                     try? await reportTerminalSummary(
                         run: run,
@@ -173,6 +215,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                     run,
                     status: status,
                     failedTask: contextualFailure?.task)
+                await observationTask?.value
             }
             if let contextualFailure {
                 try? console.failure(contextualFailure)
@@ -193,6 +236,11 @@ public struct ColliderCommand: AsyncParsableCommand {
     }
 }
 
+private func commandPhaseName(_ arguments: [String]) -> String {
+    let commandPath = arguments.prefix { !$0.hasPrefix("-") }
+    return commandPath.isEmpty ? "collider" : commandPath.joined(separator: " ")
+}
+
 func hostExecutionAdmissionLockPath(hostBuildRoot: FilePath) -> FilePath {
     hostBuildRoot.appending("state/locks/host-execution.lock")
 }
@@ -208,7 +256,15 @@ private func reportTerminalSummary(
     let summary = RunTerminalSummary(
         snapshot: snapshot,
         observedState: observed)
+    if console.progressPresentation == .machine {
+        try console.completeProgress(summary)
+        return
+    }
     if suppressHumanSummary { return }
+    if console.format == .text {
+        try console.completeProgress(summary)
+        return
+    }
     try console.report(
         summary,
         text: summary.text,

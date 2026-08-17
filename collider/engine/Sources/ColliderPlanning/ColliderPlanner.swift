@@ -59,17 +59,30 @@ public struct ColliderPlanner {
                     isClean: false,
                     explanation: "rebuild requested for selected task")
                 : assessment(of: task, identity: identity, services: services)
+            let coordinates = try executionCoordinates(
+                for: task.action,
+                runner: services.runnerPlatform)
+            let lane = task.action?.requirements.lane ?? .lightweight
+            let workload = TaskDurationWorkload(
+                task: task.id,
+                lane: lane,
+                coordinates: coordinates,
+                mode: task.durationEstimationMode)
             entries.append(
                 TaskPlanEntry(
                     task: task.id,
                     identity: identity,
                     isClean: assessment.isClean,
                     explanation: assessment.explanation,
-                    coordinates: try executionCoordinates(
-                        for: task.action,
-                        runner: services.runnerPlatform),
-                    lane: task.action?.requirements.lane ?? .lightweight,
-                    claims: normalizedClaims(for: task)))
+                    coordinates: coordinates,
+                    lane: lane,
+                    claims: normalizedClaims(for: task),
+                    durationWorkload: workload,
+                    durationEstimate: services.durationEstimate(workload).map {
+                        TaskDurationEstimate(
+                            workload: workload,
+                            durationNanoseconds: $0)
+                    }))
         }
 
         let assessed = zip(ordered, entries).map {
@@ -108,20 +121,33 @@ public struct ColliderPlanner {
                 of: lowered.task,
                 identity: identity,
                 services: services)
+            let coordinates = try executionCoordinates(
+                for: lowered.task.action,
+                runner: services.runnerPlatform)
+            let lane = lowered.task.action?.requirements.lane ?? .lightweight
+            let workload = TaskDurationWorkload(
+                task: lowered.task.id,
+                lane: lane,
+                coordinates: coordinates,
+                mode: lowered.task.durationEstimationMode)
             return TaskPlanEntry(
                 task: lowered.task.id,
                 identity: identity,
                 isClean: assessment.isClean,
                 explanation: assessment.explanation,
-                coordinates: try executionCoordinates(
-                    for: lowered.task.action,
-                    runner: services.runnerPlatform),
-                lane: lowered.task.action?.requirements.lane ?? .lightweight,
+                coordinates: coordinates,
+                lane: lane,
                 claims: normalizedClaims(for: lowered.task),
                 logicalOwners: lowered.logicalOwners.sorted {
                     $0.rawValue < $1.rawValue
                 },
-                attribution: lowered.attribution)
+                attribution: lowered.attribution,
+                durationWorkload: workload,
+                durationEstimate: services.durationEstimate(workload).map {
+                    TaskDurationEstimate(
+                        workload: workload,
+                        durationNanoseconds: $0)
+                })
         }
         return ExecutionPlan(
             declaredTasks: ordered,

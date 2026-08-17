@@ -147,6 +147,7 @@ extension WorkspaceContext {
             ]),
             workflowLocks: [sdkRebuildLock],
             lowerings: [SwiftPMLowering()],
+            hostPhases: hostPhases,
             options: controls.executionOptions)
         if controls.dryRun {
             try controls.renderDryRun(report, console: console)

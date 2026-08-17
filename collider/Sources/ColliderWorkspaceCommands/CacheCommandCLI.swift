@@ -8,7 +8,7 @@ struct Cache: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Inspect and explicitly reclaim Collider-owned generated storage.",
         subcommands: [Status.self, Prune.self])
-    struct Status: ColliderInspectionCommand {
+    struct Status: ColliderWorkspaceCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")
@@ -19,6 +19,7 @@ struct Cache: AsyncParsableCommand {
         )
         var measureAllocations = false
         @OptionGroup var outputOptions: CommandOutputOptions
+        var requiresExecutionAdmission: Bool { false }
         mutating func run(in context: WorkspaceContext) async throws {
             let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(

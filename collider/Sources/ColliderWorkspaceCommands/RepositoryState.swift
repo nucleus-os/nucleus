@@ -28,6 +28,7 @@ struct RunLogEntry: Codable, Equatable, Sendable {
 struct RunShowReport: Codable, Sendable {
     let manifest: RunManifest
     let observedState: ReducedRunState
+    let progress: RunProgressSnapshot
     let logs: [RunLogEntry]
 }
 
@@ -35,6 +36,7 @@ struct RepositoryStatusReport: Codable, Sendable {
     let status: String
     let activeRun: RunListEntry?
     let observedState: ReducedRunState?
+    let progress: RunProgressSnapshot?
     let latestRun: RunListEntry?
 }
 
@@ -56,32 +58,25 @@ struct RepositoryState {
         let active = snapshots.first(where: { $0.manifest.status == .running })
         let latest = snapshots.first
         let observed: ReducedRunState?
+        let progress: RunProgressSnapshot?
         if let active {
             observed = try await registry.reducedEvents(in: active)
+            progress = try await registry.progressSnapshot(in: active)
         } else {
             observed = nil
+            progress = nil
         }
         let report = RepositoryStatusReport(
             status: active == nil ? "idle" : "running",
             activeRun: active.map(listEntry),
             observedState: observed,
+            progress: progress,
             latestRun: latest.map(listEntry))
         var lines = ["status: \(report.status)"]
         if let activeRun = report.activeRun {
             lines += runLines(activeRun)
-            if let observed {
-                let runningTasks = observed.tasks.compactMap { task, state in
-                    if case .running = state { return task.rawValue }
-                    return nil
-                }.sorted()
-                for task in runningTasks { lines.append("running task: \(task)") }
-                for wait in observed.activeWaits.sorted(by: {
-                    if $0.resource != $1.resource { return $0.resource < $1.resource }
-                    return ($0.task?.rawValue ?? "") < ($1.task?.rawValue ?? "")
-                }) {
-                    let task = wait.task.map { " task \($0.rawValue)" } ?? ""
-                    lines.append("waiting\(task): \(wait.resource)")
-                }
+            if let progress {
+                lines += progressLines(progress)
             }
         } else if let latestRun = report.latestRun {
             lines.append("latest run: \(latestRun.runID) (\(latestRun.status.rawValue))")
@@ -101,12 +96,15 @@ struct RepositoryState {
     func showRun(_ requested: String?) async throws {
         let snapshot = try await resolve(requested)
         let observed = try await registry.reducedEvents(in: snapshot)
+        let progress = try await registry.progressSnapshot(in: snapshot)
         let logs = try await registry.logs(in: snapshot).map(logEntry)
         let report = RunShowReport(
             manifest: snapshot.manifest,
             observedState: observed,
+            progress: progress,
             logs: logs)
         var lines = runLines(listEntry(snapshot))
+        lines += progressLines(progress)
         if let tasks = snapshot.manifest.tasks {
             for (task, record) in tasks.sorted(by: { $0.key < $1.key }) {
                 lines.append(
@@ -216,6 +214,32 @@ struct RepositoryState {
     private func taskState(_ record: RunTaskRecord) -> String {
         if let outcome = record.outcome { return outcome.rawValue }
         return record.plan.isClean ? TaskRunOutcome.localClean.rawValue : "pending"
+    }
+
+    private func progressLines(_ progress: RunProgressSnapshot) -> [String] {
+        let percent = Int((progress.completionFraction * 100).rounded(.down))
+        var lines = [
+            "progress: \(progress.phase.rawValue)  "
+                + "\(progress.completedTaskCount)/\(progress.totalTaskCount)  \(percent)%"
+        ]
+        if let hostPhase = progress.hostPhase {
+            let count =
+                if let completed = hostPhase.completedItems,
+                    let total = hostPhase.totalItems
+                {
+                    " \(completed)/\(total)"
+                } else {
+                    ""
+                }
+            lines.append("host phase: \(hostPhase.name)\(count)")
+        }
+        for row in progress.activeRows {
+            lines.append("active task: \(row.task.rawValue) [\(row.lane.rawValue)]")
+        }
+        if progress.residualActiveRowCount > 0 {
+            lines.append("active tasks omitted: \(progress.residualActiveRowCount)")
+        }
+        return lines
     }
 
     private func domain(of run: RunManifest) -> String {

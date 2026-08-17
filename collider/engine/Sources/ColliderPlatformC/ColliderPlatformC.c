@@ -12,6 +12,7 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+#include <wchar.h>
 #if defined(__linux__)
 #include <linux/android/binderfs.h>
 #include <linux/loop.h>
@@ -74,6 +75,35 @@ int32_t collider_clone_file(const char *source, const char *destination) {
 
 int32_t collider_symlink(const char *target, const char *link_path) {
     return symlink(target, link_path);
+}
+
+int32_t collider_terminal_size(
+    int32_t descriptor,
+    uint16_t *columns,
+    uint16_t *rows) {
+    if (columns == NULL || rows == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    struct winsize size = {0};
+    if (ioctl(descriptor, TIOCGWINSZ, &size) != 0) {
+        return -1;
+    }
+    if (size.ws_col == 0U || size.ws_row == 0U) {
+        errno = EINVAL;
+        return -1;
+    }
+    *columns = size.ws_col;
+    *rows = size.ws_row;
+    return 0;
+}
+
+int32_t collider_terminal_scalar_width(uint32_t scalar) {
+    if (scalar > (uint32_t)WCHAR_MAX) {
+        return 1;
+    }
+    int width = wcwidth((wchar_t)scalar);
+    return width < 0 ? 1 : (int32_t)width;
 }
 
 int32_t collider_open_raw_pseudo_terminal(
