@@ -594,6 +594,11 @@ package struct LinuxNativePackagePayloadPublication: Hashable, Sendable {
     }
 }
 
+private struct LinuxNativePackagePayloadManifest: Codable, Sendable {
+    let package: LinuxNativePackageName
+    let generation: String
+}
+
 package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let publication: LinuxNativePackagePayloadPublication
@@ -702,6 +707,12 @@ package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
             candidate: candidate,
             generation: generation,
             active: publication.outputRoot.appending("current"))
+        try context.files.write(
+            try encodedJSON(
+                LinuxNativePackagePayloadManifest(
+                    package: publication.package,
+                    generation: "generations/sha256-\(digest.hexadecimal)")),
+            to: publication.outputRoot.appending("payload.json"))
         context.observations.record(
             ActionStageObservation(
                 name: LinuxNativePackageStage.payloadMaterialization.observationName,
@@ -746,6 +757,13 @@ package func validateLinuxNativePackagePayloadPublication(
     else {
         throw LinuxNativePackageAssemblyFailure(
             "canonical package payload has an invalid generation: \(package.rawValue)")
+    }
+    let manifest: LinuxNativePackagePayloadManifest = try decodeJSON(
+        files.read(root.appending("payload.json")))
+    guard manifest.package == package, manifest.generation == target else {
+        throw LinuxNativePackageAssemblyFailure(
+            "canonical package payload publication identity does not match: "
+                + package.rawValue)
     }
     let payload = root.appending(target)
     let digest = try files.digest(tree: payload)

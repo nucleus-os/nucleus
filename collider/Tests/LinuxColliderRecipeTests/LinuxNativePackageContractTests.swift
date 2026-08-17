@@ -1,5 +1,6 @@
 import ChromiumColliderRecipe
 import ColliderCore
+import Foundation
 import ShellColliderRecipe
 import SystemPackage
 import Testing
@@ -31,6 +32,109 @@ import Testing
             "LD_LIBRARY_PATH": "/fakeroot",
             "LD_PRELOAD": "explicit-fakeroot.so",
         ])
+}
+
+@Test func payloadPublicationRejectsAnotherLogicalPackage() throws {
+    struct Manifest: Encodable {
+        let package: LinuxNativePackageName
+        let generation: String
+    }
+
+    let digest = ArtifactDigest.sha256([])
+    let generation = "generations/sha256-\(digest.hexadecimal)"
+    let manifest = Array(
+        try JSONEncoder().encode(
+            Manifest(package: .session, generation: generation)))
+    let root = FilePath("/payload")
+    let files = ActionFileSystem(
+        metadata: { _ in nil },
+        metadataNoFollow: { path in
+            path == root.appending("current")
+                ? ActionFileSystem.Metadata(
+                    type: .symbolicLink,
+                    ownerExecutable: false)
+                : nil
+        },
+        contentsEqual: { _, _ in false },
+        createDirectory: { _ in },
+        copy: { _, _ in },
+        read: { path in
+            path == root.appending("payload.json") ? manifest : []
+        },
+        readSymbolicLink: { _ in generation },
+        digestTree: { _, _ in digest },
+        setPermissions: { _, _ in },
+        write: { _, _ in })
+
+    try validateLinuxNativePackagePayloadPublication(
+        root,
+        package: .session,
+        files: files)
+    #expect(throws: (any Error).self) {
+        try validateLinuxNativePackagePayloadPublication(
+            root,
+            package: .complete,
+            files: files)
+    }
+}
+
+@Test func adapterPublicationRejectsAnotherFamilyOrLogicalPackage() throws {
+    let cohort = try LinuxNativePackageCohortContract(
+        runtime: runtimeManifest(family: .debian, architecture: .arm64),
+        browser: browserManifest(architecture: .arm64),
+        architecture: .arm64)
+    let package = try #require(
+        cohort.manifest.packages.first { $0.name == .session })
+    let digest = ArtifactDigest.sha256([])
+    let target = "generations/sha256-\(digest.hexadecimal)"
+    let root = FilePath("/adapter")
+    let generation = root.appending(target)
+    let manifest = Array(try JSONEncoder().encode(package))
+    let files = ActionFileSystem(
+        metadata: { path in
+            path == generation.appending(nativeArchiveName(package))
+                ? ActionFileSystem.Metadata(
+                    type: .regular,
+                    ownerExecutable: false)
+                : nil
+        },
+        metadataNoFollow: { path in
+            path == root.appending("current")
+                ? ActionFileSystem.Metadata(
+                    type: .symbolicLink,
+                    ownerExecutable: false)
+                : nil
+        },
+        contentsEqual: { _, _ in false },
+        createDirectory: { _ in },
+        copy: { _, _ in },
+        read: { path in
+            path == generation.appending("package.json") ? manifest : []
+        },
+        readSymbolicLink: { _ in target },
+        digestTree: { _, _ in digest },
+        setPermissions: { _, _ in },
+        write: { _, _ in })
+
+    try validateLinuxNativePackageAdapterPublication(
+        root,
+        family: .debian,
+        package: .session,
+        files: files)
+    #expect(throws: (any Error).self) {
+        try validateLinuxNativePackageAdapterPublication(
+            root,
+            family: .rpm,
+            package: .session,
+            files: files)
+    }
+    #expect(throws: (any Error).self) {
+        try validateLinuxNativePackageAdapterPublication(
+            root,
+            family: .debian,
+            package: .complete,
+            files: files)
+    }
 }
 
 @Test func nativeBuilderIdentityMountRetainsTheImageIDAsARegularFile() {

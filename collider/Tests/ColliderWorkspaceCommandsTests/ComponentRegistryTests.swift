@@ -386,11 +386,19 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(retention.action?.kind == "linux.retain-package-storage")
     #expect(retention.assessmentPolicy == .always)
     let retentionDependencies = Set(retention.dependencies)
+    let packageExecutionTasks = catalog.tasks.filter {
+        guard let kind = $0.action?.kind else { return false }
+        return kind == "linux.package-runtime-payload"
+            || kind == "linux.package-control-payloads"
+            || kind == "linux.package-runtime-adapter"
+            || kind == "linux.package-control-adapters"
+    }
+    #expect(packageExecutionTasks.count == 20)
     for architecture in PlatformArchitecture.allCases {
         let packageNames = LinuxNativePackageName.allCases.filter {
             $0 != .androidAddon
         }
-        for package in packageNames {
+        for package in packageNames where !package.isControlOnly {
             let payloadID = LinuxTaskIDs.packagePayload(architecture, package)
             let payload = try #require(
                 catalog.tasks.first { $0.id == payloadID })
@@ -407,6 +415,36 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
                 #expect(adapter.assessmentPolicy == .incremental)
                 #expect(adapter.dependencies.contains(payloadID))
                 #expect(adapter.locks.count == 1)
+            }
+        }
+        let controlPayloadID = LinuxTaskIDs.packageControlPayloads(architecture)
+        let controlPayload = try #require(
+            catalog.tasks.first { $0.id == controlPayloadID })
+        #expect(controlPayload.action?.kind == "linux.package-control-payloads")
+        #expect(controlPayload.assessmentPolicy == .incremental)
+        #expect(controlPayload.outputs.count == 3)
+        #expect(controlPayload.locks.count == 3)
+        for package in LinuxNativePackageName.controlOnly {
+            #expect(
+                controlPayload.outputs.contains {
+                    $0.path.string.hasSuffix("/\(package.rawValue)/current")
+                })
+        }
+        let controlAdapterID = LinuxTaskIDs.packageControlAdapters(architecture)
+        let controlAdapter = try #require(
+            catalog.tasks.first { $0.id == controlAdapterID })
+        #expect(controlAdapter.action?.kind == "linux.package-control-adapters")
+        #expect(controlAdapter.assessmentPolicy == .incremental)
+        #expect(controlAdapter.dependencies.contains(controlPayloadID))
+        #expect(controlAdapter.outputs.count == 9)
+        #expect(controlAdapter.locks.count == 9)
+        for family in LinuxDistributionFamily.allCases {
+            for package in LinuxNativePackageName.controlOnly {
+                #expect(
+                    controlAdapter.outputs.contains {
+                        $0.path.string.hasSuffix(
+                            "/\(family.rawValue)/\(package.rawValue)/current")
+                    })
             }
         }
         let id = LinuxTaskIDs.packageCohort(architecture)
@@ -443,7 +481,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             for family in LinuxDistributionFamily.allCases {
                 #expect(
                     dependencies.contains(
-                        LinuxTaskIDs.packageAdapter(
+                        LinuxTaskIDs.adapterProducer(
                             architecture,
                             family,
                             package)))

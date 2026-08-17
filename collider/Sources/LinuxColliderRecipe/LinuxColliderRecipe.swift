@@ -55,6 +55,14 @@ package enum LinuxTaskIDs {
                 "linux.\(architecture.rawValue).package-payload.\(package.rawValue)")
     }
 
+    package static func packageControlPayloads(
+        _ architecture: PlatformArchitecture
+    ) -> TaskID {
+        TaskID(
+            rawValue:
+                "linux.\(architecture.rawValue).package-control-payloads")
+    }
+
     package static func packageAdapter(
         _ architecture: PlatformArchitecture,
         _ family: LinuxDistributionFamily,
@@ -64,6 +72,33 @@ package enum LinuxTaskIDs {
             rawValue:
                 "linux.\(architecture.rawValue).package-adapter."
                 + "\(family.rawValue).\(package.rawValue)")
+    }
+
+    package static func packageControlAdapters(
+        _ architecture: PlatformArchitecture
+    ) -> TaskID {
+        TaskID(
+            rawValue:
+                "linux.\(architecture.rawValue).package-control-adapters")
+    }
+
+    package static func payloadProducer(
+        _ architecture: PlatformArchitecture,
+        _ package: LinuxNativePackageName
+    ) -> TaskID {
+        package.isControlOnly
+            ? packageControlPayloads(architecture)
+            : packagePayload(architecture, package)
+    }
+
+    package static func adapterProducer(
+        _ architecture: PlatformArchitecture,
+        _ family: LinuxDistributionFamily,
+        _ package: LinuxNativePackageName
+    ) -> TaskID {
+        package.isControlOnly
+            ? packageControlAdapters(architecture)
+            : packageAdapter(architecture, family, package)
     }
 
     package static func packageProductPublication(
@@ -205,7 +240,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             }
             var payloads: [PreparedNativePackagePayload] = []
             for package in LinuxNativePackageName.allCases
-            where package != .androidAddon {
+            where package != .androidAddon && !package.isControlOnly {
                 let payload = try packagePayloadTask(
                     architecture: architecture,
                     package: package,
@@ -216,9 +251,17 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 tasks.append(payload.task)
                 payloads.append(payload)
             }
+            let controlPayloads = try packageControlPayloadsTask(
+                architecture: architecture,
+                lane: lane,
+                runtime: artifact,
+                browser: browser,
+                configuration: runtimeArtifact)
+            tasks.append(controlPayloads.task)
+            payloads += controlPayloads.payloads
             var adapters: [PreparedNativePackageAdapter] = []
             for family in LinuxDistributionFamily.allCases {
-                for payload in payloads {
+                for payload in payloads where !payload.package.isControlOnly {
                     let adapter = try packageAdapterTask(
                         architecture: architecture,
                         family: family,
@@ -231,6 +274,15 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     adapters.append(adapter)
                 }
             }
+            let controlAdapters = try packageControlAdaptersTask(
+                architecture: architecture,
+                payloads: controlPayloads.payloads,
+                lane: lane,
+                runtime: artifact,
+                browser: browser,
+                configuration: runtimeArtifact)
+            tasks.append(controlAdapters.task)
+            adapters += controlAdapters.adapters
             let nativePackages = try packageTask(
                 architecture: architecture,
                 lane: lane,
@@ -300,12 +352,12 @@ public enum LinuxColliderRecipe: ColliderComponent {
             let payloadProducers = Set(
                 payloadPackages.map {
                     StorageProducer.task(
-                        LinuxTaskIDs.packagePayload(architecture, $0))
+                        LinuxTaskIDs.payloadProducer(architecture, $0))
                 }
                     + payloadPackages.flatMap { package in
                         LinuxDistributionFamily.allCases.map { family in
                             StorageProducer.task(
-                                LinuxTaskIDs.packageAdapter(
+                                LinuxTaskIDs.adapterProducer(
                                     architecture,
                                     family,
                                     package))
@@ -412,7 +464,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         + package.rawValue,
                     owner: descriptor.id,
                     producers: [
-                        .task(LinuxTaskIDs.packagePayload(architecture, package))
+                        .task(LinuxTaskIDs.payloadProducer(architecture, package))
                     ],
                     storageClass: .generation,
                     root: root.appending("generations"),
@@ -434,7 +486,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         owner: descriptor.id,
                         producers: [
                             .task(
-                                LinuxTaskIDs.packageAdapter(
+                                LinuxTaskIDs.adapterProducer(
                                     architecture,
                                     family,
                                     package))
@@ -494,11 +546,21 @@ public enum LinuxColliderRecipe: ColliderComponent {
         let payload: ArtifactReference
     }
 
+    private struct PreparedControlPayloads {
+        let task: TaskDeclaration
+        let payloads: [PreparedNativePackagePayload]
+    }
+
     private struct PreparedNativePackageAdapter {
         let family: LinuxDistributionFamily
         let package: LinuxNativePackageName
         let task: TaskDeclaration
         let publication: ArtifactReference
+    }
+
+    private struct PreparedControlAdapters {
+        let task: TaskDeclaration
+        let adapters: [PreparedNativePackageAdapter]
     }
 
     private struct PreparedPublishedNativePackages {
@@ -775,6 +837,69 @@ public enum LinuxColliderRecipe: ColliderComponent {
             payload: payload)
     }
 
+    private static func packageControlPayloadsTask(
+        architecture: PlatformArchitecture,
+        lane: LinuxRuntimeArtifactLane,
+        runtime: PreparedRuntimeArtifact,
+        browser: ChromiumColliderRecipe.PackageInput,
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> PreparedControlPayloads {
+        let assembler = configuration.assemblerSwiftPM.product(
+            package: "collider-cli",
+            product: "nucleus-linux-assembler",
+            packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
+            environment: configuration.environment,
+            expectedOutputs: [
+                PathPostcondition(
+                    path: configuration.assemblerSwiftPM.executable(
+                        "nucleus-linux-assembler"),
+                    validation: .executableFile)
+            ])
+        let payloadRoot = lane.packageWorkRoot.appending("payloads")
+        var builder = TaskBuilder(
+            id: LinuxTaskIDs.packageControlPayloads(architecture),
+            component: descriptor.id)
+        builder.consume(runtime.runtime)
+        builder.consume(runtime.packageManifests)
+        builder.consume(browser.reference)
+        builder.consume(browser.payloadReference)
+        var publications:
+            [(
+                package: LinuxNativePackageName, payload: ArtifactReference
+            )] = []
+        for package in LinuxNativePackageName.controlOnly {
+            let payload = try builder.output(
+                OutputSlotID(rawValue: "payload-\(package.rawValue)"),
+                path: payloadRoot.appending("\(package.rawValue)/current"),
+                validation: .symlinkTarget)
+            publications.append((package, payload))
+        }
+        let task = builder.build(
+            swiftProducts: [assembler],
+            inputs: [configuration.assemblerSwiftPM.identityInput],
+            locks: LinuxNativePackageName.controlOnly.map {
+                .shared(
+                    payloadRoot.appending("\($0.rawValue)/.publish.lock"))
+            },
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                PackageLinuxControlPayloadsAction(
+                    architecture: architecture,
+                    runtimeArtifactRoot: lane.artifactRoot,
+                    browser: browser,
+                    assemblerSwiftPM: configuration.assemblerSwiftPM,
+                    payloadRoot: payloadRoot,
+                    environment: configuration.environment)))
+        return PreparedControlPayloads(
+            task: task,
+            payloads: publications.map {
+                PreparedNativePackagePayload(
+                    package: $0.package,
+                    task: task,
+                    payload: $0.payload)
+            })
+    }
+
     private static func packageAdapterTask(
         architecture: PlatformArchitecture,
         family: LinuxDistributionFamily,
@@ -835,6 +960,82 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: payload.package,
             task: task,
             publication: publication)
+    }
+
+    private static func packageControlAdaptersTask(
+        architecture: PlatformArchitecture,
+        payloads: [PreparedNativePackagePayload],
+        lane: LinuxRuntimeArtifactLane,
+        runtime: PreparedRuntimeArtifact,
+        browser: ChromiumColliderRecipe.PackageInput,
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> PreparedControlAdapters {
+        let assembler = configuration.assemblerSwiftPM.product(
+            package: "collider-cli",
+            product: "nucleus-linux-assembler",
+            packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
+            environment: configuration.environment,
+            expectedOutputs: [
+                PathPostcondition(
+                    path: configuration.assemblerSwiftPM.executable(
+                        "nucleus-linux-assembler"),
+                    validation: .executableFile)
+            ])
+        let adapterRoot = lane.packageWorkRoot.appending("adapters")
+        var builder = TaskBuilder(
+            id: LinuxTaskIDs.packageControlAdapters(architecture),
+            component: descriptor.id)
+        for payload in payloads {
+            builder.consume(payload.payload)
+        }
+        builder.consume(runtime.runtime)
+        builder.consume(runtime.packageManifests)
+        builder.consume(browser.reference)
+        builder.consume(browser.payloadReference)
+        var publications:
+            [(
+                family: LinuxDistributionFamily,
+                package: LinuxNativePackageName,
+                publication: ArtifactReference
+            )] = []
+        for family in LinuxDistributionFamily.allCases {
+            for package in LinuxNativePackageName.controlOnly {
+                let publication = try builder.output(
+                    OutputSlotID(
+                        rawValue: "adapter-\(family.rawValue)-\(package.rawValue)"),
+                    path: adapterRoot.appending(
+                        "\(family.rawValue)/\(package.rawValue)/current"),
+                    validation: .symlinkTarget)
+                publications.append((family, package, publication))
+            }
+        }
+        let task = builder.build(
+            swiftProducts: [assembler],
+            inputs: [configuration.assemblerSwiftPM.identityInput],
+            locks: publications.map {
+                .shared(
+                    $0.publication.path.removingLastComponent().appending(
+                        ".publish.lock"))
+            },
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                PackageLinuxControlAdaptersAction(
+                    architecture: architecture,
+                    runtimeArtifactRoot: lane.artifactRoot,
+                    browser: browser,
+                    payloadRoot: lane.packageWorkRoot.appending("payloads"),
+                    assemblerSwiftPM: configuration.assemblerSwiftPM,
+                    outputRoot: adapterRoot,
+                    environment: configuration.environment)))
+        return PreparedControlAdapters(
+            task: task,
+            adapters: publications.map {
+                PreparedNativePackageAdapter(
+                    family: $0.family,
+                    package: $0.package,
+                    task: task,
+                    publication: $0.publication)
+            })
     }
 
     private static func packageProductPublicationTask(

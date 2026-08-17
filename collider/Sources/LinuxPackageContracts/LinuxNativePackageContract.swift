@@ -9,6 +9,14 @@ package enum LinuxNativePackageName: String, CaseIterable, Codable, Hashable, Se
     case androidAddon = "nucleus-android-addon"
     case developmentHost = "nucleus-development-host"
     case complete = "nucleus"
+
+    package static let controlOnly: [LinuxNativePackageName] = [
+        .session, .developmentHost, .complete,
+    ]
+
+    package var isControlOnly: Bool {
+        Self.controlOnly.contains(self)
+    }
 }
 
 package enum LinuxNativePackagePathKind: String, Codable, Sendable {

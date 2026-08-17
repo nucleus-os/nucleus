@@ -335,6 +335,8 @@ removing a stale sibling.
 
 ## Phase 9: Batch Control-Only Package Work
 
+Status: complete.
+
 Replace the separate session, development-host, and complete payload containers
 with one architecture-local control-payload task that publishes three distinct
 content-addressed payload outputs. Replace their nine family adapter containers
@@ -348,6 +350,26 @@ logical package and family, substituting any one output fails validation, both
 architecture lifecycle qualifications pass, and a rebuilt graph eliminates at
 least sixteen control-only container executions. The run record compares saved
 container bootstrap/cleanup time against any lost scheduling overlap.
+
+The graph now owns session, development-host, and complete payloads through one
+three-output control-payload task per architecture. One nine-output
+control-adapter task per architecture owns their Debian, RPM, and Arch archives.
+Runtime and browser retain independent payload and family-adapter tasks. Payload
+publication metadata binds the logical package and active content generation;
+adapter metadata binds the family and logical package. Every batched output
+therefore retains an independent content-addressed publication and fails closed
+when substituted.
+
+Gate satisfied: run `2026-08-17T02-47-26.416Z-36896` passed both architecture
+lifecycle qualifications and reduced control-only containers from 24 to four.
+Summed bootstrap plus cleanup fell from 18.57 to 2.91 seconds, saving 15.66
+seconds, while summed container process time fell from 44.33 to 35.71 seconds.
+The control-only wall window fell from 51.24 to 18.93 seconds on arm64 and from
+63.58 to 20.14 seconds on x86_64, so batching lost no observed scheduling
+overlap. Graph tests assert the three and nine distinct output slots and the
+20-container reduction; behavioral tests reject cross-package payload and
+cross-family or cross-package adapter substitution. The complete Collider suite
+passed in run `2026-08-17T02-45-09.982Z-32864`.
 
 ## Phase 10: Build Architecture-Neutral Packages Once
 

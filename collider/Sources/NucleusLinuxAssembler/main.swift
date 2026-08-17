@@ -24,6 +24,10 @@ struct NucleusLinuxAssembler {
         switch operation {
         case "adapter":
             try await assembleAdapter(Array(arguments.dropFirst()))
+        case "control-adapters":
+            try await assembleControlAdapters(Array(arguments.dropFirst()))
+        case "control-payloads":
+            try await materializeControlPayloads(Array(arguments.dropFirst()))
         case "payload":
             try await materializePayload(Array(arguments.dropFirst()))
         case "packages":
@@ -31,6 +35,42 @@ struct NucleusLinuxAssembler {
         default:
             throw LinuxAssemblerFailure.invalidArguments
         }
+    }
+
+    private static func assembleControlAdapters(_ arguments: [String]) async throws {
+        guard arguments.count == 7,
+            let architecture = PlatformArchitecture(rawValue: arguments[4])
+        else {
+            throw LinuxAssemblerFailure.invalidArguments
+        }
+        var stages: [ActionStageObservation] = []
+        for family in LinuxDistributionFamily.allCases {
+            for package in LinuxNativePackageName.controlOnly {
+                let root = FilePath(arguments[3]).appending(
+                    "\(family.rawValue)/\(package.rawValue)")
+                let observations = try await execute(
+                    AssembleLinuxNativePackageAdapterAction(
+                        publication: LinuxNativePackageAdapterPublication(
+                            architecture: architecture,
+                            family: family,
+                            package: package,
+                            runtimeArtifactRoot: FilePath(arguments[0]),
+                            browser: BrowserPackageInputPublication(
+                                target: ArtifactTarget(
+                                    operatingSystem: .linux,
+                                    architecture: architecture,
+                                    abi: "glibc"),
+                                distributionRoot: FilePath(arguments[1]),
+                                packageInputRoot: FilePath(arguments[2])),
+                            payloadRoot: root.appending(".payload-view"),
+                            outputRoot: root,
+                            assemblerExecutable: FilePath(arguments[5]))))
+                stages += observations.actionStages
+            }
+        }
+        try Data(JSONEncoder().encode(stages)).write(
+            to: URL(fileURLWithPath: arguments[6]),
+            options: .atomic)
     }
 
     private static func assembleAdapter(_ arguments: [String]) async throws {
@@ -86,6 +126,36 @@ struct NucleusLinuxAssembler {
                     package: package)))
         try Data(JSONEncoder().encode(observations.actionStages)).write(
             to: URL(fileURLWithPath: arguments[6]),
+            options: .atomic)
+    }
+
+    private static func materializeControlPayloads(_ arguments: [String]) async throws {
+        guard arguments.count == 6,
+            let architecture = PlatformArchitecture(rawValue: arguments[4])
+        else {
+            throw LinuxAssemblerFailure.invalidArguments
+        }
+        var stages: [ActionStageObservation] = []
+        for package in LinuxNativePackageName.controlOnly {
+            let observations = try await execute(
+                MaterializeLinuxNativePackagePayloadAction(
+                    publication: LinuxNativePackagePayloadPublication(
+                        architecture: architecture,
+                        runtimeArtifactRoot: FilePath(arguments[0]),
+                        browser: BrowserPackageInputPublication(
+                            target: ArtifactTarget(
+                                operatingSystem: .linux,
+                                architecture: architecture,
+                                abi: "glibc"),
+                            distributionRoot: FilePath(arguments[1]),
+                            packageInputRoot: FilePath(arguments[2])),
+                        outputRoot: FilePath(arguments[3]).appending(
+                            package.rawValue),
+                        package: package)))
+            stages += observations.actionStages
+        }
+        try Data(JSONEncoder().encode(stages)).write(
+            to: URL(fileURLWithPath: arguments[5]),
             options: .atomic)
     }
 
