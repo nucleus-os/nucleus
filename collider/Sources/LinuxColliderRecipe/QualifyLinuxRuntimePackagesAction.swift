@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import LinuxPackageContracts
 import ShellColliderRecipe
 import SystemPackage
 
@@ -17,6 +18,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
     private let architecture: PlatformArchitecture
     private let packagePublicationRoot: FilePath
     private let productStoreRoot: FilePath
+    private let productStoreReceipt: FilePath
     private let qualificationRoot: FilePath
     private let pipeline: OCIExecutionPipeline
 
@@ -24,6 +26,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         architecture: PlatformArchitecture,
         packagePublicationRoot: FilePath,
         productStoreRoot: FilePath,
+        productStoreReceipt: FilePath,
         assemblerSwiftPM: SwiftPMInvocation,
         qualificationRoot: FilePath,
         environment: [String: String]
@@ -31,6 +34,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         self.architecture = architecture
         self.packagePublicationRoot = packagePublicationRoot
         self.productStoreRoot = productStoreRoot
+        self.productStoreReceipt = productStoreReceipt
         self.qualificationRoot = qualificationRoot
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
@@ -56,6 +60,12 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
             OCIMount(
                 source: productStoreRoot,
                 target: productStoreRoot.string,
+                access: .readOnly),
+            to: &mounts)
+        try appendQualificationMount(
+            OCIMount(
+                source: productStoreReceipt.removingLastComponent(),
+                target: productStoreReceipt.removingLastComponent().string,
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
@@ -111,7 +121,6 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
                         family.rawValue,
                         architecture.rawValue,
                         packagePublicationRoot.string,
-                        productStoreRoot.string,
                         qualificationRoot.string,
                         assembler.string,
                         assemblerOCI.imageID.string,
@@ -132,6 +141,12 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {
+        try validateLinuxNativePackageProductStoreReceipt(
+            architecture: architecture,
+            packagePublicationRoot: packagePublicationRoot,
+            productStoreRoot: productStoreRoot,
+            receipt: productStoreReceipt,
+            files: files)
         let reports: [LinuxNativePackageLifecycleQualificationReport] =
             try LinuxDistributionFamily.allCases.map { family in
                 try decodeQualificationJSON(

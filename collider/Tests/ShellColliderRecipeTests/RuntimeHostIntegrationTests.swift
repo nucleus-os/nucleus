@@ -1,4 +1,5 @@
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 import Testing
 

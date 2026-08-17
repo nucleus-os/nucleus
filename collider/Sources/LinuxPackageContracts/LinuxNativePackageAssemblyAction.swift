@@ -1,8 +1,6 @@
-import ChromiumColliderRecipe
 import ColliderCore
 import ColliderPersistence
 import Foundation
-import ShellColliderRecipe
 import SystemPackage
 
 package struct LinuxNativePackagePublication: Hashable, Sendable {
@@ -10,10 +8,12 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
     package let sourceSnapshot: FilePath
     package let runtimeArtifactRoot: FilePath
     package let browser: BrowserPackageInputPublication
+    package let canonicalPayloadRoot: FilePath?
+    package let adapterRoot: FilePath?
     package let outputRoot: FilePath
-    package let productStoreRoot: FilePath
     package let assemblerExecutable: FilePath
     package let builderImageID: FilePath
+    package let producingTask: TaskID
     package let producerRunner: RunnerPlatform
     package let environment: [String: String]
 
@@ -22,10 +22,12 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
         sourceSnapshot: FilePath,
         runtimeArtifactRoot: FilePath,
         browser: BrowserPackageInputPublication,
+        canonicalPayloadRoot: FilePath? = nil,
+        adapterRoot: FilePath? = nil,
         outputRoot: FilePath,
-        productStoreRoot: FilePath,
         assemblerExecutable: FilePath,
         builderImageID: FilePath,
+        producingTask: TaskID,
         producerRunner: RunnerPlatform,
         environment: [String: String]
     ) {
@@ -33,10 +35,12 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
         self.sourceSnapshot = sourceSnapshot
         self.runtimeArtifactRoot = runtimeArtifactRoot
         self.browser = browser
+        self.canonicalPayloadRoot = canonicalPayloadRoot
+        self.adapterRoot = adapterRoot
         self.outputRoot = outputRoot
-        self.productStoreRoot = productStoreRoot
         self.assemblerExecutable = assemblerExecutable
         self.builderImageID = builderImageID
+        self.producingTask = producingTask
         self.producerRunner = producerRunner
         self.environment = environment
     }
@@ -65,10 +69,16 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
             encoder.append(path: publication.runtimeArtifactRoot)
             encoder.append(path: publication.browser.distributionRoot)
             encoder.append(path: publication.browser.packageInputRoot)
+            if let canonicalPayloadRoot = publication.canonicalPayloadRoot {
+                encoder.append(path: canonicalPayloadRoot)
+            }
+            if let adapterRoot = publication.adapterRoot {
+                encoder.append(path: adapterRoot)
+            }
             encoder.append(path: publication.outputRoot)
-            encoder.append(path: publication.productStoreRoot)
             encoder.append(path: publication.assemblerExecutable)
             encoder.append(path: publication.builderImageID)
+            encoder.append(publication.producingTask.rawValue)
             encoder.append(publication.producerRunner.operatingSystem.rawValue)
             encoder.append(publication.producerRunner.architecture.rawValue)
         }
@@ -86,10 +96,40 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
     package var environment: [String: String] { publication.environment }
 
     package var requirements: ActionRequirements {
-        ActionRequirements(
+        var effects = [
+            ActionEffect(.read, scope: .input(publication.sourceSnapshot)),
+            ActionEffect(
+                .read,
+                scope: .input(publication.runtimeArtifactRoot)),
+            ActionEffect(
+                .read,
+                scope: .input(publication.browser.distributionRoot)),
+            ActionEffect(
+                .read,
+                scope: .input(publication.browser.packageInputRoot)),
+        ]
+        if let canonicalPayloadRoot = publication.canonicalPayloadRoot {
+            effects.append(
+                ActionEffect(.read, scope: .input(canonicalPayloadRoot)))
+        }
+        if let adapterRoot = publication.adapterRoot {
+            effects.append(ActionEffect(.read, scope: .input(adapterRoot)))
+        }
+        effects += [
+            ActionEffect(
+                .read,
+                scope: .input(publication.assemblerExecutable)),
+            ActionEffect(.read, scope: .input(publication.builderImageID)),
+            ActionEffect(
+                .readWrite,
+                scope: .publication(publication.outputRoot)),
+        ]
+        return ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "bash", executable: .named("bash"), role: .operational),
+                ActionToolRequirement(
+                    "cp", executable: .named("cp"), role: .semantic),
                 ActionToolRequirement(
                     "desktop-file-validate",
                     executable: .named("desktop-file-validate"),
@@ -109,28 +149,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                 ActionToolRequirement(
                     "zstd", executable: .named("zstd"), role: .semantic),
             ],
-            effects: [
-                ActionEffect(.read, scope: .input(publication.sourceSnapshot)),
-                ActionEffect(
-                    .read,
-                    scope: .input(publication.runtimeArtifactRoot)),
-                ActionEffect(
-                    .read,
-                    scope: .input(publication.browser.distributionRoot)),
-                ActionEffect(
-                    .read,
-                    scope: .input(publication.browser.packageInputRoot)),
-                ActionEffect(
-                    .read,
-                    scope: .input(publication.assemblerExecutable)),
-                ActionEffect(.read, scope: .input(publication.builderImageID)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .publication(publication.outputRoot)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .publication(publication.productStoreRoot)),
-            ],
+            effects: effects,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: ArtifactTarget(
                 operatingSystem: .linux,
@@ -167,9 +186,73 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
 
         let archives = candidate.appending("packages")
         let manifests = candidate.appending("manifests")
+        let productPayloads = candidate.appending("product-payloads")
         let staging = candidate.appending(".staging")
-        for directory in [archives, manifests, staging] {
+        for directory in [archives, manifests, productPayloads, staging] {
             try context.files.createDirectory(directory)
+        }
+        var canonicalPayloads: [LinuxNativePackageName: (FilePath, UInt64)] = [:]
+        if publication.adapterRoot != nil {
+            // Independently validated adapter publications supply the archives.
+        } else if let externalRoot = publication.canonicalPayloadRoot {
+            for package in LinuxNativePackageName.allCases
+            where package != .androidAddon {
+                let publicationRoot = externalRoot.appending(package.rawValue)
+                try validateLinuxNativePackagePayloadPublication(
+                    publicationRoot,
+                    package: package,
+                    files: context.files)
+                let target = try context.files.readSymbolicLink(
+                    publicationRoot.appending("current"))
+                let root = publicationRoot.appending(target)
+                canonicalPayloads[package] = (
+                    root,
+                    try linuxNativePackageLogicalByteCount(
+                        at: root,
+                        files: context.files)
+                )
+            }
+        } else {
+            let payloadRoot = staging.appending("payloads")
+            try context.files.createDirectory(payloadRoot)
+            let canonicalRuntime = try runtimeManifest(.debian, files: context.files)
+            try validateRuntimePackageInput(
+                canonicalRuntime,
+                activeGeneration: runtimePublication.generation,
+                activeDigest: runtimePublication.digest)
+            let canonicalCohort = try LinuxNativePackageCohortContract(
+                runtime: canonicalRuntime,
+                browser: browser,
+                architecture: publication.architecture)
+            for package in canonicalCohort.manifest.packages {
+                let root = payloadRoot.appending(package.name.rawValue)
+                let materializationStart = ContinuousClock().now
+                try materialize(
+                    package: package,
+                    cohort: canonicalCohort.manifest,
+                    runtimeManifest: canonicalRuntime,
+                    runtimePayload: runtimePublication.payload,
+                    browserManifest: browser,
+                    browserPayload: browserPayload,
+                    root: root,
+                    files: context.files)
+                let byteCount = try linuxNativePackageLogicalByteCount(
+                    at: root,
+                    files: context.files)
+                let duration = elapsedNanoseconds(since: materializationStart)
+                stageRecorder.record(
+                    .payloadMaterialization,
+                    durationNanoseconds: duration,
+                    inputByteCount: byteCount,
+                    outputByteCount: byteCount)
+                stageRecorder.record(
+                    .payloadMaterialization,
+                    package: package.name,
+                    durationNanoseconds: duration,
+                    inputByteCount: byteCount,
+                    outputByteCount: byteCount)
+                canonicalPayloads[package.name] = (root, byteCount)
+            }
         }
         var products: [LinuxNativePackageCohortPublication.Product] = []
         for family in LinuxDistributionFamily.allCases {
@@ -186,61 +269,117 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
             try context.files.createDirectory(familyRoot)
             var familyProducts: [LinuxNativePackageCohortPublication.Product] = []
             for package in cohort.manifest.packages {
-                let root = familyRoot.appending(package.name.rawValue)
-                let materializationStart = ContinuousClock().now
-                try materialize(
-                    package: package,
-                    cohort: cohort.manifest,
-                    runtimeManifest: runtime,
-                    runtimePayload: runtimePublication.payload,
-                    browserManifest: browser,
-                    browserPayload: browserPayload,
-                    root: root,
-                    files: context.files)
-                let materializedByteCount = try logicalByteCount(
-                    at: root,
-                    files: context.files)
-                stageRecorder.record(
-                    .payloadMaterialization,
-                    durationNanoseconds: elapsedNanoseconds(
-                        since: materializationStart),
-                    inputByteCount: materializedByteCount,
-                    outputByteCount: materializedByteCount)
                 let archive = archives.appending(
                     nativeArchiveName(package))
-                let assemblyStart = ContinuousClock().now
-                try await Self.assemble(
-                    package: package,
-                    root: root,
-                    archive: archive,
-                    workRoot: familyRoot,
-                    assemblerIdentity: toolchainIdentity,
-                    context: context)
-                let archiveByteCount = try logicalByteCount(
-                    at: archive,
-                    files: context.files)
-                stageRecorder.record(
-                    package.family.assemblyStage,
-                    durationNanoseconds: elapsedNanoseconds(since: assemblyStart),
-                    inputByteCount: materializedByteCount,
-                    outputByteCount: archiveByteCount)
-                let validationStart = ContinuousClock().now
-                try await Self.validate(
-                    package: package,
-                    archive: archive,
-                    context: context)
-                stageRecorder.record(
-                    package.family.validationStage,
-                    durationNanoseconds: elapsedNanoseconds(since: validationStart),
-                    inputByteCount: archiveByteCount,
-                    outputByteCount: 0)
+                let archiveByteCount: UInt64
+                if let adapterRoot = publication.adapterRoot {
+                    let adapterPublication = adapterRoot.appending(
+                        "\(family.rawValue)/\(package.name.rawValue)")
+                    try validateLinuxNativePackageAdapterPublication(
+                        adapterPublication,
+                        family: family,
+                        package: package.name,
+                        files: context.files)
+                    let target = try context.files.readSymbolicLink(
+                        adapterPublication.appending("current"))
+                    let generation = adapterPublication.appending(target)
+                    let adapterManifest: LinuxNativePackageManifest = try decodeJSON(
+                        context.files.read(generation.appending("package.json")))
+                    guard adapterManifest == package else {
+                        throw LinuxNativePackageAssemblyFailure(
+                            "package adapter manifest does not match its cohort")
+                    }
+                    try context.files.copy(
+                        from: generation.appending(nativeArchiveName(package)),
+                        to: archive)
+                    archiveByteCount = try linuxNativePackageLogicalByteCount(
+                        at: archive,
+                        files: context.files)
+                } else {
+                    guard let canonicalPayload = canonicalPayloads[package.name] else {
+                        throw LinuxNativePackageAssemblyFailure(
+                            "canonical package payload is missing: "
+                                + package.name.rawValue)
+                    }
+                    let root = familyRoot.appending(package.name.rawValue)
+                    let viewStart = ContinuousClock().now
+                    try await requireSuccess(
+                        .named("cp"),
+                        ["-al", canonicalPayload.0.string, root.string],
+                        environment: reproducibleEnvironment,
+                        context: context)
+                    try validateMaterializedRoot(
+                        package,
+                        root: root,
+                        files: context.files)
+                    let materializedByteCount =
+                        try linuxNativePackageLogicalByteCount(
+                            at: root,
+                            files: context.files)
+                    guard materializedByteCount == canonicalPayload.1 else {
+                        throw LinuxNativePackageAssemblyFailure(
+                            "package family view changed logical payload size: "
+                                + package.name.rawValue)
+                    }
+                    stageRecorder.record(
+                        .familyViewConstruction,
+                        package: package.name,
+                        family: package.family,
+                        durationNanoseconds: elapsedNanoseconds(since: viewStart),
+                        inputByteCount: materializedByteCount,
+                        outputByteCount: materializedByteCount)
+                    let assemblyStart = ContinuousClock().now
+                    try await Self.assemble(
+                        package: package,
+                        root: root,
+                        archive: archive,
+                        workRoot: familyRoot,
+                        assemblerIdentity: toolchainIdentity,
+                        stageRecorder: stageRecorder,
+                        context: context)
+                    archiveByteCount = try linuxNativePackageLogicalByteCount(
+                        at: archive,
+                        files: context.files)
+                    let assemblyDuration = elapsedNanoseconds(since: assemblyStart)
+                    stageRecorder.record(
+                        package.family.assemblyStage,
+                        durationNanoseconds: assemblyDuration,
+                        inputByteCount: materializedByteCount,
+                        outputByteCount: archiveByteCount)
+                    stageRecorder.record(
+                        .assembly,
+                        package: package.name,
+                        family: package.family,
+                        durationNanoseconds: assemblyDuration,
+                        inputByteCount: materializedByteCount,
+                        outputByteCount: archiveByteCount)
+                    let validationStart = ContinuousClock().now
+                    try await Self.validate(
+                        package: package,
+                        archive: archive,
+                        context: context)
+                    let validationDuration = elapsedNanoseconds(
+                        since: validationStart)
+                    stageRecorder.record(
+                        package.family.validationStage,
+                        durationNanoseconds: validationDuration,
+                        inputByteCount: archiveByteCount,
+                        outputByteCount: 0)
+                    stageRecorder.record(
+                        .validation,
+                        package: package.name,
+                        family: package.family,
+                        durationNanoseconds: validationDuration,
+                        inputByteCount: archiveByteCount,
+                        outputByteCount: 0)
+                }
                 let productPayload = familyRoot.appending(
                     ".product-\(package.name.rawValue)")
                 try context.files.createDirectory(productPayload)
                 try context.files.write(
                     try encodedJSON(package),
                     to: productPayload.appending("package.json"))
-                let productPayloadByteCount = try logicalByteCount(
+                let productPayloadByteCount = try linuxNativePackageLogicalByteCount(
                     at: productPayload,
                     files: context.files)
                 let envelopeStart = ContinuousClock().now
@@ -249,8 +388,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                     archive: archive,
                     sourceClosure: source.closure,
                     submoduleClosures: source.submoduleClosures,
-                    producingTask: LinuxTaskIDs.packageCohort(
-                        publication.architecture),
+                    producingTask: publication.producingTask,
                     runnerPlatform: publication.producerRunner,
                     executionPlatform: .linuxARM64OCI,
                     artifactTarget: ArtifactTarget(
@@ -285,27 +423,21 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                     durationNanoseconds: elapsedNanoseconds(since: envelopeStart),
                     inputByteCount: productPayloadByteCount &+ archiveByteCount,
                     outputByteCount: UInt64(envelopeBytes.count))
-                let storeStart = ContinuousClock().now
-                let stored = try LocalProductArtifactStore(
-                    root: publication.productStoreRoot
-                ).publish(
-                    envelope,
-                    payloadRoot: productPayload,
-                    archive: archive)
-                let storedByteCount = try logicalByteCount(
-                    at: stored.payloadRoot.removingLastComponent(),
-                    files: context.files)
                 stageRecorder.record(
-                    .productStorePublication,
-                    durationNanoseconds: elapsedNanoseconds(since: storeStart),
-                    inputByteCount: productPayloadByteCount &+ archiveByteCount
-                        &+ UInt64(envelopeBytes.count),
-                    outputByteCount: storedByteCount)
-                try context.files.remove(productPayload)
+                    .productEnvelopeConstruction,
+                    package: package.name,
+                    family: package.family,
+                    durationNanoseconds: elapsedNanoseconds(since: envelopeStart),
+                    inputByteCount: productPayloadByteCount &+ archiveByteCount,
+                    outputByteCount: UInt64(envelopeBytes.count))
                 try context.files.write(
                     envelopeBytes,
                     to: manifests.appending(
                         "\(package.name.rawValue)-\(family.rawValue).product.json"))
+                try context.files.move(
+                    from: productPayload,
+                    to: productPayloads.appending(
+                        envelope.identity.rawValue.hexadecimal))
                 let product = LinuxNativePackageCohortPublication.Product(
                     family: family,
                     package: package.name,
@@ -340,7 +472,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
         try context.files.write(
             try encodedJSON(publicationManifest),
             to: candidate.appending("linux-native-package-cohort.json"))
-        let generationInputByteCount = try logicalByteCount(
+        let generationInputByteCount = try linuxNativePackageLogicalByteCount(
             at: candidate,
             files: context.files)
         let digest = try context.files.digest(tree: candidate)
@@ -350,7 +482,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
             candidate: candidate,
             generation: generation,
             active: publication.outputRoot.appending("current"))
-        let generationOutputByteCount = try logicalByteCount(
+        let generationOutputByteCount = try linuxNativePackageLogicalByteCount(
             at: generation,
             files: context.files)
         stageRecorder.record(
@@ -368,17 +500,16 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
         try validateLinuxNativePackagePublication(
             architecture: publication.architecture,
             outputRoot: publication.outputRoot,
-            productStoreRoot: publication.productStoreRoot,
             files: files)
     }
 
-    private struct ActiveRuntimePublication {
+    fileprivate struct ActiveRuntimePublication {
         let payload: FilePath
         let generation: String
         let digest: ArtifactDigest
     }
 
-    private func activeRuntimePublication(files: ActionFileSystem) throws
+    fileprivate func activeRuntimePublication(files: ActionFileSystem) throws
         -> ActiveRuntimePublication
     {
         let current = publication.runtimeArtifactRoot.appending("current")
@@ -411,7 +542,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
             digest: digest)
     }
 
-    private func runtimeManifest(
+    fileprivate func runtimeManifest(
         _ family: LinuxDistributionFamily,
         files: ActionFileSystem
     ) throws -> LinuxDistributionPackageManifest {
@@ -437,6 +568,457 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                 "unknown product producer trust domain: \(value)")
         }
         return domain
+    }
+}
+
+package struct LinuxNativePackagePayloadPublication: Hashable, Sendable {
+    package let architecture: PlatformArchitecture
+    package let runtimeArtifactRoot: FilePath
+    package let browser: BrowserPackageInputPublication
+    package let outputRoot: FilePath
+    package let package: LinuxNativePackageName
+
+    package init(
+        architecture: PlatformArchitecture,
+        runtimeArtifactRoot: FilePath,
+        browser: BrowserPackageInputPublication,
+        outputRoot: FilePath,
+        package: LinuxNativePackageName
+    ) {
+        self.architecture = architecture
+        self.runtimeArtifactRoot = runtimeArtifactRoot
+        self.browser = browser
+        self.outputRoot = outputRoot
+        self.package = package
+    }
+}
+
+package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
+        let publication: LinuxNativePackagePayloadPublication
+
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(publication.architecture.rawValue)
+            encoder.append(path: publication.runtimeArtifactRoot)
+            encoder.append(path: publication.browser.distributionRoot)
+            encoder.append(path: publication.browser.packageInputRoot)
+            encoder.append(path: publication.outputRoot)
+            encoder.append(publication.package.rawValue)
+        }
+    }
+
+    package static let kind: ActionKind = "linux.materialize-native-package-payload"
+
+    let publication: LinuxNativePackagePayloadPublication
+
+    package init(publication: LinuxNativePackagePayloadPublication) {
+        self.publication = publication
+    }
+
+    package var identity: Identity { Identity(publication: publication) }
+
+    package var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.runtimeArtifactRoot)),
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.browser.distributionRoot)),
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.browser.packageInputRoot)),
+                ActionEffect(
+                    .readWrite,
+                    scope: .publication(publication.outputRoot)),
+            ],
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: ArtifactTarget(
+                operatingSystem: .linux,
+                architecture: publication.architecture,
+                abi: "glibc"))
+    }
+
+    package func execute(in context: ActionContext) async throws {
+        let browser = try validatedBrowserPackageInput(
+            publication.browser,
+            files: context.files)
+        let browserPayload = publication.browser.distributionRoot.appending(
+            browser.payloadGeneration)
+        let assembly = AssembleLinuxNativePackagesAction(
+            publication: LinuxNativePackagePublication(
+                architecture: publication.architecture,
+                sourceSnapshot: FilePath("/unused/source-snapshot"),
+                runtimeArtifactRoot: publication.runtimeArtifactRoot,
+                browser: publication.browser,
+                outputRoot: publication.outputRoot,
+                assemblerExecutable: FilePath("/unused/assembler"),
+                builderImageID: FilePath("/unused/builder-image"),
+                producingTask: TaskID(rawValue: "linux.payload"),
+                producerRunner: .current,
+                environment: [:]))
+        let runtimePublication = try assembly.activeRuntimePublication(
+            files: context.files)
+        let runtime = try assembly.runtimeManifest(.debian, files: context.files)
+        try validateRuntimePackageInput(
+            runtime,
+            activeGeneration: runtimePublication.generation,
+            activeDigest: runtimePublication.digest)
+        let cohort = try LinuxNativePackageCohortContract(
+            runtime: runtime,
+            browser: browser,
+            architecture: publication.architecture)
+        guard
+            let package = cohort.manifest.packages.first(where: {
+                $0.name == publication.package
+            })
+        else {
+            throw LinuxNativePackageAssemblyFailure(
+                "canonical package manifest is missing: \(publication.package.rawValue)")
+        }
+
+        let generations = publication.outputRoot.appending("generations")
+        let candidate = generations.appending(".candidate")
+        try context.files.createDirectory(generations)
+        try context.files.remove(candidate)
+        let start = ContinuousClock().now
+        try assembly.materialize(
+            package: package,
+            cohort: cohort.manifest,
+            runtimeManifest: runtime,
+            runtimePayload: runtimePublication.payload,
+            browserManifest: browser,
+            browserPayload: browserPayload,
+            root: candidate,
+            files: context.files)
+        let byteCount = try linuxNativePackageLogicalByteCount(
+            at: candidate,
+            files: context.files)
+        let digest = try context.files.digest(tree: candidate)
+        let generation = generations.appending("sha256-\(digest.hexadecimal)")
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: generation,
+            active: publication.outputRoot.appending("current"))
+        context.observations.record(
+            ActionStageObservation(
+                name: LinuxNativePackageStage.payloadMaterialization.observationName,
+                durationNanoseconds: elapsedNanoseconds(since: start),
+                inputByteCount: byteCount,
+                outputByteCount: byteCount))
+        context.observations.record(
+            ActionStageObservation(
+                name: LinuxNativePackageChildStage.payloadMaterialization
+                    .observationName(package: publication.package),
+                durationNanoseconds: elapsedNanoseconds(since: start),
+                inputByteCount: byteCount,
+                outputByteCount: byteCount))
+    }
+
+    package func validateOutputs(using files: ActionFileSystem) throws {
+        try validateLinuxNativePackagePayloadPublication(
+            publication.outputRoot,
+            package: publication.package,
+            files: files)
+    }
+}
+
+package func validateLinuxNativePackagePayloadPublication(
+    _ root: FilePath,
+    package: LinuxNativePackageName,
+    files: ActionFileSystem
+) throws {
+    let current = root.appending("current")
+    guard
+        try files.metadataWithoutFollowingSymlinks(for: current)?.type
+            == .symbolicLink
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "canonical package payload is not published: \(package.rawValue)")
+    }
+    let target = try files.readSymbolicLink(current)
+    guard
+        target.range(
+            of: #"^generations/sha256-[0-9a-f]{64}$"#,
+            options: .regularExpression) != nil
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "canonical package payload has an invalid generation: \(package.rawValue)")
+    }
+    let payload = root.appending(target)
+    let digest = try files.digest(tree: payload)
+    guard target == "generations/sha256-\(digest.hexadecimal)" else {
+        throw LinuxNativePackageAssemblyFailure(
+            "canonical package payload generation does not match its contents: "
+                + package.rawValue)
+    }
+}
+
+package struct LinuxNativePackageAdapterPublication: Hashable, Sendable {
+    package let architecture: PlatformArchitecture
+    package let family: LinuxDistributionFamily
+    package let package: LinuxNativePackageName
+    package let runtimeArtifactRoot: FilePath
+    package let browser: BrowserPackageInputPublication
+    package let payloadRoot: FilePath
+    package let outputRoot: FilePath
+    package let assemblerExecutable: FilePath
+
+    package init(
+        architecture: PlatformArchitecture,
+        family: LinuxDistributionFamily,
+        package: LinuxNativePackageName,
+        runtimeArtifactRoot: FilePath,
+        browser: BrowserPackageInputPublication,
+        payloadRoot: FilePath,
+        outputRoot: FilePath,
+        assemblerExecutable: FilePath
+    ) {
+        self.architecture = architecture
+        self.family = family
+        self.package = package
+        self.runtimeArtifactRoot = runtimeArtifactRoot
+        self.browser = browser
+        self.payloadRoot = payloadRoot
+        self.outputRoot = outputRoot
+        self.assemblerExecutable = assemblerExecutable
+    }
+}
+
+package struct AssembleLinuxNativePackageAdapterAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
+        let publication: LinuxNativePackageAdapterPublication
+
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(publication.architecture.rawValue)
+            encoder.append(publication.family.rawValue)
+            encoder.append(publication.package.rawValue)
+            encoder.append(path: publication.runtimeArtifactRoot)
+            encoder.append(path: publication.browser.distributionRoot)
+            encoder.append(path: publication.browser.packageInputRoot)
+            encoder.append(path: publication.payloadRoot)
+            encoder.append(path: publication.outputRoot)
+            encoder.append(path: publication.assemblerExecutable)
+        }
+    }
+
+    package static let kind: ActionKind = "linux.assemble-native-package-adapter"
+
+    let publication: LinuxNativePackageAdapterPublication
+
+    package init(publication: LinuxNativePackageAdapterPublication) {
+        self.publication = publication
+    }
+
+    package var identity: Identity { Identity(publication: publication) }
+
+    package var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "dpkg-deb", executable: .named("dpkg-deb"), role: .semantic),
+                ActionToolRequirement(
+                    "gzip", executable: .named("gzip"), role: .semantic),
+                ActionToolRequirement(
+                    "pacman", executable: .named("pacman"), role: .semantic),
+                ActionToolRequirement(
+                    "rpm", executable: .named("rpm"), role: .semantic),
+                ActionToolRequirement(
+                    "rpmbuild", executable: .named("rpmbuild"), role: .semantic),
+                ActionToolRequirement(
+                    "tar", executable: .named("tar"), role: .semantic),
+            ],
+            effects: [
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.runtimeArtifactRoot)),
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.browser.distributionRoot)),
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.browser.packageInputRoot)),
+                ActionEffect(.readWrite, scope: .output(publication.payloadRoot)),
+                ActionEffect(
+                    .readWrite,
+                    scope: .publication(publication.outputRoot)),
+                ActionEffect(
+                    .read,
+                    scope: .input(publication.assemblerExecutable)),
+            ],
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: ArtifactTarget(
+                operatingSystem: .linux,
+                architecture: publication.architecture,
+                abi: "glibc"))
+    }
+
+    package func execute(in context: ActionContext) async throws {
+        let browser = try validatedBrowserPackageInput(
+            publication.browser,
+            files: context.files)
+        let assembly = AssembleLinuxNativePackagesAction(
+            publication: LinuxNativePackagePublication(
+                architecture: publication.architecture,
+                sourceSnapshot: FilePath("/unused/source-snapshot"),
+                runtimeArtifactRoot: publication.runtimeArtifactRoot,
+                browser: publication.browser,
+                outputRoot: publication.outputRoot,
+                assemblerExecutable: publication.assemblerExecutable,
+                builderImageID: FilePath("/unused/builder-image"),
+                producingTask: TaskID(rawValue: "linux.adapter"),
+                producerRunner: .current,
+                environment: [:]))
+        let runtimePublication = try assembly.activeRuntimePublication(
+            files: context.files)
+        let runtime = try assembly.runtimeManifest(
+            publication.family,
+            files: context.files)
+        try validateRuntimePackageInput(
+            runtime,
+            activeGeneration: runtimePublication.generation,
+            activeDigest: runtimePublication.digest)
+        let cohort = try LinuxNativePackageCohortContract(
+            runtime: runtime,
+            browser: browser,
+            architecture: publication.architecture)
+        guard
+            let package = cohort.manifest.packages.first(where: {
+                $0.name == publication.package
+            })
+        else {
+            throw LinuxNativePackageAssemblyFailure(
+                "adapter package manifest is missing: \(publication.package.rawValue)")
+        }
+        for path in package.ownedPaths {
+            guard let permissions = path.permissions else { continue }
+            try context.files.setPermissions(
+                permissions,
+                for: installedLinuxPackagePath(
+                    path.path,
+                    in: publication.payloadRoot))
+        }
+        try validateMaterializedRoot(
+            package,
+            root: publication.payloadRoot,
+            files: context.files)
+        let payloadByteCount = try linuxNativePackageLogicalByteCount(
+            at: publication.payloadRoot,
+            files: context.files)
+        let generations = publication.outputRoot.appending("generations")
+        let candidate = generations.appending(".candidate")
+        try context.files.createDirectory(generations)
+        try context.files.remove(candidate)
+        try context.files.createDirectory(candidate)
+        let archive = candidate.appending(nativeArchiveName(package))
+        let recorder = LinuxNativePackageStageRecorder()
+        let start = ContinuousClock().now
+        let assemblerIdentity = try context.files.digest(
+            file: publication.assemblerExecutable)
+        try await AssembleLinuxNativePackagesAction.assemble(
+            package: package,
+            root: publication.payloadRoot,
+            archive: archive,
+            workRoot: publication.outputRoot,
+            assemblerIdentity: assemblerIdentity,
+            stageRecorder: recorder,
+            context: context)
+        let archiveByteCount = try linuxNativePackageLogicalByteCount(
+            at: archive,
+            files: context.files)
+        let assemblyDuration = elapsedNanoseconds(since: start)
+        recorder.record(
+            package.family.assemblyStage,
+            durationNanoseconds: assemblyDuration,
+            inputByteCount: payloadByteCount,
+            outputByteCount: archiveByteCount)
+        recorder.record(
+            .assembly,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: assemblyDuration,
+            inputByteCount: payloadByteCount,
+            outputByteCount: archiveByteCount)
+        let validationStart = ContinuousClock().now
+        try await AssembleLinuxNativePackagesAction.validate(
+            package: package,
+            archive: archive,
+            context: context)
+        let validationDuration = elapsedNanoseconds(since: validationStart)
+        recorder.record(
+            package.family.validationStage,
+            durationNanoseconds: validationDuration,
+            inputByteCount: archiveByteCount,
+            outputByteCount: 0)
+        recorder.record(
+            .validation,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: validationDuration,
+            inputByteCount: archiveByteCount,
+            outputByteCount: 0)
+        try context.files.write(
+            try encodedJSON(package),
+            to: candidate.appending("package.json"))
+        let digest = try context.files.digest(tree: candidate)
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: generations.appending("sha256-\(digest.hexadecimal)"),
+            active: publication.outputRoot.appending("current"))
+        for observation in recorder.observations {
+            context.observations.record(observation)
+        }
+    }
+
+    package func validateOutputs(using files: ActionFileSystem) throws {
+        try validateLinuxNativePackageAdapterPublication(
+            publication.outputRoot,
+            family: publication.family,
+            package: publication.package,
+            files: files)
+    }
+}
+
+package func validateLinuxNativePackageAdapterPublication(
+    _ root: FilePath,
+    family: LinuxDistributionFamily,
+    package: LinuxNativePackageName,
+    files: ActionFileSystem
+) throws {
+    let current = root.appending("current")
+    guard
+        try files.metadataWithoutFollowingSymlinks(for: current)?.type
+            == .symbolicLink
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "package adapter is not published: \(family.rawValue)/\(package.rawValue)")
+    }
+    let target = try files.readSymbolicLink(current)
+    guard
+        target.range(
+            of: #"^generations/sha256-[0-9a-f]{64}$"#,
+            options: .regularExpression) != nil
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "package adapter has an invalid generation: "
+                + "\(family.rawValue)/\(package.rawValue)")
+    }
+    let generation = root.appending(target)
+    let digest = try files.digest(tree: generation)
+    guard target == "generations/sha256-\(digest.hexadecimal)" else {
+        throw LinuxNativePackageAssemblyFailure(
+            "package adapter generation does not match its contents")
+    }
+    let manifest: LinuxNativePackageManifest = try decodeJSON(
+        files.read(generation.appending("package.json")))
+    guard manifest.family == family, manifest.name == package,
+        try files.metadata(
+            for: generation.appending(nativeArchiveName(manifest)))?.type
+            == .regular
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "package adapter publication is incomplete")
     }
 }
 
@@ -560,6 +1142,7 @@ extension AssembleLinuxNativePackagesAction {
         archive: FilePath,
         workRoot: FilePath,
         assemblerIdentity: ArtifactDigest,
+        stageRecorder: LinuxNativePackageStageRecorder,
         context: ActionContext
     ) async throws {
         switch package.family {
@@ -575,6 +1158,7 @@ extension AssembleLinuxNativePackagesAction {
                 root: root,
                 archive: archive,
                 workRoot: workRoot,
+                stageRecorder: stageRecorder,
                 context: context)
         case .arch:
             try await assembleArch(
@@ -616,18 +1200,32 @@ extension AssembleLinuxNativePackagesAction {
         root: FilePath,
         archive: FilePath,
         workRoot: FilePath,
+        stageRecorder: LinuxNativePackageStageRecorder,
         context: ActionContext
     ) async throws {
         let top = workRoot.appending("rpm-\(package.name.rawValue)")
         let sources = top.appending("SOURCES")
         let sourceRoot = sources.appending("root")
+        try context.files.remove(top)
         for name in [
             "BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS",
             "rpmdb", "tmp",
         ] {
             try context.files.createDirectory(top.appending(name))
         }
-        try copyTree(root, to: sourceRoot, files: context.files)
+        let sourceInputByteCount = try linuxNativePackageLogicalByteCount(
+            at: root,
+            files: context.files)
+        let sourceViewStart = ContinuousClock().now
+        try context.files.replaceSymlink(at: sourceRoot, target: root.string)
+        let sourceViewByteCount = sourceInputByteCount
+        stageRecorder.record(
+            .rpmSourceViewConstruction,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: sourceViewStart),
+            inputByteCount: sourceInputByteCount,
+            outputByteCount: sourceViewByteCount)
         let spec = top.appending("SPECS/\(package.name.rawValue).spec")
         try context.files.write(Array(rpmSpec(package).utf8), to: spec)
         let rpmConfiguration = top.appending("rpmrc")
@@ -635,6 +1233,7 @@ extension AssembleLinuxNativePackagesAction {
             Array(
                 "buildarch_compat: aarch64: \(package.architecture) noarch\n".utf8),
             to: rpmConfiguration)
+        let rpmBuildStart = ContinuousClock().now
         try await requireSuccess(
             .named("rpmbuild"),
             [
@@ -648,6 +1247,7 @@ extension AssembleLinuxNativePackagesAction {
                 "--define", "_buildrootdir \(top.appending("BUILDROOT").string)",
                 "--define", "_rpmdir \(top.appending("RPMS").string)",
                 "--define", "_srcrpmdir \(top.appending("SRPMS").string)",
+                "--define", "_binary_payload w7.zstdio",
                 "--define", "_source_date_epoch \(rpmSourceDateEpoch)",
                 "--define", "use_source_date_epoch_as_buildtime 1",
                 "--define", "_build_mtime_policy clamp_to_source_date_epoch",
@@ -662,8 +1262,37 @@ extension AssembleLinuxNativePackagesAction {
             context: context)
         let built = top.appending(
             "RPMS/\(package.architecture)/\(nativeArchiveName(package))")
+        let builtByteCount = try linuxNativePackageLogicalByteCount(
+            at: built,
+            files: context.files)
+        stageRecorder.record(
+            .rpmBuild,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: rpmBuildStart),
+            inputByteCount: sourceViewByteCount,
+            outputByteCount: builtByteCount)
+        let archivePublicationStart = ContinuousClock().now
         try context.files.move(from: built, to: archive)
+        stageRecorder.record(
+            .rpmArchivePublication,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: archivePublicationStart),
+            inputByteCount: builtByteCount,
+            outputByteCount: builtByteCount)
+        let cleanupInputByteCount = try linuxNativePackageLogicalByteCount(
+            at: top,
+            files: context.files)
+        let cleanupStart = ContinuousClock().now
         try context.files.remove(top)
+        stageRecorder.record(
+            .rpmCleanup,
+            package: package.name,
+            family: package.family,
+            durationNanoseconds: elapsedNanoseconds(since: cleanupStart),
+            inputByteCount: cleanupInputByteCount,
+            outputByteCount: 0)
     }
 
     private static func assembleArch(
@@ -948,7 +1577,7 @@ extension AssembleLinuxNativePackagesAction {
         try context.files.write(
             try encodedJSON(products),
             to: payload.appending("products.json"))
-        let payloadByteCount = try logicalByteCount(
+        let payloadByteCount = try linuxNativePackageLogicalByteCount(
             at: payload,
             files: context.files)
         let archive = candidate.appending(
@@ -965,7 +1594,7 @@ extension AssembleLinuxNativePackagesAction {
             workingDirectory: payload,
             environment: reproducibleEnvironment,
             context: context)
-        let archiveByteCount = try logicalByteCount(
+        let archiveByteCount = try linuxNativePackageLogicalByteCount(
             at: archive,
             files: context.files)
         stageRecorder.record(
@@ -979,7 +1608,7 @@ extension AssembleLinuxNativePackagesAction {
             archive: archive,
             sourceClosure: source.closure,
             submoduleClosures: source.submoduleClosures,
-            producingTask: LinuxTaskIDs.packageCohort(publication.architecture),
+            producingTask: publication.producingTask,
             runnerPlatform: publication.producerRunner,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: ArtifactTarget(
@@ -1014,27 +1643,14 @@ extension AssembleLinuxNativePackagesAction {
             durationNanoseconds: elapsedNanoseconds(since: envelopeStart),
             inputByteCount: payloadByteCount &+ archiveByteCount,
             outputByteCount: UInt64(envelopeBytes.count))
-        let storeStart = ContinuousClock().now
-        let stored = try LocalProductArtifactStore(
-            root: publication.productStoreRoot
-        ).publish(
-            envelope,
-            payloadRoot: payload,
-            archive: archive)
-        let storedByteCount = try logicalByteCount(
-            at: stored.payloadRoot.removingLastComponent(),
-            files: context.files)
-        stageRecorder.record(
-            .productStorePublication,
-            durationNanoseconds: elapsedNanoseconds(since: storeStart),
-            inputByteCount: payloadByteCount &+ archiveByteCount
-                &+ UInt64(envelopeBytes.count),
-            outputByteCount: storedByteCount)
         try context.files.write(
             envelopeBytes,
             to: candidate.appending(
                 "manifests/\(cohort.family.rawValue)-cohort.product.json"))
-        try context.files.remove(payload)
+        try context.files.move(
+            from: payload,
+            to: candidate.appending("product-payloads").appending(
+                envelope.identity.rawValue.hexadecimal))
         return LinuxNativePackageCohortPublication.Product(
             family: cohort.family,
             package: nil,
@@ -1045,7 +1661,7 @@ extension AssembleLinuxNativePackagesAction {
 }
 
 extension LinuxDistributionFamily {
-    fileprivate var assemblyStage: LinuxNativePackageStage {
+    package var assemblyStage: LinuxNativePackageStage {
         switch self {
         case .debian: .debianAssembly
         case .rpm: .rpmAssembly
@@ -1053,7 +1669,7 @@ extension LinuxDistributionFamily {
         }
     }
 
-    fileprivate var validationStage: LinuxNativePackageStage {
+    package var validationStage: LinuxNativePackageStage {
         switch self {
         case .debian: .debianValidation
         case .rpm: .rpmValidation
@@ -1062,7 +1678,7 @@ extension LinuxDistributionFamily {
     }
 }
 
-private func logicalByteCount(
+package func linuxNativePackageLogicalByteCount(
     at path: FilePath,
     files: ActionFileSystem
 ) throws -> UInt64 {
@@ -1086,12 +1702,18 @@ private func logicalByteCount(
     }
 }
 
+package struct ValidatedLinuxNativePackageGeneration: Sendable {
+    package let target: String
+    package let root: FilePath
+    package let publication: LinuxNativePackageCohortPublication
+}
+
+@discardableResult
 package func validateLinuxNativePackagePublication(
     architecture: PlatformArchitecture,
     outputRoot: FilePath,
-    productStoreRoot: FilePath,
     files: ActionFileSystem
-) throws {
+) throws -> ValidatedLinuxNativePackageGeneration {
     let current = outputRoot.appending("current")
     guard
         try files.metadataWithoutFollowingSymlinks(for: current)?.type
@@ -1127,7 +1749,6 @@ package func validateLinuxNativePackagePublication(
         throw LinuxNativePackageAssemblyFailure(
             "package cohort publication is incomplete")
     }
-    let store = LocalProductArtifactStore(root: productStoreRoot)
     for product in manifest.products {
         let archive = generation.appending(product.archive)
         guard try files.digest(file: archive) == product.archiveDigest else {
@@ -1148,6 +1769,33 @@ package func validateLinuxNativePackagePublication(
             throw LinuxNativePackageAssemblyFailure(
                 "native package product envelope was substituted: \(product.archive)")
         }
+        try ProductArtifactBuilder.validateEnvelope(
+            envelope,
+            payloadRoot: generation.appending("product-payloads").appending(
+                product.productArtifact.rawValue.hexadecimal),
+            archive: archive)
+    }
+    return ValidatedLinuxNativePackageGeneration(
+        target: target,
+        root: generation,
+        publication: manifest)
+}
+
+package func validateLinuxNativePackagePublication(
+    architecture: PlatformArchitecture,
+    outputRoot: FilePath,
+    productStoreRoot: FilePath,
+    files: ActionFileSystem
+) throws {
+    let generation = try validateLinuxNativePackagePublication(
+        architecture: architecture,
+        outputRoot: outputRoot,
+        files: files)
+    let store = LocalProductArtifactStore(root: productStoreRoot)
+    for product in generation.publication.products {
+        let envelopeName = linuxNativePackageEnvelopeName(product)
+        let envelope: ProductArtifactEnvelope = try decodeJSON(
+            files.read(generation.root.appending("manifests/\(envelopeName)")))
         let stored = try store.validatedArtifact(
             product.productArtifact,
             provenance: envelope.provenanceIdentity)
@@ -1156,6 +1804,16 @@ package func validateLinuxNativePackagePublication(
                 "native package product store envelope was substituted: "
                     + product.archive)
         }
+    }
+}
+
+package func linuxNativePackageEnvelopeName(
+    _ product: LinuxNativePackageCohortPublication.Product
+) -> String {
+    if let package = product.package {
+        "\(package.rawValue)-\(product.family.rawValue).product.json"
+    } else {
+        "\(product.family.rawValue)-cohort.product.json"
     }
 }
 

@@ -1,9 +1,7 @@
-import ChromiumColliderRecipe
 import ColliderCore
 import ColliderRuntime
 import Foundation
-import LinuxColliderRecipe
-import ShellColliderRecipe
+import LinuxPackageContracts
 import SystemPackage
 
 #if os(Linux)
@@ -23,8 +21,10 @@ struct NucleusLinuxAssembler {
             throw LinuxAssemblerFailure.invalidArguments
         }
         switch operation {
-        case "runtime":
-            try await assembleRuntime(Array(arguments.dropFirst()))
+        case "adapter":
+            try await assembleAdapter(Array(arguments.dropFirst()))
+        case "payload":
+            try await materializePayload(Array(arguments.dropFirst()))
         case "packages":
             try await assemblePackages(Array(arguments.dropFirst()))
         default:
@@ -32,30 +32,64 @@ struct NucleusLinuxAssembler {
         }
     }
 
-    private static func assembleRuntime(_ arguments: [String]) async throws {
-        guard arguments.count == 9,
-            let rollbackGenerationCount = UInt32(arguments[4]),
-            let targetArchitecture = PlatformArchitecture(rawValue: arguments[8])
+    private static func assembleAdapter(_ arguments: [String]) async throws {
+        guard arguments.count == 10,
+            let architecture = PlatformArchitecture(rawValue: arguments[5]),
+            let family = LinuxDistributionFamily(rawValue: arguments[6]),
+            let package = LinuxNativePackageName(rawValue: arguments[7])
         else {
             throw LinuxAssemblerFailure.invalidArguments
         }
-        _ = try await execute(
-            PublishRuntimeGenerationAction(
-                products: FilePath(arguments[0]),
-                prefix: FilePath(arguments[1]),
-                generationsRoot: FilePath(arguments[2]),
-                packageManifestsRoot: FilePath(arguments[3]),
-                rollbackGenerationCount: rollbackGenerationCount,
-                sessionPackage: FilePath(arguments[5]),
-                kernelContract: FilePath(arguments[6]),
-                trustKey: nil,
-                buildMetadata: arguments[7],
-                targetArchitecture: targetArchitecture,
-                environment: ProcessInfo.processInfo.environment))
+        let observations = try await execute(
+            AssembleLinuxNativePackageAdapterAction(
+                publication: LinuxNativePackageAdapterPublication(
+                    architecture: architecture,
+                    family: family,
+                    package: package,
+                    runtimeArtifactRoot: FilePath(arguments[0]),
+                    browser: BrowserPackageInputPublication(
+                        target: ArtifactTarget(
+                            operatingSystem: .linux,
+                            architecture: architecture,
+                            abi: "glibc"),
+                        distributionRoot: FilePath(arguments[1]),
+                        packageInputRoot: FilePath(arguments[2])),
+                    payloadRoot: FilePath(arguments[3]),
+                    outputRoot: FilePath(arguments[4]),
+                    assemblerExecutable: FilePath(arguments[8]))))
+        try Data(JSONEncoder().encode(observations.actionStages)).write(
+            to: URL(fileURLWithPath: arguments[9]),
+            options: .atomic)
+    }
+
+    private static func materializePayload(_ arguments: [String]) async throws {
+        guard arguments.count == 7,
+            let architecture = PlatformArchitecture(rawValue: arguments[4]),
+            let package = LinuxNativePackageName(rawValue: arguments[5])
+        else {
+            throw LinuxAssemblerFailure.invalidArguments
+        }
+        let observations = try await execute(
+            MaterializeLinuxNativePackagePayloadAction(
+                publication: LinuxNativePackagePayloadPublication(
+                    architecture: architecture,
+                    runtimeArtifactRoot: FilePath(arguments[0]),
+                    browser: BrowserPackageInputPublication(
+                        target: ArtifactTarget(
+                            operatingSystem: .linux,
+                            architecture: architecture,
+                            abi: "glibc"),
+                        distributionRoot: FilePath(arguments[1]),
+                        packageInputRoot: FilePath(arguments[2])),
+                    outputRoot: FilePath(arguments[3]),
+                    package: package)))
+        try Data(JSONEncoder().encode(observations.actionStages)).write(
+            to: URL(fileURLWithPath: arguments[6]),
+            options: .atomic)
     }
 
     private static func assemblePackages(_ arguments: [String]) async throws {
-        guard arguments.count == 12,
+        guard arguments.count == 13,
             let architecture = PlatformArchitecture(rawValue: arguments[6]),
             let runnerOperatingSystem = PlatformOperatingSystem(rawValue: arguments[8]),
             let runnerArchitecture = PlatformArchitecture(rawValue: arguments[9])
@@ -69,19 +103,23 @@ struct NucleusLinuxAssembler {
                     sourceSnapshot: FilePath(arguments[0]),
                     runtimeArtifactRoot: FilePath(arguments[1]),
                     browser: BrowserPackageInputPublication(
-                        target: ChromiumLinuxTarget(architecture: architecture),
+                        target: ArtifactTarget(
+                            operatingSystem: .linux,
+                            architecture: architecture,
+                            abi: "glibc"),
                         distributionRoot: FilePath(arguments[2]),
                         packageInputRoot: FilePath(arguments[3])),
-                    outputRoot: FilePath(arguments[4]),
-                    productStoreRoot: FilePath(arguments[5]),
+                    adapterRoot: FilePath(arguments[4]),
+                    outputRoot: FilePath(arguments[5]),
                     assemblerExecutable: FilePath(arguments[7]),
                     builderImageID: FilePath(arguments[10]),
+                    producingTask: TaskID(rawValue: arguments[11]),
                     producerRunner: RunnerPlatform(
                         operatingSystem: runnerOperatingSystem,
                         architecture: runnerArchitecture),
                     environment: ProcessInfo.processInfo.environment)))
         try Data(JSONEncoder().encode(observations.actionStages)).write(
-            to: URL(fileURLWithPath: arguments[11]),
+            to: URL(fileURLWithPath: arguments[12]),
             options: .atomic)
     }
 
@@ -120,7 +158,7 @@ private enum LinuxAssemblerFailure: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .invalidArguments:
-            "usage: nucleus-linux-assembler <runtime|packages> <arguments...>"
+            "usage: nucleus-linux-assembler packages <arguments...>"
         case .linuxRequired:
             "nucleus-linux-assembler requires Linux"
         }

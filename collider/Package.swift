@@ -28,6 +28,9 @@ let package = Package(
             name: "nucleus-linux-assembler",
             targets: ["NucleusLinuxAssembler"]),
         .executable(
+            name: "nucleus-linux-runtime-publisher",
+            targets: ["NucleusLinuxRuntimePublisher"]),
+        .executable(
             name: "nucleus-linux-package-qualifier",
             targets: ["NucleusLinuxPackageQualifier"]),
     ],
@@ -41,8 +44,13 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
-                "ChromiumColliderRecipe",
-                "LinuxColliderRecipe",
+                "LinuxPackageContracts",
+            ]),
+        .executableTarget(
+            name: "NucleusLinuxRuntimePublisher",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
                 "ShellColliderRecipe",
             ]),
         .executableTarget(
@@ -51,8 +59,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
-                "LinuxColliderRecipe",
-                "ShellColliderRecipe",
+                "LinuxPackageContracts",
             ]),
         .target(
             name: "ColliderCLI",
@@ -85,6 +92,7 @@ let package = Package(
                 "CompositorColliderRecipe",
                 "CoreColliderRecipe",
                 "LinuxColliderRecipe",
+                "LinuxPackageContracts",
                 "NativeBuilderColliderRecipe",
                 "ReactNativeColliderRecipe",
                 "ReleaseGateColliderRecipe",
@@ -115,7 +123,10 @@ let package = Package(
             ] + nucleusAndroidRuntimeDependencies),
         .target(
             name: "ChromiumColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "LinuxPackageContracts",
+            ]),
         .target(
             name: "CompositorColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -131,8 +142,15 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 "ChromiumColliderRecipe",
+                "LinuxPackageContracts",
                 "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
+            ]),
+        .target(
+            name: "LinuxPackageContracts",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
             ]),
         .target(
             name: "NativeBuilderColliderRecipe",
@@ -153,6 +171,7 @@ let package = Package(
             name: "ShellColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                "LinuxPackageContracts",
                 "NativeBuilderColliderRecipe",
             ] + nucleusAndroidRuntimeDependencies),
         .target(
@@ -178,6 +197,7 @@ let package = Package(
                 .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "ChromiumColliderRecipe",
+                "LinuxPackageContracts",
             ]),
         .testTarget(
             name: "ColliderCLITests",
@@ -261,12 +281,14 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 "ChromiumColliderRecipe",
                 "LinuxColliderRecipe",
+                "LinuxPackageContracts",
                 "ShellColliderRecipe",
             ]),
         .testTarget(
             name: "ShellColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                "LinuxPackageContracts",
                 "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
             ]),

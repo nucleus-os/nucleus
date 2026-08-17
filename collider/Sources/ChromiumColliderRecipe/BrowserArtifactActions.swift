@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 
 package struct AssembleBrowserArtifactAction: ColliderAction {
@@ -178,37 +179,6 @@ private func validateBrowserPublicationStructure(
     return current
 }
 
-package func validatedBrowserPublicationPayload(
-    distributionRoot: FilePath,
-    files: ActionFileSystem
-) throws -> FilePath {
-    let current = distributionRoot.appending("current")
-    guard
-        try files.metadataWithoutFollowingSymlinks(for: current)?.type
-            == .symbolicLink
-    else {
-        throw BrowserArtifactActionFailure.invalidOutput(
-            "published browser generation is missing")
-    }
-    let target = try files.readSymbolicLink(current)
-    guard
-        target.range(
-            of: #"^generations/sha256-[0-9a-f]{64}$"#,
-            options: .regularExpression) != nil
-    else {
-        throw BrowserArtifactActionFailure.invalidOutput(
-            "published browser generation is not content addressed: \(target)")
-    }
-    let payload = distributionRoot.appending(target)
-    try validateBrowserGenerationStructure(payload, files: files)
-    let digest = try files.digest(tree: payload)
-    guard target == "generations/sha256-\(digest.hexadecimal)" else {
-        throw BrowserArtifactActionFailure.invalidOutput(
-            "published browser generation digest does not match its payload")
-    }
-    return payload
-}
-
 private func validateBrowserGeneration(
     _ generation: FilePath,
     assembly: BrowserArtifactAssembly,
@@ -238,34 +208,6 @@ private func validateBrowserGeneration(
     else {
         throw BrowserArtifactActionFailure.invalidOutput(
             "browser generation failed Linux linkage or launcher validation")
-    }
-}
-
-package func validateBrowserGenerationStructure(
-    _ generation: FilePath,
-    files: ActionFileSystem
-) throws {
-    let runtime = generation.appending("runtime")
-    for relative in [
-        "nucleus-browser-bin", "chrome_crashpad_handler",
-        "chrome_sandbox", "icudtl.dat", "resources.pak",
-        "chrome_100_percent.pak", "chrome_200_percent.pak",
-        "locales", "libEGL.so", "libGLESv2.so", "libvulkan.so.1",
-    ] {
-        guard try exists(runtime.appending(relative), files: files) else {
-            throw BrowserArtifactActionFailure.invalidOutput(
-                "browser generation is missing: \(relative)")
-        }
-    }
-    for relative in [
-        "share/icons/hicolor/128x128/apps/dev.nucleus.Browser.png",
-        "nucleus-build-manifest.json",
-        "bin/nucleus-browser",
-    ] {
-        guard try exists(generation.appending(relative), files: files) else {
-            throw BrowserArtifactActionFailure.invalidOutput(
-                "browser generation is missing: \(relative)")
-        }
     }
 }
 

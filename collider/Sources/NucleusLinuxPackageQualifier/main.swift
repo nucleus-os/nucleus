@@ -1,8 +1,7 @@
 import ColliderCore
 import ColliderRuntime
 import Foundation
-import LinuxColliderRecipe
-import ShellColliderRecipe
+import LinuxPackageContracts
 import SystemPackage
 
 #if os(Linux)
@@ -18,7 +17,7 @@ struct NucleusLinuxPackageQualifier {
 
     private static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments.count == 7,
+        guard arguments.count == 6,
             let family = LinuxDistributionFamily(rawValue: arguments[0]),
             let architecture = PlatformArchitecture(rawValue: arguments[1])
         else {
@@ -31,10 +30,9 @@ struct NucleusLinuxPackageQualifier {
                     family: family,
                     architecture: architecture,
                     packagePublicationRoot: FilePath(arguments[2]),
-                    productStoreRoot: FilePath(arguments[3]),
-                    qualificationRoot: FilePath(arguments[4]),
-                    assemblerExecutable: FilePath(arguments[5]),
-                    builderImageID: FilePath(arguments[6]),
+                    qualificationRoot: FilePath(arguments[3]),
+                    assemblerExecutable: FilePath(arguments[4]),
+                    builderImageID: FilePath(arguments[5]),
                     environment: ProcessInfo.processInfo.environment))
             await runtime.shutdown()
         } catch {
@@ -65,8 +63,8 @@ private enum LinuxPackageQualifierFailure: Error, CustomStringConvertible {
         switch self {
         case .invalidArguments:
             "usage: nucleus-linux-package-qualifier <debian|rpm|arch> "
-                + "<arm64|x86_64> <package-root> <product-store> "
-                + "<qualification-root> <assembler> <builder-image-id>"
+                + "<arm64|x86_64> <package-root> <qualification-root> "
+                + "<assembler> <builder-image-id>"
         case .linuxRequired:
             "nucleus-linux-package-qualifier requires Linux"
         }

@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 
 package struct LinuxPackageStorageRetentionLane: Hashable, Sendable {

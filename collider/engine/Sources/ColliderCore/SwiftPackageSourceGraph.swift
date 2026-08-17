@@ -43,6 +43,7 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
     public struct Package: Hashable, Sendable {
         public let identity: String
         public let root: FilePath
+        public let isLocal: Bool
         public let dependencyRoots: [FilePath]
         public let products: [Product]
         public let targets: [Target]
@@ -50,12 +51,14 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         public init(
             identity: String,
             root: FilePath,
+            isLocal: Bool = true,
             dependencyRoots: [FilePath] = [],
             products: [Product],
             targets: [Target]
         ) {
             self.identity = identity
             self.root = root
+            self.isLocal = isLocal
             self.dependencyRoots = dependencyRoots.sorted {
                 $0.string < $1.string
             }
@@ -119,17 +122,77 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
     /// the source-closure boundary for product provenance; generated build
     /// state, tool identities, and dependency locks remain separate inputs.
     public func sourcePaths(forProduct productName: String) -> [FilePath] {
-        let paths = inputs(forProduct: productName).flatMap { input -> [FilePath] in
-            switch input {
-            case .file(let path), .tree(let path), .sourceCheckout(let path):
-                [path]
-            case .sourceCheckoutClosure(let paths):
-                paths
-            case .value, .string, .environment, .swiftBuildContext, .tool:
-                []
+        switch storage {
+        case .packageWide(let inputs):
+            return inputs.flatMap { input -> [FilePath] in
+                switch input {
+                case .file(let path), .tree(let path), .sourceCheckout(let path):
+                    [path]
+                case .sourceCheckoutClosure(let paths):
+                    paths
+                case .value, .string, .environment, .swiftBuildContext, .tool:
+                    []
+                }
             }
+        case .resolved(let root, let packages):
+            let packageByRoot = Dictionary(
+                uniqueKeysWithValues: packages.map { ($0.root, $0) })
+            guard let rootPackage = packageByRoot[root],
+                let product = rootPackage.products.first(where: {
+                    $0.name == productName
+                })
+            else {
+                preconditionFailure(
+                    "Swift package graph has no product named \(productName)")
+            }
+            struct TargetID: Hashable {
+                let packageRoot: FilePath
+                let name: String
+            }
+            var visited: Set<TargetID> = []
+            var paths: Set<FilePath> = []
+
+            func visitProduct(_ name: String, from package: Package) {
+                let candidates = package.dependencyRoots.compactMap { dependencyRoot in
+                    packageByRoot[dependencyRoot].flatMap { dependency in
+                        dependency.products.first(where: { $0.name == name }).map {
+                            (dependency, $0)
+                        }
+                    }
+                }
+                precondition(
+                    candidates.count == 1,
+                    "Swift package graph cannot uniquely resolve product \(name) from \(package.identity)"
+                )
+                for target in candidates[0].1.targets {
+                    visitTarget(target, in: candidates[0].0)
+                }
+            }
+
+            func visitTarget(_ name: String, in package: Package) {
+                let id = TargetID(packageRoot: package.root, name: name)
+                guard visited.insert(id).inserted else { return }
+                guard let target = package.targets.first(where: { $0.name == name }) else {
+                    preconditionFailure(
+                        "Swift package graph has no target \(name) in \(package.identity)")
+                }
+                if package.isLocal {
+                    paths.insert(package.root.appending("Package.swift"))
+                    paths.insert(target.path)
+                }
+                for dependency in target.targetDependencies {
+                    visitTarget(dependency, in: package)
+                }
+                for dependency in target.productDependencies {
+                    visitProduct(dependency, from: package)
+                }
+            }
+
+            for target in product.targets {
+                visitTarget(target, in: rootPackage)
+            }
+            return paths.sorted { $0.string < $1.string }
         }
-        return Array(Set(paths)).sorted { $0.string < $1.string }
     }
 
     public var testInputs: [ArtifactInput] {

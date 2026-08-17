@@ -34,6 +34,63 @@ the complete production component catalog; the longest single test spent
 78.845 seconds doing so while the test process was also running other catalog
 construction tests.
 
+Run `2026-08-16T19-38-50.660Z-92080` is the stage-instrumented native package
+baseline. The arm64 action took 348.957 seconds, of which the declared stages
+accounted for 343.957 seconds. The x86_64 action took 370.571 seconds, of which
+the declared stages accounted for 365.527 seconds. RPM assembly dominated at
+243.489 and 261.946 seconds, payload materialization took 54.130 and 54.779
+seconds, and product-store publication took 10.507 and 10.836 seconds. The
+family views materialized 2.461 GB for arm64 and 2.677 GB for x86_64 from
+roughly 820 MB and 893 MB of logical package payload per family. Validation,
+envelope construction, and generation publication are not critical paths.
+
+Run `2026-08-16T20-39-31.103Z-19529` is the concurrent-assembly package gate.
+Arm64 and x86_64 package assembly started 95 milliseconds apart and overlapped
+for 354.581 seconds. Arm64 completed in 354.659 seconds while x86_64 completed
+in 389.978 seconds; serial execution of those same actions would have consumed
+744.637 seconds. Arm64 store publication took 4.166 seconds and ran while
+x86_64 assembly remained active. X86_64 store publication took 4.325 seconds.
+Each publication emitted a receipt for 18 validated products, and both
+architecture lifecycle qualifications passed. RPM assembly still dominates at
+252.139 and 273.570 seconds.
+
+Run `2026-08-16T21-24-00.573Z-52797` is the narrowed-closure Collider test
+gate. All CLI and engine tests passed in 85.8 seconds. The workspace test
+process completed its 96 tests in 23.7 seconds. SwiftPM dependency inspection
+shows that `NucleusLinuxAssembler` and `NucleusLinuxPackageQualifier` each
+depend only on `LinuxPackageContracts` plus engine products, while
+`LinuxPackageContracts` has no recipe-target dependencies.
+
+Run `2026-08-16T21-58-39.169Z-81635` is the per-package RPM evidence gate.
+Hard-linked RPM source-view construction took only 0.36 seconds for the 633 MB
+arm64 browser payload and 0.33 seconds for the 705 MB x86_64 payload. The
+browser `rpmbuild` subprocess instead took 182.98 and 210.45 seconds; runtime
+`rpmbuild` took 48.08 and 49.43 seconds. Archive publication and cleanup were
+negligible. Explicit RPM zstd level 7 in run
+`2026-08-16T22-11-07.785Z-85102` reduced aggregate RPM assembly from 232.07 and
+260.80 seconds to 19.02 and 20.83 seconds. Complete cohort time fell from
+335.75 and 376.57 seconds to 124.67 and 137.60 seconds while both lifecycle
+qualifications passed. RPM browser and runtime archives grew by approximately
+21–23 percent; the measured throughput trade is intentional.
+
+Run `2026-08-16T23-58-06.658Z-43964` is the per-package graph gate. Five
+content-addressed payload tasks and fifteen independently cached family adapter
+tasks completed for each architecture, followed by lightweight cohort actions
+of 18.44 seconds for arm64 and 19.45 seconds for x86_64. Canonical payload
+materialization totaled 17.34 and 18.95 seconds instead of rebuilding the same
+logical payload for each family. APFS copy-on-write family views represented
+6.18 GB of logical input across all 30 adapters but took 0.741 seconds total;
+the slowest view took 0.123 seconds. The arm64 Debian browser adapter remained
+active while all five arm64 RPM adapters executed, proving that disjoint family
+adapters overlap within the two-container OCI lane. Browser `rpmbuild` took
+13.35 and 16.00 seconds, and runtime `rpmbuild` took 5.79 and 4.40 seconds. Both
+architecture lifecycle qualifications passed. Debian browser assembly is now
+the dominant archive stage at 98.31 and 120.13 seconds; Debian runtime assembly
+took 26.30 and 27.35 seconds. The 18 control-only session,
+development-host, and complete adapter tasks used 44.14 seconds of summed task
+time even though each archive assembly took less than 0.2 seconds; container
+bootstrap and teardown dominate those tasks.
+
 ## Phase 1: Establish the Measured Critical Paths
 
 Status: complete.
@@ -71,7 +128,9 @@ identical RPM payload bytes; RPM assembly now uses fixed nonzero source epoch
 to run manifests and do not participate in task, archive, envelope, product, or
 generation identity.
 
-## Phase 3: Isolate Product-Store Publication
+## Phase 3: Unlock Concurrent Architecture Assembly
+
+Status: complete.
 
 Make each architecture package action write only its immutable package
 generation, product envelopes, and the small payloads required by those
@@ -91,32 +150,52 @@ Run the two architecture assembly actions together with 12-CPU OCI limits so
 their combined declared budget fits the M2 Ultra. Preserve distinct package
 roots and all existing artifact targets.
 
-Gate: graph inspection proves that both expensive architecture actions can run
-concurrently, only store publication and retention claim writable store state,
-qualifications can overlap, and substitution or interrupted publication still
-fails closed.
+Gate satisfied: run `2026-08-16T20-39-31.103Z-19529` executed the two 12-CPU
+architecture package actions concurrently, with disjoint package publication
+locks and no product-store mount. Separate host actions revalidated and
+published each 18-product cohort, recorded only the
+`product-store-publication` stage, and emitted generation-bound receipts before
+lifecycle qualification. The Collider graph and envelope validation tests cover
+store independence, receipt ordering, substituted payload rejection, and
+shared-store serialization.
 
-## Phase 4: Materialize Each Package Payload Once
+## Phase 4: Narrow Collider Rebuild and Test Closures
 
-Create one canonical payload tree per logical package and architecture before
-family-specific metadata is added. Build Debian, RPM, and Arch views with
-hard-linked regular files plus independently created directories, symbolic
-links, control metadata, and maintainer scripts. Keep every view inside one
-owned architecture staging filesystem so hard links never cross a mount or
-storage boundary.
+Status: complete.
 
-RPM consumes a hard-linked source view and keeps `__os_install_post` disabled so
-it cannot mutate or strip the immutable cross-architecture payload.
-Run the three family adapters with bounded concurrency after canonical payload
-materialization. Keep package assembly serial within each family until the
-stage observations prove that finer decomposition is useful.
+The Linux package schema, browser package-input validation, distribution
+manifest schema, archive assembly and validation, lifecycle report, and
+stage-observation contract live in `LinuxPackageContracts`. Package assembly
+and qualification helpers consume only that target plus engine products. A
+separate runtime-publication executable owns the Shell runtime action, so the
+package assembler no longer imports Chromium or Shell recipes. Graph task
+naming is supplied explicitly as provenance rather than derived inside the
+contract target.
 
-Gate: file identities prove that runtime and browser bytes are materialized
-once per architecture, format metadata remains isolated, all native package
-lifecycle tests pass, and archive payload bytes match the pre-optimization
-contract.
+Collider workspace tests now share one mutex-protected immutable catalog for
+the repository-root, empty-environment, no-host-augmentation fixture. Tests for
+relocation, environment overrides, and host augmentation retain explicit
+catalogs. Run `2026-08-16T21-05-06.992Z-39152` passed the complete Collider
+suite in 84.5 seconds; the workspace test process fell from 74.7 seconds in the
+Phase 3 handoff run to 24.7 seconds, and its formerly 74.7-second catalog-heavy
+test fell to 11.3 seconds.
+
+The package source-provenance closure includes only the root package and
+recursive filesystem dependencies. Source-control checkouts remain build
+inputs but cannot enter the monorepo source snapshot merely because SwiftPM
+places them beneath `.build`.
+
+Gate satisfied: dependency inspection proves the narrowed helper closure. The
+focused package targets have no unrelated recipe dependency, the source graph
+keeps source-control dependencies out of provenance while retaining them as
+build inputs, and run `2026-08-16T21-24-00.573Z-52797` passed the complete
+Collider suite. The shared immutable workspace catalog fixture performs one
+load for the repository-root empty-environment context; relocation,
+environment, and augmentation tests retain explicit inputs.
 
 ## Phase 5: Add a Non-Mutating Skia Source Fast Path
+
+Status: complete.
 
 Keep `core.sources` always assessed so tracked modifications cannot hide behind
 a stamp. For each Skia external, read the configured origin, current commit,
@@ -130,33 +209,154 @@ Skia external, tracked modifications still fail before mutation, missing
 objects are acquired only by the host action, and the repaired checkout is
 exactly the pinned commit and remote.
 
-## Phase 6: Narrow Collider Rebuild and Test Closures
+Gate satisfied: exact checkouts return after concurrent origin, commit,
+dereferenced-pin, and tracked-status reads; behavior tests prove that the fast
+path leaves the Git config and HEAD reflog byte-identical and that tracked
+changes fail before remote repair. A non-exact external continues through the
+repair path and complete post-mutation validation.
 
-Move Linux package assembly and qualification contracts into a focused SwiftPM
-target consumed by the two Linux helper executables and by
-`LinuxColliderRecipe`. Keep graph construction in the recipe target. Changes to
-unrelated Linux, Chromium, Shell, or workspace command code no longer rebuild a
-helper unless its imported contract actually changed.
+## Phase 6: Materialize Each Package Payload Once
 
-Separate immutable catalog input loading from component graph composition.
-Collider workspace tests share a thread-safe fixture input snapshot for the
-same repository root, environment, and host augmentation, while tests that
-exercise relocation or augmentation continue to use explicit inputs. Every
-assertion remains behavioral; no test inspects source shape.
+Status: complete.
 
-Gate: dependency inspection proves the narrowed helper closure, touching an
-unrelated recipe source leaves the helper build clean, and the complete
-Collider suite passes with one fixture input load per distinct test context.
+First retain the ten top-level package observations and add per-logical-package
+child observations. Split RPM assembly into source-view construction, the
+`rpmbuild` subprocess, archive publication, and cleanup. The child evidence
+determines RPM task resource limits and any later compression change; validation
+and compression are not weakened speculatively.
 
-## Phase 7: Close the Throughput Qualification
+The evidence above proves that RPM source-view construction, archive
+publication, and cleanup are not critical paths. RPM uses an explicit zstd
+level 7 payload because `rpmbuild` dominated the measured interval and the
+complete lifecycle gate passed with the resulting archives. Keep that setting
+in every per-package RPM adapter.
+
+Each architecture now owns one canonical payload task per logical package and
+one adapter task per package and family. Payload tasks publish immutable
+content-addressed trees. Each adapter creates an APFS copy-on-write view inside
+its own bounded export, applies format metadata there, and publishes one
+content-addressed archive. Cross-publication hard links are forbidden: Apple
+Container bounded exports do not reliably open an inode whose origin lies
+outside the export. RPM instead uses a symlinked source view inside the adapter
+and keeps `__os_install_post` disabled so it cannot strip payload bytes. Every
+RPM scratch root is removed before construction, so interrupted work cannot be
+mistaken for a current source view.
+
+Independent adapters use two CPUs and 8 GB each and overlap within the
+two-container OCI lane. The architecture cohort action only validates adapter
+publications, copies immutable archives into the generation, constructs
+envelopes, and publishes the generation. Exact-cohort versioning deliberately
+means that a browser or runtime digest change invalidates every family adapter:
+all archives embed that cohort version. Content-addressed runtime and session
+payload generations remain byte-identical when their own bytes do not change;
+the graph never claims that a version-bearing archive is unrelated to another
+cohort member.
+
+Gate satisfied: run `2026-08-16T23-58-06.658Z-43964` materialized runtime and
+browser payload bytes once per architecture, isolated format metadata in
+adapter-owned views, overlapped independent Debian and RPM adapters, published
+both architecture cohorts, and passed every native package lifecycle test.
+Run `2026-08-16T23-47-28.022Z-36170` reused 21 already valid adapter
+publications while completing the remaining work after a wrapper-only report
+validation correction. Run `2026-08-17T00-10-52.408Z-47408` passed the complete
+Collider suite with graph assertions for every payload and adapter task.
+
+## Phase 7: Accelerate Debian Archive Compression
+
+Split Debian assembly into control-tree construction, the `dpkg-deb` subprocess,
+archive publication, and cleanup observations. Record the exact compressor,
+level, and thread count selected by the pinned builder's `dpkg-deb`. Replace the
+implicit compressor with explicit zstd settings after the lifecycle gate proves
+the builder and target package manager support them. Choose the fastest level
+whose archive-size increase remains justified by the measured end-to-end
+package and installation paths; do not optimize the already negligible APFS
+family view.
+
+Gate: the run record attributes Debian time to its substages and records their
+logical input/output bytes. Both architecture lifecycle qualifications pass
+with the explicit compressor, package metadata and installed payload bytes
+match the current contract, and the plan records the measured time/size trade.
+
+## Phase 8: Accelerate Linux Packaging Tool Builds
+
+Record compile and link substages for the Linux packaging-tool SwiftPM build.
+Use LLVM `lld` instead of GNU `ld.bfd` when the pinned native builder proves the
+tool is present, and disable release DWARF for internal assembler, publisher,
+and qualifier executables. Split schema-only contracts from assembly
+implementation so an adapter or compression edit does not relink the runtime
+publisher or schema-only qualification code. Give independently invoked tools
+narrow SwiftPM product requirements while retaining one persistent Linux build
+workspace.
+
+Make each tool-build scratch directory transaction-scoped and retain failure
+diagnostics outside disposable scratch. A failed relink or package-tool build
+must not leave a source or build tree that a retry can reinterpret as current.
+
+Gate: the tool build record distinguishes compilation from linking, the linker
+identity is explicit, package-tool diagnostics remain adequate without release
+DWARF, and an adapter-only edit rebuilds only its implementation closure. The
+complete Collider suite and native package lifecycle graph pass.
+
+## Phase 9: Batch Control-Only Package Work
+
+Replace the separate session, development-host, and complete payload containers
+with one architecture-local control-payload task that publishes three distinct
+content-addressed payload outputs. Replace their nine family adapter containers
+per architecture with one control-adapter task that publishes nine distinct
+archive outputs. Keep runtime and browser tasks independent. This batching does
+not broaden semantic invalidation: exact-cohort versioning already invalidates
+all three control-only packages and all family metadata together.
+
+Gate: the bundled task exposes separate observations and publications for every
+logical package and family, substituting any one output fails validation, both
+architecture lifecycle qualifications pass, and a rebuilt graph eliminates at
+least sixteen control-only container executions. The run record compares saved
+container bootstrap/cleanup time against any lost scheduling overlap.
+
+## Phase 10: Build Architecture-Neutral Packages Once
+
+Classify a logical package as architecture-neutral only when its canonical
+payload, lifecycle metadata, dependency relationships, and every family archive
+are byte-identical across arm64 and x86_64. Build each proven-neutral payload and
+family adapter once. Architecture cohorts consume the same content-addressed
+archives and payloads, while thin architecture-specific envelopes remain only
+where the product contract requires an architecture coordinate. Runtime,
+browser, and every other architecture-bearing package remain separate.
+
+Gate: an audit names every eligible package and proves byte equality before the
+graph is changed. One neutral task supplies both cohorts, architecture-bound
+substitution still fails closed, lifecycle qualification passes for both
+cohorts, and changing one neutral input invalidates the shared task exactly
+once.
+
+## Phase 11: Optimize Host Product Publication
+
+Extend the Phase 3 host publication action after package outputs have
+per-package identities. Before materializing a product, look up its exact
+product identity and fully revalidate an existing stored envelope, archive,
+payload, and provenance binding. A valid existing artifact produces the receipt
+without rewriting bytes. Publish a missing artifact through a private candidate
+using macOS clone-on-write copies for immutable archives and regular payload
+files, then atomically promote it. Never hard-link product-store content to a
+mutable package generation.
+
+Gate: repeated publication of already valid products writes no artifact bytes,
+missing products use clone-backed private candidates, clone isolation tests
+prove that later candidate mutation cannot change stored content, and
+interrupted publication leaves the prior store state valid and reachable.
+
+## Phase 12: Close the Throughput Qualification
 
 Run the complete Collider suite, the dual-architecture native package and
 lifecycle graph from changed inputs, an immediately unchanged package graph,
 product-store retention, and cache-prune dry-run. Compare stage observations to
-the Phase 1 baselines and retain only changes that reduce measured work without
-changing package identity or qualification semantics.
+the Phase 2 instrumented baseline and task-level results to the Phase 1
+baselines. Retain only changes that reduce measured work without changing
+package identity or qualification semantics.
 
 Gate: both architectures assemble concurrently within the declared host budget,
-payload copying is single-materialization, the unchanged graph performs no
+payload copying is single-materialization, independently cached package adapters
+reuse unaffected work, architecture-neutral packages build once, repeated
+publication writes no existing artifact bytes, the unchanged graph performs no
 source mutation, the product store retains exactly the active and rollback
 cohorts, and every correctness gate passes.

@@ -7,11 +7,13 @@ import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
 import LinuxColliderRecipe
+import LinuxPackageContracts
 import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
 import ShellColliderRecipe
 import SwiftTargetSDKColliderRecipe
+import Synchronization
 import SystemPackage
 import Testing
 import VulkanColliderRecipe
@@ -26,6 +28,21 @@ private let fixtureRepositoryRoot = FilePath(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent().path)
+private let sharedFixtureCatalogStorage = Mutex<ComponentCatalog?>(nil)
+
+private func sharedFixtureCatalog() throws -> ComponentCatalog {
+    try sharedFixtureCatalogStorage.withLock { cached in
+        if let cached { return cached }
+        let catalog = try ComponentRegistry(
+            context: WorkspaceContext(
+                root: fixtureRepositoryRoot,
+                environment: [:],
+                runtime: ColliderRuntime())
+        ).componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+        cached = catalog
+        return catalog
+    }
+}
 
 private struct RelocatableStorageSignature: Equatable {
     let id: String
@@ -52,10 +69,9 @@ private func selectedTasks(
 }
 
 private func selectedTestTasks(
-    in registry: ComponentRegistry,
+    in catalog: ComponentCatalog,
     selection: String?
 ) throws -> [TaskID] {
-    let catalog = try registry.componentCatalog()
     var requests = [
         ComponentEntrypointRequest(entrypoint: .testDefault, selection: selection)
     ]
@@ -70,12 +86,7 @@ private func selectedTestTasks(
 
 @Test
 func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
-    let context = WorkspaceContext(
-        root: fixtureRepositoryRoot,
-        environment: [:],
-        runtime: ColliderRuntime())
-    let catalog = try ComponentRegistry(context: context).componentCatalog(
-        hostAugmentation: HostCatalogAugmentation.none)
+    let catalog = try sharedFixtureCatalog()
 
     #expect(
         try selectedTasks(in: catalog, entrypoint: .build, selection: "android-native")
@@ -346,14 +357,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
 @Test func linuxNativePackageCohortsConsumeExactArchitecturePublications()
     async throws
 {
-    let root = try #require(
-        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let registry = ComponentRegistry(
-        context: WorkspaceContext(
-            root: root,
-            environment: [:],
-            runtime: ColliderRuntime()))
-    let catalog = try registry.componentCatalog()
+    let root = fixtureRepositoryRoot
+    let catalog = try sharedFixtureCatalog()
     let selected = Set(
         try selectedTasks(
             in: catalog,
@@ -382,7 +387,31 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(retention.assessmentPolicy == .always)
     let retentionDependencies = Set(retention.dependencies)
     for architecture in PlatformArchitecture.allCases {
+        let packageNames = LinuxNativePackageName.allCases.filter {
+            $0 != .androidAddon
+        }
+        for package in packageNames {
+            let payloadID = LinuxTaskIDs.packagePayload(architecture, package)
+            let payload = try #require(
+                catalog.tasks.first { $0.id == payloadID })
+            #expect(payload.action?.kind == "linux.package-runtime-payload")
+            #expect(payload.assessmentPolicy == .incremental)
+            for family in LinuxDistributionFamily.allCases {
+                let adapterID = LinuxTaskIDs.packageAdapter(
+                    architecture,
+                    family,
+                    package)
+                let adapter = try #require(
+                    catalog.tasks.first { $0.id == adapterID })
+                #expect(adapter.action?.kind == "linux.package-runtime-adapter")
+                #expect(adapter.assessmentPolicy == .incremental)
+                #expect(adapter.dependencies.contains(payloadID))
+                #expect(adapter.locks.count == 1)
+            }
+        }
         let id = LinuxTaskIDs.packageCohort(architecture)
+        let productPublicationID = LinuxTaskIDs.packageProductPublication(
+            architecture)
         let qualificationID = LinuxTaskIDs.packageLifecycleQualification(
             architecture)
         #expect(retentionDependencies.contains(qualificationID))
@@ -405,14 +434,26 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
                 TaskID(
                     rawValue:
                         "browser.browser.\(architecture.rawValue).artifact")))
+        for package in packageNames {
+            for family in LinuxDistributionFamily.allCases {
+                #expect(
+                    dependencies.contains(
+                        LinuxTaskIDs.packageAdapter(
+                            architecture,
+                            family,
+                            package)))
+            }
+        }
         let action = try #require(task.action)
         #expect(action.kind == "linux.package-runtime-cohort")
         #expect(action.requirements.networkAccess == .none)
+        #expect(task.locks.count == 1)
         let execution = try #require(
             try await ociExecutions(
                 in: action,
                 files: nativePackageObservationFileSystem()
             ).first)
+        #expect(execution.resourceLimits.cpuCount == 12)
         #expect(execution.executionPlatform == .linuxARM64OCI)
         #expect(execution.artifactTarget.architecture == architecture)
         #expect(execution.executableRequirements.isEmpty)
@@ -426,22 +467,43 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             !execution.mounts.contains {
                 $0.source == root && $0.target == root.string
             })
-        let productStoreMount = try #require(
-            execution.mounts.first {
+        #expect(
+            !execution.mounts.contains {
                 $0.target.hasSuffix("/artifacts/product-store")
             })
-        #expect(productStoreMount.purpose == .boundedExport)
-        #expect(execution.command.contains(productStoreMount.target))
         #expect(execution.command.contains(sourceSnapshotOutput.string))
         #expect(
             execution.command.contains {
                 $0.hasSuffix("nucleus-linux-assembler")
             })
 
+        let productPublication = try #require(
+            catalog.tasks.first { $0.id == productPublicationID })
+        #expect(productPublication.assessmentPolicy == .incremental)
+        #expect(productPublication.dependencies == [id])
+        #expect(productPublication.locks.count == 2)
+        let productPublicationAction = try #require(productPublication.action)
+        #expect(
+            productPublicationAction.kind
+                == "linux.publish-runtime-package-products")
+        #expect(
+            productPublicationAction.requirements.executionPlatform
+                == .macOSARM64Native)
+        #expect(
+            productPublicationAction.requirements.effects.contains {
+                guard case .publication(let path) = $0.scope else {
+                    return false
+                }
+                return $0.access == .readWrite
+                    && path.string.hasSuffix("/artifacts/product-store")
+            })
+
         let qualification = try #require(
             catalog.tasks.first { $0.id == qualificationID })
         #expect(qualification.assessmentPolicy == .incremental)
         #expect(qualification.dependencies.contains(id))
+        #expect(qualification.dependencies.contains(productPublicationID))
+        #expect(qualification.locks.count == 1)
         #expect(
             Set(qualification.swiftProducts.map(\.qualifiedProduct)) == [
                 "collider-cli:nucleus-linux-package-qualifier"
@@ -474,6 +536,13 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
                     $0.target.hasSuffix("/artifacts/product-store")
                 })
             #expect(storeMount.isReadOnly)
+            #expect(!qualificationExecution.command.contains(storeMount.target))
+            #expect(
+                qualificationExecution.mounts.contains {
+                    $0.isReadOnly
+                        && $0.target.contains(
+                            "/artifacts/package-publication/")
+                })
             let outputMount = try #require(
                 qualificationExecution.mounts.first {
                     $0.target.contains("/artifacts/package-qualification/")
@@ -485,10 +554,24 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
                 })
         }
     }
+    let armAssembly = try #require(
+        catalog.tasks.first { $0.id == LinuxTaskIDs.packageCohort(.arm64) })
+    let x86Assembly = try #require(
+        catalog.tasks.first { $0.id == LinuxTaskIDs.packageCohort(.x86_64) })
+    #expect(Set(armAssembly.locks).isDisjoint(with: Set(x86Assembly.locks)))
+    let armPublication = try #require(
+        catalog.tasks.first {
+            $0.id == LinuxTaskIDs.packageProductPublication(.arm64)
+        })
+    let x86Publication = try #require(
+        catalog.tasks.first {
+            $0.id == LinuxTaskIDs.packageProductPublication(.x86_64)
+        })
+    #expect(!Set(armPublication.locks).isDisjoint(with: Set(x86Publication.locks)))
 }
 
 private func nativePackageObservationFileSystem() -> ActionFileSystem {
-    let observations = LinuxNativePackageStage.allCases.map {
+    let observations = LinuxNativePackageStage.assemblyCases.map {
         ActionStageObservation(
             name: $0.observationName,
             durationNanoseconds: 1,
@@ -856,14 +939,7 @@ private func fixtureReactNativeNodeModules(
 }
 
 @Test func runtimeTestSelectionsUseNativeARM64LinuxLane() throws {
-    let root = try #require(
-        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let registry = ComponentRegistry(
-        context: WorkspaceContext(
-            root: root,
-            environment: [:],
-            runtime: ColliderRuntime()))
-    let catalog = try registry.componentCatalog()
+    let catalog = try sharedFixtureCatalog()
     let armBuild = try #require(
         catalog.tasks.first {
             $0.id == TaskID(rawValue: "linux.arm64.build")
@@ -890,7 +966,7 @@ private func fixtureReactNativeNodeModules(
     } else {
         Issue.record("native Linux tests must execute in the ARM64 OCI builder")
     }
-    let all = try selectedTestTasks(in: registry, selection: nil).map(\.rawValue)
+    let all = try selectedTestTasks(in: catalog, selection: nil).map(\.rawValue)
 
     #expect(
         all == [
@@ -905,60 +981,53 @@ private func fixtureReactNativeNodeModules(
             "test.release-gate.text-editor",
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "collider") == [
+        try selectedTestTasks(in: catalog, selection: "collider") == [
             ColliderSelfTaskIDs.cliTests,
             ColliderSelfTaskIDs.engineTests,
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "runtime").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "runtime").map(\.rawValue) == [
             "linux.arm64.test"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "config").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "config").map(\.rawValue) == [
             "linux.arm64.test"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "ipc").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "ipc").map(\.rawValue) == [
             "linux.arm64.test"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "compositor").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "compositor").map(\.rawValue) == [
             "linux.arm64.test"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "loader").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "loader").map(\.rawValue) == [
             "linux.arm64.test-loader"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "gpu-headless").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "gpu-headless").map(\.rawValue) == [
             "linux.arm64.test-gpu-headless"
         ])
     #expect(
-        try selectedTestTasks(in: registry, selection: "gpu-drm").map(\.rawValue) == [
+        try selectedTestTasks(in: catalog, selection: "gpu-drm").map(\.rawValue) == [
             "compositor-core.test-gpu-drm"
         ])
     #expect(throws: (any Error).self) {
-        try selectedTestTasks(in: registry, selection: "unknown")
+        try selectedTestTasks(in: catalog, selection: "unknown")
     }
 }
 
 @Test func linuxRuntimeArtifactsBuildOncePerArchitectureAndPublishTypedOutputs()
     async throws
 {
-    let root = try #require(
-        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let registry = ComponentRegistry(
-        context: WorkspaceContext(
-            root: root,
-            environment: [:],
-            runtime: ColliderRuntime()))
-    let catalog = try registry.componentCatalog()
+    let catalog = try sharedFixtureCatalog()
     let selected = try selectedTasks(
         in: catalog,
         entrypoint: .build,
         selection: "linux-runtime")
     let expectedProducts = Set([
-        "collider-cli:nucleus-linux-assembler",
+        "collider-cli:nucleus-linux-runtime-publisher",
         "nucleus:NucleusCompositor",
         "nucleus:NucleusSessionSupervisor",
         "nucleus:NucleusConfigService",
@@ -985,7 +1054,7 @@ private func fixtureReactNativeNodeModules(
         #expect(execution.command.first == "swiftpm")
         #expect(
             execution.command.dropFirst().first?.hasSuffix(
-                "nucleus-linux-assembler") == true)
+                "nucleus-linux-runtime-publisher") == true)
         #expect(execution.command.last == architecture.rawValue)
         #expect(!execution.command.contains("swift"))
         #expect(
@@ -1335,14 +1404,7 @@ private func fixtureReactNativeNodeModules(
 }
 
 @Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {
-    let root = try #require(
-        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let registry = ComponentRegistry(
-        context: WorkspaceContext(
-            root: root,
-            environment: [:],
-            runtime: ColliderRuntime()))
-    let catalog = try registry.componentCatalog()
+    let catalog = try sharedFixtureCatalog()
     let allTasks = catalog.tasks
     let releaseTasks = allTasks.filter {
         $0.component.rawValue == "release-gate"
@@ -1384,14 +1446,10 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: [:],
         swiftPM: swiftPM)
-    let registry = ComponentRegistry(
-        context: WorkspaceContext(
-            root: repositoryRoot,
-            environment: [:],
-            runtime: ColliderRuntime()))
+    let catalog = try sharedFixtureCatalog()
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
-    #expect(try selectedTestTasks(in: registry, selection: "gpu-drm") == [task.id])
+    #expect(try selectedTestTasks(in: catalog, selection: "gpu-drm") == [task.id])
 }
 
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {

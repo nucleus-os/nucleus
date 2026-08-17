@@ -1,5 +1,6 @@
 import ChromiumColliderRecipe
 import ColliderCore
+import LinuxPackageContracts
 import NativeBuilderColliderRecipe
 import ShellColliderRecipe
 import SystemPackage
@@ -45,6 +46,34 @@ package enum LinuxTaskIDs {
         TaskID(rawValue: "linux.\(architecture.rawValue).package-cohort")
     }
 
+    package static func packagePayload(
+        _ architecture: PlatformArchitecture,
+        _ package: LinuxNativePackageName
+    ) -> TaskID {
+        TaskID(
+            rawValue:
+                "linux.\(architecture.rawValue).package-payload.\(package.rawValue)")
+    }
+
+    package static func packageAdapter(
+        _ architecture: PlatformArchitecture,
+        _ family: LinuxDistributionFamily,
+        _ package: LinuxNativePackageName
+    ) -> TaskID {
+        TaskID(
+            rawValue:
+                "linux.\(architecture.rawValue).package-adapter."
+                + "\(family.rawValue).\(package.rawValue)")
+    }
+
+    package static func packageProductPublication(
+        _ architecture: PlatformArchitecture
+    ) -> TaskID {
+        TaskID(
+            rawValue:
+                "linux.\(architecture.rawValue).package-product-publication")
+    }
+
     package static func packageLifecycleQualification(
         _ architecture: PlatformArchitecture
     ) -> TaskID {
@@ -64,17 +93,23 @@ package struct LinuxRuntimeArtifactLane: Sendable {
     package let runtimeSwiftPM: SwiftPMInvocation
     package let artifactRoot: FilePath
     package let packageRoot: FilePath
+    package let packageWorkRoot: FilePath
+    package let productPublicationRoot: FilePath
     package let qualificationRoot: FilePath
 
     package init(
         runtimeSwiftPM: SwiftPMInvocation,
         artifactRoot: FilePath,
         packageRoot: FilePath,
+        packageWorkRoot: FilePath,
+        productPublicationRoot: FilePath,
         qualificationRoot: FilePath
     ) {
         self.runtimeSwiftPM = runtimeSwiftPM
         self.artifactRoot = artifactRoot
         self.packageRoot = packageRoot
+        self.packageWorkRoot = packageWorkRoot
+        self.productPublicationRoot = productPublicationRoot
         self.qualificationRoot = qualificationRoot
     }
 }
@@ -168,19 +203,55 @@ public enum LinuxColliderRecipe: ColliderComponent {
             else {
                 throw LinuxRuntimeArtifactFailure.missingBrowser(architecture)
             }
+            var payloads: [PreparedNativePackagePayload] = []
+            for package in LinuxNativePackageName.allCases
+            where package != .androidAddon {
+                let payload = try packagePayloadTask(
+                    architecture: architecture,
+                    package: package,
+                    lane: lane,
+                    runtime: artifact,
+                    browser: browser,
+                    configuration: runtimeArtifact)
+                tasks.append(payload.task)
+                payloads.append(payload)
+            }
+            var adapters: [PreparedNativePackageAdapter] = []
+            for family in LinuxDistributionFamily.allCases {
+                for payload in payloads {
+                    let adapter = try packageAdapterTask(
+                        architecture: architecture,
+                        family: family,
+                        payload: payload,
+                        lane: lane,
+                        runtime: artifact,
+                        browser: browser,
+                        configuration: runtimeArtifact)
+                    tasks.append(adapter.task)
+                    adapters.append(adapter)
+                }
+            }
             let nativePackages = try packageTask(
                 architecture: architecture,
                 lane: lane,
                 runtime: artifact,
                 browser: browser,
+                adapters: adapters,
                 sourceSnapshot: packageSourceSnapshot.snapshot,
                 configuration: runtimeArtifact)
             tasks.append(nativePackages.task)
             packagePublications.append(nativePackages)
+            let productPublication = try packageProductPublicationTask(
+                architecture: architecture,
+                lane: lane,
+                packages: nativePackages,
+                configuration: runtimeArtifact)
+            tasks.append(productPublication.task)
             let qualification = try packageQualificationTask(
                 architecture: architecture,
                 lane: lane,
                 packages: nativePackages,
+                productPublication: productPublication,
                 configuration: runtimeArtifact)
             tasks.append(qualification.task)
             packageQualifications.append(qualification)
@@ -208,7 +279,8 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 owner: descriptor.id,
                 producers: Set(
                     PlatformArchitecture.allCases.map {
-                        StorageProducer.task(LinuxTaskIDs.packageCohort($0))
+                        StorageProducer.task(
+                            LinuxTaskIDs.packageProductPublication($0))
                     } + [.task(LinuxTaskIDs.packageStorageRetention)]),
                 storageClass: .published,
                 root: runtimeArtifact.productStoreRoot,
@@ -220,7 +292,34 @@ public enum LinuxColliderRecipe: ColliderComponent {
             }
             let task = LinuxTaskIDs.runtimeArtifact(architecture)
             let packageTask = LinuxTaskIDs.packageCohort(architecture)
+            let productPublicationTask =
+                LinuxTaskIDs.packageProductPublication(architecture)
+            let payloadPackages = LinuxNativePackageName.allCases.filter {
+                $0 != .androidAddon
+            }
+            let payloadProducers = Set(
+                payloadPackages.map {
+                    StorageProducer.task(
+                        LinuxTaskIDs.packagePayload(architecture, $0))
+                }
+                    + payloadPackages.flatMap { package in
+                        LinuxDistributionFamily.allCases.map { family in
+                            StorageProducer.task(
+                                LinuxTaskIDs.packageAdapter(
+                                    architecture,
+                                    family,
+                                    package))
+                        }
+                    })
             storage += [
+                StorageDeclaration(
+                    id: "linux-\(architecture.rawValue)-native-package-work",
+                    owner: descriptor.id,
+                    producers: payloadProducers,
+                    storageClass: .published,
+                    root: lane.packageWorkRoot,
+                    safetyRoot: lane.packageWorkRoot.removingLastComponent(),
+                    retentionPolicy: .protected),
                 StorageDeclaration(
                     id: "linux-\(architecture.rawValue)-runtime-artifact-root",
                     owner: descriptor.id,
@@ -283,6 +382,15 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         rawValue: #"^\.candidate$"#)),
                 StorageDeclaration(
                     id:
+                        "linux-\(architecture.rawValue)-package-product-publication",
+                    owner: descriptor.id,
+                    producers: [.task(productPublicationTask)],
+                    storageClass: .published,
+                    root: lane.productPublicationRoot,
+                    safetyRoot: lane.productPublicationRoot.removingLastComponent(),
+                    retentionPolicy: .singleWorkingSet),
+                StorageDeclaration(
+                    id:
                         "linux-\(architecture.rawValue)-native-package-qualification",
                     owner: descriptor.id,
                     producers: [
@@ -295,6 +403,52 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     safetyRoot: lane.qualificationRoot.removingLastComponent(),
                     retentionPolicy: .singleWorkingSet),
             ]
+            storage += payloadPackages.map { package in
+                let root = lane.packageWorkRoot.appending(
+                    "payloads/\(package.rawValue)")
+                return StorageDeclaration(
+                    id:
+                        "linux-\(architecture.rawValue)-native-package-payload-"
+                        + package.rawValue,
+                    owner: descriptor.id,
+                    producers: [
+                        .task(LinuxTaskIDs.packagePayload(architecture, package))
+                    ],
+                    storageClass: .generation,
+                    root: root.appending("generations"),
+                    safetyRoot: root,
+                    retentionPolicy: .keepActiveAndRollback(count: 0),
+                    activeGenerationLink: root.appending("current"),
+                    generationNaming: .artifactDigestDirectory,
+                    interruptedCandidateNaming: DirectoryNamePattern(
+                        rawValue: #"^\.candidate$"#))
+            }
+            storage += payloadPackages.flatMap { package in
+                LinuxDistributionFamily.allCases.map { family in
+                    let root = lane.packageWorkRoot.appending(
+                        "adapters/\(family.rawValue)/\(package.rawValue)")
+                    return StorageDeclaration(
+                        id:
+                            "linux-\(architecture.rawValue)-native-package-adapter-"
+                            + "\(family.rawValue)-\(package.rawValue)",
+                        owner: descriptor.id,
+                        producers: [
+                            .task(
+                                LinuxTaskIDs.packageAdapter(
+                                    architecture,
+                                    family,
+                                    package))
+                        ],
+                        storageClass: .generation,
+                        root: root.appending("generations"),
+                        safetyRoot: root,
+                        retentionPolicy: .keepActiveAndRollback(count: 0),
+                        activeGenerationLink: root.appending("current"),
+                        generationNaming: .artifactDigestDirectory,
+                        interruptedCandidateNaming: DirectoryNamePattern(
+                            rawValue: #"^\.candidate$"#))
+                }
+            }
         }
         return try ComponentDefinition(
             descriptor: descriptor,
@@ -332,6 +486,24 @@ public enum LinuxColliderRecipe: ColliderComponent {
     private struct PreparedNativePackages {
         let task: TaskDeclaration
         let publication: ArtifactReference
+    }
+
+    private struct PreparedNativePackagePayload {
+        let package: LinuxNativePackageName
+        let task: TaskDeclaration
+        let payload: ArtifactReference
+    }
+
+    private struct PreparedNativePackageAdapter {
+        let family: LinuxDistributionFamily
+        let package: LinuxNativePackageName
+        let task: TaskDeclaration
+        let publication: ArtifactReference
+    }
+
+    private struct PreparedPublishedNativePackages {
+        let task: TaskDeclaration
+        let receipt: ArtifactReference
     }
 
     private struct PreparedPackageQualification {
@@ -418,15 +590,15 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         validation: .executableFile)
                 ])
         }
-        let assembler = configuration.assemblerSwiftPM.product(
+        let runtimePublisher = configuration.assemblerSwiftPM.product(
             package: "collider-cli",
-            product: "nucleus-linux-assembler",
+            product: "nucleus-linux-runtime-publisher",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
             environment: configuration.environment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
-                        "nucleus-linux-assembler"),
+                        "nucleus-linux-runtime-publisher"),
                     validation: .executableFile)
             ])
         let generations = lane.artifactRoot.appending("generations")
@@ -452,7 +624,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             path: packageManifests.appending("current"),
             validation: .symlinkTarget)
         let task = builder.build(
-            swiftProducts: runtimeRequirements + [assembler],
+            swiftProducts: runtimeRequirements + [runtimePublisher],
             inputs: RuntimeHostIntegration.sourceFiles.map {
                 .file(configuration.sessionPackage.appending($0))
             } + [
@@ -486,6 +658,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         lane: LinuxRuntimeArtifactLane,
         runtime: PreparedRuntimeArtifact,
         browser: ChromiumColliderRecipe.PackageInput,
+        adapters: [PreparedNativePackageAdapter],
         sourceSnapshot: ArtifactReference,
         configuration: LinuxRuntimeArtifactConfiguration
     ) throws -> PreparedNativePackages {
@@ -513,6 +686,9 @@ public enum LinuxColliderRecipe: ColliderComponent {
         builder.consume(runtime.packageManifests)
         builder.consume(browser.reference)
         builder.consume(browser.payloadReference)
+        for adapter in adapters {
+            builder.consume(adapter.publication)
+        }
         builder.consume(sourceSnapshot)
         builder.consume(assemblerOCI.image)
         let publication: ArtifactReference = try builder.output(
@@ -529,12 +705,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN"]),
             ],
             locks: [
-                .shared(lane.packageRoot.appending(".publish.lock")),
-                .shared(
-                    configuration.productStoreRoot.appending(".publish.lock")),
-                .shared(
-                    configuration.packageSourceSnapshotRoot.appending(
-                        ".publish.lock")),
+                .shared(lane.packageRoot.appending(".publish.lock"))
             ],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
@@ -543,18 +714,165 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     sourceSnapshot: sourceSnapshot.path,
                     runtimeArtifactRoot: lane.artifactRoot,
                     browser: browser,
+                    adapterRoot: lane.packageWorkRoot.appending("adapters"),
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: lane.packageRoot,
-                    productStoreRoot: configuration.productStoreRoot,
+                    producingTask: LinuxTaskIDs.packageCohort(architecture),
                     producerRunner: .current,
                     environment: configuration.environment)))
         return PreparedNativePackages(task: task, publication: publication)
+    }
+
+    private static func packagePayloadTask(
+        architecture: PlatformArchitecture,
+        package: LinuxNativePackageName,
+        lane: LinuxRuntimeArtifactLane,
+        runtime: PreparedRuntimeArtifact,
+        browser: ChromiumColliderRecipe.PackageInput,
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> PreparedNativePackagePayload {
+        let assembler = configuration.assemblerSwiftPM.product(
+            package: "collider-cli",
+            product: "nucleus-linux-assembler",
+            packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
+            environment: configuration.environment,
+            expectedOutputs: [
+                PathPostcondition(
+                    path: configuration.assemblerSwiftPM.executable(
+                        "nucleus-linux-assembler"),
+                    validation: .executableFile)
+            ])
+        let outputRoot = lane.packageWorkRoot.appending(
+            "payloads/\(package.rawValue)")
+        var builder = TaskBuilder(
+            id: LinuxTaskIDs.packagePayload(architecture, package),
+            component: descriptor.id)
+        builder.consume(runtime.runtime)
+        builder.consume(runtime.packageManifests)
+        builder.consume(browser.reference)
+        builder.consume(browser.payloadReference)
+        let payload: ArtifactReference = try builder.output(
+            "payload",
+            path: outputRoot.appending("current"),
+            validation: .symlinkTarget)
+        let task = builder.build(
+            swiftProducts: [assembler],
+            inputs: [configuration.assemblerSwiftPM.identityInput],
+            locks: [.shared(outputRoot.appending(".publish.lock"))],
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                PackageLinuxRuntimePayloadAction(
+                    architecture: architecture,
+                    package: package,
+                    runtimeArtifactRoot: lane.artifactRoot,
+                    browser: browser,
+                    assemblerSwiftPM: configuration.assemblerSwiftPM,
+                    outputRoot: outputRoot,
+                    environment: configuration.environment)))
+        return PreparedNativePackagePayload(
+            package: package,
+            task: task,
+            payload: payload)
+    }
+
+    private static func packageAdapterTask(
+        architecture: PlatformArchitecture,
+        family: LinuxDistributionFamily,
+        payload: PreparedNativePackagePayload,
+        lane: LinuxRuntimeArtifactLane,
+        runtime: PreparedRuntimeArtifact,
+        browser: ChromiumColliderRecipe.PackageInput,
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> PreparedNativePackageAdapter {
+        let assembler = configuration.assemblerSwiftPM.product(
+            package: "collider-cli",
+            product: "nucleus-linux-assembler",
+            packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
+            environment: configuration.environment,
+            expectedOutputs: [
+                PathPostcondition(
+                    path: configuration.assemblerSwiftPM.executable(
+                        "nucleus-linux-assembler"),
+                    validation: .executableFile)
+            ])
+        let outputRoot = lane.packageWorkRoot.appending(
+            "adapters/\(family.rawValue)/\(payload.package.rawValue)")
+        let payloadRoot = lane.packageWorkRoot.appending(
+            "payloads/\(payload.package.rawValue)")
+        var builder = TaskBuilder(
+            id: LinuxTaskIDs.packageAdapter(
+                architecture,
+                family,
+                payload.package),
+            component: descriptor.id)
+        builder.consume(payload.payload)
+        builder.consume(runtime.runtime)
+        builder.consume(runtime.packageManifests)
+        builder.consume(browser.reference)
+        builder.consume(browser.payloadReference)
+        let publication: ArtifactReference = try builder.output(
+            "adapter",
+            path: outputRoot.appending("current"),
+            validation: .symlinkTarget)
+        let task = builder.build(
+            swiftProducts: [assembler],
+            inputs: [configuration.assemblerSwiftPM.identityInput],
+            locks: [.shared(outputRoot.appending(".publish.lock"))],
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                PackageLinuxRuntimeAdapterAction(
+                    architecture: architecture,
+                    family: family,
+                    package: payload.package,
+                    runtimeArtifactRoot: lane.artifactRoot,
+                    browser: browser,
+                    payloadPublicationRoot: payloadRoot,
+                    assemblerSwiftPM: configuration.assemblerSwiftPM,
+                    outputRoot: outputRoot,
+                    environment: configuration.environment)))
+        return PreparedNativePackageAdapter(
+            family: family,
+            package: payload.package,
+            task: task,
+            publication: publication)
+    }
+
+    private static func packageProductPublicationTask(
+        architecture: PlatformArchitecture,
+        lane: LinuxRuntimeArtifactLane,
+        packages: PreparedNativePackages,
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> PreparedPublishedNativePackages {
+        var builder = TaskBuilder(
+            id: LinuxTaskIDs.packageProductPublication(architecture),
+            component: descriptor.id)
+        builder.consume(packages.publication)
+        let receipt: ArtifactReference = try builder.output(
+            "package-product-publication-receipt",
+            path: lane.productPublicationRoot.appending("receipt.json"),
+            validation: .regularFile)
+        let task = builder.build(
+            locks: [
+                .shared(
+                    lane.productPublicationRoot.appending(".publish.lock")),
+                .shared(
+                    configuration.productStoreRoot.appending(".publish.lock")),
+            ],
+            assessmentPolicy: .incremental,
+            action: try AnyColliderAction(
+                PublishLinuxRuntimePackageProductsAction(
+                    architecture: architecture,
+                    packagePublicationRoot: lane.packageRoot,
+                    productStoreRoot: configuration.productStoreRoot,
+                    receiptRoot: lane.productPublicationRoot)))
+        return PreparedPublishedNativePackages(task: task, receipt: receipt)
     }
 
     private static func packageQualificationTask(
         architecture: PlatformArchitecture,
         lane: LinuxRuntimeArtifactLane,
         packages: PreparedNativePackages,
+        productPublication: PreparedPublishedNativePackages,
         configuration: LinuxRuntimeArtifactConfiguration
     ) throws -> PreparedPackageQualification {
         let qualifier = configuration.assemblerSwiftPM.product(
@@ -578,6 +896,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             id: LinuxTaskIDs.packageLifecycleQualification(architecture),
             component: descriptor.id)
         builder.consume(packages.publication)
+        builder.consume(productPublication.receipt)
         builder.consume(assemblerOCI.image)
         let report: ArtifactReference = try builder.output(
             "package-lifecycle-qualification",
@@ -587,9 +906,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             swiftProducts: [qualifier],
             inputs: [configuration.assemblerSwiftPM.identityInput],
             locks: [
-                .shared(lane.qualificationRoot.appending(".publish.lock")),
-                .shared(
-                    configuration.productStoreRoot.appending(".publish.lock")),
+                .shared(lane.qualificationRoot.appending(".publish.lock"))
             ],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
@@ -597,6 +914,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     architecture: architecture,
                     packagePublicationRoot: lane.packageRoot,
                     productStoreRoot: configuration.productStoreRoot,
+                    productStoreReceipt: productPublication.receipt.path,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     qualificationRoot: lane.qualificationRoot,
                     environment: configuration.environment)))

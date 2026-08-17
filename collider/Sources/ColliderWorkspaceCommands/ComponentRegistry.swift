@@ -177,6 +177,11 @@ package struct ComponentRegistry {
                                     "runtime/linux-\(architecture.rawValue)"),
                                 packageRoot: context.artifactRoot.appending(
                                     "packages/linux-\(architecture.rawValue)"),
+                                packageWorkRoot: context.artifactRoot.appending(
+                                    "package-work/linux-\(architecture.rawValue)"),
+                                productPublicationRoot: context.artifactRoot.appending(
+                                    "package-publication/linux-"
+                                        + architecture.rawValue),
                                 qualificationRoot: context.artifactRoot.appending(
                                     "package-qualification/linux-"
                                         + architecture.rawValue))

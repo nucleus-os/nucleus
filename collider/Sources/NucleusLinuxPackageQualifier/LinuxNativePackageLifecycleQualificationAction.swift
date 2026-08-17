@@ -1,8 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
-import LinuxColliderRecipe
-import ShellColliderRecipe
+import LinuxPackageContracts
 import SystemPackage
 
 package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
@@ -10,7 +9,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
         let family: LinuxDistributionFamily
         let architecture: PlatformArchitecture
         let packagePublicationRoot: FilePath
-        let productStoreRoot: FilePath
         let qualificationRoot: FilePath
         let assemblerExecutable: FilePath
         let builderImageID: FilePath
@@ -19,7 +17,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
             encoder.append(family.rawValue)
             encoder.append(architecture.rawValue)
             encoder.append(path: packagePublicationRoot)
-            encoder.append(path: productStoreRoot)
             encoder.append(path: qualificationRoot)
             encoder.append(path: assemblerExecutable)
             encoder.append(path: builderImageID)
@@ -32,7 +29,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
     private let family: LinuxDistributionFamily
     private let architecture: PlatformArchitecture
     private let packagePublicationRoot: FilePath
-    private let productStoreRoot: FilePath
     private let qualificationRoot: FilePath
     private let assemblerExecutable: FilePath
     private let builderImageID: FilePath
@@ -42,7 +38,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
         family: LinuxDistributionFamily,
         architecture: PlatformArchitecture,
         packagePublicationRoot: FilePath,
-        productStoreRoot: FilePath,
         qualificationRoot: FilePath,
         assemblerExecutable: FilePath,
         builderImageID: FilePath,
@@ -51,7 +46,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
         self.family = family
         self.architecture = architecture
         self.packagePublicationRoot = packagePublicationRoot
-        self.productStoreRoot = productStoreRoot
         self.qualificationRoot = qualificationRoot
         self.assemblerExecutable = assemblerExecutable
         self.builderImageID = builderImageID
@@ -63,7 +57,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
             family: family,
             architecture: architecture,
             packagePublicationRoot: packagePublicationRoot,
-            productStoreRoot: productStoreRoot,
             qualificationRoot: qualificationRoot,
             assemblerExecutable: assemblerExecutable,
             builderImageID: builderImageID)
@@ -94,7 +87,6 @@ package struct QualifyLinuxNativePackageLifecycleAction: ColliderAction {
             effects: [
                 ActionEffect(
                     .read, scope: .input(packagePublicationRoot)),
-                ActionEffect(.read, scope: .input(productStoreRoot)),
                 ActionEffect(.read, scope: .input(assemblerExecutable)),
                 ActionEffect(.read, scope: .input(builderImageID)),
                 ActionEffect(
@@ -347,6 +339,7 @@ private func assembleLifecycleFixture(
             archive: archive,
             workRoot: fixtureRoot,
             assemblerIdentity: assemblerIdentity,
+            stageRecorder: LinuxNativePackageStageRecorder(),
             context: context)
         try await AssembleLinuxNativePackagesAction.validate(
             package: package,

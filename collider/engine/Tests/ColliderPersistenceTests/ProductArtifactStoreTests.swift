@@ -174,6 +174,30 @@ import Testing
     }
 }
 
+@Test func productArtifactEnvelopeValidationDoesNotRequireStorePublication() throws {
+    let directory = temporaryDirectory(named: "collider-product-validation")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fixture = try productFixture(in: directory)
+    let envelope = try productEnvelope(
+        fixture: fixture,
+        placement: directory,
+        provenance: localProvenance())
+
+    try ProductArtifactBuilder.validateEnvelope(
+        envelope,
+        payloadRoot: fixture.payload,
+        archive: fixture.archive)
+    try Data("substituted".utf8).write(
+        to: URL(
+            fileURLWithPath: fixture.payload.appending("libnucleus.so").string))
+    #expect(throws: ProductArtifactStoreFailure.self) {
+        try ProductArtifactBuilder.validateEnvelope(
+            envelope,
+            payloadRoot: fixture.payload,
+            archive: fixture.archive)
+    }
+}
+
 @Test func productArtifactStoreRejectsArchiveSubstitution() throws {
     let directory = temporaryDirectory(named: "collider-product-substitution")
     defer { try? FileManager.default.removeItem(at: directory) }

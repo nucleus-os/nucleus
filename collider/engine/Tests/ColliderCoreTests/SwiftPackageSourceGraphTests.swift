@@ -30,6 +30,52 @@ func productInputsFollowTheTransitiveManifestTargetGraph() {
 }
 
 @Test
+func productSourcePathsExcludeSourceControlDependencyCheckouts() {
+    let root = FilePath("/workspace")
+    let external = root.appending(".build/checkouts/external")
+    let graph = SwiftPackageSourceGraph(
+        root: root,
+        packages: [
+            SwiftPackageSourceGraph.Package(
+                identity: "workspace",
+                root: root,
+                dependencyRoots: [external],
+                products: [
+                    SwiftPackageSourceGraph.Product(name: "App", targets: ["App"])
+                ],
+                targets: [
+                    SwiftPackageSourceGraph.Target(
+                        name: "App",
+                        path: root.appending("Sources/App"),
+                        productDependencies: ["External"])
+                ]),
+            SwiftPackageSourceGraph.Package(
+                identity: "external",
+                root: external,
+                isLocal: false,
+                products: [
+                    SwiftPackageSourceGraph.Product(
+                        name: "External",
+                        targets: ["External"])
+                ],
+                targets: [
+                    SwiftPackageSourceGraph.Target(
+                        name: "External",
+                        path: external.appending("Sources/External"))
+                ]),
+        ])
+
+    let buildInputs = sourcePaths(in: Set(graph.inputs(forProduct: "App")))
+    let provenancePaths = Set(graph.sourcePaths(forProduct: "App"))
+
+    #expect(buildInputs.contains(external.appending("Sources/External")))
+    #expect(!provenancePaths.contains(external.appending("Package.swift")))
+    #expect(!provenancePaths.contains(external.appending("Sources/External")))
+    #expect(provenancePaths.contains(root.appending("Package.swift")))
+    #expect(provenancePaths.contains(root.appending("Sources/App")))
+}
+
+@Test
 func testInputsFollowEveryRootTestTargetAndItsDependencies() {
     let root = FilePath("/workspace")
     let dependency = root.appending("third-party/dependency")

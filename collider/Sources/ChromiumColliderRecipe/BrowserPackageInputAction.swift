@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 
 package struct PublishBrowserPackageInputAction: ColliderAction {
@@ -44,7 +45,7 @@ package struct PublishBrowserPackageInputAction: ColliderAction {
         let payloadDigest = try context.files.digest(tree: payload)
         let buildManifest = payload.appending("nucleus-build-manifest.json")
         let manifest = BrowserPackageInputManifest(
-            artifactTarget: publication.target.artifactTarget,
+            artifactTarget: publication.target,
             payloadDigest: payloadDigest,
             payloadGeneration: try context.files.readSymbolicLink(
                 publication.distributionRoot.appending("current")),
@@ -76,63 +77,6 @@ package struct PublishBrowserPackageInputAction: ColliderAction {
     }
 }
 
-@discardableResult
-package func validatedBrowserPackageInput(
-    _ publication: BrowserPackageInputPublication,
-    files: ActionFileSystem
-) throws -> BrowserPackageInputManifest {
-    let current = publication.packageInputRoot.appending("current")
-    guard
-        try files.metadataWithoutFollowingSymlinks(for: current)?.type
-            == .symbolicLink
-    else {
-        throw BrowserPackageInputFailure(
-            "browser package input publication is missing")
-    }
-    let target = try files.readSymbolicLink(current)
-    guard
-        target.range(
-            of: #"^generations/sha256-[0-9a-f]{64}$"#,
-            options: .regularExpression) != nil
-    else {
-        throw BrowserPackageInputFailure(
-            "browser package input is not content addressed: \(target)")
-    }
-    let manifestPath = publication.packageInputRoot.appending(target).appending(
-        "browser-package-input.json")
-    let manifest: BrowserPackageInputManifest
-    do {
-        manifest = try JSONDecoder().decode(
-            BrowserPackageInputManifest.self,
-            from: Data(files.read(manifestPath)))
-    } catch {
-        throw BrowserPackageInputFailure(
-            "browser package input manifest is invalid: \(error)")
-    }
-    guard manifest.packageName == "nucleus-browser",
-        manifest.artifactTarget == publication.target.artifactTarget,
-        target == "generations/sha256-\(manifest.identity.hexadecimal)"
-    else {
-        throw BrowserPackageInputFailure(
-            "browser package input identity does not match its target")
-    }
-    let payload = publication.distributionRoot.appending(
-        manifest.payloadGeneration)
-    let activePayload = try validatedBrowserPublicationPayload(
-        distributionRoot: publication.distributionRoot,
-        files: files)
-    guard payload == activePayload,
-        try files.digest(tree: payload) == manifest.payloadDigest,
-        try files.digest(
-            file: payload.appending("nucleus-build-manifest.json"))
-            == manifest.buildManifestDigest
-    else {
-        throw BrowserPackageInputFailure(
-            "browser package input does not match its immutable payload")
-    }
-    return manifest
-}
-
 private func encodedJSON<T: Encodable>(_ value: T) throws -> [UInt8] {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [
@@ -141,14 +85,4 @@ private func encodedJSON<T: Encodable>(_ value: T) throws -> [UInt8] {
     var bytes = Array(try encoder.encode(value))
     bytes.append(0x0a)
     return bytes
-}
-
-private struct BrowserPackageInputFailure: Error, CustomStringConvertible,
-    Sendable
-{
-    let description: String
-
-    init(_ description: String) {
-        self.description = "browser package input failed: \(description)"
-    }
 }

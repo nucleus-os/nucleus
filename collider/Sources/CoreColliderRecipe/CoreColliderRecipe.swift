@@ -920,12 +920,12 @@ package struct SkiaGitDependency: Hashable, Sendable {
     }
 }
 
-private struct MaterializeSkiaDependenciesAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
+package struct MaterializeSkiaDependenciesAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
         let skia: FilePath
         let dependencies: [SkiaGitDependency]
 
-        func encode(into encoder: inout IdentityEncoder) {
+        package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: skia)
             encoder.appendSequence(dependencies) { dependencyEncoder, dependency in
                 dependencyEncoder.append(dependency.relativePath)
@@ -935,15 +935,27 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
         }
     }
 
-    static let kind: ActionKind = "core.materialize-skia-dependencies"
+    package static let kind: ActionKind = "core.materialize-skia-dependencies"
 
-    let skia: FilePath
-    let dependencies: [SkiaGitDependency]
-    let environment: [String: String]
+    package let skia: FilePath
+    package let dependencies: [SkiaGitDependency]
+    package let environment: [String: String]
 
-    var identity: Identity { Identity(skia: skia, dependencies: dependencies) }
+    package init(
+        skia: FilePath,
+        dependencies: [SkiaGitDependency],
+        environment: [String: String]
+    ) {
+        self.skia = skia
+        self.dependencies = dependencies
+        self.environment = environment
+    }
 
-    var requirements: ActionRequirements {
+    package var identity: Identity {
+        Identity(skia: skia, dependencies: dependencies)
+    }
+
+    package var requirements: ActionRequirements {
         let checkouts = dependencies.map { skia.appending($0.relativePath) }
         let parents = Set(checkouts.map { $0.removingLastComponent() }).sorted {
             $0.string < $1.string
@@ -968,94 +980,136 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
             executionPlatform: .macOSARM64Native)
     }
 
-    func execute(in context: ActionContext) async throws {
+    package func execute(in context: ActionContext) async throws {
         let disabled = skia.appending("sync-deps.disable")
         guard try context.files.metadata(for: disabled) == nil else {
             throw SkiaDependencyFailure.disabled(disabled)
         }
-        for dependency in dependencies {
-            try context.cancellation.check()
-            let checkout = skia.appending(dependency.relativePath)
-            try context.files.createDirectory(checkout.removingLastComponent())
-            let gitDirectory = checkout.appending(".git")
-            if try context.files.metadata(for: gitDirectory) == nil {
-                try await requireSuccess(
-                    ["init", checkout.string],
-                    workingDirectory: skia,
-                    context: context)
-                try await requireSuccess(
-                    ["-C", checkout.string, "remote", "add", "origin", dependency.remote],
-                    workingDirectory: skia,
-                    context: context)
-            } else {
-                let dirty = try await git(
-                    [
-                        "-C", checkout.string, "status", "--porcelain",
-                        "--untracked-files=no",
-                    ],
-                    workingDirectory: skia,
-                    context: context)
-                guard dirty.status == 0, dirty.standardOutput.isEmpty else {
-                    throw SkiaDependencyFailure.trackedModifications(
-                        dependency.relativePath)
+        let concurrencyLimit = 8
+        for start in stride(from: 0, to: dependencies.count, by: concurrencyLimit) {
+            let end = min(start + concurrencyLimit, dependencies.count)
+            let batch = dependencies[start..<end]
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for dependency in batch {
+                    group.addTask {
+                        try await materialize(dependency, context: context)
+                    }
                 }
-                try await requireSuccess(
-                    [
-                        "-C", checkout.string, "remote", "set-url", "origin",
-                        dependency.remote,
-                    ],
-                    workingDirectory: skia,
-                    context: context)
+                try await group.waitForAll()
             }
+        }
+    }
 
-            let object = try await git(
-                ["-C", checkout.string, "cat-file", "-e", "\(dependency.commit)^{commit}"],
-                workingDirectory: skia,
-                context: context)
-            if object.status != 0 {
-                try await requireSuccess(
-                    [
-                        "-C", checkout.string, "fetch", "--no-tags", "--depth=1",
-                        "origin", dependency.commit,
-                    ],
-                    workingDirectory: skia,
-                    context: context)
-            }
+    private func materialize(
+        _ dependency: SkiaGitDependency,
+        context: ActionContext
+    ) async throws {
+        try context.cancellation.check()
+        let checkout = skia.appending(dependency.relativePath)
+        if try await checkoutIsExact(dependency, at: checkout, context: context) {
+            return
+        }
+
+        try context.files.createDirectory(checkout.removingLastComponent())
+        let gitDirectory = checkout.appending(".git")
+        if try context.files.metadata(for: gitDirectory) == nil {
             try await requireSuccess(
-                ["-C", checkout.string, "checkout", "--detach", "--force", dependency.commit],
+                ["init", checkout.string],
                 workingDirectory: skia,
                 context: context)
+            try await requireSuccess(
+                ["-C", checkout.string, "remote", "add", "origin", dependency.remote],
+                workingDirectory: skia,
+                context: context)
+        } else {
+            let origin = try await git(
+                ["-C", checkout.string, "remote", "get-url", "origin"],
+                workingDirectory: skia,
+                context: context)
+            let operation = origin.succeeded ? "set-url" : "add"
+            try await requireSuccess(
+                [
+                    "-C", checkout.string, "remote", operation, "origin",
+                    dependency.remote,
+                ],
+                workingDirectory: skia,
+                context: context)
+        }
+
+        let object = try await git(
+            ["-C", checkout.string, "cat-file", "-e", "\(dependency.commit)^{commit}"],
+            workingDirectory: skia,
+            context: context)
+        if object.status != 0 {
+            try await requireSuccess(
+                [
+                    "-C", checkout.string, "fetch", "--no-tags", "--depth=1",
+                    "origin", dependency.commit,
+                ],
+                workingDirectory: skia,
+                context: context)
+        }
+        try await requireSuccess(
+            ["-C", checkout.string, "checkout", "--detach", "--force", dependency.commit],
+            workingDirectory: skia,
+            context: context)
+        guard try await checkoutIsExact(dependency, at: checkout, context: context)
+        else {
             let resolved = try await git(
                 ["-C", checkout.string, "rev-parse", "HEAD"],
                 workingDirectory: skia,
                 context: context)
-            let expected = try await git(
-                ["-C", checkout.string, "rev-parse", "\(dependency.commit)^{commit}"],
-                workingDirectory: skia,
-                context: context)
-            guard resolved.status == 0,
-                expected.status == 0,
-                resolved.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    == expected.standardOutput.trimmingCharacters(
-                        in: .whitespacesAndNewlines)
-            else {
-                throw SkiaDependencyFailure.wrongCommit(
-                    dependency.relativePath,
-                    expected: expected.standardOutput,
-                    actual: resolved.standardOutput)
-            }
-            let dirty = try await git(
-                [
-                    "-C", checkout.string, "status", "--porcelain",
-                    "--untracked-files=no",
-                ],
-                workingDirectory: skia,
-                context: context)
-            guard dirty.status == 0, dirty.standardOutput.isEmpty else {
-                throw SkiaDependencyFailure.trackedModifications(
-                    dependency.relativePath)
-            }
+            throw SkiaDependencyFailure.wrongCommit(
+                dependency.relativePath,
+                expected: dependency.commit,
+                actual: resolved.standardOutput)
         }
+    }
+
+    private func checkoutIsExact(
+        _ dependency: SkiaGitDependency,
+        at checkout: FilePath,
+        context: ActionContext
+    ) async throws -> Bool {
+        guard try context.files.metadata(for: checkout.appending(".git")) != nil else {
+            return false
+        }
+        async let origin = git(
+            ["-C", checkout.string, "remote", "get-url", "origin"],
+            workingDirectory: skia,
+            context: context)
+        async let head = git(
+            ["-C", checkout.string, "rev-parse", "HEAD"],
+            workingDirectory: skia,
+            context: context)
+        async let expected = git(
+            ["-C", checkout.string, "rev-parse", "\(dependency.commit)^{commit}"],
+            workingDirectory: skia,
+            context: context)
+        async let status = git(
+            [
+                "-C", checkout.string, "status", "--porcelain",
+                "--untracked-files=no",
+            ],
+            workingDirectory: skia,
+            context: context)
+        let (resolvedOrigin, resolvedHead, resolvedExpected, resolvedStatus) = try await (
+            origin, head, expected, status
+        )
+        guard resolvedStatus.succeeded else {
+            throw SkiaDependencyFailure.invalidCheckout(dependency.relativePath)
+        }
+        guard resolvedStatus.standardOutput.isEmpty else {
+            throw SkiaDependencyFailure.trackedModifications(dependency.relativePath)
+        }
+        return resolvedOrigin.succeeded && resolvedHead.succeeded
+            && resolvedExpected.succeeded
+            && resolvedOrigin.standardOutput.trimmingCharacters(
+                in: .whitespacesAndNewlines) == dependency.remote
+            && resolvedHead.standardOutput.trimmingCharacters(
+                in: .whitespacesAndNewlines)
+                == resolvedExpected.standardOutput.trimmingCharacters(
+                    in: .whitespacesAndNewlines)
     }
 
     private func requireSuccess(

@@ -4,6 +4,7 @@ import ColliderEngine
 import ColliderPersistence
 import ColliderRuntime
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 import Testing
 
@@ -212,7 +213,7 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
 
     let packageInputRoot = directory.appendingPathComponent("package-input")
     let packagePublication = BrowserPackageInputPublication(
-        target: target,
+        target: target.artifactTarget,
         distributionRoot: FilePath(distribution.path),
         packageInputRoot: FilePath(packageInputRoot.path))
     try await execute(

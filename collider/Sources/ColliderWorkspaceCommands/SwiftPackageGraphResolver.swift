@@ -263,6 +263,24 @@ package final class SwiftPackageGraphResolver: @unchecked Sendable {
             uniqueKeysWithValues: locations.map {
                 ($0.identity, canonicalPath(FilePath($0.path)))
             })
+        let descriptionByRoot = Dictionary(
+            uniqueKeysWithValues: descriptions.map {
+                (canonicalPath(FilePath($0.path)), $0)
+            })
+        var localRoots: Set<FilePath> = [canonicalRoot]
+        var pendingLocalRoots = [canonicalRoot]
+        while let packageRoot = pendingLocalRoots.popLast() {
+            guard let description = descriptionByRoot[packageRoot] else { continue }
+            for dependency in description.dependencies where dependency.type == "fileSystem" {
+                guard
+                    let dependencyRoot = dependency.path.map({
+                        canonicalPath(FilePath($0))
+                    }) ?? pathByIdentity[dependency.identity],
+                    localRoots.insert(dependencyRoot).inserted
+                else { continue }
+                pendingLocalRoots.append(dependencyRoot)
+            }
+        }
         return SwiftPackageSourceGraph(
             root: canonicalRoot,
             packages: descriptions.map { description in
@@ -276,6 +294,7 @@ package final class SwiftPackageGraphResolver: @unchecked Sendable {
                 return SwiftPackageSourceGraph.Package(
                     identity: description.name,
                     root: packageRoot,
+                    isLocal: localRoots.contains(packageRoot),
                     dependencyRoots: dependencyRoots,
                     products: description.products.map {
                         SwiftPackageSourceGraph.Product(

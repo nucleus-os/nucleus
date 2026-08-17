@@ -37,6 +37,43 @@ import Testing
         ])
 }
 
+@Test func exactSkiaDependencyValidationDoesNotMutateTheCheckout() async throws {
+    let fixture = try makeSkiaDependencyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let headLog = fixture.checkout.appendingPathComponent(".git/logs/HEAD")
+    let config = fixture.checkout.appendingPathComponent(".git/config")
+    let headLogBefore = try Data(contentsOf: headLog)
+    let configBefore = try Data(contentsOf: config)
+
+    try await executeSkiaDependencyAction(
+        root: fixture.skia,
+        dependency: fixture.dependency)
+
+    #expect(try Data(contentsOf: headLog) == headLogBefore)
+    #expect(try Data(contentsOf: config) == configBefore)
+}
+
+@Test func trackedSkiaChangesFailBeforeRemoteRepair() async throws {
+    let fixture = try makeSkiaDependencyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try Data("modified\n".utf8).write(
+        to: fixture.checkout.appendingPathComponent("tracked.txt"))
+    let originalRemote = try runGit(
+        ["-C", fixture.checkout.path, "remote", "get-url", "origin"])
+    let mismatched = SkiaGitDependency(
+        relativePath: fixture.dependency.relativePath,
+        remote: fixture.root.appendingPathComponent("replacement.git").path,
+        commit: fixture.dependency.commit)
+
+    await #expect(throws: (any Error).self) {
+        try await executeSkiaDependencyAction(root: fixture.skia, dependency: mismatched)
+    }
+
+    #expect(
+        try runGit(["-C", fixture.checkout.path, "remote", "get-url", "origin"])
+            == originalRemote)
+}
+
 @Test func androidHostValidationChecksELFAndKotlinJNIContracts() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-android-host-validation-\(UUID().uuidString)")
@@ -100,4 +137,93 @@ import Testing
         selected: [validation.task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
     #expect(report.executed == [producer.id, validation.task.id])
+}
+
+private struct SkiaDependencyFixture {
+    let root: URL
+    let skia: URL
+    let checkout: URL
+    let dependency: SkiaGitDependency
+}
+
+private func makeSkiaDependencyFixture() throws -> SkiaDependencyFixture {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-skia-fast-path-\(UUID().uuidString)")
+    let remote = root.appendingPathComponent("remote")
+    let skia = root.appendingPathComponent("skia")
+    let checkout = skia.appendingPathComponent("third_party/externals/example")
+    try FileManager.default.createDirectory(
+        at: remote,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: skia,
+        withIntermediateDirectories: true)
+    try Data("deps = {}\n".utf8).write(to: skia.appendingPathComponent("DEPS"))
+    _ = try runGit(["init", remote.path])
+    try Data("tracked\n".utf8).write(to: remote.appendingPathComponent("tracked.txt"))
+    _ = try runGit(["-C", remote.path, "add", "tracked.txt"])
+    _ = try runGit([
+        "-C", remote.path,
+        "-c", "user.name=Collider Tests",
+        "-c", "user.email=collider@example.invalid",
+        "commit", "-m", "fixture",
+    ])
+    _ = try runGit([
+        "-C", remote.path,
+        "-c", "user.name=Collider Tests",
+        "-c", "user.email=collider@example.invalid",
+        "tag", "-a", "fixture", "-m", "fixture",
+    ])
+    let pinnedObject = try runGit([
+        "-C", remote.path, "rev-parse", "refs/tags/fixture",
+    ])
+    try FileManager.default.createDirectory(
+        at: checkout.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    _ = try runGit(["clone", remote.path, checkout.path])
+    return SkiaDependencyFixture(
+        root: root,
+        skia: skia,
+        checkout: checkout,
+        dependency: SkiaGitDependency(
+            relativePath: "third_party/externals/example",
+            remote: remote.path,
+            commit: pinnedObject))
+}
+
+private func executeSkiaDependencyAction(
+    root: URL,
+    dependency: SkiaGitDependency
+) async throws {
+    let runtime = ColliderRuntime()
+    do {
+        _ = try await runtime.execute(
+            MaterializeSkiaDependenciesAction(
+                skia: FilePath(root.path),
+                dependencies: [dependency],
+                environment: ProcessInfo.processInfo.environment))
+        await runtime.shutdown()
+    } catch {
+        await runtime.shutdown()
+        throw error
+    }
+}
+
+private func runGit(_ arguments: [String]) throws -> String {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = arguments
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    let bytes = output.fileHandleForReading.readDataToEndOfFile()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(
+            .fileReadUnknown,
+            userInfo: [NSDebugDescriptionErrorKey: String(decoding: bytes, as: UTF8.self)])
+    }
+    return String(decoding: bytes, as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }

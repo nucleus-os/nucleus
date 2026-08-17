@@ -1,10 +1,8 @@
-import ChromiumColliderRecipe
 import ColliderCore
 import Foundation
-import ShellColliderRecipe
 import SystemPackage
 
-package enum LinuxNativePackageName: String, CaseIterable, Codable, Sendable {
+package enum LinuxNativePackageName: String, CaseIterable, Codable, Hashable, Sendable {
     case runtime = "nucleus-runtime"
     case session = "nucleus-session"
     case browser = "nucleus-browser"
@@ -153,9 +151,7 @@ package struct LinuxNativePackageCohortContract: Sendable {
         guard browser.packageName == LinuxNativePackageName.browser.rawValue,
             browser.artifactTarget == target,
             runtime.architecture
-                == LinuxDistributionPackageAdapter(
-                    family: runtime.family
-                ).packageArchitecture(architecture),
+                == runtime.family.packageArchitecture(architecture),
             runtime.artifactDigest.hasPrefix("sha256:"),
             let runtimeDigest = ArtifactDigest(
                 sha256Hex: String(runtime.artifactDigest.dropFirst("sha256:".count)))
@@ -515,14 +511,14 @@ package func validateRuntimePackageInput(
     }
     let generation = "/opt/nucleus/generations/\(activeGeneration)"
     guard manifest.artifactDigest == activeDigest.description,
-        manifest.runtimeRoot == LinuxDistributionPackageAdapter.runtimeRoot,
+        manifest.runtimeRoot == LinuxDistributionFamily.runtimeRoot,
         manifest.runtimeGeneration == generation,
         manifest.installations.contains(where: {
             $0.kind == .tree && $0.destination == generation
         }),
         manifest.installations.contains(where: {
             $0.kind == .symbolicLink
-                && $0.destination == LinuxDistributionPackageAdapter.runtimeRoot
+                && $0.destination == LinuxDistributionFamily.runtimeRoot
                 && $0.target == generation
         })
     else {

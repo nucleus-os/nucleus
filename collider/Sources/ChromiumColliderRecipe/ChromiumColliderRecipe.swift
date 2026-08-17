@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import LinuxPackageContracts
 import SystemPackage
 
 package enum ChromiumTaskIDs {
@@ -677,7 +678,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     action: try AnyColliderAction(
                         PublishBrowserPackageInputAction(
                             publication: BrowserPackageInputPublication(
-                                target: target,
+                                target: target.artifactTarget,
                                 distributionRoot: distributionRoot,
                                 packageInputRoot: packageInputRoot)))))
             packageInputs.append(packageInput)
@@ -685,7 +686,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 reference: packageInput,
                 payloadReference: browserPublication,
                 publication: BrowserPackageInputPublication(
-                    target: target,
+                    target: target.artifactTarget,
                     distributionRoot: distributionRoot,
                     packageInputRoot: packageInputRoot))
         }

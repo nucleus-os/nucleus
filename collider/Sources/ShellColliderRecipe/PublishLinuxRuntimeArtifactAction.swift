@@ -92,8 +92,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
             resourceLimits: .build,
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
-                assemblerSwiftPM.executable("nucleus-linux-assembler").string,
-                "runtime",
+                assemblerSwiftPM.executable("nucleus-linux-runtime-publisher").string,
                 runtimeSwiftPM.productsDirectory.string,
                 artifactRoot.appending("current").string,
                 generationsRoot.string,

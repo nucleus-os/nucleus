@@ -86,6 +86,47 @@ private func executeWithSwiftPM(
         ])
 }
 
+@Test func coalescedBuildDoesNotWaitForAnActionDependingOnAnotherOwner() throws {
+    let packageRoot = FilePath("/fixture/package")
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath("/fixture/scratch"))
+    func product(_ name: String) -> SwiftProductRequirement {
+        invocation.product(
+            package: "fixture",
+            product: name,
+            packageRoot: packageRoot,
+            environment: [:])
+    }
+    let assembler = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.assemble"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftProducts: [product("Assembler")])
+    let publication = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.publish"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [assembler.id])
+    let qualifier = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.qualify"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [publication.id],
+        swiftProducts: [product("Qualifier")])
+
+    let lowered = try SwiftPMLowering().lower([
+        AssessedTaskDeclaration(task: assembler, isClean: false),
+        AssessedTaskDeclaration(task: publication, isClean: false),
+        AssessedTaskDeclaration(task: qualifier, isClean: false),
+    ])
+
+    #expect(lowered.count == 1)
+    #expect(lowered[0].logicalOwners == [assembler.id, qualifier.id])
+    #expect(lowered[0].prerequisites.isEmpty)
+}
+
 @Test func ociLoweringMaterializesLockedDependenciesOnTheHost() throws {
     let packageRoot = FilePath("/fixture/package")
     let scratch = FilePath("/fixture/scratch")

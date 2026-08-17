@@ -1,7 +1,7 @@
 import ColliderCore
 import Testing
 
-@testable import LinuxColliderRecipe
+@testable import LinuxPackageContracts
 
 @Test func nativePackageStageObservationsAggregateInDeclaredOrder() {
     let recorder = LinuxNativePackageStageRecorder()
@@ -20,6 +20,13 @@ import Testing
         durationNanoseconds: 17,
         inputByteCount: 19,
         outputByteCount: 23)
+    recorder.record(
+        .rpmBuild,
+        package: .runtime,
+        family: .rpm,
+        durationNanoseconds: 29,
+        inputByteCount: 31,
+        outputByteCount: 37)
 
     #expect(
         recorder.observations == [
@@ -33,5 +40,10 @@ import Testing
                 durationNanoseconds: 28,
                 inputByteCount: 31,
                 outputByteCount: 36),
+            ActionStageObservation(
+                name: "linux-native-package.rpm.nucleus-runtime.rpmbuild",
+                durationNanoseconds: 29,
+                inputByteCount: 31,
+                outputByteCount: 37),
         ])
 }

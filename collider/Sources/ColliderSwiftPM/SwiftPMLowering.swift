@@ -113,7 +113,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
             prerequisites: prerequisites(
                 for: owners,
                 context: context,
-                tasksByID: tasksByID
+                tasksByID: tasksByID,
+                logicalOwners: Set(owners.map(\.id))
             ).union(additionalPrerequisites))
     }
 
@@ -134,7 +135,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
             prerequisites: prerequisites(
                 for: owners,
                 context: context,
-                tasksByID: tasksByID
+                tasksByID: tasksByID,
+                logicalOwners: Set(owners.map(\.id))
             ).union(additionalPrerequisites))
     }
 
@@ -225,7 +227,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
     private func prerequisites(
         for owners: [TaskDeclaration],
         context: SwiftBuildContext,
-        tasksByID: [TaskID: TaskDeclaration]
+        tasksByID: [TaskID: TaskDeclaration],
+        logicalOwners: Set<TaskID>
     ) -> Set<TaskID> {
         var result: Set<TaskID> = []
         for owner in owners {
@@ -234,6 +237,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     dependency,
                     context: context,
                     tasksByID: tasksByID,
+                    logicalOwners: logicalOwners,
                     into: &result)
             }
         }
@@ -244,6 +248,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         _ id: TaskID,
         context: SwiftBuildContext,
         tasksByID: [TaskID: TaskDeclaration],
+        logicalOwners: Set<TaskID>,
         into prerequisites: inout Set<TaskID>
     ) {
         guard let task = tasksByID[id] else { return }
@@ -259,11 +264,37 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     dependency,
                     context: context,
                     tasksByID: tasksByID,
+                    logicalOwners: logicalOwners,
                     into: &prerequisites)
             }
+        } else if transitivelyDepends(
+            task,
+            onAnyOf: logicalOwners,
+            tasksByID: tasksByID
+        ) {
+            // This action sits after another owner of the same coalesced build.
+            // Making it a compiler prerequisite would make the build wait for
+            // an action that cannot run until that build has completed.
         } else {
             prerequisites.insert(id)
         }
+    }
+
+    private func transitivelyDepends(
+        _ task: TaskDeclaration,
+        onAnyOf logicalOwners: Set<TaskID>,
+        tasksByID: [TaskID: TaskDeclaration]
+    ) -> Bool {
+        var pending = task.executionDependencies
+        var visited: Set<TaskID> = []
+        while let id = pending.popLast() {
+            guard visited.insert(id).inserted else { continue }
+            if logicalOwners.contains(id) { return true }
+            if let dependency = tasksByID[id] {
+                pending.append(contentsOf: dependency.executionDependencies)
+            }
+        }
+        return false
     }
 
     private func buildTask(

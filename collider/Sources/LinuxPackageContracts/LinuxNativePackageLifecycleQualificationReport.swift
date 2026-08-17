@@ -1,7 +1,6 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
-import ShellColliderRecipe
 
 package struct LinuxNativePackageLifecycleQualificationReport: Codable,
     Equatable, Sendable

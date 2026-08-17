@@ -5,6 +5,7 @@ import SystemPackage
 import Testing
 
 @testable import LinuxColliderRecipe
+@testable import LinuxPackageContracts
 
 @Test func nativePackageSubprocessesPreserveOnlyTheFakerootSession() {
     let environment = nativePackageSubprocessEnvironment(

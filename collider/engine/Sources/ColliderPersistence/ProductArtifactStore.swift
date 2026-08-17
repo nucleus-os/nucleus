@@ -71,6 +71,17 @@ public enum ProductArtifactBuilder {
             manifest: manifest,
             provenance: provenance)
     }
+
+    public static func validateEnvelope(
+        _ envelope: ProductArtifactEnvelope,
+        payloadRoot: FilePath,
+        archive: FilePath
+    ) throws {
+        try validateProductArtifact(
+            envelope: envelope,
+            payloadRoot: payloadRoot,
+            archive: archive)
+    }
 }
 
 public struct StoredProductArtifact: Sendable {
@@ -432,18 +443,10 @@ public struct LocalProductArtifactStore: Sendable {
         payloadRoot: FilePath,
         archive: FilePath
     ) throws {
-        try envelope.validate()
-        let inspection = try inspectPayload(payloadRoot)
-        guard inspection.treeDigest == envelope.manifest.treeDigest else {
-            throw ProductArtifactStoreFailure("artifact payload tree digest changed")
-        }
-        guard inspection.files == envelope.manifest.files else {
-            throw ProductArtifactStoreFailure("artifact payload file manifest changed")
-        }
-        guard try ArtifactHasher.digest(file: archive) == envelope.manifest.archiveDigest
-        else {
-            throw ProductArtifactStoreFailure("artifact archive digest changed")
-        }
+        try validateProductArtifact(
+            envelope: envelope,
+            payloadRoot: payloadRoot,
+            archive: archive)
     }
 
     private func decodeManifest(
@@ -598,6 +601,25 @@ public struct LocalProductArtifactStore: Sendable {
     ) -> FilePath {
         artifactDirectory.appending("provenances")
             .appending(identity.rawValue.hexadecimal + ".json")
+    }
+}
+
+private func validateProductArtifact(
+    envelope: ProductArtifactEnvelope,
+    payloadRoot: FilePath,
+    archive: FilePath
+) throws {
+    try envelope.validate()
+    let inspection = try inspectPayload(payloadRoot)
+    guard inspection.treeDigest == envelope.manifest.treeDigest else {
+        throw ProductArtifactStoreFailure("artifact payload tree digest changed")
+    }
+    guard inspection.files == envelope.manifest.files else {
+        throw ProductArtifactStoreFailure("artifact payload file manifest changed")
+    }
+    guard try ArtifactHasher.digest(file: archive) == envelope.manifest.archiveDigest
+    else {
+        throw ProductArtifactStoreFailure("artifact archive digest changed")
     }
 }
 
