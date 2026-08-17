@@ -8,11 +8,11 @@ Collider builds, tests, stages private development generations, and produces
 Linux package and repository artifacts. Collider never installs, upgrades,
 rolls back, or removes the Nucleus product on a user system.
 
-APT, DNF, and pacman are the only authorities that mutate system-owned Nucleus
-files. An installed Nucleus component owns activation and rollback of optional
-product capabilities whose lifecycle extends beyond package extraction. Nucleus
-does not ship a parallel updater, background package client, or distribution-
-independent replacement for the host package manager.
+APT, DNF, and pacman are the only authorities that install, activate, upgrade,
+roll back, or remove system-owned Nucleus files and optional capabilities.
+Nucleus does not ship a parallel installer, generation store, updater,
+background package client, or distribution-independent replacement for the
+host package manager.
 
 Every distribution package consumes the same immutable Nucleus runtime payload
 for its architecture. Distribution adapters add dependency metadata and native
@@ -58,8 +58,8 @@ The boundaries are:
   objects to the active immutable backend, then publishes its repository
   metadata;
 - APT, DNF, or pacman installs and updates Nucleus on Linux; and
-- the installed `nucleus` administration boundary manages optional capability
-  activation that must be transactional beyond the package-manager transaction.
+- installing or removing an optional native package activates or deactivates
+  its capability declaration as part of the package-manager transaction.
 
 `collider-setup.sh` remains the one-time developer-tool bootstrap. Its Collider
 launcher installation is not Nucleus product installation and is outside this
@@ -67,12 +67,13 @@ plan's package-manager boundary.
 
 ## Current State
 
-Collider currently retains two transitional product installation surfaces:
-
-- `collider install session` assembles a generation below the checkout-local
-  `.install` prefix;
-- `collider install android-addon` validates and mutates an add-on store directly
-  on Linux.
+Collider retains one transitional product installation surface:
+`collider install session` assembles a generation below the checkout-local
+`.install` prefix. Android has no Nucleus- or Collider-owned installation,
+activation, generation-store, compatibility-document, or publisher-signature
+surface. `nucleus-android` is an exact-cohort native package; package-manager
+ownership activates its capability declaration, while Android Verified Boot
+authenticates its image chain.
 
 `collider run` now publishes or reuses the requested checkout-private development
 generation directly. Its active generation lives below
@@ -113,7 +114,8 @@ One release publishes a version-matched package cohort:
 - `nucleus-session` contains systemd, PAM, Wayland-session, and host-integration
   policy;
 - `nucleus-browser` contains the architecture-specific Chromium/CEF product;
-- `nucleus-android-addon` contains the optional signed Android capability;
+- `nucleus-android` contains the optional architecture-specific Android
+  capability, its AVB-authenticated images, and its session declaration;
 - `nucleus-development-host` contains only the host capability dependencies
   needed to run user-owned development generations;
 - `nucleus` is the complete-installation meta-package; and
@@ -291,22 +293,51 @@ empty-cache dependency resolution selected the pinned forks without an identity
 warning; and retention reduced package/product storage to two generations per
 architecture with zero interrupted candidates.
 
-## Phase 4: Move Android Add-on Activation into Nucleus
+## Phase 4: Make Android an Ordinary Native Package
 
-Install the signed Android artifact through `nucleus-android-addon`. Add an
-installed Nucleus add-on manager that validates compatibility and signatures,
-activates one immutable generation atomically, preserves persistent Android
-state across package changes, rolls back failed activation, and deactivates a
-removed capability.
+Status: complete.
 
-Package lifecycle hooks communicate with that installed boundary; they do not
-reimplement its state machine. The installed `nucleus` administration CLI owns
-manual installation of an offline signed artifact when that workflow is needed.
-Collider only assembles and tests the artifact.
+Emit `nucleus-android` as an architecture-specific member of every native
+package cohort. The package owns one immutable Android payload path and
+`/usr/share/nucleus/session-capabilities/android.json`. Installation activates
+the capability by installing that declaration; removal deactivates it by
+removing the declaration. Exact-cohort dependency on `nucleus-runtime` prevents
+the Android host binaries and base runtime from drifting.
 
-Gate: package-manager installation and removal exercise the same product-owned
-activation contract as an offline artifact, and Collider does not mutate the
-installed add-on store.
+Keep `/var/lib/nucleus/android` outside package ownership so upgrades,
+downgrades, and removal retain persistent Android state. Package signatures
+authenticate the native package, and the packaged AVB public key verifies the
+Android image chain at runtime. Do not add lifecycle hooks when ordinary file
+ownership provides the required transaction.
+
+Delete the separate add-on manager, generation store, compatibility document,
+publisher key and signature, installed `nucleus addon` commands,
+`collider install android-addon`, and the downloadable-directory packaging
+surface. An offline artifact is installed through the host package manager's
+local-package operation; it is not a second product format.
+
+Gate: APT, DNF, and pacman installation, upgrade, downgrade, removal, and
+reinstallation activate the exact packaged Android capability while retaining
+persistent state; malformed payload or AVB provenance fails package
+qualification; neither Nucleus nor Collider exposes a parallel add-on
+installation or activation system.
+
+Achieved state: `nucleus-android` is the sixth member of each architecture and
+package-family cohort, owns an immutable package payload plus the Android
+capability declaration, depends exactly on `nucleus-runtime`, and leaves
+`/var/lib/nucleus/android` outside package ownership. The custom manager,
+generation store, compatibility and publisher-signature inputs, installed
+`nucleus addon` grammar, and `collider install android-addon` grammar are gone.
+The package input and runtime contract use package terminology and contain no
+independent schema-version, installer, updater, or trust root.
+
+Gate evidence: Collider run `2026-08-17T08-43-25.628Z-3959` passed the complete
+Collider suite, including exact package-input payload/provenance acceptance and
+malformed identity and unsigned-provenance rejection. Run
+`2026-08-17T08-26-34.228Z-95006` assembled arm64 and x86_64 Debian, RPM, and Arch
+cohorts, qualified install, upgrade, downgrade, removal, reinstallation, and
+final removal for every package, retained Android persistent state, and
+completed product-store retention.
 
 ## Phase 5: Assemble Signed Repository Snapshots
 
@@ -323,6 +354,11 @@ Repository assembly accepts explicit signing identities and an immutable package
 set. It performs no upload and no source or package download. Unsigned local test
 snapshots are a distinct test fixture and cannot satisfy a release gate.
 
+Use the same repository signing identity and metadata path for
+`nucleus-android` as every other native package. Do not introduce an Android-only
+publisher key, enrollment flow, repository, or update channel; AVB remains the
+independent integrity boundary only for the packaged Android image chain.
+
 Generate the family-specific repository enrollment and keyring packages here,
 from the public half of the explicit signing identity. They carry repository
 configuration, the active public key, and the key-transition contract and are
@@ -336,10 +372,9 @@ repository contents; and assembly performs no network access or publication.
 ## Phase 6: Remove Collider Product Installation
 
 Move every remaining caller to development staging, native packaging, or the
-installed Nucleus add-on boundary. Then delete, in one cutover:
+installed native-package boundary. Then delete, in one cutover:
 
 - `collider install session`;
-- `collider install android-addon` and its lifecycle children;
 - the root `collider install` command group;
 - component install entrypoints and checkout installation-prefix policy; and
 - obsolete parser, capability, action, and installation tests.
@@ -398,7 +433,7 @@ package or documented trust bootstrap. Qualify on arm64 and x86_64:
 3. interrupted download and interrupted transaction recovery;
 4. explicit downgrade to a retained prior cohort;
 5. signing-key transition through an earlier keyring update;
-6. Android add-on installation, update, deactivation, and persistent-state
+6. Android package installation, update, removal, and persistent-state
    preservation;
 7. removal without deleting user-authored or persistent product state; and
 8. reinstallation after removal.
@@ -495,7 +530,7 @@ dependencies for a target that does not otherwise have Nucleus installed. It
 does not contain a Nucleus runtime or grant a development generation additional
 privilege. Optional capabilities such as Android are used only when a matching
 development capability generation is deployed; a development session never
-silently mixes its private runtime with a package-installed add-on generation.
+silently mixes its private runtime with the installed `nucleus-android` payload.
 
 Retain the current generation, a bounded number of prior generations, and every
 generation held by a live session lease. Pruning takes the generation's lease

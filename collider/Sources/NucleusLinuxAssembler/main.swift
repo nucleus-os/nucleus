@@ -104,7 +104,7 @@ struct NucleusLinuxAssembler {
     }
 
     private static func materializePayload(_ arguments: [String]) async throws {
-        guard arguments.count == 7,
+        guard arguments.count == 8,
             let architecture = PlatformArchitecture(rawValue: arguments[4]),
             let package = LinuxNativePackageName(rawValue: arguments[5])
         else {
@@ -122,10 +122,12 @@ struct NucleusLinuxAssembler {
                             abi: "glibc"),
                         distributionRoot: FilePath(arguments[1]),
                         packageInputRoot: FilePath(arguments[2])),
+                    androidPackageInputRoot:
+                        arguments[6] == "-" ? nil : FilePath(arguments[6]),
                     outputRoot: FilePath(arguments[3]),
                     package: package)))
         try Data(JSONEncoder().encode(observations.actionStages)).write(
-            to: URL(fileURLWithPath: arguments[6]),
+            to: URL(fileURLWithPath: arguments[7]),
             options: .atomic)
     }
 

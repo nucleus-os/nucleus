@@ -9,6 +9,32 @@ import Testing
 @testable import LinuxPackageAssembly
 @testable import LinuxPackageContracts
 
+@Test func androidPackageInputQualificationAcceptsExactPayloadAndProvenance() throws {
+    let fixture = try androidPackageInputFixture()
+    try qualifyAndroidPackageInput(
+        fixture.root,
+        architecture: .arm64,
+        files: fixture.files)
+}
+
+@Test func androidPackageInputQualificationRejectsMalformedIdentityAndProvenance() throws {
+    let wrongIdentity = try androidPackageInputFixture(identifier: "wrong-product")
+    #expect(throws: (any Error).self) {
+        try qualifyAndroidPackageInput(
+            wrongIdentity.root,
+            architecture: .arm64,
+            files: wrongIdentity.files)
+    }
+
+    let unsigned = try androidPackageInputFixture(provenanceStatus: "unsigned")
+    #expect(throws: (any Error).self) {
+        try qualifyAndroidPackageInput(
+            unsigned.root,
+            architecture: .arm64,
+            files: unsigned.files)
+    }
+}
+
 @Test func nativePackageSubprocessesPreserveOnlyTheFakerootSession() {
     let environment = nativePackageSubprocessEnvironment(
         [
@@ -154,7 +180,8 @@ import Testing
 
         #expect(
             cohort.manifest.packages.map(\.name) == [
-                .runtime, .session, .browser, .developmentHost, .complete,
+                .runtime, .session, .browser, .androidPackage, .developmentHost,
+                .complete,
             ])
         #expect(cohort.manifest.runtimeArtifactDigest.description == runtime.artifactDigest)
         #expect(cohort.manifest.browserPayloadDigest == browser.payloadDigest)
@@ -195,6 +222,7 @@ import Testing
         #expect(
             Set(complete.relationships.map(\.package)) == [
                 "nucleus-runtime", "nucleus-session", "nucleus-browser",
+                "nucleus-android",
             ])
         #expect(
             complete.relationships.allSatisfy {
@@ -485,4 +513,129 @@ private func browserManifest(
         payloadGeneration: "generations/sha256-\(payload.hexadecimal)",
         buildManifestDigest: ArtifactDigest(
             sha256Hex: String(repeating: "e", count: 64))!)
+}
+
+private struct AndroidPackageInputFixtureManifest: Encodable {
+    struct Payload: Encodable {
+        let path: String
+        let size: UInt64
+        let sha256: String
+        let executable: Bool
+    }
+
+    let identifier: String
+    let release: String
+    let buildNumber: String
+    let architecture: PlatformArchitecture
+    let payload: [Payload]
+}
+
+private struct AndroidPackageInputFixtureProvenance: Encodable {
+    struct Image: Encodable {
+        let name: String
+        let size: UInt64
+        let storageFormat: String
+        let sha256: String
+    }
+
+    let status: String
+    let product: String
+    let release: String
+    let buildNumber: String
+    let images: [Image]
+}
+
+private func androidPackageInputFixture(
+    identifier: String = "android",
+    provenanceStatus: String = "signed"
+) throws -> (root: FilePath, files: ActionFileSystem) {
+    let root = FilePath("/android-package-input")
+    let digest = ArtifactDigest.sha256([0x78])
+    let imageNames = [
+        "system.img", "system_ext.img", "product.img", "vendor.img",
+        "vbmeta.img", "vbmeta_system.img",
+    ]
+    let executablePaths = [
+        "libexec/nucleus-android-runtime",
+        "libexec/nucleus-android-runtime-privileged",
+        "libexec/nucleus-android-gfxstream-broker",
+        "libexec/nucleus-android-display-host",
+        "libexec/android-tools/avbtool",
+    ]
+    let payloadPaths =
+        ["image-provenance.json"]
+        + imageNames.map { "images/\($0)" }
+        + executablePaths
+        + [
+            "share/nucleus/android/avb-release-key.pem",
+            "share/nucleus/android/lxc-nucleus-android.apparmor",
+            "share/nucleus/android/nucleus-android.seccomp",
+        ]
+    let manifest = AndroidPackageInputFixtureManifest(
+        identifier: identifier,
+        release: "Android 17",
+        buildNumber: "fixture-build",
+        architecture: .arm64,
+        payload: payloadPaths.map {
+            AndroidPackageInputFixtureManifest.Payload(
+                path: $0,
+                size: 1,
+                sha256: digest.hexadecimal,
+                executable: executablePaths.contains($0))
+        })
+    let provenance = AndroidPackageInputFixtureProvenance(
+        status: provenanceStatus,
+        product: "nucleus_arm64",
+        release: manifest.release,
+        buildNumber: manifest.buildNumber,
+        images: imageNames.map {
+            AndroidPackageInputFixtureProvenance.Image(
+                name: $0,
+                size: 1,
+                storageFormat: "raw",
+                sha256: digest.hexadecimal)
+        })
+    let manifestBytes = Array(try JSONEncoder().encode(manifest))
+    let provenanceBytes = Array(try JSONEncoder().encode(provenance))
+    let entries =
+        payloadPaths.map { path in
+            ActionFileSystem.Entry(
+                path: root.appending(path),
+                relativePath: path,
+                metadata: ActionFileSystem.Metadata(
+                    type: .regular,
+                    ownerExecutable: executablePaths.contains(path),
+                    size: 1,
+                    permissions: executablePaths.contains(path) ? 0o755 : 0o644))
+        } + [
+            ActionFileSystem.Entry(
+                path: root.appending("package-manifest.json"),
+                relativePath: "package-manifest.json",
+                metadata: ActionFileSystem.Metadata(type: .regular, ownerExecutable: false))
+        ]
+    let metadata = Dictionary(uniqueKeysWithValues: entries.map { ($0.path, $0.metadata) })
+    return (
+        root,
+        ActionFileSystem(
+            metadata: { metadata[$0] },
+            metadataNoFollow: { path in
+                path == root
+                    ? ActionFileSystem.Metadata(type: .directory, ownerExecutable: true)
+                    : metadata[path]
+            },
+            contentsEqual: { _, _ in false },
+            createDirectory: { _ in },
+            copy: { _, _ in },
+            read: { path in
+                switch path {
+                case root.appending("package-manifest.json"): manifestBytes
+                case root.appending("image-provenance.json"): provenanceBytes
+                default: [0x78]
+                }
+            },
+            listRecursively: { _ in entries },
+            digestFile: { _ in digest },
+            setPermissions: { _, _ in },
+            write: { _, _ in })
+    )
 }

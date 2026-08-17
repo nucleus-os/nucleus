@@ -7,8 +7,6 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
     public let generationsRoot: FilePath
     public let packageManifestsRoot: FilePath
     public let sessionPackage: FilePath
-    public let kernelContract: FilePath
-    public let trustKey: FilePath?
     public let buildMetadata: String
     public let environment: [String: String]
 
@@ -18,8 +16,6 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
         generationsRoot: FilePath,
         packageManifestsRoot: FilePath,
         sessionPackage: FilePath,
-        kernelContract: FilePath,
-        trustKey: FilePath?,
         buildMetadata: String,
         environment: [String: String]
     ) {
@@ -28,8 +24,6 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
         self.generationsRoot = generationsRoot
         self.packageManifestsRoot = packageManifestsRoot
         self.sessionPackage = sessionPackage
-        self.kernelContract = kernelContract
-        self.trustKey = trustKey
         self.buildMetadata = buildMetadata
         self.environment = environment
     }
@@ -132,10 +126,6 @@ public enum ShellColliderRecipe: ColliderComponent {
             contentsOf: RuntimeHostIntegration.sourceFiles.map {
                 .file(configuration.sessionPackage.appending($0))
             })
-        inputs.append(.file(configuration.kernelContract))
-        if let trustKey = configuration.trustKey {
-            inputs.append(.file(trustKey))
-        }
         var builder = TaskBuilder(
             id: TaskID(rawValue: "shell.publish-runtime"),
             component: descriptor.id)

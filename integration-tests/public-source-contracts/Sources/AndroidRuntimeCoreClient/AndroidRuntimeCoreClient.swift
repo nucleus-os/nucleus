@@ -1,5 +1,5 @@
 import NucleusAndroidRuntimeCore
 
-public func androidAddonArchitecture() -> AndroidAddonArchitecture {
+public func androidPackageArchitecture() -> AndroidPackageArchitecture {
     .arm64
 }

@@ -1,15 +1,13 @@
 import ColliderCore
 import SystemPackage
 
-public struct AndroidAddonPackageConfiguration: RecipeConfiguration {
+public struct AndroidPackageInputConfiguration: RecipeConfiguration {
     public let swiftPM: SwiftPMInvocation
     public let runtimeRoot: FilePath?
     public let runtimeScratch: FilePath
     public let aospGeneration: FilePath
     public let usesManagedAOSPGeneration: Bool
-    public let compatibility: FilePath
     public let aospSigningKey: FilePath
-    public let addonSigningKey: FilePath
     public let output: FilePath
     public let appArmorPolicy: FilePath
     public let seccompPolicy: FilePath
@@ -21,9 +19,7 @@ public struct AndroidAddonPackageConfiguration: RecipeConfiguration {
         runtimeScratch: FilePath,
         aospGeneration: FilePath,
         usesManagedAOSPGeneration: Bool,
-        compatibility: FilePath,
         aospSigningKey: FilePath,
-        addonSigningKey: FilePath,
         output: FilePath,
         appArmorPolicy: FilePath,
         seccompPolicy: FilePath,
@@ -34,9 +30,7 @@ public struct AndroidAddonPackageConfiguration: RecipeConfiguration {
         self.runtimeScratch = runtimeScratch
         self.aospGeneration = aospGeneration
         self.usesManagedAOSPGeneration = usesManagedAOSPGeneration
-        self.compatibility = compatibility
         self.aospSigningKey = aospSigningKey
-        self.addonSigningKey = addonSigningKey
         self.output = output
         self.appArmorPolicy = appArmorPolicy
         self.seccompPolicy = seccompPolicy
@@ -50,8 +44,8 @@ import NucleusAndroidRuntimeCore
 import ShellColliderRecipe
 
 extension AndroidRuntimeColliderRecipe {
-    static func addonPackageTask(
-        configuration: AndroidAddonPackageConfiguration,
+    static func packageInputTask(
+        configuration: AndroidPackageInputConfiguration,
         repositoryRoot: FilePath,
         managedAOSPGeneration: ArtifactReference
     ) throws -> TaskDeclaration {
@@ -76,9 +70,7 @@ extension AndroidRuntimeColliderRecipe {
                     ])
             } : []
         var inputs: [ArtifactInput] = [
-            .file(configuration.compatibility),
             .file(configuration.aospSigningKey),
-            .file(configuration.addonSigningKey),
             .file(configuration.appArmorPolicy),
             .file(configuration.seccompPolicy),
         ]
@@ -91,13 +83,13 @@ extension AndroidRuntimeColliderRecipe {
             inputs.append(configuration.swiftPM.identityInput)
         }
         var builder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.package-addon"),
+            id: TaskID(rawValue: "android-runtime.package-input"),
             component: descriptor.id)
         if configuration.usesManagedAOSPGeneration {
             builder.consume(managedAOSPGeneration)
         }
         let _: ArtifactReference = try builder.output(
-            "addon",
+            "package-input",
             path: configuration.output,
             validation: .nonEmptyDirectory)
         return builder.build(
@@ -106,23 +98,21 @@ extension AndroidRuntimeColliderRecipe {
             locks: [
                 .shared(
                     configuration.output.removingLastComponent().appending(
-                        ".android-addon-package.lock"))
+                        ".android-package-input.lock"))
             ],
             action:
                 try AnyColliderAction(
-                    PackageAndroidAddonAction(configuration: configuration)))
+                    MaterializeAndroidPackageInputAction(configuration: configuration)))
     }
 }
 
-struct PackageAndroidAddonAction: ColliderAction {
+struct MaterializeAndroidPackageInputAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let runtimeProducts: FilePath
         let runtimeRoot: FilePath?
         let runtimeScratch: FilePath
         let aospGeneration: FilePath
-        let compatibility: FilePath
         let aospSigningKey: FilePath
-        let addonSigningKey: FilePath
         let output: FilePath
         let appArmorPolicy: FilePath
         let seccompPolicy: FilePath
@@ -132,24 +122,20 @@ struct PackageAndroidAddonAction: ColliderAction {
             encoder.append(runtimeRoot?.string ?? "")
             encoder.append(path: runtimeScratch)
             encoder.append(path: aospGeneration)
-            encoder.append(path: compatibility)
             encoder.append(path: aospSigningKey)
-            encoder.append(path: addonSigningKey)
             encoder.append(path: output)
             encoder.append(path: appArmorPolicy)
             encoder.append(path: seccompPolicy)
         }
     }
 
-    static let kind: ActionKind = "android-runtime.package-addon"
+    static let kind: ActionKind = "android-runtime.package-input"
 
     let runtimeProducts: FilePath
     let runtimeRoot: FilePath?
     let runtimeScratch: FilePath
     let aospGeneration: FilePath
-    let compatibility: FilePath
     let aospSigningKey: FilePath
-    let addonSigningKey: FilePath
     let output: FilePath
     let appArmorPolicy: FilePath
     let seccompPolicy: FilePath
@@ -161,9 +147,7 @@ struct PackageAndroidAddonAction: ColliderAction {
             runtimeRoot: runtimeRoot,
             runtimeScratch: runtimeScratch,
             aospGeneration: aospGeneration,
-            compatibility: compatibility,
             aospSigningKey: aospSigningKey,
-            addonSigningKey: addonSigningKey,
             output: output,
             appArmorPolicy: appArmorPolicy,
             seccompPolicy: seccompPolicy)
@@ -173,9 +157,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         var effects = [
             ActionEffect(.read, scope: .input(runtimeProducts)),
             ActionEffect(.read, scope: .input(aospGeneration)),
-            ActionEffect(.read, scope: .input(compatibility)),
             ActionEffect(.read, scope: .input(aospSigningKey)),
-            ActionEffect(.read, scope: .input(addonSigningKey)),
             ActionEffect(.read, scope: .checkout(appArmorPolicy)),
             ActionEffect(.read, scope: .checkout(seccompPolicy)),
             ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
@@ -210,14 +192,12 @@ struct PackageAndroidAddonAction: ColliderAction {
                 abi: "glibc"))
     }
 
-    init(configuration: AndroidAddonPackageConfiguration) {
+    init(configuration: AndroidPackageInputConfiguration) {
         runtimeProducts = configuration.swiftPM.productsDirectory
         runtimeRoot = configuration.runtimeRoot
         runtimeScratch = configuration.runtimeScratch
         aospGeneration = configuration.aospGeneration
-        compatibility = configuration.compatibility
         aospSigningKey = configuration.aospSigningKey
-        addonSigningKey = configuration.addonSigningKey
         output = configuration.output
         appArmorPolicy = configuration.appArmorPolicy
         seccompPolicy = configuration.seccompPolicy
@@ -228,25 +208,17 @@ struct PackageAndroidAddonAction: ColliderAction {
         guard
             try context.files.metadataWithoutFollowingSymlinks(for: output) == nil
         else {
-            throw AndroidAddonPackageFailure(
+            throw AndroidPackageInputFailure(
                 "output already exists: \(output)")
         }
         try context.files.createDirectory(output.removingLastComponent())
         try context.files.createDirectory(runtimeScratch)
-        let candidate = runtimeScratch.appending("addon-candidate")
+        let candidate = runtimeScratch.appending("package-input-candidate")
         try context.files.remove(candidate)
         try context.files.createDirectory(candidate)
         defer { try? context.files.remove(candidate) }
 
-        let compatibility = try JSONDecoder().decode(
-            AndroidAddonCompatibility.self,
-            from: Data(try context.files.read(self.compatibility)))
         let buildArchitecture = currentArchitecture
-        guard compatibility.architecture == buildArchitecture else {
-            throw AndroidAddonPackageFailure(
-                "packaging process is \(buildArchitecture.rawValue), but compatibility declares \(compatibility.architecture.rawValue)"
-            )
-        }
 
         let generatedRuntime = runtimeRoot == nil
         let resolvedRuntime = runtimeRoot ?? runtimeScratch.appending("runtime")
@@ -257,9 +229,9 @@ struct PackageAndroidAddonAction: ColliderAction {
                 products: runtimeProducts,
                 prefix: resolvedRuntime,
                 environment: environment,
-                productSet: .androidAddon,
+                productSet: .androidPackage,
                 targetArchitecture:
-                    compatibility.architecture == .arm64 ? .arm64 : .x86_64,
+                    buildArchitecture == .arm64 ? .arm64 : .x86_64,
                 context: context)
         }
 
@@ -269,13 +241,13 @@ struct PackageAndroidAddonAction: ColliderAction {
             AndroidImageProvenance.self,
             from: Data(try context.files.read(provenancePath)))
         let expectedProduct =
-            switch compatibility.architecture {
+            switch buildArchitecture {
             case .arm64: "nucleus_arm64"
             case .x86_64: "nucleus_x86_64"
             }
         guard provenance.status == "signed", provenance.product == expectedProduct else {
-            throw AndroidAddonPackageFailure(
-                "signed AOSP product \(provenance.product) does not match \(compatibility.architecture.rawValue)"
+            throw AndroidPackageInputFailure(
+                "signed AOSP product \(provenance.product) does not match \(buildArchitecture.rawValue)"
             )
         }
         let requiredImages = Set([
@@ -285,7 +257,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         guard Set(provenance.images.map(\.name)) == requiredImages,
             provenance.images.allSatisfy({ $0.storageFormat == "raw" })
         else {
-            throw AndroidAddonPackageFailure(
+            throw AndroidPackageInputFailure(
                 "signed AOSP provenance does not declare the complete raw image set")
         }
 
@@ -319,7 +291,7 @@ struct PackageAndroidAddonAction: ColliderAction {
                 metadata.size == image.size,
                 hex(try context.files.digest(file: source).bytes) == image.sha256
             else {
-                throw AndroidAddonPackageFailure(
+                throw AndroidPackageInputFailure(
                     "signed AOSP image does not match provenance: \(image.name)")
             }
             try copyRegularFile(
@@ -370,40 +342,27 @@ struct PackageAndroidAddonAction: ColliderAction {
             context: context)
 
         let payload = try payloadFiles(in: candidate, files: context.files)
-        let manifest = try AndroidAddonManifest(
+        let manifest = try AndroidPackageManifest(
             release: provenance.release,
             buildNumber: provenance.buildNumber,
-            architecture: compatibility.architecture,
-            requiredNucleusBuildIdentity: compatibility.nucleusBuildIdentity,
-            requiredKernelCapabilityIdentity: compatibility.kernelCapabilityIdentity,
+            architecture: buildArchitecture,
             payload: payload)
-        let manifestPath = candidate.appending("addon-manifest.json")
+        let manifestPath = candidate.appending("package-manifest.json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var bytes = Array(try encoder.encode(manifest))
         bytes.append(0x0a)
         try context.files.write(bytes, to: manifestPath)
-        try await requireSuccess(
-            CommandSpec(
-                executable: .named("openssl"),
-                arguments: [
-                    "dgst", "-sha256", "-sign", addonSigningKey.string,
-                    "-out", candidate.appending("addon-manifest.json.sig").string,
-                    manifestPath.string,
-                ],
-                workingDirectory: candidate,
-                environment: environment),
-            context: context)
         try context.files.move(from: candidate, to: output)
     }
 
-    private var currentArchitecture: AndroidAddonArchitecture {
+    private var currentArchitecture: AndroidPackageArchitecture {
         #if arch(arm64)
         .arm64
         #elseif arch(x86_64)
         .x86_64
         #else
-        #error("Nucleus supports Android add-ons only on arm64 and x86_64")
+        #error("Nucleus supports Android packages only on arm64 and x86_64")
         #endif
     }
 
@@ -415,7 +374,7 @@ struct PackageAndroidAddonAction: ColliderAction {
             try files.metadataWithoutFollowingSymlinks(for: path)?.type
                 == .directory
         else {
-            throw AndroidAddonPackageFailure(
+            throw AndroidPackageInputFailure(
                 "required directory is unavailable: \(path)")
         }
     }
@@ -429,7 +388,7 @@ struct PackageAndroidAddonAction: ColliderAction {
             try files.metadataWithoutFollowingSymlinks(for: source)?.type
                 == .regular
         else {
-            throw AndroidAddonPackageFailure(
+            throw AndroidPackageInputFailure(
                 "required regular file is unavailable: \(source)")
         }
         try files.copy(from: source, to: destination)
@@ -446,7 +405,7 @@ struct PackageAndroidAddonAction: ColliderAction {
             firstLine.hasPrefix("#!"),
             firstLine.contains("python")
         else {
-            throw AndroidAddonPackageFailure(
+            throw AndroidPackageInputFailure(
                 "AOSP avbtool must be an architecture-neutral Python script: \(source)")
         }
         try files.write(bytes, to: destination)
@@ -456,20 +415,20 @@ struct PackageAndroidAddonAction: ColliderAction {
     private func payloadFiles(
         in root: FilePath,
         files: ActionFileSystem
-    ) throws -> [AndroidAddonPayloadFile] {
-        var payload: [AndroidAddonPayloadFile] = []
+    ) throws -> [AndroidPackagePayloadFile] {
+        var payload: [AndroidPackagePayloadFile] = []
         for entry in try files.listRecursively(root) {
             guard entry.metadata.type != .symbolicLink else {
-                throw AndroidAddonPackageFailure(
+                throw AndroidPackageInputFailure(
                     "payload cannot contain symlinks: \(entry.path)")
             }
             if entry.metadata.type == .directory { continue }
             guard entry.metadata.type == .regular else {
-                throw AndroidAddonPackageFailure(
+                throw AndroidPackageInputFailure(
                     "payload contains a non-regular file: \(entry.path)")
             }
             payload.append(
-                try AndroidAddonPayloadFile(
+                try AndroidPackagePayloadFile(
                     path: entry.relativePath,
                     size: entry.metadata.size,
                     sha256: hex(try files.digest(file: entry.path).bytes),
@@ -485,7 +444,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         let result = try await context.commands.execute(command)
         guard result.succeeded else {
             throw result.executionFailure(
-                reason: "Android add-on packaging command failed: \(result.standardOutput)")
+                reason: "Android package packaging command failed: \(result.standardOutput)")
         }
     }
 }
@@ -500,11 +459,11 @@ private func hex(_ bytes: some Sequence<UInt8>) -> String {
     return String(decoding: result, as: UTF8.self)
 }
 
-struct AndroidAddonPackageFailure: Error, CustomStringConvertible {
+struct AndroidPackageInputFailure: Error, CustomStringConvertible {
     let description: String
 
     init(_ description: String) {
-        self.description = "Android add-on packaging failed: \(description)"
+        self.description = "Android package packaging failed: \(description)"
     }
 }
 #endif

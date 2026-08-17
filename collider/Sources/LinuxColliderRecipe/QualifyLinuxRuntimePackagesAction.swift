@@ -159,9 +159,9 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
                 report.architecture == architecture
                     && report.operations == [
                         "install-old", "upgrade-new", "downgrade-old",
-                        "remove-old",
+                        "remove-old", "reinstall-new", "remove-new",
                     ]
-                    && report.lifecycleInvocations >= 4
+                    && report.lifecycleInvocations >= 6
             })
         else {
             throw LinuxNativePackageQualificationFailure(

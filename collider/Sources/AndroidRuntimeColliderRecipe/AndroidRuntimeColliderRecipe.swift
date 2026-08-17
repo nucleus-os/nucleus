@@ -4,8 +4,8 @@ import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum AndroidRuntimeEntrypoints {
-    package static let packageAddon = ComponentEntrypointID(
-        rawValue: "package.android-addon")
+    package static let packageInput = ComponentEntrypointID(
+        rawValue: "package.android-input")
 }
 
 package enum AndroidRuntimeTaskIDs {
@@ -167,21 +167,21 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         var platformStorage: [StorageDeclaration] = []
         #if os(Linux)
         if let configuration = try context.configurationIfPresent(
-            AndroidAddonPackageConfiguration.self,
+            AndroidPackageInputConfiguration.self,
             for: descriptor.id)
         {
-            let package = try addonPackageTask(
+            let package = try packageInputTask(
                 configuration: configuration,
                 repositoryRoot: context.repositoryRoot,
                 managedAOSPGeneration: aosp.activeGeneration)
             tasks.append(package)
             entrypoints.append(
                 ComponentEntrypoint(
-                    id: AndroidRuntimeEntrypoints.packageAddon,
+                    id: AndroidRuntimeEntrypoints.packageInput,
                     roots: [package.id]))
             platformStorage = [
                 StorageDeclaration(
-                    id: "android-addon-packaging-scratch",
+                    id: "android-package-input-scratch",
                     owner: descriptor.id,
                     producers: [.task(package.id)],
                     storageClass: .incremental,
@@ -189,7 +189,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     safetyRoot: configuration.runtimeScratch.removingLastComponent(),
                     retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
-                    id: "android-addon-publication",
+                    id: "android-package-input-publication",
                     owner: descriptor.id,
                     producers: [.task(package.id)],
                     storageClass: .published,

@@ -5,7 +5,7 @@ import NucleusAndroidRuntimeCore
 import NucleusSessionProtocol
 
 package struct AndroidRuntimeBrokerConfiguration: Sendable {
-    package let addonRoot: URL
+    package let packageRoot: URL
     package let persistentStateRoot: URL
     package let sessionRuntimeDirectory: URL
     package let diagnosticsRunDirectory: URL
@@ -18,7 +18,7 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
     package let gfxstreamBrokerEnvironment: [String: String]
 
     package init(
-        addonRoot: URL,
+        packageRoot: URL,
         persistentStateRoot: URL,
         sessionRuntimeDirectory: URL,
         diagnosticsRunDirectory: URL,
@@ -31,7 +31,7 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
         gfxstreamBrokerEnvironment: [String: String] = [:]
     ) throws {
         for path in [
-            addonRoot,
+            packageRoot,
             persistentStateRoot,
             sessionRuntimeDirectory,
             diagnosticsRunDirectory,
@@ -52,7 +52,7 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
             throw AndroidRuntimeFailure(
                 "Android runtime Wayland/timeout configuration is invalid")
         }
-        self.addonRoot = addonRoot
+        self.packageRoot = packageRoot
         self.persistentStateRoot = persistentStateRoot
         self.sessionRuntimeDirectory = sessionRuntimeDirectory
         self.diagnosticsRunDirectory = diagnosticsRunDirectory
@@ -73,7 +73,7 @@ package func runAndroidRuntimeBroker<
     environment: [String: String]
 ) async throws {
     let layout = try AndroidRuntimeLayout(
-        addonRoot: configuration.addonRoot,
+        packageRoot: configuration.packageRoot,
         persistentStateRoot: configuration.persistentStateRoot,
         diagnosticsRunDirectory:
             configuration.diagnosticsRunDirectory,
@@ -94,7 +94,7 @@ package func runAndroidRuntimeBroker<
     for input in [
         layout.appArmorProfile,
         layout.seccompProfile,
-        layout.addonManifest,
+        layout.packageManifest,
         layout.provenance,
         layout.avbTool,
         layout.verificationKey,

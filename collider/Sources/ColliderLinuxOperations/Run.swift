@@ -155,10 +155,11 @@ struct RunCommand {
         var environment = context.environment
         try configureRuntimeEnvironment(options, environment: &environment)
         if options.android {
-            try requireInstalledAndroidCapability()
+            let capabilityRoot = FilePath(
+                "/usr/share/nucleus/session-capabilities")
+            try requireInstalledAndroidCapability(at: capabilityRoot)
             environment["NUCLEUS_SESSION_CAPABILITY_ROOT"] =
-                context.layout.androidAddonStore
-                .appending("session-capabilities").string
+                capabilityRoot.string
         }
 
         if options.tracy {
@@ -224,22 +225,20 @@ struct RunCommand {
         }
     }
 
-    private func requireInstalledAndroidCapability() throws {
-        let store = context.layout.androidAddonStore
-        let manifest = store.appending(
-            "session-capabilities/android.json")
-        let executable = store.appending(
-            "current/libexec/nucleus-android-runtime")
+    private func requireInstalledAndroidCapability(at root: FilePath) throws {
+        let manifest = root.appending("android.json")
         let values = try? URL(manifest).resourceValues(
             forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values?.isRegularFile == true,
             values?.isSymbolicLink != true,
-            FileManager.default.isExecutableFile(
-                atPath: executable.string)
+            let declaration = try? JSONDecoder().decode(
+                SessionCapabilityDeclaration.self,
+                from: Data(contentsOf: URL(manifest))),
+            FileManager.default.isExecutableFile(atPath: declaration.executable)
         else {
             throw WorkspaceFailure.message(
-                "the Android add-on is not installed; install a signed "
-                    + "add-on generation before requesting --android")
+                "nucleus-android is not installed; install the native "
+                    + "package before requesting --android")
         }
     }
 

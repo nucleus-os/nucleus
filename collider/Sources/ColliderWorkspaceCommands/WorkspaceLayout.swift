@@ -15,8 +15,6 @@ package struct WorkspaceLayout: Sendable {
 
     package var state: FilePath { root.appending(".nucleus") }
     package var runtimeState: FilePath { state.appending("runtime") }
-    package var androidAddonStore: FilePath { runtimeState.appending("android-addon") }
-    package var androidPersistentState: FilePath { runtimeState.appending("android-state") }
     func swiftScratch(
         for context: SwiftBuildContext,
         under scratchRoot: FilePath

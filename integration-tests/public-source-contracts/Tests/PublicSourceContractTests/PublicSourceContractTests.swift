@@ -16,7 +16,7 @@ func foundationFacadeConstructsCanonicalValues() {
 @Test
 @MainActor
 func deploymentProductsExposeTheirSupportedContracts() {
-    #expect(androidAddonArchitecture() == .arm64)
+    #expect(androidPackageArchitecture() == .arm64)
     #expect(makeSessionMilestone() == .compositorReady)
     _ = makeDesktopConfiguration()
     _ = makePortableViewHierarchy

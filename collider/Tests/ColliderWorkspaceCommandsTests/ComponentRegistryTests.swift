@@ -393,11 +393,9 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             || kind == "linux.package-runtime-adapter"
             || kind == "linux.package-control-adapters"
     }
-    #expect(packageExecutionTasks.count == 20)
+    #expect(packageExecutionTasks.count == 28)
     for architecture in PlatformArchitecture.allCases {
-        let packageNames = LinuxNativePackageName.allCases.filter {
-            $0 != .androidAddon
-        }
+        let packageNames = LinuxNativePackageName.allCases
         for package in packageNames where !package.isControlOnly {
             let payloadID = LinuxTaskIDs.packagePayload(architecture, package)
             let payload = try #require(

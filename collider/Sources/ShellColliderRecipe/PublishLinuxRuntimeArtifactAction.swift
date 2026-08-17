@@ -28,7 +28,6 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         packageManifestsRoot: FilePath,
         rollbackGenerationCount: UInt32,
         sessionPackage: FilePath,
-        kernelContract: FilePath,
         environment: [String: String]
     ) throws {
         self.artifactRoot = artifactRoot
@@ -99,7 +98,6 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 packageManifestsRoot.string,
                 String(rollbackGenerationCount),
                 sessionPackage.string,
-                kernelContract.string,
                 "release",
                 architecture.rawValue,
             ],

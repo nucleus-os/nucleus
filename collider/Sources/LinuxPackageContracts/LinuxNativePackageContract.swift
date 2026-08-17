@@ -6,7 +6,7 @@ package enum LinuxNativePackageName: String, CaseIterable, Codable, Hashable, Se
     case runtime = "nucleus-runtime"
     case session = "nucleus-session"
     case browser = "nucleus-browser"
-    case androidAddon = "nucleus-android-addon"
+    case androidPackage = "nucleus-android"
     case developmentHost = "nucleus-development-host"
     case complete = "nucleus"
 
@@ -180,7 +180,7 @@ package struct LinuxNativePackageCohortContract: Sendable {
             canonicalVersion: canonicalVersion,
             family: runtime.family)
         let exactPackages: [LinuxNativePackageName] = [
-            .runtime, .session, .browser,
+            .runtime, .session, .browser, .androidPackage,
         ]
         let exactRelationships = exactPackages.map {
             LinuxNativePackageRelationship(
@@ -199,6 +199,8 @@ package struct LinuxNativePackageCohortContract: Sendable {
         let runtimeGeneration = runtime.runtimeGeneration
         let browserGeneration =
             "/usr/lib/nucleus-browser/\(browser.payloadGeneration)"
+        let androidGeneration =
+            "/usr/lib/nucleus-android/\(canonicalVersion)"
         let desktopRefresh = [
             "update-desktop-database /usr/share/applications"
         ]
@@ -272,6 +274,29 @@ package struct LinuxNativePackageCohortContract: Sendable {
                     afterRemove: desktopRefresh)),
             LinuxNativePackageManifest(
                 family: runtime.family,
+                name: .androidPackage,
+                version: familyVersion,
+                architecture: runtime.architecture,
+                summary: "Nucleus Android capability",
+                relationships: [
+                    LinuxNativePackageRelationship(
+                        package: LinuxNativePackageName.runtime.rawValue,
+                        requirement: .exactCohort,
+                        version: familyVersion)
+                ],
+                conflicts: [],
+                ownedPaths: [
+                    LinuxNativePackageOwnedPath(
+                        path: androidGeneration,
+                        kind: .tree),
+                    LinuxNativePackageOwnedPath(
+                        path: "/usr/share/nucleus/session-capabilities/android.json",
+                        kind: .file,
+                        permissions: 0o644),
+                ],
+                lifecycle: LinuxNativePackageLifecycle()),
+            LinuxNativePackageManifest(
+                family: runtime.family,
                 name: .developmentHost,
                 version: familyVersion,
                 architecture: Self.neutralArchitecture(for: runtime.family),
@@ -315,7 +340,8 @@ package struct LinuxNativePackageCohortContract: Sendable {
     package func validate() throws {
         guard
             manifest.packages.map(\.name) == [
-                .runtime, .session, .browser, .developmentHost, .complete,
+                .runtime, .session, .browser, .androidPackage, .developmentHost,
+                .complete,
             ]
         else {
             throw LinuxNativePackageContractFailure(

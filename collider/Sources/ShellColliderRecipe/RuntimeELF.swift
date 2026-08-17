@@ -25,7 +25,7 @@ public struct RuntimeELFReport: Codable, Hashable, Sendable {
 
 public enum RuntimeELFProductSet: String, Codable, Hashable, Sendable {
     case baseRuntime
-    case androidAddon
+    case androidPackage
 }
 
 public struct StageRuntimeELFAction: ColliderAction {
@@ -656,7 +656,7 @@ private enum RuntimeELFLayout {
     static func executables(productSet: RuntimeELFProductSet) -> [Executable] {
         switch productSet {
         case .baseRuntime: coreExecutables
-        case .androidAddon: androidExecutables
+        case .androidPackage: androidExecutables
         }
     }
 

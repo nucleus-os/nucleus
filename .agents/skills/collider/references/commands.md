@@ -164,7 +164,7 @@ Subcommands:
 
 Assemble the complete Linux runtime package cohort.
 
-Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
+Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--android-arm64 <android-arm64>] [--android-x86-64 <android-x86-64>] [--version] [--help]`
 
 Arguments and options:
 
@@ -177,6 +177,8 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--android-arm64` `<android-arm64>`
+- `--android-x86-64` `<android-x86-64>`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

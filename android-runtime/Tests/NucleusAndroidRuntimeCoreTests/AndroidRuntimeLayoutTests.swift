@@ -3,12 +3,25 @@ import NucleusAndroidRuntimeCore
 import Testing
 
 @Suite struct AndroidRuntimeLayoutTests {
-    @Test func layoutUsesTheActiveAddonAndIndependentPersistentState() throws {
-        let addonRoot = URL(fileURLWithPath: "/opt/nucleus/addons/android")
+    @Test func layoutRejectsOverlappingPackageAndStateRoots() {
+        #expect(throws: AndroidRuntimeFailure.self) {
+            _ = try AndroidRuntimeLayout(
+                packageRoot: URL(fileURLWithPath: "/usr/lib/nucleus-android/fixture"),
+                persistentStateRoot: URL(
+                    fileURLWithPath: "/usr/lib/nucleus-android/fixture/state"),
+                diagnosticsRunDirectory: URL(
+                    fileURLWithPath: "/run/user/1000/nucleus"),
+                gfxstreamBrokerExecutable: URL(fileURLWithPath: "/broker"),
+                displayHostExecutable: URL(fileURLWithPath: "/display"))
+        }
+    }
+
+    @Test func layoutUsesPackagePayloadAndIndependentPersistentState() throws {
+        let packageRoot = URL(fileURLWithPath: "/usr/lib/nucleus-android/fixture")
         let stateRoot = URL(fileURLWithPath: "/var/lib/nucleus/android")
         let runDirectory = URL(fileURLWithPath: "/run/user/1000/nucleus")
         let layout = try AndroidRuntimeLayout(
-            addonRoot: addonRoot,
+            packageRoot: packageRoot,
             persistentStateRoot: stateRoot,
             diagnosticsRunDirectory: runDirectory,
             gfxstreamBrokerExecutable: URL(
@@ -31,14 +44,14 @@ import Testing
                 == "/run/user/1000/nucleus/android-runtime")
         #expect(
             layout.images.path
-                == "/opt/nucleus/addons/android/current/images")
+                == "/usr/lib/nucleus-android/fixture/images")
         #expect(layout.persistentStateRoot.path == "/var/lib/nucleus/android")
         #expect(
             layout.verificationKey.path
-                == "/opt/nucleus/addons/android/current/share/nucleus/android/avb-release-key.pem")
+                == "/usr/lib/nucleus-android/fixture/share/nucleus/android/avb-release-key.pem")
         #expect(
             layout.avbTool.path
-                == "/opt/nucleus/addons/android/current/libexec/android-tools/avbtool")
+                == "/usr/lib/nucleus-android/fixture/libexec/android-tools/avbtool")
         #expect(
             layout.displayHostSocket.path
                 == layout.instance.appendingPathComponent(

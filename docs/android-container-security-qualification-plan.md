@@ -4,7 +4,7 @@ Status: active.
 
 ## Invariant
 
-The downloadable Android 17 add-on runs in one rootless LXC runtime whose host
+The optional `nucleus-android` native package runs Android 17 in one rootless LXC runtime whose host
 boundary is enforced by user namespaces, cgroups, AppArmor, seccomp, mount
 ownership, bounded device access, and explicit broker protocols. Android UID,
 package, mount, Binder, storage, Keystore, ART, and application-data isolation

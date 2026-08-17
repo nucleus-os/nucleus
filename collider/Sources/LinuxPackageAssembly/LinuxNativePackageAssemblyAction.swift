@@ -11,6 +11,7 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
     package let browser: BrowserPackageInputPublication
     package let canonicalPayloadRoot: FilePath?
     package let adapterRoot: FilePath?
+    package let androidPackageInputRoot: FilePath?
     package let outputRoot: FilePath
     package let assemblerExecutable: FilePath
     package let builderImageID: FilePath
@@ -25,6 +26,7 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
         browser: BrowserPackageInputPublication,
         canonicalPayloadRoot: FilePath? = nil,
         adapterRoot: FilePath? = nil,
+        androidPackageInputRoot: FilePath? = nil,
         outputRoot: FilePath,
         assemblerExecutable: FilePath,
         builderImageID: FilePath,
@@ -38,6 +40,7 @@ package struct LinuxNativePackagePublication: Hashable, Sendable {
         self.browser = browser
         self.canonicalPayloadRoot = canonicalPayloadRoot
         self.adapterRoot = adapterRoot
+        self.androidPackageInputRoot = androidPackageInputRoot
         self.outputRoot = outputRoot
         self.assemblerExecutable = assemblerExecutable
         self.builderImageID = builderImageID
@@ -75,6 +78,9 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
             }
             if let adapterRoot = publication.adapterRoot {
                 encoder.append(path: adapterRoot)
+            }
+            if let androidPackageInputRoot = publication.androidPackageInputRoot {
+                encoder.append(path: androidPackageInputRoot)
             }
             encoder.append(path: publication.outputRoot)
             encoder.append(path: publication.assemblerExecutable)
@@ -115,6 +121,10 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
         }
         if let adapterRoot = publication.adapterRoot {
             effects.append(ActionEffect(.read, scope: .input(adapterRoot)))
+        }
+        if let androidPackageInputRoot = publication.androidPackageInputRoot {
+            effects.append(
+                ActionEffect(.read, scope: .input(androidPackageInputRoot)))
         }
         effects += [
             ActionEffect(
@@ -196,8 +206,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
         if publication.adapterRoot != nil {
             // Independently validated adapter publications supply the archives.
         } else if let externalRoot = publication.canonicalPayloadRoot {
-            for package in LinuxNativePackageName.allCases
-            where package != .androidAddon {
+            for package in LinuxNativePackageName.allCases {
                 let publicationRoot = externalRoot.appending(package.rawValue)
                 try validateLinuxNativePackagePayloadPublication(
                     publicationRoot,
@@ -235,6 +244,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                     runtimePayload: runtimePublication.payload,
                     browserManifest: browser,
                     browserPayload: browserPayload,
+                    androidPackageInput: publication.androidPackageInputRoot,
                     root: root,
                     files: context.files)
                 let byteCount = try linuxNativePackageLogicalByteCount(
@@ -576,6 +586,7 @@ package struct LinuxNativePackagePayloadPublication: Hashable, Sendable {
     package let architecture: PlatformArchitecture
     package let runtimeArtifactRoot: FilePath
     package let browser: BrowserPackageInputPublication
+    package let androidPackageInputRoot: FilePath?
     package let outputRoot: FilePath
     package let package: LinuxNativePackageName
 
@@ -583,12 +594,14 @@ package struct LinuxNativePackagePayloadPublication: Hashable, Sendable {
         architecture: PlatformArchitecture,
         runtimeArtifactRoot: FilePath,
         browser: BrowserPackageInputPublication,
+        androidPackageInputRoot: FilePath? = nil,
         outputRoot: FilePath,
         package: LinuxNativePackageName
     ) {
         self.architecture = architecture
         self.runtimeArtifactRoot = runtimeArtifactRoot
         self.browser = browser
+        self.androidPackageInputRoot = androidPackageInputRoot
         self.outputRoot = outputRoot
         self.package = package
     }
@@ -608,6 +621,9 @@ package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
             encoder.append(path: publication.runtimeArtifactRoot)
             encoder.append(path: publication.browser.distributionRoot)
             encoder.append(path: publication.browser.packageInputRoot)
+            if let androidPackageInputRoot = publication.androidPackageInputRoot {
+                encoder.append(path: androidPackageInputRoot)
+            }
             encoder.append(path: publication.outputRoot)
             encoder.append(publication.package.rawValue)
         }
@@ -638,7 +654,10 @@ package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
                 ActionEffect(
                     .readWrite,
                     scope: .publication(publication.outputRoot)),
-            ],
+            ]
+                + (publication.androidPackageInputRoot.map {
+                    [ActionEffect(.read, scope: .input($0))]
+                } ?? []),
             executionPlatform: .linuxARM64OCI,
             artifactTarget: ArtifactTarget(
                 operatingSystem: .linux,
@@ -658,6 +677,7 @@ package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
                 sourceSnapshot: FilePath("/unused/source-snapshot"),
                 runtimeArtifactRoot: publication.runtimeArtifactRoot,
                 browser: publication.browser,
+                androidPackageInputRoot: publication.androidPackageInputRoot,
                 outputRoot: publication.outputRoot,
                 assemblerExecutable: FilePath("/unused/assembler"),
                 builderImageID: FilePath("/unused/builder-image"),
@@ -696,6 +716,7 @@ package struct MaterializeLinuxNativePackagePayloadAction: ColliderAction {
             runtimePayload: runtimePublication.payload,
             browserManifest: browser,
             browserPayload: browserPayload,
+            androidPackageInput: publication.androidPackageInputRoot,
             root: candidate,
             files: context.files)
         let byteCount = try linuxNativePackageLogicalByteCount(
@@ -1049,6 +1070,7 @@ extension AssembleLinuxNativePackagesAction {
         runtimePayload: FilePath,
         browserManifest: BrowserPackageInputManifest,
         browserPayload: FilePath,
+        androidPackageInput: FilePath?,
         root: FilePath,
         files: ActionFileSystem
     ) throws {
@@ -1148,9 +1170,47 @@ extension AssembleLinuxNativePackagesAction {
                 Array((cohort.canonicalVersion + "\n").utf8),
                 to: destination)
             try files.setPermissions(marker.permissions ?? 0o644, for: destination)
-        case .androidAddon:
-            throw LinuxNativePackageAssemblyFailure(
-                "Android add-on packaging belongs to Phase 4")
+        case .androidPackage:
+            guard let androidPackageInput else {
+                throw LinuxNativePackageAssemblyFailure(
+                    "Android native package input is missing")
+            }
+            let manifest = try validateAndroidPackageInput(
+                androidPackageInput,
+                architecture: cohort.architecture,
+                files: files)
+            guard
+                let payloadPath = package.ownedPaths.first(where: {
+                    $0.kind == .tree
+                })?.path
+            else {
+                throw LinuxNativePackageAssemblyFailure(
+                    "Android package manifest has no immutable payload path")
+            }
+            let payload = try installedLinuxPackagePath(payloadPath, in: root)
+            try copyTree(androidPackageInput, to: payload, files: files)
+            let capability = AndroidPackageCapabilityDeclaration(
+                identifier: "android",
+                executable: payloadPath + "/libexec/nucleus-android-runtime",
+                arguments: [
+                    "--package-root", payloadPath,
+                    "--state-root", "/var/lib/nucleus/android",
+                ],
+                shutdownTimeoutSeconds: 60)
+            let declaration = try installedLinuxPackagePath(
+                "/usr/share/nucleus/session-capabilities/android.json",
+                in: root)
+            try files.createDirectory(declaration.removingLastComponent())
+            try files.write(try encodedJSON(capability), to: declaration)
+            try files.setPermissions(0o644, for: declaration)
+            guard
+                manifest.payload.contains(where: {
+                    $0.path == "libexec/nucleus-android-runtime"
+                })
+            else {
+                throw LinuxNativePackageAssemblyFailure(
+                    "Android package input has no runtime executable")
+            }
         }
         try validateMaterializedRoot(package, root: root, files: files)
     }
@@ -1739,6 +1799,164 @@ extension AssembleLinuxNativePackagesAction {
     }
 }
 
+private struct AndroidPackageCapabilityDeclaration: Encodable {
+    let identifier: String
+    let executable: String
+    let arguments: [String]
+    let shutdownTimeoutSeconds: UInt16
+}
+
+private struct AndroidNativePackageInputManifest: Decodable {
+    struct PayloadFile: Decodable {
+        let path: String
+        let size: UInt64
+        let sha256: String
+        let executable: Bool
+    }
+
+    let identifier: String
+    let release: String
+    let buildNumber: String
+    let architecture: PlatformArchitecture
+    let payload: [PayloadFile]
+}
+
+private struct AndroidNativePackageImageProvenance: Decodable {
+    struct Image: Decodable {
+        let name: String
+        let size: UInt64
+        let storageFormat: String
+        let sha256: String
+    }
+
+    let status: String
+    let product: String
+    let release: String
+    let buildNumber: String
+    let images: [Image]
+}
+
+private func validateAndroidPackageInput(
+    _ root: FilePath,
+    architecture: PlatformArchitecture,
+    files: ActionFileSystem
+) throws -> AndroidNativePackageInputManifest {
+    guard try files.metadataWithoutFollowingSymlinks(for: root)?.type == .directory
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "Android native package input is not a directory")
+    }
+    let manifest: AndroidNativePackageInputManifest = try decodeJSON(
+        files.read(root.appending("package-manifest.json")))
+    guard manifest.identifier == "android",
+        manifest.architecture == architecture
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "Android native package input architecture does not match the cohort")
+    }
+    let required = Set([
+        "image-provenance.json",
+        "images/system.img",
+        "images/system_ext.img",
+        "images/product.img",
+        "images/vendor.img",
+        "images/vbmeta.img",
+        "images/vbmeta_system.img",
+        "libexec/nucleus-android-runtime",
+        "libexec/nucleus-android-runtime-privileged",
+        "libexec/nucleus-android-gfxstream-broker",
+        "libexec/nucleus-android-display-host",
+        "libexec/android-tools/avbtool",
+        "share/nucleus/android/avb-release-key.pem",
+        "share/nucleus/android/lxc-nucleus-android.apparmor",
+        "share/nucleus/android/nucleus-android.seccomp",
+    ])
+    let declared = Set(manifest.payload.map(\.path))
+    guard required.isSubset(of: declared) else {
+        throw LinuxNativePackageAssemblyFailure(
+            "Android native package input is incomplete")
+    }
+    for file in manifest.payload {
+        let path = root.appending(file.path)
+        guard
+            let metadata = try files.metadataWithoutFollowingSymlinks(for: path),
+            metadata.type == .regular,
+            metadata.size == file.size,
+            (metadata.permissions & 0o111 != 0) == file.executable,
+            androidPackageHex(try files.digest(file: path).bytes) == file.sha256
+        else {
+            throw LinuxNativePackageAssemblyFailure(
+                "Android native package input does not match its manifest: \(file.path)")
+        }
+    }
+    let allowed = declared.union(["package-manifest.json"])
+    for entry in try files.listRecursively(root) {
+        guard entry.metadata.type != .symbolicLink else {
+            throw LinuxNativePackageAssemblyFailure(
+                "Android native package input contains a symbolic link")
+        }
+        if entry.metadata.type == .directory { continue }
+        guard entry.metadata.type == .regular,
+            allowed.contains(entry.relativePath)
+        else {
+            throw LinuxNativePackageAssemblyFailure(
+                "Android native package input contains undeclared content: "
+                    + entry.relativePath)
+        }
+    }
+    let provenance: AndroidNativePackageImageProvenance = try decodeJSON(
+        files.read(root.appending("image-provenance.json")))
+    let expectedProduct =
+        architecture == .arm64 ? "nucleus_arm64" : "nucleus_x86_64"
+    let expectedImages = Set([
+        "system.img", "system_ext.img", "product.img", "vendor.img",
+        "vbmeta.img", "vbmeta_system.img",
+    ])
+    guard provenance.status == "signed",
+        provenance.product == expectedProduct,
+        provenance.release == manifest.release,
+        provenance.buildNumber == manifest.buildNumber,
+        Set(provenance.images.map(\.name)) == expectedImages,
+        provenance.images.allSatisfy({ $0.storageFormat == "raw" })
+    else {
+        throw LinuxNativePackageAssemblyFailure(
+            "Android image provenance does not satisfy the package contract")
+    }
+    for image in provenance.images {
+        guard
+            let payload = manifest.payload.first(where: {
+                $0.path == "images/\(image.name)"
+            }),
+            payload.size == image.size,
+            payload.sha256 == image.sha256
+        else {
+            throw LinuxNativePackageAssemblyFailure(
+                "Android image provenance does not match the package payload")
+        }
+    }
+    return manifest
+}
+
+package func qualifyAndroidPackageInput(
+    _ root: FilePath,
+    architecture: PlatformArchitecture,
+    files: ActionFileSystem
+) throws {
+    _ = try validateAndroidPackageInput(
+        root,
+        architecture: architecture,
+        files: files)
+}
+
+private func androidPackageHex(_ bytes: some Sequence<UInt8>) -> String {
+    let digits = Array("0123456789abcdef".utf8)
+    return String(
+        decoding: bytes.flatMap { byte in
+            [digits[Int(byte >> 4)], digits[Int(byte & 0x0f)]]
+        },
+        as: UTF8.self)
+}
+
 extension LinuxDistributionFamily {
     package var assemblyStage: LinuxNativePackageStage {
         switch self {
@@ -1821,9 +2039,7 @@ package func validateLinuxNativePackagePublication(
     guard manifest.architecture == architecture,
         manifest.products.count
             == LinuxDistributionFamily.allCases.count
-            * (LinuxNativePackageName.allCases.filter {
-                $0 != .androidAddon
-            }.count + 1)
+            * (LinuxNativePackageName.allCases.count + 1)
     else {
         throw LinuxNativePackageAssemblyFailure(
             "package cohort publication is incomplete")

@@ -19,26 +19,22 @@ extension ComponentRegistry {
             controls: controls)
     }
 
-    func packageAndroidAddon(
+    func materializeAndroidPackageInput(
         runtimeRoot: FilePath?,
         aospGeneration: FilePath,
         usesManagedAOSPGeneration: Bool,
-        compatibility: FilePath,
         aospSigningKey: FilePath,
-        addonSigningKey: FilePath,
         output: FilePath,
         controls: TaskControls = TaskControls()
     ) async throws {
-        let configuration = AndroidAddonPackageConfiguration(
+        let configuration = AndroidPackageInputConfiguration(
             swiftPM: try context.swiftPMInvocation(configuration: .release),
             runtimeRoot: runtimeRoot,
             runtimeScratch: context.workRoot.appending(
-                "android-addon-runtime"),
+                "android-package-input-runtime"),
             aospGeneration: aospGeneration,
             usesManagedAOSPGeneration: usesManagedAOSPGeneration,
-            compatibility: compatibility,
             aospSigningKey: aospSigningKey,
-            addonSigningKey: addonSigningKey,
             output: output,
             appArmorPolicy: context.layout.androidRuntime.appending(
                 "container/lxc-nucleus-android.apparmor"),
@@ -51,12 +47,12 @@ extension ComponentRegistry {
         let catalog = try componentCatalog(
             hostAugmentation: .linux(
                 shellConfiguration: shellConfiguration,
-                androidAddonConfiguration: configuration))
+                androidPackageConfiguration: configuration))
         try await context.execute(
             catalog: catalog,
             requests: [
                 ComponentEntrypointRequest(
-                    entrypoint: AndroidRuntimeEntrypoints.packageAddon,
+                    entrypoint: AndroidRuntimeEntrypoints.packageInput,
                     selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
             ],
             controls: controls)

@@ -17,9 +17,9 @@ struct NucleusLinuxRuntimePublisher {
 
     private static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments.count == 9,
+        guard arguments.count == 8,
             let rollbackGenerationCount = UInt32(arguments[4]),
-            let targetArchitecture = PlatformArchitecture(rawValue: arguments[8])
+            let targetArchitecture = PlatformArchitecture(rawValue: arguments[7])
         else {
             throw LinuxRuntimePublisherFailure.invalidArguments
         }
@@ -33,9 +33,7 @@ struct NucleusLinuxRuntimePublisher {
                     packageManifestsRoot: FilePath(arguments[3]),
                     rollbackGenerationCount: rollbackGenerationCount,
                     sessionPackage: FilePath(arguments[5]),
-                    kernelContract: FilePath(arguments[6]),
-                    trustKey: nil,
-                    buildMetadata: arguments[7],
+                    buildMetadata: arguments[6],
                     targetArchitecture: targetArchitecture,
                     environment: ProcessInfo.processInfo.environment))
             await runtime.shutdown()

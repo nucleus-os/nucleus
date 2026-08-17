@@ -23,13 +23,13 @@ nucleus-session
        │    ├─ NucleusUI product surfaces
        │    ├─ Wayland client/input/render runtime
        │    └─ Linux service projections
-       └─ installed Android add-on capability
+       └─ installed Android package capability
             ├─ privileged LXC launcher
             ├─ Android 17 userspace
             └─ graphics broker and display host
 ```
 
-The supervisor starts the compositor first, waits for typed physical-presentation readiness, then starts the shell and selected installed capabilities. The base runtime has no Android binaries or declaration; a verified architecture-matched add-on contributes its declaration through the external capability registry. Required child failure retires the complete session. Shutdown proceeds from optional services to shell to compositor so producers stop before consumers disappear.
+The supervisor starts the compositor first, waits for typed physical-presentation readiness, then starts the shell and selected installed capabilities. The base runtime has no Android binaries or declaration; the architecture-matched `nucleus-android` native package contributes its declaration through the external capability registry. Required child failure retires the complete session. Shutdown proceeds from optional services to shell to compositor so producers stop before consumers disappear.
 
 ## Package graph
 
@@ -66,7 +66,7 @@ Collider owns declared task graphs, planning, execution, artifact identity, lock
 Collider currently installs one executable on macOS. `ColliderCLI` owns the
 single root grammar and process lifecycle, and `ColliderWorkspaceCommands` owns
 checkout-oriented commands and catalog construction. The source graph retains
-`ColliderLinuxOperations` for installed-session and Android add-on operations,
+`ColliderLinuxOperations` for installed-session and Linux development operations,
 but no supported setup, launcher, or OCI backend currently exposes a Linux-host
 Collider build. Recipe modules continue to own Linux-target artifact actions.
 

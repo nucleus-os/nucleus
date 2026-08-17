@@ -268,11 +268,12 @@ private struct LifecycleFixtureArtifact {
 }
 
 private let lifecyclePackageNames: [LinuxNativePackageName] = [
-    .runtime, .session, .browser, .developmentHost, .complete,
+    .runtime, .session, .browser, .androidPackage, .developmentHost, .complete,
 ]
 
 private let lifecycleOperations = [
     "install-old", "upgrade-new", "downgrade-old", "remove-old",
+    "reinstall-new", "remove-new",
 ]
 
 private func lifecycleFixtureCohort(
@@ -460,6 +461,11 @@ private func exercisePackageManager(
             "package manager did not execute the install lifecycle hook")
     }
 
+    let androidState = FilePath("/var/lib/nucleus/android/retained")
+    let persistentAndroidState = Array("persistent-android-state\n".utf8)
+    try context.files.createDirectory(androidState.removingLastComponent())
+    try context.files.write(persistentAndroidState, to: androidState)
+
     let configurationPath = FilePath("/etc/pam.d/nucleus")
     let operatorConfiguration = Array("operator-preserved\n".utf8)
     try context.files.write(operatorConfiguration, to: configurationPath)
@@ -475,6 +481,10 @@ private func exercisePackageManager(
     try requirePreservedConfiguration(
         operatorConfiguration,
         at: configurationPath,
+        files: context.files)
+    try requirePreservedAndroidState(
+        persistentAndroidState,
+        at: androidState,
         files: context.files)
     try await validateInstalledVersions(
         family: family,
@@ -503,6 +513,10 @@ private func exercisePackageManager(
         operatorConfiguration,
         at: configurationPath,
         files: context.files)
+    try requirePreservedAndroidState(
+        persistentAndroidState,
+        at: androidState,
+        files: context.files)
     try await validateInstalledVersions(
         family: family,
         architecture: architecture,
@@ -530,12 +544,65 @@ private func exercisePackageManager(
         environment: environment,
         context: context)
     try validateRemovedLifecycleCohort(oldCohort, files: context.files)
+    try requirePreservedAndroidState(
+        persistentAndroidState,
+        at: androidState,
+        files: context.files)
     nextCount = try lifecycleLineCount(lifecycleLog, files: context.files)
     guard nextCount > lifecycleCount else {
         throw LinuxNativePackageLifecycleFailure(
             "package manager did not execute the removal lifecycle hook")
     }
+    lifecycleCount = nextCount
+
+    try await packageManagerInstall(
+        family: family,
+        architecture: architecture,
+        artifacts: newArtifacts,
+        work: work,
+        environment: environment,
+        context: context)
+    try validateInstalledLifecycleCohort(newCohort, files: context.files)
+    try requirePreservedAndroidState(
+        persistentAndroidState,
+        at: androidState,
+        files: context.files)
+    nextCount = try lifecycleLineCount(lifecycleLog, files: context.files)
+    guard nextCount > lifecycleCount else {
+        throw LinuxNativePackageLifecycleFailure(
+            "package manager did not execute the reinstall lifecycle hook")
+    }
+    lifecycleCount = nextCount
+
+    try await packageManagerRemove(
+        family: family,
+        architecture: architecture,
+        packages: newCohort.packages,
+        work: work,
+        environment: environment,
+        context: context)
+    try validateRemovedLifecycleCohort(newCohort, files: context.files)
+    try requirePreservedAndroidState(
+        persistentAndroidState,
+        at: androidState,
+        files: context.files)
+    nextCount = try lifecycleLineCount(lifecycleLog, files: context.files)
+    guard nextCount > lifecycleCount else {
+        throw LinuxNativePackageLifecycleFailure(
+            "package manager did not execute the final removal lifecycle hook")
+    }
     return lifecycleOperations
+}
+
+private func requirePreservedAndroidState(
+    _ expected: [UInt8],
+    at path: FilePath,
+    files: ActionFileSystem
+) throws {
+    guard try files.read(path) == expected else {
+        throw LinuxNativePackageLifecycleFailure(
+            "package transaction changed persistent Android state")
+    }
 }
 
 private func packageManagerInstall(

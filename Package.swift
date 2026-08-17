@@ -1015,14 +1015,9 @@ let targets: [Target] = [
     .executableTarget(
         name: "NucleusControlCLI",
         dependencies: [
-            "NucleusAndroidRuntimeCore", "NucleusControlClient", "NucleusControlProtocol",
-            "NucleusConfig",
+            "NucleusControlClient", "NucleusControlProtocol", "NucleusConfig",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ], path: "ipc/Sources/NucleusControlCLI"),
-    .testTarget(
-        name: "NucleusControlCLITests",
-        dependencies: ["NucleusControlCLI"],
-        path: "ipc/Tests/NucleusControlCLITests"),
     .target(
         name: "NucleusControlClient",
         dependencies: ["NucleusIPCTransport", "NucleusIPCTransportC", "NucleusControlProtocol"],

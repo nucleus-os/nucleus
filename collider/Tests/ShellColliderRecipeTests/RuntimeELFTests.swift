@@ -93,17 +93,17 @@ import Testing
             report: FilePath("/elsewhere/report.json"),
             environment: ["PATH": "/one"],
             executionPlatform: .linuxX86_64Native))
-    let androidAddon = try AnyColliderAction(
+    let androidPackage = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
             environment: ["PATH": "/one"],
-            productSet: .androidAddon,
+            productSet: .androidPackage,
             executionPlatform: .linuxX86_64Native))
 
     #expect(first == sameDeclaration)
     #expect(first != differentOutput)
-    #expect(first != androidAddon)
+    #expect(first != androidPackage)
     #expect(first.kind == "shell.validate-runtime-elf")
 }
 

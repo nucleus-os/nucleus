@@ -1,7 +1,6 @@
 #if os(Linux)
 import ColliderCore
 import Foundation
-import NucleusAndroidRuntimeCore
 import SystemPackage
 
 package struct PublishRuntimeGenerationAction: ColliderAction {
@@ -12,8 +11,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         let packageManifestsRoot: FilePath
         let rollbackGenerationCount: UInt32
         let sessionPackage: FilePath
-        let kernelContract: FilePath
-        let trustKey: FilePath?
         let buildMetadata: String
         let targetArchitecture: PlatformArchitecture
 
@@ -24,8 +21,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             encoder.append(path: packageManifestsRoot)
             encoder.append(UInt64(rollbackGenerationCount))
             encoder.append(path: sessionPackage)
-            encoder.append(path: kernelContract)
-            encoder.append(trustKey?.string ?? "")
             encoder.append(buildMetadata)
             encoder.append(targetArchitecture.rawValue)
         }
@@ -39,8 +34,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
     let packageManifestsRoot: FilePath
     let rollbackGenerationCount: UInt32
     let sessionPackage: FilePath
-    let kernelContract: FilePath
-    let trustKey: FilePath?
     let buildMetadata: String
     let targetArchitecture: PlatformArchitecture
     package let environment: [String: String]
@@ -53,17 +46,14 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             packageManifestsRoot: packageManifestsRoot,
             rollbackGenerationCount: rollbackGenerationCount,
             sessionPackage: sessionPackage,
-            kernelContract: kernelContract,
-            trustKey: trustKey,
             buildMetadata: buildMetadata,
             targetArchitecture: targetArchitecture)
     }
 
     package var requirements: ActionRequirements {
-        var effects = [
+        let effects = [
             ActionEffect(.read, scope: .input(products)),
             ActionEffect(.read, scope: .checkout(sessionPackage)),
-            ActionEffect(.read, scope: .checkout(kernelContract)),
             ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
             ActionEffect(
                 .readWrite,
@@ -72,15 +62,10 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             ActionEffect(.readWrite, scope: .publication(packageManifestsRoot)),
             ActionEffect(.readWrite, scope: .publication(prefix)),
         ]
-        if let trustKey {
-            effects.append(ActionEffect(.read, scope: .input(trustKey)))
-        }
         return ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "bash", executable: .named("bash"), role: .operational),
-                ActionToolRequirement(
-                    "openssl", executable: .named("openssl"), role: .operational),
                 ActionToolRequirement(
                     "patchelf", executable: .named("patchelf"), role: .semantic),
                 ActionToolRequirement(
@@ -110,8 +95,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         packageManifestsRoot = configuration.packageManifestsRoot
         rollbackGenerationCount = ShellColliderRecipe.rollbackGenerationCount
         sessionPackage = configuration.sessionPackage
-        kernelContract = configuration.kernelContract
-        trustKey = configuration.trustKey
         buildMetadata = configuration.buildMetadata
         targetArchitecture = RunnerPlatform.current.architecture
         environment = configuration.environment
@@ -124,8 +107,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         packageManifestsRoot: FilePath,
         rollbackGenerationCount: UInt32,
         sessionPackage: FilePath,
-        kernelContract: FilePath,
-        trustKey: FilePath?,
         buildMetadata: String,
         targetArchitecture: PlatformArchitecture,
         environment: [String: String]
@@ -136,8 +117,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         self.packageManifestsRoot = packageManifestsRoot
         self.rollbackGenerationCount = rollbackGenerationCount
         self.sessionPackage = sessionPackage
-        self.kernelContract = kernelContract
-        self.trustKey = trustKey
         self.buildMetadata = buildMetadata
         self.targetArchitecture = targetArchitecture
         self.environment = environment
@@ -182,7 +161,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         try context.files.write(
             Array(buildMetadata.utf8),
             to: candidate.appending("share/nucleus/runtime-build.txt"))
-        try await stageTrustRoot(candidate: candidate, context: context)
         try validateStructure(candidate, files: context.files)
 
         let report = candidate.appending("share/nucleus/runtime-elf-report.json")
@@ -194,7 +172,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             targetArchitecture: targetArchitecture,
             context: context)
         try await validateRelocation(candidate: candidate, context: context)
-        try writeCompatibility(candidate: candidate, files: context.files)
 
         let digest = try context.files.digest(tree: candidate)
         let generation = generationsRoot.appending(
@@ -321,31 +298,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         try context.files.remove(unit)
     }
 
-    private func stageTrustRoot(
-        candidate: FilePath,
-        context: ActionContext
-    ) async throws {
-        guard let trustKey else { return }
-        guard
-            try context.files.metadataWithoutFollowingSymlinks(for: trustKey)?.type
-                == .regular
-        else {
-            throw RuntimePublicationFailure(
-                "Android add-on trust key must be a regular file: \(trustKey)")
-        }
-        try await requireSuccess(
-            CommandSpec(
-                executable: .named("openssl"),
-                arguments: ["pkey", "-pubin", "-in", trustKey.string, "-noout"],
-                workingDirectory: trustKey.removingLastComponent(),
-                environment: environment),
-            context: context)
-        try context.files.copy(
-            from: trustKey,
-            to: candidate.appending(
-                "share/nucleus/trust/android-addon-publisher.pem"))
-    }
-
     private func validateStructure(
         _ candidate: FilePath,
         files: ActionFileSystem
@@ -403,31 +355,6 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             try? context.files.move(from: relocated, to: candidate)
             throw error
         }
-    }
-
-    private func writeCompatibility(
-        candidate: FilePath,
-        files: ActionFileSystem
-    ) throws {
-        let relativePath = "share/nucleus/android-addon-compatibility.json"
-        let buildIdentity = try files.digest(
-            tree: candidate,
-            excluding: [relativePath])
-        let kernelIdentity = try files.digest(file: kernelContract)
-        let architecture =
-            switch targetArchitecture {
-            case .arm64: AndroidAddonArchitecture.arm64
-            case .x86_64: AndroidAddonArchitecture.x86_64
-            }
-        let compatibility = try AndroidAddonCompatibility(
-            nucleusBuildIdentity: hex(buildIdentity.bytes),
-            kernelCapabilityIdentity: hex(kernelIdentity.bytes),
-            architecture: architecture)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        var bytes = Array(try encoder.encode(compatibility))
-        bytes.append(0x0a)
-        try files.write(bytes, to: candidate.appending(relativePath))
     }
 
     private func requireSuccess(

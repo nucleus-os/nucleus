@@ -150,10 +150,11 @@ contract changes invalidate package assembly without rebuilding or copying the
 browser payload.
 
 `collider package linux-runtime` consumes the exact runtime and browser
-publications for arm64 and x86_64. Its offline Linux arm64 builder emits native
-Debian, RPM, and Arch cohorts containing separate runtime, session, browser,
-development-host, and complete-installation packages. The Android add-on joins
-that split with its installed activation boundary in the next package phase.
+publications and validated Android package inputs for arm64 and x86_64. Its offline
+Linux arm64 builder emits native Debian, RPM, and Arch cohorts containing separate
+runtime, session, browser, Android, development-host, and complete-installation
+packages. Installing or removing the Android package installs or removes its generic
+session capability declaration; Collider and Nucleus expose no parallel installer.
 Every emitted package and complete family cohort carries a
 `ProductArtifactEnvelope` bound to source provenance and the exact consumed
 publications. Repository enrollment is produced later with the explicit signing

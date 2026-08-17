@@ -2,43 +2,39 @@
 
 ## Product invariant
 
-Android 17 is an independently signed, architecture-specific downloadable add-on.
-The base Nucleus OS never contains Android executables, images, AOSP tools, policy,
-private signing material, or an Android capability declaration. It contains only the
-generic session supervisor and `android-addon-compatibility.json` for its exact build,
-kernel contract, and architecture.
+Android 17 is an architecture-specific optional native package. The base Nucleus OS
+never contains Android executables, images, AOSP tools, policy, private signing
+material, or an Android capability declaration. The generic session supervisor
+discovers the declaration only when `nucleus-android` is installed.
 
 This package owns the Android product, container contract, and host-side graphics
 path. Collider materializes the pinned AOSP source, builds and release-signs the
 standalone system images, validates their provenance and AVB chain, and produces the
-inputs for the independently signed add-on artifact.
+validated Android package input consumed by native package assembly.
 
-An installed artifact has this shape:
+The installed package owns this shape:
 
 ```text
-<android-add-on-store>/
-  generations/<manifest-content-identity>/
-    addon-manifest.json
-    addon-manifest.json.sig
+usr/lib/nucleus-android/<cohort-version>/
+    package-manifest.json
     image-provenance.json
     images/
     lib/
     libexec/
     share/nucleus/android/
-  current -> generations/<manifest-content-identity>
-  session-capabilities/android.json
+usr/share/nucleus/session-capabilities/android.json
 
 <android-state-root>/
   data/
 ```
 
-The signed manifest declares every payload file by relative path, size, SHA-256,
-executable bit, Android release/build, architecture, exact Nucleus build identity,
-and kernel capability identity. Installation verifies the publisher signature,
-compatibility, complete payload closure, and the absence of symlinks or undeclared
-files before atomically replacing `current`. The capability declaration is derived
-locally after verification and always addresses `current`; it is not publisher-owned
-input. Deactivation and uninstall retain the disjoint persistent state root.
+The manifest declares every payload file by relative path, size, SHA-256, executable
+bit, Android release/build, and architecture. Native package assembly validates the
+complete payload closure, provenance, and absence of symlinks or undeclared files.
+The package has an exact-cohort dependency on `nucleus-runtime`; the host package
+manager authenticates and transacts the package, while AVB authenticates the Android
+image chain at runtime. Removal deletes the capability declaration and package payload
+but retains the disjoint persistent state root.
 
 ## Implemented contract
 
@@ -102,7 +98,7 @@ input. Deactivation and uninstall retain the disjoint persistent state root.
   virtual mouse and keyboard during the versioned runtime handshake.
 - The current `nucleus_x86_64-cp2a-userdebug` Android 17 product emits separate immutable
   system, system-ext, product, and vendor images with release-signed APKs, APEXes, and
-  AVB metadata. The add-on format already rejects architecture mismatches and supports
+  AVB metadata. The package-input contract already rejects architecture mismatches and supports
   `arm64`; publishing an ARM64 artifact additionally requires the corresponding
   `nucleus_arm64` AOSP product rather than translating an x86_64 Android userspace.
 
@@ -120,45 +116,31 @@ Build and verify the signed Android image inputs:
 collider build android-image
 ```
 
-On the matching Linux release architecture, build the add-on host executables,
-assemble their relocated ELF closure with the current signed AOSP generation, and
-sign the downloadable directory:
+On the matching Linux release architecture, build the Android host executables and
+assemble their relocated ELF closure with the current signed AOSP generation:
 
 ```sh
-collider android-runtime package-addon \
-  --compatibility /opt/nucleus/current/share/nucleus/android-addon-compatibility.json \
+collider android-runtime package-input \
   --aosp-signing-key /secure/android-avb-release-private.pem \
-  --addon-signing-key /secure/android-addon-publisher-private.pem \
-  --output ./nucleus-android-addon
+  --output ./android-package-input
 ```
 
 The AOSP AVB private key is used only to derive the public verification key placed in
-the artifact and prove that it verifies the assembled image chain. Neither that
-private key nor the add-on publisher private key enters the output. `--runtime-root`
-and `--aosp-generation` override the release inputs for controlled build environments.
+the input and prove that it verifies the assembled image chain. The private key never
+enters the output. `--runtime-root` and `--aosp-generation` override the release inputs
+for controlled build environments.
 
-On Nucleus OS, activate a fully assembled artifact only against its matching base
-runtime. This uses the installed product manager and does not require a source checkout
-or Collider:
+Supply both architecture inputs when assembling the native cohorts:
 
 ```sh
-sudo nucleus addon install ./nucleus-android-addon \
-  --base-prefix /opt/nucleus/current \
-  --store-root /opt/nucleus/addons/android \
-  --state-root /var/lib/nucleus/android
+collider package linux-runtime \
+  --android-arm64 ./android-package-input-arm64 \
+  --android-x86-64 ./android-package-input-x86-64
 ```
 
-Production base images pin the add-on publisher trust root at
-`share/nucleus/trust/android-addon-publisher.pem`. `--trust-key` is an explicit
-development/recovery override; downloaded content never supplies its own trust key.
-The release installer receives the public key through
-`NUCLEUS_ANDROID_ADDON_TRUST_KEY`, validates it with OpenSSL, and copies it into the
-base generation before calculating that generation's add-on compatibility identity.
-
-`sudo nucleus addon deactivate` removes only the capability and active pointer.
-`sudo nucleus addon uninstall` also removes all installed immutable generations. Both
-retain `/var/lib/nucleus/android`. Collider exposes the same lifecycle under
-`collider install android-addon` only for checkout-local development stores.
+On Nucleus OS, APT, DNF, or pacman installs and removes
+`nucleus-android`. Local/offline installation uses that package manager's normal
+local-package operation. No Nucleus or Collider add-on installer exists.
 
 The shared-allocation path is integrated into the production display host. Phase 2
 source locking, product definition, signing, AVB validation, container configuration,
@@ -181,8 +163,8 @@ Run the installed desktop and Android runtime together from a free virtual termi
 collider run --android
 ```
 
-The supervisor starts Android only when `--android` selects the add-on's active Android
-session capability. A missing, inactive, or incompatible add-on fails before session
+The supervisor starts Android only when `--android` selects the installed package's
+Android session capability. A missing or invalid package capability fails before session
 launch. Android remains alive for the session lifetime and stops before the compositor
 and shell. Each instance receives a private `/dev/kmsg` transport whose
 output is retained in `android-kmsg.log`; the runtime never exposes the host kernel log.

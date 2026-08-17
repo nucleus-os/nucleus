@@ -38,8 +38,8 @@ enum NucleusAndroidRuntimeMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         let environment = ProcessInfo.processInfo.environment
         guard
-            let addonRoot = option(
-                "addon-root",
+            let packageRoot = option(
+                "package-root",
                 in: arguments),
             let persistentStateRoot = option(
                 "state-root",
@@ -95,8 +95,8 @@ enum NucleusAndroidRuntimeMain {
             ?? libexec.appendingPathComponent(
                 "nucleus-android-gfxstream-broker")
         let configuration = try AndroidRuntimeBrokerConfiguration(
-            addonRoot: URL(
-                fileURLWithPath: addonRoot,
+            packageRoot: URL(
+                fileURLWithPath: packageRoot,
                 isDirectory: true),
             persistentStateRoot: URL(
                 fileURLWithPath: persistentStateRoot,

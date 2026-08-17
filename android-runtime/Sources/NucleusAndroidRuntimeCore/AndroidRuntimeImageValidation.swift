@@ -6,11 +6,11 @@ public func validateAndroidRuntimeImages<
     layout: AndroidRuntimeLayout,
     using host: RuntimeHost
 ) async throws -> AndroidImageProvenance {
-    let addon = try JSONDecoder().decode(
-        AndroidAddonManifest.self,
-        from: Data(contentsOf: layout.addonManifest))
-    for file in addon.payload {
-        let path = layout.addonRoot.appendingPathComponent(file.path)
+    let manifest = try JSONDecoder().decode(
+        AndroidPackageManifest.self,
+        from: Data(contentsOf: layout.packageManifest))
+    for file in manifest.payload {
+        let path = layout.packageRoot.appendingPathComponent(file.path)
         let values = try path.resourceValues(
             forKeys: [
                 .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
@@ -23,7 +23,7 @@ public func validateAndroidRuntimeImages<
             values.isExecutable == file.executable
         else {
             throw AndroidRuntimeFailure(
-                "Android add-on payload metadata changed: \(file.path)")
+                "Android package payload metadata changed: \(file.path)")
         }
         let output = try await host.run(
             "sha256sum", ["--", path.path], capture: true)
@@ -32,14 +32,14 @@ public func validateAndroidRuntimeImages<
                 == Substring(file.sha256)
         else {
             throw AndroidRuntimeFailure(
-                "Android add-on payload digest changed: \(file.path)")
+                "Android package payload digest changed: \(file.path)")
         }
     }
     let provenance = try JSONDecoder().decode(
         AndroidImageProvenance.self,
         from: Data(contentsOf: layout.provenance))
-    try validateAndroidAddonImageProvenance(
-        manifest: addon,
+    try validateAndroidPackageImageProvenance(
+        manifest: manifest,
         provenance: provenance)
     for image in provenance.images {
         let path = layout.images.appendingPathComponent(image.name)
@@ -65,8 +65,8 @@ public func validateAndroidRuntimeImages<
     return provenance
 }
 
-public func validateAndroidAddonImageProvenance(
-    manifest addon: AndroidAddonManifest,
+public func validateAndroidPackageImageProvenance(
+    manifest: AndroidPackageManifest,
     provenance: AndroidImageProvenance
 ) throws {
     let expected = Set([
@@ -78,14 +78,14 @@ public func validateAndroidAddonImageProvenance(
         "vbmeta_system.img",
     ])
     let expectedProduct =
-        switch addon.architecture {
+        switch manifest.architecture {
         case .arm64: "nucleus_arm64"
         case .x86_64: "nucleus_x86_64"
         }
     guard provenance.status == "signed",
         provenance.product == expectedProduct,
-        provenance.release == addon.release,
-        provenance.buildNumber == addon.buildNumber,
+        provenance.release == manifest.release,
+        provenance.buildNumber == manifest.buildNumber,
         Set(provenance.images.map(\.name)) == expected,
         provenance.images.allSatisfy({ $0.storageFormat == "raw" })
     else {
@@ -95,14 +95,14 @@ public func validateAndroidAddonImageProvenance(
     }
     for image in provenance.images {
         guard
-            let payload = addon.payload.first(where: {
+            let payload = manifest.payload.first(where: {
                 $0.path == "images/\(image.name)"
             }),
             payload.size == image.size,
             payload.sha256 == image.sha256
         else {
             throw AndroidRuntimeFailure(
-                "\(image.name) does not match the signed add-on manifest")
+                "\(image.name) does not match the signed package manifest")
         }
     }
 }

@@ -32,6 +32,7 @@ package struct ComponentRegistry {
     package func componentCatalog(
         environment environmentOverride: [String: String]? = nil,
         hostAugmentation explicitHostAugmentation: HostCatalogAugmentation? = nil,
+        androidPackageInputs: [PlatformArchitecture: FilePath] = [:],
         forceSwiftSDKGeneration: Bool = false
     ) throws -> ComponentCatalog {
         let hostAugmentation =
@@ -106,9 +107,9 @@ package struct ComponentRegistry {
                     builder: nativeConfiguration,
                     nativeSDKRoot: context.nativeSDKRoot.removingLastComponent()),
         ]
-        if let androidAddonConfiguration = hostAugmentation.androidAddonConfiguration {
+        if let androidPackageConfiguration = hostAugmentation.androidPackageConfiguration {
             configurations[AndroidRuntimeColliderRecipe.descriptor.id] =
-                androidAddonConfiguration
+                androidPackageConfiguration
         }
         if let shellConfiguration = hostAugmentation.shellConfiguration {
             configurations[ShellColliderRecipe.descriptor.id] = shellConfiguration
@@ -191,15 +192,14 @@ package struct ComponentRegistry {
                     uniqueKeysWithValues: chromium.packageInputs.map {
                         ($0.key.architecture, $0.value)
                     }),
+                androidPackageInputs:
+                    androidPackageInputs.isEmpty ? nil : androidPackageInputs,
                 assemblerSwiftPM: runtimeAssembler,
                 packageSourceSnapshotRoot: context.hostBuildRoot.appending(
                     "product-source/linux-packages"),
                 productStoreRoot: context.artifactRoot.appending(
                     "product-store"),
                 sessionPackage: context.layout.compositorSessionPackage,
-                kernelContract: context.layout.androidRuntime.appending(
-                    "Sources/NucleusAndroidRuntimeCore/"
-                        + "AndroidRuntimeKernelRequirements.swift"),
                 environment: recipeEnvironment)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
@@ -435,8 +435,8 @@ package struct ComponentRegistry {
             routes: routes,
             publicEntrypoints: publicEntrypoints(
                 includeLinuxOperations: hostAugmentation.exposesLinuxOperations,
-                includeAndroidAddon:
-                    hostAugmentation.androidAddonConfiguration != nil))
+                includeAndroidPackage:
+                    hostAugmentation.androidPackageConfiguration != nil))
         try StorageCatalog.validate(
             catalog.storage,
             forbiddenRemovalRoots: [
@@ -451,7 +451,7 @@ package struct ComponentRegistry {
 
     private func publicEntrypoints(
         includeLinuxOperations: Bool,
-        includeAndroidAddon: Bool
+        includeAndroidPackage: Bool
     ) -> [ComponentEntrypointRequest] {
         var requests: [ComponentEntrypointRequest] = []
         func expose(
@@ -513,8 +513,8 @@ package struct ComponentRegistry {
             ComponentEntrypointID(rawValue: "aosp.image"),
             to: ["android-runtime"])
         expose(.build, to: ["swift-sdk"])
-        if includeAndroidAddon {
-            expose(AndroidRuntimeEntrypoints.packageAddon, to: ["android-runtime"])
+        if includeAndroidPackage {
+            expose(AndroidRuntimeEntrypoints.packageInput, to: ["android-runtime"])
         }
         return requests
     }
@@ -560,6 +560,17 @@ package struct ComponentRegistry {
     ) async throws {
         try await checkBrowserPrerequisites(selection: selection, controls: controls)
         let catalog = try componentCatalog()
+        if selection == ReleaseGateColliderRecipe.descriptor.canonicalName {
+            try await context.execute(
+                catalog: catalog,
+                requests: [
+                    ComponentEntrypointRequest(
+                        entrypoint: ReleaseGateEntrypoints.test,
+                        selection: selection)
+                ],
+                controls: controls)
+            return
+        }
         var requests = [
             ComponentEntrypointRequest(
                 entrypoint: .testDefault,
@@ -592,11 +603,15 @@ package struct ComponentRegistry {
             controls: controls)
     }
 
-    func packageLinuxRuntime(controls: TaskControls) async throws {
+    func packageLinuxRuntime(
+        androidPackageInputs: [PlatformArchitecture: FilePath],
+        controls: TaskControls
+    ) async throws {
         try await checkBrowserPrerequisites(
             selection: "browser",
             controls: controls)
-        let catalog = try componentCatalog()
+        let catalog = try componentCatalog(
+            androidPackageInputs: androidPackageInputs)
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -702,10 +717,6 @@ package struct ComponentRegistry {
             generationsRoot: runtimeGenerationsRoot(for: prefix),
             packageManifestsRoot: runtimePackageManifestsRoot(for: prefix),
             sessionPackage: context.layout.compositorSessionPackage,
-            kernelContract: context.layout.androidRuntime.appending(
-                "Sources/NucleusAndroidRuntimeCore/AndroidRuntimeKernelRequirements.swift"),
-            trustKey: context.environment["NUCLEUS_ANDROID_ADDON_TRUST_KEY"]
-                .flatMap { $0.isEmpty ? nil : FilePath($0) },
             buildMetadata: selection.metadata,
             environment: context.taskEnvironment)
     }

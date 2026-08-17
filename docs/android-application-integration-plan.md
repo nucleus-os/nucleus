@@ -2,8 +2,8 @@
 
 ## Invariant
 
-Android is an independently signed, architecture-specific downloadable add-on and an
-ordinary client of the Nucleus desktop stack. The base OS contains no Android payload
+Android is an architecture-specific optional native package and an ordinary
+client of the Nucleus desktop stack. The base OS contains no Android payload
 or Android capability declaration. The compositor never learns about Android packages, activities,
 tasks, Binder, container state, or Android-specific window roles. Every Android
 presentation is a normal `xdg_toplevel`. Android's logical default display is a
@@ -38,8 +38,8 @@ desktop-presentation request; it does not introduce a second renderer, a
 compatibility mode, or a compositor feature flag.
 
 Every base OS image omits the Android runtime broker, Android image, and its
-session-capability declaration. A verified add-on generation contributes all three
-without changing the compositor or shell binaries. Native application discovery and
+session-capability declaration. The installed `nucleus-android` package
+contributes all three without changing the compositor or shell binaries. Native application discovery and
 launching remain fully functional when no Android application provider connects.
 
 ## Implementation Status
@@ -76,11 +76,11 @@ Phase 1 now includes:
   and privileged-helper implementations;
 - the persistent `nucleus-android-runtime` broker and
   `nucleus-android-runtime-privileged` helper;
-- independent Android add-on staging, relocation validation, signed payload
-  verification, atomic generation activation, and generation of an external
-  `session-capabilities/android.json` declaration;
-- installed `nucleus addon` product commands for status, installation, deactivation,
-  and uninstall without a source checkout or Collider;
+- native-package Android payload assembly, relocation validation, AVB image
+  verification, exact-runtime dependency, and package-owned generation of the
+  external `session-capabilities/android.json` declaration;
+- package-manager-owned installation, upgrade, downgrade, removal, and
+  reinstallation, with persistent Android state outside package ownership;
 - the standard `collider run` path as the only desktop/session launch path;
 - explicit `collider run --android` capability selection and terminal-owned
   sudo authentication before the background Android service starts;
@@ -374,8 +374,8 @@ Add:
 - `NucleusAndroidRuntimeCore` for image validation, mount/container setup,
   process supervision, startup, shutdown, health monitoring, and diagnostics;
 - `nucleus-android-runtime` as the background broker executable;
-- an Android runtime session-capability declaration derived only after an
-  independently signed Android add-on passes compatibility and payload validation;
+- an Android runtime session-capability declaration installed only with the
+  architecture-matched native Android package after payload and AVB validation;
 - generic session-supervisor support for declared capability processes and
   their descriptor attachments.
 

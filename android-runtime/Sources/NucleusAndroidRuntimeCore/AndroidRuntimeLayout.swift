@@ -1,7 +1,7 @@
 import Foundation
 
 public struct AndroidRuntimeLayout: Sendable {
-    public let addonRoot: URL
+    public let packageRoot: URL
     public let persistentStateRoot: URL
     public let name: String
     public let runtime: URL
@@ -43,7 +43,7 @@ public struct AndroidRuntimeLayout: Sendable {
     public let containerTombstones: URL
     public let diagnosticTombstones: URL
     public let images: URL
-    public let addonManifest: URL
+    public let packageManifest: URL
     public let provenance: URL
     public let avbTool: URL
     public let verificationKey: URL
@@ -51,18 +51,27 @@ public struct AndroidRuntimeLayout: Sendable {
     public let seccompProfile: URL
 
     public init(
-        addonRoot: URL,
+        packageRoot: URL,
         persistentStateRoot: URL,
         diagnosticsRunDirectory: URL,
         gfxstreamBrokerExecutable: URL,
         displayHostExecutable: URL,
         processIdentifier: Int32 = ProcessInfo.processInfo.processIdentifier
     ) throws {
-        let store = try AndroidAddonStoreLayout(
-            root: addonRoot,
-            persistentStateRoot: persistentStateRoot)
-        self.addonRoot = store.active
-        self.persistentStateRoot = store.persistentStateRoot
+        let payload = packageRoot.standardizedFileURL
+        let state = persistentStateRoot.standardizedFileURL
+        let payloadPrefix = payload.path.hasSuffix("/") ? payload.path : payload.path + "/"
+        let statePrefix = state.path.hasSuffix("/") ? state.path : state.path + "/"
+        guard payload.path.first == "/", state.path.first == "/",
+            payload != state,
+            !payloadPrefix.hasPrefix(statePrefix),
+            !statePrefix.hasPrefix(payloadPrefix)
+        else {
+            throw AndroidRuntimeFailure(
+                "Android package payload and persistent state require disjoint absolute roots")
+        }
+        self.packageRoot = payload
+        self.persistentStateRoot = state
         name = "nucleus-android-runtime-\(processIdentifier)"
         runtime = URL(
             fileURLWithPath: "/run/nucleus/android",
@@ -150,18 +159,18 @@ public struct AndroidRuntimeLayout: Sendable {
             isDirectory: true)
         self.gfxstreamBrokerExecutable = gfxstreamBrokerExecutable
         self.displayHostExecutable = displayHostExecutable
-        images = store.active.appendingPathComponent(
+        images = payload.appendingPathComponent(
             "images",
             isDirectory: true)
-        addonManifest = store.active.appendingPathComponent("addon-manifest.json")
-        provenance = store.active.appendingPathComponent("image-provenance.json")
-        avbTool = store.active.appendingPathComponent(
+        packageManifest = payload.appendingPathComponent("package-manifest.json")
+        provenance = payload.appendingPathComponent("image-provenance.json")
+        avbTool = payload.appendingPathComponent(
             "libexec/android-tools/avbtool")
-        verificationKey = store.active.appendingPathComponent(
+        verificationKey = payload.appendingPathComponent(
             "share/nucleus/android/avb-release-key.pem")
-        appArmorProfile = store.active.appendingPathComponent(
+        appArmorProfile = payload.appendingPathComponent(
             "share/nucleus/android/lxc-nucleus-android.apparmor")
-        seccompProfile = store.active.appendingPathComponent(
+        seccompProfile = payload.appendingPathComponent(
             "share/nucleus/android/nucleus-android.seccomp")
     }
 }

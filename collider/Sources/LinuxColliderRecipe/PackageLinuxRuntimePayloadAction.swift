@@ -30,6 +30,7 @@ package struct PackageLinuxRuntimePayloadAction: ColliderAction {
         package: LinuxNativePackageName,
         runtimeArtifactRoot: FilePath,
         browser: ChromiumColliderRecipe.PackageInput,
+        androidPackageInputRoot: FilePath? = nil,
         assemblerSwiftPM: SwiftPMInvocation,
         outputRoot: FilePath,
         environment: [String: String]
@@ -63,6 +64,14 @@ package struct PackageLinuxRuntimePayloadAction: ColliderAction {
             OCIMount(boundedExport: outputRoot, target: outputRoot.string),
         ] {
             try appendMount(mount, to: &mounts)
+        }
+        if let androidPackageInputRoot {
+            try appendMount(
+                OCIMount(
+                    source: androidPackageInputRoot,
+                    target: androidPackageInputRoot.string,
+                    access: .readOnly),
+                to: &mounts)
         }
         var containerEnvironment = assemblerOCI.containerEnvironment
         containerEnvironment["PATH"] =
@@ -103,6 +112,7 @@ package struct PackageLinuxRuntimePayloadAction: ColliderAction {
                 outputRoot.string,
                 architecture.rawValue,
                 package.rawValue,
+                androidPackageInputRoot?.string ?? "-",
                 stageObservationReport.string,
             ],
             environment: environment,

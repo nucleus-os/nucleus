@@ -152,31 +152,39 @@ package struct LinuxRuntimeArtifactLane: Sendable {
 package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
     package let lanes: [PlatformArchitecture: LinuxRuntimeArtifactLane]
     package let browserPackageInputs: [PlatformArchitecture: ChromiumColliderRecipe.PackageInput]
+    package let androidPackageInputs: [PlatformArchitecture: FilePath]
     package let assemblerSwiftPM: SwiftPMInvocation
     package let packageSourceSnapshotRoot: FilePath
     package let productStoreRoot: FilePath
     package let sessionPackage: FilePath
-    package let kernelContract: FilePath
     package let environment: [String: String]
 
     package init(
         lanes: [PlatformArchitecture: LinuxRuntimeArtifactLane],
         browserPackageInputs:
             [PlatformArchitecture: ChromiumColliderRecipe.PackageInput],
+        androidPackageInputs: [PlatformArchitecture: FilePath]? = nil,
         assemblerSwiftPM: SwiftPMInvocation,
         packageSourceSnapshotRoot: FilePath,
         productStoreRoot: FilePath,
         sessionPackage: FilePath,
-        kernelContract: FilePath,
         environment: [String: String]
     ) {
         self.lanes = lanes
         self.browserPackageInputs = browserPackageInputs
+        self.androidPackageInputs =
+            androidPackageInputs
+            ?? Dictionary(
+                uniqueKeysWithValues: lanes.map { architecture, lane in
+                    (
+                        architecture,
+                        lane.packageWorkRoot.appending("android-package-input")
+                    )
+                })
         self.assemblerSwiftPM = assemblerSwiftPM
         self.packageSourceSnapshotRoot = packageSourceSnapshotRoot
         self.productStoreRoot = productStoreRoot
         self.sessionPackage = sessionPackage
-        self.kernelContract = kernelContract
         self.environment = environment
     }
 }
@@ -238,15 +246,23 @@ public enum LinuxColliderRecipe: ColliderComponent {
             else {
                 throw LinuxRuntimeArtifactFailure.missingBrowser(architecture)
             }
+            guard
+                let androidPackageInput =
+                    runtimeArtifact.androidPackageInputs[architecture]
+            else {
+                throw LinuxRuntimeArtifactFailure.missingAndroidPackageInput(
+                    architecture)
+            }
             var payloads: [PreparedNativePackagePayload] = []
             for package in LinuxNativePackageName.allCases
-            where package != .androidAddon && !package.isControlOnly {
+            where !package.isControlOnly {
                 let payload = try packagePayloadTask(
                     architecture: architecture,
                     package: package,
                     lane: lane,
                     runtime: artifact,
                     browser: browser,
+                    androidPackageInput: androidPackageInput,
                     configuration: runtimeArtifact)
                 tasks.append(payload.task)
                 payloads.append(payload)
@@ -346,9 +362,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             let packageTask = LinuxTaskIDs.packageCohort(architecture)
             let productPublicationTask =
                 LinuxTaskIDs.packageProductPublication(architecture)
-            let payloadPackages = LinuxNativePackageName.allCases.filter {
-                $0 != .androidAddon
-            }
+            let payloadPackages = LinuxNativePackageName.allCases
             let payloadProducers = Set(
                 payloadPackages.map {
                     StorageProducer.task(
@@ -690,7 +704,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
             inputs: RuntimeHostIntegration.sourceFiles.map {
                 .file(configuration.sessionPackage.appending($0))
             } + [
-                .file(configuration.kernelContract),
                 lane.runtimeSwiftPM.identityInput,
                 configuration.assemblerSwiftPM.identityInput,
             ],
@@ -707,7 +720,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     packageManifestsRoot: packageManifests,
                     rollbackGenerationCount: rollbackGenerationCount,
                     sessionPackage: configuration.sessionPackage,
-                    kernelContract: configuration.kernelContract,
                     environment: configuration.environment)))
         return PreparedRuntimeArtifact(
             task: task,
@@ -791,6 +803,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         lane: LinuxRuntimeArtifactLane,
         runtime: PreparedRuntimeArtifact,
         browser: ChromiumColliderRecipe.PackageInput,
+        androidPackageInput: FilePath,
         configuration: LinuxRuntimeArtifactConfiguration
     ) throws -> PreparedNativePackagePayload {
         let assembler = configuration.assemblerSwiftPM.product(
@@ -819,7 +832,9 @@ public enum LinuxColliderRecipe: ColliderComponent {
             validation: .symlinkTarget)
         let task = builder.build(
             swiftProducts: [assembler],
-            inputs: [configuration.assemblerSwiftPM.identityInput],
+            inputs: [configuration.assemblerSwiftPM.identityInput]
+                + (package == .androidPackage
+                    ? [.tree(androidPackageInput)] : []),
             locks: [.shared(outputRoot.appending(".publish.lock"))],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
@@ -828,6 +843,8 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     package: package,
                     runtimeArtifactRoot: lane.artifactRoot,
                     browser: browser,
+                    androidPackageInputRoot:
+                        package == .androidPackage ? androidPackageInput : nil,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: outputRoot,
                     environment: configuration.environment)))
@@ -1243,6 +1260,7 @@ private enum LinuxRuntimeArtifactFailure: Error, CustomStringConvertible {
     case requiresOCI
     case missingArchitecture(PlatformArchitecture)
     case missingBrowser(PlatformArchitecture)
+    case missingAndroidPackageInput(PlatformArchitecture)
 
     var description: String {
         switch self {
@@ -1252,6 +1270,8 @@ private enum LinuxRuntimeArtifactFailure: Error, CustomStringConvertible {
             "Linux runtime artifact assembly has no \(architecture.rawValue) lane"
         case .missingBrowser(let architecture):
             "Linux package assembly has no \(architecture.rawValue) browser input"
+        case .missingAndroidPackageInput(let architecture):
+            "Linux package assembly has no \(architecture.rawValue) Android input"
         }
     }
 }
