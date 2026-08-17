@@ -22,6 +22,7 @@
 #include <sys/syscall.h>
 #include <sys/un.h>
 #elif defined(__APPLE__)
+#include <sys/clonefile.h>
 #include <sys/stdio.h>
 #endif
 
@@ -55,6 +56,17 @@ int32_t collider_exchange(const char *left, const char *right) {
 #else
     (void)left;
     (void)right;
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+int32_t collider_clone_file(const char *source, const char *destination) {
+#if defined(__APPLE__)
+    return clonefile(source, destination, CLONE_NOOWNERCOPY);
+#else
+    (void)source;
+    (void)destination;
     errno = ENOTSUP;
     return -1;
 #endif

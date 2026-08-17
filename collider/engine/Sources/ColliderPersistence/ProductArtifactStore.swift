@@ -1,6 +1,13 @@
 import ColliderCore
+import ColliderPlatformC
 import Foundation
 import SystemPackage
+
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 public enum ProductArtifactBuilder {
     public static func createEnvelope(
@@ -100,12 +107,48 @@ public struct StoredProductArtifact: Sendable {
     }
 }
 
+public struct ProductArtifactPublication: Sendable {
+    public enum Disposition: Equatable, Sendable {
+        case reused
+        case publishedProvenance
+        case publishedArtifact
+    }
+
+    public let artifact: StoredProductArtifact
+    public let disposition: Disposition
+
+    public init(
+        artifact: StoredProductArtifact,
+        disposition: Disposition
+    ) {
+        self.artifact = artifact
+        self.disposition = disposition
+    }
+}
+
+enum ProductArtifactPublicationCheckpoint: Sendable {
+    case productCandidateValidated
+}
+
 public struct LocalProductArtifactStore: Sendable {
     public let root: FilePath
+    private let publicationCheckpoint:
+        @Sendable (ProductArtifactPublicationCheckpoint) throws -> Void
 
     public init(root: FilePath) {
         precondition(root.isAbsolute && root.isLexicallyNormal)
         self.root = root
+        publicationCheckpoint = { _ in }
+    }
+
+    init(
+        root: FilePath,
+        publicationCheckpoint:
+            @escaping @Sendable (ProductArtifactPublicationCheckpoint) throws -> Void
+    ) {
+        precondition(root.isAbsolute && root.isLexicallyNormal)
+        self.root = root
+        self.publicationCheckpoint = publicationCheckpoint
     }
 
     public func publish(
@@ -113,6 +156,52 @@ public struct LocalProductArtifactStore: Sendable {
         payloadRoot: FilePath,
         archive: FilePath
     ) throws -> StoredProductArtifact {
+        try publishIfNeeded(
+            envelope,
+            payloadRoot: payloadRoot,
+            archive: archive
+        ).artifact
+    }
+
+    public func publishIfNeeded(
+        _ envelope: ProductArtifactEnvelope,
+        payloadRoot: FilePath,
+        archive: FilePath
+    ) throws -> ProductArtifactPublication {
+        let destination = artifactDirectory(envelope.identity)
+        if FileManager.default.fileExists(atPath: destination.string) {
+            try validateStoredManifest(
+                envelope.manifest,
+                identity: envelope.identity,
+                directory: destination)
+            let existingProvenance = provenancePath(
+                envelope.provenanceIdentity,
+                in: destination)
+            if FileManager.default.fileExists(atPath: existingProvenance.string) {
+                let stored = try validatedArtifact(
+                    envelope.identity,
+                    provenance: envelope.provenanceIdentity)
+                guard stored.envelope == envelope else {
+                    throw ProductArtifactStoreFailure(
+                        "artifact identity already exists with a different envelope")
+                }
+                return ProductArtifactPublication(
+                    artifact: stored,
+                    disposition: .reused)
+            }
+            try publishProvenance(envelope.provenance, in: destination)
+            let stored = try validatedArtifact(
+                envelope.identity,
+                provenance: envelope.provenanceIdentity)
+            guard stored.envelope == envelope else {
+                throw ProductArtifactStoreFailure(
+                    "published artifact provenance does not match its envelope")
+            }
+            return ProductArtifactPublication(
+                artifact: stored,
+                disposition: .publishedProvenance)
+        }
+
         try validate(
             envelope: envelope,
             payloadRoot: payloadRoot,
@@ -123,18 +212,6 @@ public struct LocalProductArtifactStore: Sendable {
         try FileManager.default.createDirectory(
             atPath: root.appending("archives").string,
             withIntermediateDirectories: true)
-        let destination = artifactDirectory(envelope.identity)
-        if FileManager.default.fileExists(atPath: destination.string) {
-            try validateStoredManifest(
-                envelope.manifest,
-                identity: envelope.identity,
-                directory: destination)
-            try publishProvenance(envelope.provenance, in: destination)
-            return try validatedArtifact(
-                envelope.identity,
-                provenance: envelope.provenanceIdentity)
-        }
-
         let candidate = root.appending("products").appending(
             ".candidate-\(envelope.identity.rawValue.hexadecimal)-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(atPath: candidate.string) }
@@ -143,21 +220,11 @@ public struct LocalProductArtifactStore: Sendable {
             withIntermediateDirectories: false)
         let candidatePayload = candidate.appending("payload")
         let candidateArchive = candidate.appending("product.archive")
-        try FileManager.default.copyItem(
-            atPath: payloadRoot.string,
-            toPath: candidatePayload.string)
+        try cloneTree(from: payloadRoot, to: candidatePayload)
         let archiveBlob = try publishArchiveBlob(
             archive,
             digest: envelope.manifest.archiveDigest)
-        do {
-            try FileManager.default.linkItem(
-                atPath: archiveBlob.string,
-                toPath: candidateArchive.string)
-        } catch {
-            try FileManager.default.copyItem(
-                atPath: archiveBlob.string,
-                toPath: candidateArchive.string)
-        }
+        try cloneRegularFile(from: archiveBlob, to: candidateArchive)
         try DurableFile.writeJSON(
             envelope.manifest,
             to: candidate.appending("manifest.json"))
@@ -166,14 +233,17 @@ public struct LocalProductArtifactStore: Sendable {
             envelope: envelope,
             payloadRoot: candidatePayload,
             archive: candidateArchive)
+        try publicationCheckpoint(.productCandidateValidated)
         try FileManager.default.moveItem(
             atPath: candidate.string,
             toPath: destination.string)
         try DurableFile.synchronizeDirectory(root.appending("products"))
-        return StoredProductArtifact(
-            envelope: envelope,
-            payloadRoot: destination.appending("payload"),
-            archive: destination.appending("product.archive"))
+        return ProductArtifactPublication(
+            artifact: StoredProductArtifact(
+                envelope: envelope,
+                payloadRoot: destination.appending("payload"),
+                archive: destination.appending("product.archive")),
+            disposition: .publishedArtifact)
     }
 
     public func validatedArtifact(
@@ -511,9 +581,7 @@ public struct LocalProductArtifactStore: Sendable {
         let candidate = archives.appending(
             ".candidate-\(digest.hexadecimal)-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(atPath: candidate.string) }
-        try FileManager.default.copyItem(
-            atPath: archive.string,
-            toPath: candidate.string)
+        try cloneRegularFile(from: archive, to: candidate)
         guard try ArtifactHasher.digest(file: candidate) == digest else {
             throw ProductArtifactStoreFailure(
                 "archive blob digest changed while publishing: \(digest)")
@@ -531,6 +599,58 @@ public struct LocalProductArtifactStore: Sendable {
         }
         try DurableFile.synchronizeDirectory(archives)
         return destination
+    }
+
+    private func cloneTree(from source: FilePath, to destination: FilePath) throws {
+        let metadata = try source.stat(followTargetSymlink: false)
+        switch metadata.type {
+        case .directory:
+            try FileManager.default.createDirectory(
+                atPath: destination.string,
+                withIntermediateDirectories: false)
+            for name in try FileManager.default.contentsOfDirectory(
+                atPath: source.string)
+            {
+                try cloneTree(
+                    from: source.appending(name),
+                    to: destination.appending(name))
+            }
+            let attributes = try FileManager.default.attributesOfItem(
+                atPath: source.string)
+            if let permissions = attributes[.posixPermissions] {
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: permissions],
+                    ofItemAtPath: destination.string)
+            }
+        case .regular:
+            try cloneRegularFile(from: source, to: destination)
+        case .symbolicLink:
+            let target = try FileManager.default.destinationOfSymbolicLink(
+                atPath: source.string)
+            try FileManager.default.createSymbolicLink(
+                atPath: destination.string,
+                withDestinationPath: target)
+        default:
+            throw ProductArtifactStoreFailure(
+                "product payload contains an unsupported file type: \(source)")
+        }
+    }
+
+    private func cloneRegularFile(
+        from source: FilePath,
+        to destination: FilePath
+    ) throws {
+        #if os(macOS)
+        guard
+            unsafe collider_clone_file(source.string, destination.string) == 0
+        else {
+            throw Errno(rawValue: errno)
+        }
+        #else
+        try FileManager.default.copyItem(
+            atPath: source.string,
+            toPath: destination.string)
+        #endif
     }
 
     private func qualificationDirectory(

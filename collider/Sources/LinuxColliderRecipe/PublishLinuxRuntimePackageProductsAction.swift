@@ -100,13 +100,15 @@ package struct PublishLinuxRuntimePackageProductsAction: ColliderAction {
                 at: archive,
                 files: context.files)
             inputByteCount &+= UInt64(envelopeBytes.count)
-            let stored = try store.publish(
+            let stored = try store.publishIfNeeded(
                 envelope,
                 payloadRoot: payload,
                 archive: archive)
-            outputByteCount &+= try linuxNativePackageLogicalByteCount(
-                at: stored.payloadRoot.removingLastComponent(),
-                files: context.files)
+            if stored.disposition == .publishedArtifact {
+                outputByteCount &+= try linuxNativePackageLogicalByteCount(
+                    at: stored.artifact.payloadRoot.removingLastComponent(),
+                    files: context.files)
+            }
         }
         let receipt = LinuxNativePackageProductStoreReceipt(
             architecture: architecture,

@@ -1,6 +1,6 @@
 # Collider throughput optimization plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -373,48 +373,85 @@ passed in run `2026-08-17T02-45-09.982Z-32864`.
 
 ## Phase 10: Build Architecture-Neutral Packages Once
 
+Status: complete.
+
 Classify a logical package as architecture-neutral only when its canonical
 payload, lifecycle metadata, dependency relationships, and every family archive
-are byte-identical across arm64 and x86_64. Build each proven-neutral payload and
-family adapter once. Architecture cohorts consume the same content-addressed
-archives and payloads, while thin architecture-specific envelopes remain only
-where the product contract requires an architecture coordinate. Runtime,
-browser, and every other architecture-bearing package remain separate.
+are byte-identical across arm64 and x86_64. A distribution architecture value of
+`all`, `noarch`, or `any` does not establish that invariant.
 
-Gate: an audit names every eligible package and proves byte equality before the
-graph is changed. One neutral task supplies both cohorts, architecture-bound
-substitution still fails closed, lifecycle qualification passes for both
-cohorts, and changing one neutral input invalidates the shared task exactly
-once.
+The audit of qualified run `2026-08-17T02-47-26.416Z-36896` found no eligible
+package. Runtime and browser contain architecture-bearing binaries. Session
+contains `/opt/nucleus/current` with the architecture-specific runtime
+generation target and has an exact-cohort runtime dependency. Development-host
+and complete contain their architecture cohort version in the installed marker;
+complete also carries exact-cohort runtime, session, and browser dependencies.
+The arm64 and x86_64 payload generation digests therefore differ for all three
+control-only packages. Their package manifests differ, and every Debian, RPM,
+and Arch archive has a different SHA-256 digest.
+
+Gate satisfied by retaining architecture-local ownership for every package. A
+shared neutral task is deliberately absent because no payload and archive set
+passes the required byte-equality proof. This preserves exact-cohort validation
+and avoids introducing a cross-architecture prerequisite that would delay
+otherwise independent packaging work.
 
 ## Phase 11: Optimize Host Product Publication
 
-Extend the Phase 3 host publication action after package outputs have
-per-package identities. Before materializing a product, look up its exact
-product identity and fully revalidate an existing stored envelope, archive,
-payload, and provenance binding. A valid existing artifact produces the receipt
-without rewriting bytes. Publish a missing artifact through a private candidate
-using macOS clone-on-write copies for immutable archives and regular payload
-files, then atomically promote it. Never hard-link product-store content to a
-mutable package generation.
+Status: complete.
 
-Gate: repeated publication of already valid products writes no artifact bytes,
-missing products use clone-backed private candidates, clone isolation tests
-prove that later candidate mutation cannot change stored content, and
-interrupted publication leaves the prior store state valid and reachable.
+The product store now looks up the exact product and provenance identities
+before materializing any producer bytes. A hit revalidates the stored manifest,
+payload, archive, provenance, and reconstructed envelope, returns the artifact
+without writes, and records zero publication output bytes. A new provenance for
+an existing product remains an explicit provenance-only publication.
+
+Missing products clone every regular payload and archive file into private
+macOS candidates, validate the complete candidate, and atomically promote its
+directory. Archive blobs remain content-deduplicated, while each product archive
+has an independent clone-on-write inode; product-store content is never
+hard-linked to a mutable package generation or another product.
+
+Gate satisfied: full Collider run `2026-08-17T03-31-23.704Z-43760` passed. The
+reuse test mutates both producer payload and archive after the initial publish,
+then proves the exact stored envelope remains valid and the complete store
+filesystem snapshot is unchanged after republishing. Archive isolation tests
+prove equal archives have distinct inodes. An injected interruption after full
+candidate validation leaves the prior product valid and reachable, does not
+publish the interrupted product, and removes its private product candidate.
 
 ## Phase 12: Close the Throughput Qualification
 
-Run the complete Collider suite, the dual-architecture native package and
-lifecycle graph from changed inputs, an immediately unchanged package graph,
-product-store retention, and cache-prune dry-run. Compare stage observations to
-the Phase 2 instrumented baseline and task-level results to the Phase 1
-baselines. Retain only changes that reduce measured work without changing
-package identity or qualification semantics.
+Status: complete.
 
-Gate: both architectures assemble concurrently within the declared host budget,
-payload copying is single-materialization, independently cached package adapters
-reuse unaffected work, architecture-neutral packages build once, repeated
-publication writes no existing artifact bytes, the unchanged graph performs no
-source mutation, the product store retains exactly the active and rollback
-cohorts, and every correctness gate passes.
+Full Collider run `2026-08-17T03-31-23.704Z-43760` passed the CLI and engine
+suites, including exact-envelope zero-write reuse, clone isolation, and
+interrupted product publication. Changed-input package run
+`2026-08-17T03-37-40.101Z-49847` executed 35 tasks with no failure, rebuilt and
+qualified both architecture cohorts, and overlapped the architecture package
+lanes for 43.7 seconds within their declared resource limits. The one-time
+Linux assembler tool rebuild accounted for 254.7 seconds of that run; its
+package cohort actions took 19.80 seconds for arm64 and 19.51 seconds for
+x86_64.
+
+Against the Phase 2 stage baseline, cohort time fell 94.3 percent for arm64 and
+94.7 percent for x86_64. Summed RPM assembly fell 91.5 and 92.3 percent,
+canonical payload materialization fell 64.6 and 63.6 percent, and host product
+publication fell 86.5 and 86.6 percent. The changed run retained the
+architecture-local package classification established by Phase 10 and passed
+install, upgrade, removal, and exact-cohort lifecycle qualifications for both
+architectures.
+
+Immediately unchanged run `2026-08-17T03-45-24.149Z-52712` kept every package,
+adapter, cohort, product publication, and lifecycle task clean. It invoked no
+SwiftPM build and no container, executed only the five declared always-assessed
+or retention tasks in 4.62 seconds, and left the complete source status and diff
+digest unchanged. This cuts unchanged execution by 50.5 percent from the Phase
+1 baseline.
+
+Retention leaves exactly two package generations per architecture: the active
+cohort and one rollback cohort. Their manifests reference exactly the 72 stored
+products and 62 unique archive blobs present in the product store; no product or
+archive candidate remains. The cache-prune dry run performed no mutation and
+reported 191 historical storage targets plus four inactive workspaces as
+reclaimable. All throughput and correctness gates are satisfied.

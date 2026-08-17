@@ -238,7 +238,95 @@ import Testing
     }
 }
 
-@Test func productArtifactStoreDeduplicatesArchiveBlobsAcrossIdentities() throws {
+@Test func productArtifactStoreReusesValidEnvelopeWithoutWriting() throws {
+    let directory = temporaryDirectory(named: "collider-product-reuse")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fixture = try productFixture(in: directory.appendingPathComponent("producer"))
+    let envelope = try productEnvelope(
+        fixture: fixture,
+        placement: fixture.root,
+        provenance: localProvenance())
+    let storeRoot = directory.appendingPathComponent("store")
+    let store = LocalProductArtifactStore(root: FilePath(storeRoot.path))
+
+    let first = try store.publishIfNeeded(
+        envelope,
+        payloadRoot: fixture.payload,
+        archive: fixture.archive)
+    #expect(first.disposition == .publishedArtifact)
+    let firstSnapshot = try filesystemSnapshot(at: storeRoot)
+
+    try Data("mutated-producer-binary".utf8).write(
+        to: URL(fileURLWithPath: fixture.payload.appending("bin/nucleus").string))
+    try Data("mutated-producer-archive".utf8).write(
+        to: URL(fileURLWithPath: fixture.archive.string))
+    let second = try store.publishIfNeeded(
+        envelope,
+        payloadRoot: fixture.payload,
+        archive: fixture.archive)
+
+    #expect(second.disposition == .reused)
+    #expect(try filesystemSnapshot(at: storeRoot) == firstSnapshot)
+    #expect(
+        try store.validatedArtifact(
+            envelope.identity,
+            provenance: envelope.provenanceIdentity
+        ).envelope == envelope)
+}
+
+@Test func productArtifactStoreInterruptedCandidatePreservesPriorProducts() throws {
+    let directory = temporaryDirectory(named: "collider-product-interruption")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let firstFixture = try productFixture(
+        in: directory.appendingPathComponent("first"),
+        archiveContents: "first-archive")
+    let secondFixture = try productFixture(
+        in: directory.appendingPathComponent("second"),
+        archiveContents: "second-archive")
+    let provenance = try localProvenance()
+    let first = try productEnvelope(
+        fixture: firstFixture,
+        placement: firstFixture.root,
+        provenance: provenance)
+    let second = try productEnvelope(
+        fixture: secondFixture,
+        placement: secondFixture.root,
+        provenance: provenance)
+    let storeRoot = FilePath(directory.appendingPathComponent("store").path)
+    _ = try LocalProductArtifactStore(root: storeRoot).publish(
+        first,
+        payloadRoot: firstFixture.payload,
+        archive: firstFixture.archive)
+    let interruptedStore = LocalProductArtifactStore(
+        root: storeRoot,
+        publicationCheckpoint: { checkpoint in
+            guard checkpoint == .productCandidateValidated else { return }
+            throw ProductPublicationFixtureInterruption()
+        })
+
+    #expect(throws: ProductPublicationFixtureInterruption.self) {
+        _ = try interruptedStore.publish(
+            second,
+            payloadRoot: secondFixture.payload,
+            archive: secondFixture.archive)
+    }
+
+    #expect(
+        try interruptedStore.validatedArtifact(
+            first.identity,
+            provenance: first.provenanceIdentity
+        ).envelope == first)
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: storeRoot.appending("products").appending(
+                second.identity.rawValue.hexadecimal
+            ).string))
+    let productEntries = try FileManager.default.contentsOfDirectory(
+        atPath: storeRoot.appending("products").string)
+    #expect(!productEntries.contains { $0.hasPrefix(".candidate-") })
+}
+
+@Test func productArtifactStoreDeduplicatesArchiveBlobsWithoutHardLinks() throws {
     let directory = temporaryDirectory(named: "collider-product-archive-blobs")
     defer { try? FileManager.default.removeItem(at: directory) }
     let fixture = try productFixture(in: directory.appendingPathComponent("producer"))
@@ -272,7 +360,10 @@ import Testing
     let secondInode = try #require(
         FileManager.default.attributesOfItem(
             atPath: secondStored.archive.string)[.systemFileNumber] as? NSNumber)
-    #expect(firstInode == secondInode)
+    #expect(firstInode != secondInode)
+    #expect(
+        try Data(contentsOf: URL(fileURLWithPath: firstStored.archive.string))
+            == Data(contentsOf: URL(fileURLWithPath: secondStored.archive.string)))
 }
 
 @Test func productArtifactStorePrunesOnlyUnreferencedKnownObjects() throws {
@@ -438,6 +529,36 @@ private struct ProductFixture {
     let root: URL
     let payload: FilePath
     let archive: FilePath
+}
+
+private struct ProductPublicationFixtureInterruption: Error {}
+
+private struct FilesystemEntrySnapshot: Equatable {
+    let relativePath: String
+    let fileNumber: NSNumber?
+    let modificationDate: Date?
+    let size: NSNumber?
+}
+
+private func filesystemSnapshot(at root: URL) throws -> [FilesystemEntrySnapshot] {
+    let fileManager = FileManager.default
+    let entries = try #require(
+        fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [],
+            errorHandler: nil))
+    var snapshot: [FilesystemEntrySnapshot] = []
+    for case let entry as URL in entries {
+        let attributes = try fileManager.attributesOfItem(atPath: entry.path)
+        snapshot.append(
+            FilesystemEntrySnapshot(
+                relativePath: String(entry.path.dropFirst(root.path.count + 1)),
+                fileNumber: attributes[.systemFileNumber] as? NSNumber,
+                modificationDate: attributes[.modificationDate] as? Date,
+                size: attributes[.size] as? NSNumber))
+    }
+    return snapshot.sorted { $0.relativePath < $1.relativePath }
 }
 
 private func temporaryDirectory(named name: String) -> URL {

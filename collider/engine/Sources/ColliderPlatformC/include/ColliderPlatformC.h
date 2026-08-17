@@ -10,6 +10,7 @@ int32_t collider_sync_file(int32_t descriptor);
 int32_t collider_sync_directory(int32_t descriptor);
 int32_t collider_replace(const char *source, const char *destination);
 int32_t collider_exchange(const char *left, const char *right);
+int32_t collider_clone_file(const char *source, const char *destination);
 int32_t collider_symlink(const char *target, const char *link_path);
 int32_t collider_binderfs_add_device(
     const char *control_path,
