@@ -26,13 +26,14 @@ qualification, packaging, CI, signing, publication, and distribution establish
 the contracts that development deployment and independent contributor hosts
 reuse.
 
-1. Complete Phases 2 through 5 of the
+1. Complete Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
-   establish the protected main-only workflow boundary, provision the
-   `nucleus-builder` account on the M2 Ultra, move automated `main` and locally
-   initiated clean, branch, dirty, debug, and release builds onto its shared
-   persistent Collider cache, and enforce source, account, credential, network,
-   and recovery boundaries.
+   move automated `main` and locally initiated clean, branch, dirty, debug, and
+   release builds onto the `nucleus-builder` account's shared persistent
+   Collider cache, and enforce source, account, credential, network, and
+   recovery boundaries. Its protected main-only workflow boundary and trusted
+   builder identity are established, and protected-main verification runs green
+   on the M2 Ultra.
 2. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
