@@ -25,6 +25,7 @@
   "builder": {
     "user": "nucleus-builder",
     "group": "nucleus-builder",
+    "buildStateGroup": "nucleus-build-state",
     "home": "/Users/nucleus-builder",
     "developerUser": "maddy",
     "authoritativeCheckout": "/Users/maddy/Developer/nucleus",
@@ -40,6 +41,7 @@
     "runnerServiceLabel": "com.nucleus.github-actions-runner",
     "runnerRoot": "/Library/Nucleus/GitHubActionsRunner",
     "hostContractRoot": "/Library/Nucleus/Builder",
+    "hostExecutionLock": "/Library/Nucleus/Builder/host-execution.lock",
     "runnerWorkRoot": "/Users/nucleus-builder/Library/Developer/Nucleus/Collider/actions-runner-work"
   },
   "resources": {

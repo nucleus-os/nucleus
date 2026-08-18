@@ -46,6 +46,7 @@ if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
 fi
 /bin/rm -f \
   "$runner_plist" \
+  /etc/sudoers.d/nucleus-builder \
   /usr/local/bin/collider \
   /usr/local/bin/nucleus-builder-run
 

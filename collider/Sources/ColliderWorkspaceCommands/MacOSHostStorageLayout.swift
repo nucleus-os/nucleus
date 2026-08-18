@@ -1,10 +1,16 @@
 import Foundation
 import SystemPackage
 
-/// The conventional per-user macOS storage owned by Collider.
+/// The macOS storage Collider owns.
 ///
 /// This layout contains no checkout identity, custom-volume policy, or legacy
 /// path fallback. Every macOS Collider consumer resolves through these roots.
+///
+/// The data roots come from the machine-wide build store where a privileged
+/// provisioning step has installed one, because two accounts execute on that
+/// host and the state they share belongs to neither home. Launch agents stay
+/// per-user regardless: a launchd agent is a property of a login session, not
+/// of the data it manages.
 package struct MacOSHostStorageLayout: Equatable, Sendable {
     package let applicationSupportRoot: FilePath
     package let developerRoot: FilePath
@@ -35,6 +41,16 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
         launchAgentsDirectory = libraryDirectory.appending("LaunchAgents")
     }
 
+    /// The installed machine-wide build store, with launch agents still
+    /// resolved in the invoking account's own Library.
+    package init(buildStore: FilePath, libraryDirectory: FilePath) {
+        applicationSupportRoot = buildStore.appending("configuration")
+        developerRoot = buildStore.appending("state")
+        cacheRoot = buildStore.appending("cache")
+        logsRoot = buildStore.appending("logs")
+        launchAgentsDirectory = libraryDirectory.appending("LaunchAgents")
+    }
+
     package static func current(
         fileManager: FileManager = .default
     ) throws -> MacOSHostStorageLayout {
@@ -60,6 +76,11 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
                 appropriateFor: nil,
                 create: false
             ).path)
+        if MacOSMachineStorageLayout.buildStoreIsInstalled() {
+            return MacOSHostStorageLayout(
+                buildStore: MacOSMachineStorageLayout.buildStore,
+                libraryDirectory: libraryDirectory)
+        }
         return MacOSHostStorageLayout(
             homeDirectory: homeDirectory,
             applicationSupportDirectory: applicationSupportDirectory,
@@ -95,9 +116,10 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
         developerRoot.appending("artifacts")
     }
 
-    /// Durable, account-local identity material such as local-development
-    /// signing keys. Each account owns its own; none of it is shared, so no
-    /// account ever reads another's private keys.
+    /// Durable identity material such as local-development signing keys. The
+    /// identity that executes is the identity that signs, so on a host with a
+    /// build store this subtree is readable only by the builder and never by
+    /// the group that reads the rest of the store.
     package var identity: FilePath {
         developerRoot.appending("identity")
     }

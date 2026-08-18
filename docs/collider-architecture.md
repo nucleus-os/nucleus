@@ -208,12 +208,30 @@ resource limits and guest job counts remain action inputs, while independent
 architecture lanes may overlap when their claims do not conflict.
 
 Every command that can execute work or mutate repository-owned state first
-acquires one host-wide kernel lease below the shared Nucleus cache root. The
-lease spans checkouts, local terminals, SSH sessions, and future trusted runner
-invocations, and remains held through runtime shutdown and run finalization.
-Dry-runs and inspection commands never acquire it. Contention is represented by
-the existing run wait events and lock-owner record; `collider status`, run, and
-log inspection remain available while another invocation owns admission.
+acquires one kernel lease and holds it through runtime shutdown and run
+finalization. The lease spans checkouts, local terminals, SSH sessions, and
+runner invocations. Dry-runs and inspection commands never acquire it, so
+`collider status`, run, and log inspection remain available while another
+invocation owns admission.
+
+A provisioned host locks one machine-wide lease that privileged provisioning
+installs: a root-owned file inside a directory writable only by root. Every
+account may open, lock, and describe that file, and no account may replace,
+unlink, or shadow it, so separate accounts serialize on one inode without either
+one reading the other's storage. Presence of the installed file selects it, and
+drifted ownership or mode fails the acquisition instead of falling back, because
+a fallback would silently split one host's serialization into two independent
+halves. A host with no installed lease runs Collider from a single account and
+locks that account's state root.
+
+Each lock records its holder inside the locked file rather than beside it, which
+is what lets a lock live in a directory nobody may write. The record names the
+process, account, run, task, and start time, and a clean release clears it, so a
+record found without a holder is evidence of a dead process. It explains an
+observed wait; the kernel lock alone decides whether work proceeds. A contended
+acquisition records the holder as part of the waited-on resource, so the
+progress line a blocked invocation renders names what it is waiting behind
+instead of presenting as a stalled command.
 
 `ColliderRuntime` owns action execution, process groups, output streaming,
 credential scrubbing, cancellation, teardown, observations, and run records.

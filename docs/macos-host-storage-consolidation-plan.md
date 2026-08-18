@@ -31,6 +31,18 @@ Collider resolves these locations through one typed host-storage layout. Static
 contracts do not contain absolute home-directory paths. No compatibility path
 continues to read or write `/Volumes/Nucleus*` after the cutover.
 
+Phase 4 of the
+[GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
+supersedes the per-user placement of retained build state. Two accounts execute
+on this host, so the container application root, volumes, caches, intermediates,
+artifacts, and run records move to one machine-owned store outside every home.
+The invariants above that concern filesystem policy rather than placement are
+unaffected, and measurement since confirms them: no custom APFS volume is
+created or required, and case-sensitive workloads stay inside sparse container
+volumes on the default Data volume because a block device outperforms a shared
+host filesystem by an order of magnitude on the metadata operations that
+dominate build work. The authoritative checkout remains `~/Developer/nucleus`.
+
 ## Phase 1: Introduce the standard host-storage layout
 
 Status: complete. `MacOSHostStorageLayout` resolves the standard per-user roots

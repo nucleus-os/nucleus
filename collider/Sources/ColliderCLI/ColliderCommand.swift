@@ -144,9 +144,11 @@ public struct ColliderCommand: AsyncParsableCommand {
         defer { withExtendedLifetime(executionAdmission) {} }
         do {
             if workspaceCommand.requiresExecutionAdmission {
+                try requireBuildStoreWriteAccess()
                 executionAdmission = try await acquireColliderFileLock(
                     path: hostExecutionAdmissionLockPath(
-                        hostBuildRoot: application.workspace.hostBuildRoot),
+                        hostBuildRoot: application.workspace.hostBuildRoot,
+                        provisionedMachineLease: provisionedHostExecutionLease),
                     purpose: "Collider host execution admission",
                     resource: "host execution admission",
                     run: run,
@@ -253,8 +255,59 @@ private func commandPhaseName(_ arguments: [String]) -> String {
     return commandPath.isEmpty ? "collider" : commandPath.joined(separator: " ")
 }
 
-func hostExecutionAdmissionLockPath(hostBuildRoot: FilePath) -> FilePath {
-    hostBuildRoot.appending("state/locks/host-execution.lock")
+/// Refuses an invocation that would execute into a build store it cannot write.
+///
+/// A provisioned host has one store and one identity permitted to write it.
+/// Without this check the invocation acquires admission, plans, and then fails
+/// partway through on a permission error from somewhere deep in the graph. The
+/// account is told instead, before any work, what does have write access.
+/// Inspection never reaches here, so run and log reading stay available to the
+/// group that can read the store.
+func requireBuildStoreWriteAccess() throws {
+    #if os(macOS)
+    let store = MacOSMachineStorageLayout.buildStore
+    guard MacOSMachineStorageLayout.buildStoreIsInstalled(),
+        !FileManager.default.isWritableFile(atPath: store.string)
+    else { return }
+    throw WorkspaceFailure.message(
+        "this account cannot write the machine build store at \(store); "
+            + "run builds through \(MacOSMachineStorageLayout.builderLauncher)")
+    #endif
+}
+
+/// The machine-wide execution lease, where a privileged provisioning step has
+/// installed one. Only macOS builder hosts have one; on any other host a single
+/// account runs Collider at all.
+var provisionedHostExecutionLease: FilePath? {
+    #if os(macOS)
+    MacOSMachineStorageLayout.hostExecutionAdmission
+    #else
+    nil
+    #endif
+}
+
+/// The lock that admits one Collider task graph to this host.
+///
+/// A provisioned builder host owns one root-created lock file at a neutral
+/// machine path. Both the trusted builder identity and the interactive developer
+/// can hold it and read its holder record, and neither can replace it, so host
+/// execution serializes across accounts without either reading the other's
+/// storage. A host without that file runs Collider from one account, whose
+/// per-user state root carries the same lock.
+///
+/// Presence, not writability, selects the machine lease. A lease whose ownership
+/// or mode has drifted must fail the acquisition loudly; falling back would
+/// silently split one host's serialization into two independent halves.
+func hostExecutionAdmissionLockPath(
+    hostBuildRoot: FilePath,
+    provisionedMachineLease: FilePath?
+) -> FilePath {
+    if let provisionedMachineLease,
+        FileManager.default.fileExists(atPath: provisionedMachineLease.string)
+    {
+        return provisionedMachineLease
+    }
+    return hostBuildRoot.appending("state/locks/host-execution.lock")
 }
 
 private func reportTerminalSummary(

@@ -196,7 +196,7 @@ Arguments and options:
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<target>` — Provisioning target: macos-builder.; values: `macos-builder`
-- `<operation>` — Provisioning operation.; values: `prepare`, `handoff`, `retire`
+- `<operation>` — Provisioning operation.; values: `prepare`, `commission`, `retire`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
@@ -303,6 +303,7 @@ Subcommands:
 
 - `status`: Report ownership, retention, allocation, and reclaimability for declared storage.
 - `prune`: Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images.
+- `reclaim`: Return blocks freed inside persistent workspaces to the host filesystem.
 
 ## `collider cache status`
 
@@ -329,6 +330,22 @@ Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [
 Arguments and options:
 
 - `--dry-run` — Print removals without applying them.
+- `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
+- `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider cache reclaim`
+
+Return blocks freed inside persistent workspaces to the host filesystem.
+
+Usage: `collider cache reclaim [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
+
+Arguments and options:
+
+- `--dry-run` — Report the workspaces that would be trimmed without trimming them.
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`

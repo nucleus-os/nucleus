@@ -20,6 +20,7 @@ readonly builder_user="$(contract_value builder.user)"
 readonly builder_group="$(contract_value builder.group)"
 readonly builder_home="$(contract_value builder.home)"
 readonly checkout="$(contract_value builder.authoritativeCheckout)"
+readonly developer_user="$(contract_value builder.developerUser)"
 readonly runner_group="$(contract_value builder.runnerGroup)"
 readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_version="$(contract_value builder.runnerVersion)"
@@ -29,6 +30,9 @@ readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly runner_work="$(contract_value builder.runnerWorkRoot)"
 readonly runner_logs="$builder_home/Library/Logs/Nucleus/GitHubActionsRunner"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
+readonly build_state_group="$(contract_value builder.buildStateGroup)"
+readonly build_store=/Library/Nucleus/Collider
 readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_agent_directory="$builder_home/Library/LaunchAgents"
@@ -103,13 +107,73 @@ done
 printf '%s\n' "$checkout" >"$host_contract_root/authoritative-checkout"
 /usr/sbin/chown root:wheel "$host_contract_root/authoritative-checkout"
 /bin/chmod 0644 "$host_contract_root/authoritative-checkout"
+# The machine-wide Collider execution lease. Every account may open and lock
+# this file; none may replace it, because the directory holding it is writable
+# only by root. That is what lets the builder and the interactive developer
+# serialize host execution against one inode without either reading the other's
+# storage. Create it in place rather than installing over it: replacing the
+# inode would silently release a lock a running build still believes it holds.
+[[ "$host_execution_lock" == "$host_contract_root"/* ]] \
+  || { echo "error: execution lease is outside the host contract root" >&2; exit 78; }
+/usr/bin/touch "$host_execution_lock"
+[[ -f "$host_execution_lock" && ! -L "$host_execution_lock" ]] \
+  || { echo "error: execution lease is not a regular file" >&2; exit 73; }
+/usr/sbin/chown root:wheel "$host_execution_lock"
+/bin/chmod -N "$host_execution_lock"
+/bin/chmod 0666 "$host_execution_lock"
+# The group that reads the machine-wide build store. Two accounts execute on
+# this host and the state they share belongs to neither home, so the builder
+# owns and writes that store while this group reads it, which is what lets the
+# interactive developer inspect run records and finished artifacts without
+# privilege and without the builder's home becoming readable.
+if ! /usr/bin/dscl . -read "/Groups/$build_state_group" >/dev/null 2>&1; then
+  build_state_gid=400
+  while /usr/bin/dscl . -list /Groups PrimaryGroupID \
+      | /usr/bin/awk '{print $2}' | /usr/bin/grep -qx "$build_state_gid"; do
+    build_state_gid=$((build_state_gid + 1))
+    [[ "$build_state_gid" -lt 500 ]] \
+      || { echo "error: no free service GID for $build_state_group" >&2; exit 78; }
+  done
+  /usr/bin/dscl . -create "/Groups/$build_state_group"
+  /usr/bin/dscl . -create "/Groups/$build_state_group" PrimaryGroupID "$build_state_gid"
+  /usr/bin/dscl . -create "/Groups/$build_state_group" RealName \
+    "Nucleus Collider build state readers"
+fi
+# The developer reads the store; the builder writes it as its owner. Neither
+# membership grants the other's, so the reading group never reaches the runner
+# registration credentials the builder's own group gates.
+/usr/sbin/dseditgroup -o edit -a "$developer_user" -t user "$build_state_group" 2>/dev/null || true
+# The store itself is created by the migration that fills it, never here. Its
+# existence is what switches every Collider consumer from per-user storage to
+# the store, so a store that exists while still empty would strand the retained
+# volumes behind an owner that no longer addresses them.
+
 for executable in nucleus-builder-run collider-workspace-shim; do
   target=/usr/local/bin/${executable/collider-workspace-shim/collider}
   /usr/bin/install -o root -g wheel -m 0755 "$script_directory/$executable" "$target"
 done
 
+# One scoped, password-free path from the developer to the build launcher.
+# Without it every local build prompts, and a build that prompts is a build that
+# gets run some other way. The grant is one exact root-owned program that takes
+# only a canonical checkout, a typed operation, and a declared configuration,
+# and grants no shell; the identity it runs code as has no sudo, no keys, and no
+# read access to the interactive home, so it lowers privilege rather than
+# raising it. Validated before installation, because an unparsable file in
+# sudoers.d disables sudo for every user on the host.
+readonly sudoers_file=/etc/sudoers.d/nucleus-builder
+temporary_sudoers="$(/usr/bin/mktemp /tmp/nucleus-sudoers.XXXXXX)"
+trap '/bin/rm -f "$temporary_sudoers" "${temporary_plist:-}"' EXIT
+/bin/cat >"$temporary_sudoers" <<SUDOERS
+# Installed by tools/macos-builder/finalize-nucleus-builder.sh. Do not edit.
+$developer_user ALL=($builder_user) NOPASSWD: /usr/local/bin/nucleus-builder-run
+SUDOERS
+/usr/sbin/visudo -c -f "$temporary_sudoers" >/dev/null \
+  || { echo "error: generated sudoers entry is invalid" >&2; exit 78; }
+/usr/bin/install -o root -g wheel -m 0440 "$temporary_sudoers" "$sudoers_file"
+
+# The EXIT trap installed above already removes this file.
 temporary_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-plist.XXXXXX)"
-trap '/bin/rm -f "$temporary_plist"' EXIT
 /bin/cat >"$temporary_plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

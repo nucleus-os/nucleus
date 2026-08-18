@@ -138,6 +138,17 @@ public actor ColliderRuntime {
             configuration: ociConfiguration)
     }
 
+    public func reclaimOCIPersistentWorkspace(
+        _ workspace: PersistentWorkspaceDeclaration,
+        imageReference: String
+    ) async throws {
+        try await ociBackend.reclaimPersistentWorkspace(
+            workspace,
+            imageReference: imageReference,
+            configuration: ociConfiguration,
+            cancellation: cancellation)
+    }
+
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
         try await execute(command, stage: nil, operationName: nil, onStarted: nil)
     }

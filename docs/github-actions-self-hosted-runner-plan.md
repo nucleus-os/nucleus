@@ -69,8 +69,8 @@ Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
 durable runs, content-derived task identity, persistent build workspaces,
 cancellation, logs, and cleanup. Its execution lease serializes task-graph
-execution within one configured storage root while retaining internal task and
-architecture concurrency.
+execution across every account on this host, through one root-installed inode no
+account can replace, while retaining internal task and architecture concurrency.
 
 Collider now also owns the portable product-artifact contract, a tested local
 content-addressed product-store primitive, distinct provenance identities, and
@@ -101,24 +101,25 @@ Apple Container import and unpack costs. Collider also verifies that every
 recorded clean image producer still has its exact local runtime digest before a
 job may reuse it.
 
-Collider's complete incremental state is deliberately per-user. The largest
-state includes Apple-container persistent volumes beneath the current user's
-Developer root, not only loose files beneath a cache directory. Pointing two
-macOS accounts at a shared directory would therefore not give them the same
-warm build. One trusted builder identity must own both automated and locally
-initiated execution.
+Collider's retained state is currently per-user, and its largest component is
+the set of Apple-container persistent volumes beneath the current user's
+Developer root. That placement is incidental rather than required: the container
+service accepts an explicit application root, so one machine-owned store serves
+every account. One trusted builder identity executes all build code, and Phase 4
+separates that identity from the location of the state it produces.
 
 Persistent workspace names are currently scoped by a digest of the absolute
-checkout root. A builder-owned CI checkout and the authoritative development
-checkout therefore select different Apple-container volumes even when the
-builder identity and source contents match. Phase 4 replaces that remaining
-workspace-owner identity before local pre-commit builds can warm the exact
-persistent state later used by CI.
+checkout root, and each volume also records that digest in its label and an
+absolute source path in its metadata. A builder-owned CI checkout and the
+authoritative development checkout therefore select different volumes even when
+the builder identity and source contents match. Phase 4 removes that
+workspace-owner identity rather than replacing it.
 
-The existing retained M2 Ultra state belongs to the interactive account. The
-`nucleus-builder` account, its clean checkout, its persistent Apple-container
-per-user service, the one-time retained-state cutover, and the complete `main`
-workflow do not yet exist.
+The existing retained M2 Ultra state belongs to the interactive account and is
+roughly nine-tenths live data, so it is migrated rather than rebuilt. The
+machine-owned build store, allocation reporting, workspace reclamation, the
+interactive account's password-free path to the root launcher, and the complete
+`main` workflow do not yet exist.
 
 ## Threat Model and Host Roles
 
@@ -133,11 +134,14 @@ reconstructible project state, not proof that executed code is harmless.
 The M2 Ultra roles are:
 
 - `maddy` owns personal data, credentials, the authoritative checkout, and
-  interactive development, and can authorize builds and delivery operations;
+  interactive development, and can authorize builds and delivery operations
+  through one sudoers entry admitting only the root build launcher, which grants
+  no shell and no other privileged path;
 - `nucleus-builder` owns the clean `main` checkout, GitHub Actions runner,
-  Apple-container service, shared Collider cache, persistent workspaces, staged
-  build artifacts, and run records, and receives read-only access to the Nucleus
-  development checkout for an explicitly initiated local build;
+  Apple-container service, and every write to the machine-owned build store
+  holding the shared cache, persistent workspaces, staged build artifacts, and
+  run records, and receives read-only access to the Nucleus development checkout
+  for an explicitly initiated local build;
 - native Linux and physical GPU/DRM qualifiers receive only immutable artifact
   bundles and emit digest-bound qualification records; and
 - signing, GitHub Release publication, R2 publication, contributor-input
@@ -380,11 +384,13 @@ it provides, and its testing macro plugin remain exact.
 
 Provisioning that needs no privilege belongs to Collider. `collider provision
 macos-builder prepare` acquires and verifies the pinned runner archive.
-`handoff` reconciles the workflow-restricted runner group, obtains a short-lived
-registration token, invokes one root provisioning boundary, and verifies the
-resulting registration, after verifying the canonical checkout, executing user,
-complete archive, provisioning executables, and local account and service state.
-`retire` returns a provisioned host to the pre-artifact state handoff resumes
+`commission` reconciles the workflow-restricted runner group, obtains a
+short-lived registration token, invokes one root provisioning boundary, and
+verifies the resulting registration, after verifying the canonical checkout,
+executing user, complete archive, provisioning executables, and local account
+and service state. It is named for the state it establishes rather than for the
+privilege transfer inside it, and it converges rather than transferring once.
+`retire` returns a provisioned host to the pre-artifact state commission resumes
 from, deriving the installed machine root from the installed service rather
 than from the contract so a host provisioned under an earlier root is retired
 completely; recursive removal requires both a system Library location and a
@@ -398,12 +404,15 @@ response reaches the logging runtime: the registration token is read straight
 into memory and travels to the privileged boundary on standard input only,
 never through argv, the environment, or the durable run log.
 
-The handoff is resumable across GitHub API failures. Fresh, pre-artifact,
+Commission is resumable across GitHub API failures. Fresh, pre-artifact,
 unregistered, and registered local states each combine with exactly one
-runner-group state and select provisioning, finalization, or re-verification
-without requesting another token or replacing host state. Every other partial
-pair, unexpected runner, multiple runners, or mismatch between local and GitHub
-state stops for explicit recovery. The probe deciding whether provisioning may
+runner-group state and select provisioning or finalization without requesting
+another token or replacing host state. A completed host finalizes again rather
+than only verifying, because finalization converges on the host contract and
+ends in verification, so machine state the contract later declares is installed
+by re-running the commission. Every other partial pair, unexpected runner,
+multiple runners, or mismatch between local and GitHub state stops for explicit
+recovery. The probe deciding whether provisioning may
 resume tests the builder home's owner and mode but not its group, because
 provisioning is what assigns the group.
 
@@ -423,8 +432,8 @@ Secure Token, sudo, remote-login, GUI, TCC, Keychain, signing, publication, and
 personal-home access; that it can read but not mutate the development checkout,
 cannot list either traverse gate, and cannot reach unrelated interactive state;
 and that the runner installation is root-owned with a builder-owned work root
-outside it. Handoff provisioned, finalized, registered, and verified the runner,
-and protected-main verification then ran green on it end to end.
+outside it. Commission provisioned, finalized, registered, and verified the
+runner, and protected-main verification then ran green on it end to end.
 
 The gate items requiring an executed build move to Phase 4: effective-user and
 Apple-container parity between automated and local invocations, a dirty-tree
@@ -435,42 +444,122 @@ from-scratch materialization of the entire native dependency graph rather than
 the contracts they state.
 
 
-## Phase 4: Unify Persistent Cache and Host Admission
+## Phase 4: Establish One Machine-Owned Build Store
 
 Status: active
 
-Make the conventional per-user Collider storage owned by `nucleus-builder` the
-single trusted build store for automated and locally initiated execution:
+Execution identity and state location are independent concerns.
+`nucleus-builder` is the only identity that executes build code, because build
+code is native code and must not run where it can read personal data. Where the
+state that execution produces lives is a separate question, and answering it
+with an account home is what bakes a home-derived identity into every persistent
+workspace name, splits the Apple-container service across two accounts, and
+leaves the developer unable to read the records of builds initiated from the
+authoritative checkout. Collider's retained build state is therefore
+machine-owned, and no part of it lives in any account home.
 
-- `~/Library/Application Support/Nucleus/Collider` owns service metadata;
-- `~/Library/Developer/Nucleus/Collider` owns Apple-container state, persistent
-  volumes, incremental build workspaces, staged artifacts, and host build state;
-- `~/Library/Caches/Nucleus/Collider` owns downloads, SDKs, package inputs,
-  repository inputs, and reproducible host caches; and
-- `~/Library/Logs/Nucleus/Collider` owns service logs and build run records.
+`/Library/Nucleus/Collider` holds that state: the Apple-container application
+root and its persistent volumes, downloads, SDKs, package and repository inputs,
+compiler caches, build intermediates, task state, staged artifacts, the product
+store, and run records. It is owned `nucleus-builder:nucleus-build-state`, mode
+2750 with the setgid bit, so the builder writes it and the group reads it.
+Local-development signing material is a builder-only subtree at mode 0700 inside
+that store: the identity that executes is the identity that signs, and no other
+account can read its private keys.
 
-Move the retained cache, SDK, image, and persistent-workspace state needed by
-the selected graph from the interactive account into the builder account in one
-offline, same-filesystem cutover. Verify sparse allocation, volume metadata,
-task identity, ownership, and warm reuse before retiring the old copy. Do not
-duplicate the complete retained working set or leave two writable cache
-authorities.
+The migration that fills the store is what creates it. The store's existence is
+what switches every Collider consumer away from per-user storage, so a store
+that existed while still empty would leave the retained volumes behind an owner
+that no longer addresses them, and a container service pointed at an application
+root that does not yet exist. Commissioning provisions the reading group and the
+developer's password-free path to the launcher; the migration provisions the
+store itself, in one pass, and a host that has not migrated runs from per-user
+storage exactly as a single-account host does.
+
+Two groups keep those facts separate. `nucleus-builder` remains the builder's
+primary group and gates the runner registration credentials.
+`nucleus-build-state` grants the interactive developer read access to run
+records, logs, and finished artifacts without privilege, and nothing else. The
+developer never writes the store, because the developer never executes build
+code.
+
+One Apple-container application root serves the host. `container system start`
+takes an explicit application root, so the builder's service owns the store's
+container root and the interactive account runs no container service at all.
+
+The storage substrate does not change. Case-sensitive Linux workloads stay
+inside sparse ext4 images on the default Data volume, reached as block devices.
+Measured against a host directory shared into the guest, a block volume creates
+ten thousand small files twelve times faster, sweeps their metadata ten to
+twenty-five times faster, and deletes them twenty-four times faster, while bulk
+sequential throughput is identical. Build work is metadata work, so a shared
+host filesystem is not viable at the scale this repository builds, and no host
+path is substituted for a persistent workspace.
+
+Persistent workspaces remain one volume per component, target, and role. Two
+containers cannot mount one ext4 block device read-write without corrupting it,
+so a coarser volume would force independent component lanes to serialize on a
+shared lock and would trade the machine's parallelism for nothing.
+
+Volume capacity is not the control surface. An unclaimed ceiling on a sparse
+image costs nothing, so the sum of declared capacities is not a budget and is
+not managed as one. The control surface is the store's actual allocation against
+the physical disk, which Collider does not currently report: most declared roots
+answer that their allocation is not measured. Every storage root reports its
+real allocation, a volume through one stat of its image and a host root through
+its own accounting, so growth is observable long before it is a surprise.
+
+Freed guest blocks return to the host. The runtime mounts an ext4 volume with no
+discard option, so a workspace retains every block it has ever written even
+after the files are gone. The block device supports discard and trimming a
+volume returns its free space exactly, so reclamation is a declared operation
+over persistent workspaces. It runs in a minimal maintenance container that
+mounts one volume, trims it, and exits, carrying the single capability the
+operation requires and no build input, build code, or network. No build
+container carries that capability.
+
+Retained state is migrated rather than rebuilt. The volume set is roughly
+nine-tenths live data, and reconstructing it means rebuilding the complete
+native dependency graph, so the store receives the existing volumes. Reclamation
+runs first so the migration moves less; each volume is then renamed and its
+recorded name, label, and source path rewritten; and every volume is enumerated
+and matched against its declaration before the previous location is released.
+
+Persistent workspaces are owned by the build store rather than by a checkout.
+The owner a volume name and label carry is derived from the store, so the clean
+CI checkout and the authoritative development checkout resolve to one value and
+select the same volume; without a store a checkout owns its own workspaces,
+because nothing is shared. The owner stays a digest rather than being dropped:
+volume names carry it, and two Collider domains sharing one container
+application root — production and an integration test among them — would
+otherwise collide on name alone while their labels disagreed. Dropping it would
+also have been the larger change, because every existing volume must be renamed
+either way.
+
+Architecture residency is declared rather than incidental. Nearly every source
+tree, output tree, and compiler cache exists once per supported architecture,
+which is the largest single multiplier on the store's size. Each target's
+retention states whether its state stays continuously resident or is
+materialized on demand, so residency is a recorded decision rather than a
+consequence of whatever was built last.
+
+The interactive developer initiates a local build through the existing root
+launcher without a password: one sudoers entry admits exactly
+`/usr/local/bin/nucleus-builder-run` for that account. The launcher accepts only
+the canonical authoritative checkout, a typed operation, and a declared
+configuration, and grants no shell. The identity it runs code as has no sudo, no
+keys, and no read access to the interactive home, so the entry lowers privilege
+rather than raising it. A direct `collider build` in the interactive account
+refuses and names the launcher, because one store admits one writer.
 
 Every supported run reuses this state. Exact source, submodule, toolchain,
-configuration, platform, and semantic input identities decide whether an
-action is current. The checkout path, invocation source, GitHub run identifier,
-and choice between automated and manual initiation do not create different
-cache identities. A changed semantic input invalidates only its affected action
+configuration, platform, and semantic input identities decide whether an action
+is current. The checkout path, invocation source, GitHub run identifier, and
+choice between automated and manual initiation do not create different cache
+identities. A changed semantic input invalidates only its affected action
 closure.
 
-Replace the absolute-checkout digest used as the Apple-container persistent
-workspace owner with one provisioned machine-local Nucleus builder-domain
-identity. Only the clean CI checkout and canonical authoritative development
-checkout may select it, and both execute as `nucleus-builder`. The machine-wide
-lease prevents their source views from using the same mutable workspace
-concurrently.
-
-Store debug and release state in the same builder storage domain with explicit
+Store debug and release state in the same machine store with explicit
 configuration identity. Configuration-independent acquisitions, toolchains,
 SDKs, source volumes, OCI images, and safe compiler-cache entries are shared.
 Debug and release objects, SwiftPM products, CMake or GN output directories,
@@ -485,42 +574,54 @@ caches across runner jobs and manual invocations. Clean only the checkout work
 directory, job temporary state, expired run history, and storage selected by
 Collider's declared retention policies. Do not pass `--rebuild`, erase
 persistent workspaces, recreate the Apple-container application root, or wipe
-the account home as routine pipeline setup or teardown.
+the store as routine pipeline setup or teardown.
 
-Place one machine-wide Collider execution lease in an explicitly provisioned
-location that both the interactive account and `nucleus-builder` can lock
-without reading one another's data. Automated builds, manual shared-cache
-builds, ordinary developer builds, cache maintenance, and Apple-container
-mutation all acquire it. One task graph uses the M2 Ultra at a time while the
-admitted graph retains its internal component and architecture concurrency.
+The machine-wide execution lease is in place ahead of the store. Provisioning
+installs one root-owned lock file inside a root-owned directory, so the
+interactive account and `nucleus-builder` lock the same inode, neither can
+replace it, and neither reads the other's storage to find it. Automated builds,
+manual shared-cache builds, ordinary developer builds, cache maintenance, and
+Apple-container mutation acquire it; dry-runs and inspection do not. One task
+graph uses the M2 Ultra at a time while the admitted graph retains its internal
+component and architecture concurrency. A blocked invocation renders the account
+and run holding the lease, so a build waiting behind the other account is
+distinguishable from a stalled command.
 
 This phase carries the Phase 3 gate items that require an executed build,
-because the builder account holds no materialized dependency graph until the
-cutover completes and exercising them earlier would measure a from-scratch
-build rather than the contracts they state.
+because no build has yet executed against the machine store.
 
-Verify the builder can read and write each relocated root before moving
-anything into it. The cutover is a one-way move into an account the interactive
-user cannot read, so a permission fault discovered afterwards is diagnosed
-without access to the state it concerns.
+Verify the store's ownership, mode, and group access from both accounts before
+any state enters it, and verify the builder reads every migrated volume and
+artifact root before the interactive copies are released. The store is
+unreadable to the interactive account, so a permission fault found afterwards is
+diagnosed without access to the state it concerns.
 
-Gate: an automated build followed by a local build of identical effective
-source and configuration, and the reverse ordering, reuse the same action
-outputs, SDKs, images, compiler caches, and persistent workspaces; automated and
-local invocations report `nucleus-builder` as their effective user and the same
-Apple-container application root; a dirty-tree build observes every declared
-working-copy change and source mutation during execution supersedes the run; a
-dirty build followed by committing the identical tree does not compile identical
-source again; debug and release coexist without collisions or mutual cleaning;
-neither ordering performs a clean rebuild; a semantic source or configuration
-change invalidates only the expected closure; concurrent invocations serialize;
-and deleting runner work directories leaves the retained build state intact.
+Gate: an automated build followed by a local build of identical effective source
+and configuration, and the reverse ordering, reuse the same action outputs,
+SDKs, images, compiler caches, and persistent workspaces; automated and local
+invocations report `nucleus-builder` as their effective user and the same
+Apple-container application root; the interactive account runs no container
+service, reads run records and artifacts, and writes nothing in the store; every
+storage root reports its actual allocation and the store's total is observable
+against the physical disk; trimming a workspace returns its free space to the
+host while no build container carries the trim capability; every migrated volume
+matches its declaration and the previous location holds no retained state; a
+dirty-tree build observes every declared working-copy change and source mutation
+during execution supersedes the run; a dirty build followed by committing the
+identical tree does not compile identical source again; debug and release
+coexist without collisions or mutual cleaning; neither ordering performs a clean
+rebuild; a semantic source or configuration change invalidates only the expected
+closure; concurrent invocations serialize; a local build starts without a
+password prompt while a direct interactive-account build refuses; and deleting
+runner work directories leaves the retained build state intact.
 
 ## Phase 5: Enforce Account, Credential, Network, and Recovery Boundaries
 
 Keep all build and qualification credentials read-only and job-scoped. The
-builder cannot read personal homes, attach to personal agents, use signing
-identities, reach publisher credentials, or deploy infrastructure. Host-side
+builder cannot read personal homes, attach to personal agents, hold a release
+signing or code-signing identity, reach publisher credentials, or deploy
+infrastructure. The local-development signing material it owns signs
+development images only and confers no publication authority. Host-side
 acquisition reaches only the public origins required by the pinned source and
 dependency graph. Apple containers retain the host-only network with DNS
 disabled and receive only already acquired inputs.
@@ -528,16 +629,17 @@ disabled and receive only already acquired inputs.
 Treat every builder cache, workspace, image, checkout, staged artifact, and run
 record as reconstructible project state. Never place a personal secret,
 publication credential, release signing key, browser profile, private unrelated
-source, or authoritative document in the builder account or its backups.
+source, or authoritative document in the build store, the builder account, or
+their backups.
 
 On ordinary failure or cancellation, Collider finalizes the run, terminates its
 containers, and preserves valid incremental state. On suspected compromise,
 unexpected persistence, account-boundary failure, or cache-integrity failure,
 quarantine `nucleus-builder`; prevent CI, manual trusted builds, signing, and
-publication; preserve diagnostics; then recreate its checkout, account-owned
-state, runner, service, and caches from declared inputs. If a kernel, firmware,
-hypervisor, or privileged host-service escape is suspected, recover the entire
-M2 Ultra before restoring personal or release authority.
+publication; preserve diagnostics; then recreate its checkout, the machine-owned
+build store, runner, service, and caches from declared inputs. If a kernel,
+firmware, hypervisor, or privileged host-service escape is suspected, recover
+the entire M2 Ultra before restoring personal or release authority.
 
 Gate: hostile probes executing as the builder cannot read the interactive home,
 credentials, signer, publisher, private network services, or unrelated source;

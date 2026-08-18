@@ -30,9 +30,23 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(contract.builder.runnerArchiveSize == 127_389_671)
     #expect(contract.builder.runnerRoot == "/Library/Nucleus/GitHubActionsRunner")
     #expect(contract.builder.hostContractRoot == "/Library/Nucleus/Builder")
+    // Collider locks the compiled-in path, so a checkout cannot move which
+    // inode serializes host execution by editing the contract it owns.
+    #expect(
+        contract.builder.hostContractRoot == MacOSMachineStorageLayout.contractRoot.string)
+    #expect(
+        contract.builder.hostExecutionLock
+            == MacOSMachineStorageLayout.hostExecutionAdmission.string)
+    #expect(
+        contract.builder.hostExecutionLock.hasPrefix(contract.builder.hostContractRoot + "/"))
     // A builder in staff would read the whole interactive home by group.
     #expect(contract.builder.group == "nucleus-builder")
     #expect(contract.builder.group != "staff")
+    // The reading group must not be the builder's own, or granting the
+    // developer read access to the store would also hand over the group that
+    // gates the runner registration credentials.
+    #expect(contract.builder.buildStateGroup == "nucleus-build-state")
+    #expect(contract.builder.buildStateGroup != contract.builder.group)
     #expect(
         contract.builder.runnerWorkRoot
             == "/Users/nucleus-builder/Library/Developer/Nucleus/Collider/actions-runner-work")
@@ -230,7 +244,7 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
 }
 
 @Test
-func builderHandoffResolvesOnlySupportedLocalStates() {
+func builderCommissionResolvesOnlySupportedLocalStates() {
     #expect(
         builderLocalState(account: .absent, service: .absent, recovery: .absent) == .fresh)
     #expect(
@@ -310,12 +324,14 @@ func builderRunnerStateAcceptsOnlyTheDeclaredRunner() {
 }
 
 @Test
-func builderHandoffActionPairsOnlyReconcilableStates() {
-    #expect(builderHandoffAction(local: .fresh, runner: .fresh) == .provision)
-    #expect(builderHandoffAction(local: .preArtifact, runner: .fresh) == .provision)
-    #expect(builderHandoffAction(local: .unregistered, runner: .fresh) == .provision)
-    #expect(builderHandoffAction(local: .registered, runner: .complete) == .finalize)
-    #expect(builderHandoffAction(local: .complete, runner: .complete) == .verify)
+func builderProvisioningActionPairsOnlyReconcilableStates() {
+    #expect(builderProvisioningAction(local: .fresh, runner: .fresh) == .provision)
+    #expect(builderProvisioningAction(local: .preArtifact, runner: .fresh) == .provision)
+    #expect(builderProvisioningAction(local: .unregistered, runner: .fresh) == .provision)
+    #expect(builderProvisioningAction(local: .registered, runner: .complete) == .finalize)
+    // A completed host converges on the contract instead of only asserting the
+    // state an earlier contract installed.
+    #expect(builderProvisioningAction(local: .complete, runner: .complete) == .finalize)
 
     let reconcilable: Set<[String]> = [
         ["fresh", "fresh"],
@@ -329,7 +345,7 @@ func builderHandoffActionPairsOnlyReconcilableStates() {
             let pair = [local.rawValue, runner.rawValue]
             guard !reconcilable.contains(pair) else { continue }
             #expect(
-                builderHandoffAction(local: local, runner: runner) == .inconsistent,
+                builderProvisioningAction(local: local, runner: runner) == .inconsistent,
                 "\(pair) must stop for explicit recovery")
         }
     }

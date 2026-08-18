@@ -29,11 +29,11 @@ reuse.
 1. Complete Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    move automated `main` and locally initiated clean, branch, dirty, debug, and
-   release builds onto the `nucleus-builder` account's shared persistent
-   Collider cache, and enforce source, account, credential, network, and
-   recovery boundaries. Its protected main-only workflow boundary and trusted
-   builder identity are established, and protected-main verification runs green
-   on the M2 Ultra.
+   release builds onto one machine-owned Collider build store outside every
+   account home, and enforce source, account, credential, network, and recovery
+   boundaries. Its protected main-only workflow boundary, trusted builder
+   identity, and machine-wide execution lease are established, and
+   protected-main verification runs green on the M2 Ultra.
 2. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's

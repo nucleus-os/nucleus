@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import ColliderRuntime
+import Foundation
 import SystemPackage
 import Testing
 
@@ -228,6 +229,30 @@ func mutatingCommandsAcquireHostExecutionAdmission() throws {
 func hostExecutionAdmissionLivesOutsideTheCheckout() {
     let hostBuildRoot = FilePath("/host/build")
     #expect(
-        hostExecutionAdmissionLockPath(hostBuildRoot: hostBuildRoot)
+        hostExecutionAdmissionLockPath(
+            hostBuildRoot: hostBuildRoot,
+            provisionedMachineLease: nil)
             == FilePath("/host/build/state/locks/host-execution.lock"))
+    #expect(
+        hostExecutionAdmissionLockPath(
+            hostBuildRoot: hostBuildRoot,
+            provisionedMachineLease: FilePath("/absent/host-execution.lock"))
+            == FilePath("/host/build/state/locks/host-execution.lock"))
+}
+
+/// A provisioned host serializes every account against one inode, so the
+/// installed lease supersedes the per-user lock whenever it is present.
+@Test
+func provisionedMachineLeaseSupersedesPerUserAdmission() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-machine-lease-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let lease = FilePath(directory.appendingPathComponent("host-execution.lock").path)
+    try Data().write(to: URL(fileURLWithPath: lease.string))
+
+    #expect(
+        hostExecutionAdmissionLockPath(
+            hostBuildRoot: FilePath("/host/build"),
+            provisionedMachineLease: lease) == lease)
 }

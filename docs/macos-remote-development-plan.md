@@ -147,18 +147,18 @@ run resumes without repeating clean tasks.
 
 ## Phase 4: Add Host-Wide Collider Admission
 
-The single-account implementation is complete. Phase 4 of the
+The single-account implementation is complete, and the machine-wide lease is
+installed. Phase 4 of the
 [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-replaces its per-user location with machine-wide admission before this plan
-resumes. This phase completes the remote-development integration and
-operational gate.
+establishes the shared build store the remaining gate items exercise. This phase
+completes the remote-development integration and operational gate.
 
-Add one cross-process execution lock in a host-owned path outside every
-checkout and user home. Both `maddy` and `nucleus-builder` can acquire it without
-reading one another's private state. Every task-executing Collider command,
-local account-switching build, CI run, and mutating cache operation acquires it
-before execution and holds it through shutdown and cancellation. Inspection
-commands do not acquire the lock.
+Add one cross-process execution lock in a host-owned path outside every checkout
+and user home. Both `maddy` and `nucleus-builder` can acquire it without reading
+one another's private state. Every task-executing Collider command, local
+account-switching build, CI run, and mutating cache operation acquires it before
+execution and holds it through shutdown and cancellation. Inspection commands do
+not acquire the lock.
 
 The lock admits one Collider run at a time across local terminals, remote SSH
 sessions, the authoritative checkout, the clean builder checkout, automated
@@ -172,14 +172,21 @@ Record lock ownership and wait state using the existing run and lock evidence.
 Cancellation releases the lock only after child processes and managed
 containers have completed their normal cleanup transaction.
 
-Move the lease from
-`~/Library/Developer/Nucleus/Collider/build/state/locks/host-execution.lock` to
-one root-provisioned Nucleus admission directory under `/Library/Application
-Support`. Record the owning account, checkout, source identity, configuration,
-and run beside it using the existing cancellable file-lock acquisition path.
-Mutating commands and non-dry task commands acquire it. Doctor, status, run,
-log, task, graph, cache-status, and dry-run commands remain available without
-it.
+The lease is installed at `/Library/Nucleus/Builder/host-execution.lock`, a
+root-owned file inside a root-owned directory. Every account may open, lock, and
+describe it; none may replace, unlink, or shadow it. `/Library/Application
+Support` is unusable for this role and for every other machine-wide builder
+path, because the Actions runner substitutes step-script paths into one command
+string unquoted and whitespace breaks every `run:` step before its body
+executes.
+
+The holder is recorded inside the locked file rather than beside it, which is
+what allows the lock to live in a directory nobody may write, and it names the
+process, account, run, task, and start time; the run identifies the checkout,
+source identity, and configuration. A clean release clears the record. Mutating
+commands and non-dry task commands acquire the lease through the existing
+cancellable file-lock acquisition path. Doctor, status, run, log, task, graph,
+cache-status, and dry-run commands remain available without it.
 
 Gate: the interactive and builder accounts cannot execute task graphs
 concurrently; a developer-initiated dirty build reads the authoritative checkout

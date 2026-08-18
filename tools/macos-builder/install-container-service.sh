@@ -25,13 +25,25 @@ readonly service_home="$(
   /usr/bin/dscl . -read "/Users/$service_user" NFSHomeDirectory \
     | /usr/bin/sed 's/^NFSHomeDirectory: //'
 )"
-readonly application_support_root="$service_home/Library/Application Support/Nucleus/Collider"
+# Data roots come from the machine-wide build store where one is installed,
+# because two accounts execute on that host and the state they share belongs to
+# neither home. The launch agent stays per-user regardless: a launchd agent is a
+# property of a login session, not of the data it manages.
+readonly build_store=/Library/Nucleus/Collider
+if [[ -d "$build_store" ]]; then
+  readonly application_support_root="$build_store/configuration"
+  readonly developer_root="$build_store/state"
+  readonly cache_root="$build_store/cache"
+  readonly logs_root="$build_store/logs"
+else
+  readonly application_support_root="$service_home/Library/Application Support/Nucleus/Collider"
+  readonly developer_root="$service_home/Library/Developer/Nucleus/Collider"
+  readonly cache_root="$service_home/Library/Caches/Nucleus/Collider"
+  readonly logs_root="$service_home/Library/Logs/Nucleus/Collider"
+fi
 readonly service_support_root="$application_support_root/service"
 readonly starter_target="$service_support_root/container-system-start"
-readonly developer_root="$service_home/Library/Developer/Nucleus/Collider"
 readonly app_root="$developer_root/apple-container"
-readonly cache_root="$service_home/Library/Caches/Nucleus/Collider"
-readonly logs_root="$service_home/Library/Logs/Nucleus/Collider"
 readonly service_logs="$logs_root/service"
 readonly standard_output_path="$service_logs/apple-container-apiserver.log"
 readonly standard_error_path="$service_logs/apple-container-apiserver.error.log"

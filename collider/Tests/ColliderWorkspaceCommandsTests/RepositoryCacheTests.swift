@@ -109,11 +109,34 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
         throw WorkspaceFailure.message("unused fixture operation")
     }
 
+    private var reclaimed: [(key: String, imageReference: String)] = []
+
     func persistentWorkspaces(
         configuration _: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState] {
         workspaces
     }
+
+    func reclaimPersistentWorkspace(
+        _ workspace: PersistentWorkspaceDeclaration,
+        imageReference: String,
+        configuration _: OCIRuntimeConfiguration,
+        cancellation _: RuntimeCancellation
+    ) async throws {
+        reclaimed.append((workspace.identity.key, imageReference))
+        workspaces = workspaces.map { state in
+            state.identity == workspace.identity
+                ? OCIPersistentWorkspaceState(
+                    name: state.name,
+                    identity: state.identity,
+                    capacityBytes: state.capacityBytes,
+                    allocatedBytes: state.allocatedBytes / 2,
+                    active: state.active)
+                : state
+        }
+    }
+
+    func reclamations() -> [(key: String, imageReference: String)] { reclaimed }
 
     func diskUsage(
         configuration _: OCIRuntimeConfiguration
@@ -246,6 +269,61 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
 
     let measuredStatus = try Cache.Status.parse(["--measure-allocations"])
     #expect(measuredStatus.measureAllocations)
+}
+
+/// A terabyte-scale working set is only manageable if the report answers what
+/// it weighs in total. Per-root detail says where a byte went; it never says
+/// whether the host is running out.
+@Test func cacheStatusTotalsWhatCollidesStateWeighs() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-status-totals-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let roomy = fixtureWorkspace(key: "roomy-build")
+    let nearlyFull = fixtureWorkspace(key: "nearly-full-build")
+    // An ext4 image cannot grow past the size it was created with, so the
+    // warning marks the workspace whose next build fails for space rather than
+    // for anything it did. Both sides of that threshold are pinned here, and
+    // the threshold is inclusive.
+    let warningThreshold = nearlyFull.capacityBytes - nearlyFull.capacityBytes / 5
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "roomy-volume",
+                identity: roomy.identity,
+                capacityBytes: roomy.capacityBytes,
+                allocatedBytes: warningThreshold - 1,
+                active: false),
+            OCIPersistentWorkspaceState(
+                name: "nearly-full-volume",
+                identity: nearlyFull.identity,
+                capacityBytes: nearlyFull.capacityBytes,
+                allocatedBytes: warningThreshold,
+                active: false),
+        ])
+    let output = StorageConsoleCapture()
+    let console = CommandConsole(
+        format: .text,
+        progress: .never,
+        standardOutputIsTerminal: false,
+        standardErrorIsTerminal: false,
+        standardOutput: output.write,
+        standardError: output.write)
+    try await RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend),
+            console: console),
+        catalog: ComponentCatalog(components: [], publicEntrypoints: [])
+    ).status()
+
+    #expect(output.text.contains("storage-total:"))
+    #expect(output.text.contains("2 workspaces"))
+    #expect(output.text.contains("1 workspace(s) within 20% of declared capacity"))
+    // Declared host roots need a recursive walk, so an unmeasured total must
+    // say what it left out rather than under-report the host as smaller.
+    #expect(output.text.contains("declared roots not measured"))
+    #expect(!output.text.contains("declared roots 0 B"))
 }
 
 @Test func cacheStatusBoundsUnavailableRuntimeAndReportsUnknownOwnedPaths() async throws {
@@ -465,6 +543,121 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
     #expect(await backend.imageDeletions().isEmpty)
     try await repository.prune(dryRun: false)
     #expect(Set(await backend.imageDeletions()) == [obsolete, dangling])
+}
+
+/// Reclamation trims declared workspaces in place. It removes nothing, so an
+/// undeclared workspace is left for pruning to decide about rather than being
+/// touched by a maintenance pass.
+@Test func repositoryReclaimTrimsDeclaredWorkspacesOnly() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-workspace-reclaim-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let declared = fixtureWorkspace(key: "declared-build")
+    let undeclared = fixtureWorkspace(key: "undeclared-build")
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "declared-volume",
+                identity: declared.identity,
+                capacityBytes: declared.capacityBytes,
+                allocatedBytes: 8_192,
+                active: false),
+            OCIPersistentWorkspaceState(
+                name: "undeclared-volume",
+                identity: undeclared.identity,
+                capacityBytes: undeclared.capacityBytes,
+                allocatedBytes: 8_192,
+                active: false),
+        ],
+        images: [
+            OCIImageState(
+                reference: "localhost/nucleus-apt-resolver:latest",
+                repository: "localhost/nucleus-apt-resolver",
+                tag: "latest",
+                digest: "sha256:" + String(repeating: "a", count: 64),
+                creationDate: nil,
+                active: false)
+        ])
+    let componentID = ComponentID(rawValue: "fixture")
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: componentID,
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [
+                    TaskDeclaration(
+                        id: TaskID(rawValue: "fixture.build"),
+                        component: componentID,
+                        action: try AnyColliderAction(
+                            WorkspaceFixtureAction(workspace: declared)))
+                ],
+                entrypoints: [])
+        ],
+        publicEntrypoints: [])
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: catalog)
+
+    try await repository.reclaim(dryRun: true)
+    #expect(await backend.reclamations().isEmpty)
+
+    try await repository.reclaim(dryRun: false)
+    let reclamations = await backend.reclamations()
+    #expect(reclamations.map(\.key) == ["declared-build"])
+    // The maintenance container runs a first-party Linux image that any built
+    // host already has, so reclamation introduces no pinned input of its own.
+    #expect(reclamations.first?.imageReference == "localhost/nucleus-apt-resolver:latest")
+}
+
+/// A host that has never built has no image to run the maintenance container
+/// and nothing to reclaim, so it must say so rather than fail obscurely.
+@Test func repositoryReclaimRequiresAFirstPartyLinuxImage() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-workspace-reclaim-image-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let declared = fixtureWorkspace(key: "declared-build")
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [
+            OCIPersistentWorkspaceState(
+                name: "declared-volume",
+                identity: declared.identity,
+                capacityBytes: declared.capacityBytes,
+                allocatedBytes: 8_192,
+                active: false)
+        ])
+    let componentID = ComponentID(rawValue: "fixture")
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: ComponentCatalog(
+            components: [
+                try ComponentDefinition(
+                    descriptor: ComponentDescriptor(
+                        id: componentID,
+                        canonicalName: "fixture",
+                        directoryName: "fixture"),
+                    tasks: [
+                        TaskDeclaration(
+                            id: TaskID(rawValue: "fixture.build"),
+                            component: componentID,
+                            action: try AnyColliderAction(
+                                WorkspaceFixtureAction(workspace: declared)))
+                    ],
+                    entrypoints: [])
+            ],
+            publicEntrypoints: []))
+
+    await #expect(throws: (any Error).self) {
+        try await repository.reclaim(dryRun: false)
+    }
+    #expect(await backend.reclamations().isEmpty)
 }
 
 @Test func repositoryCleanRemovesOnlyTheSelectedComponentsDeclaredWorkspaces() async throws {

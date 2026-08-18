@@ -24,8 +24,8 @@ struct Provision: ColliderWorkspaceCommand {
             "Provisioning operation.",
             discussion: """
                 prepare acquires and verifies the pinned Actions runner archive.
-                handoff reconciles the protected runner group and provisions, \
-                finalizes, or re-verifies the host identity.
+                commission reconciles the protected runner group, then provisions \
+                the host identity or converges and verifies an installed one.
                 retire removes the runner registration, the installed service, \
                 and machine-wide builder state.
                 """))

@@ -186,10 +186,33 @@ public protocol OCIRuntimeBackend: Sendable {
         named name: String,
         configuration: OCIRuntimeConfiguration
     ) async throws
+    /// Returns a workspace's freed blocks to the host.
+    ///
+    /// A workspace is a filesystem inside a sparse image, mounted without a
+    /// discard option, so deleting files inside it releases nothing: the image
+    /// holds every block it has ever written. Reclaiming requires the guest to
+    /// issue discards, which requires a capability no build container may hold,
+    /// so this is a maintenance operation the action vocabulary cannot express
+    /// rather than an execution any task can request.
+    func reclaimPersistentWorkspace(
+        _ workspace: PersistentWorkspaceDeclaration,
+        imageReference: String,
+        configuration: OCIRuntimeConfiguration,
+        cancellation: RuntimeCancellation
+    ) async throws
 }
 
 extension OCIRuntimeBackend {
     public func health() async throws -> OCIRuntimeHealth {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func reclaimPersistentWorkspace(
+        _ workspace: PersistentWorkspaceDeclaration,
+        imageReference: String,
+        configuration: OCIRuntimeConfiguration,
+        cancellation: RuntimeCancellation
+    ) async throws {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 

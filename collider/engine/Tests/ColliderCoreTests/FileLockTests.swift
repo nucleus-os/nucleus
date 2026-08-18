@@ -15,12 +15,15 @@ import Testing
         path: FilePath(path.path),
         purpose: "artifact publication",
         owner: LockOwner(run: "run-1", task: "artifact.publish"))
-    let ownerRecord = URL(fileURLWithPath: path.path + ".owner")
-    let record = try String(contentsOf: ownerRecord, encoding: .utf8)
-    #expect(record.contains("run=run-1"))
-    #expect(record.contains("task=artifact.publish"))
+    let record = ColliderFileLock.holder(at: FilePath(path.path))
+    #expect(record?.contains("run=run-1") == true)
+    #expect(record?.contains("task=artifact.publish") == true)
+    #expect(record?.contains("user=\(NSUserName())") == true)
 
-    try FileManager.default.removeItem(at: ownerRecord)
+    // The record explains a wait; the kernel lock is what enforces it. Erasing
+    // the record must not hand the lock to a second holder.
+    try Data().write(to: path)
+    #expect(ColliderFileLock.holder(at: FilePath(path.path)) == nil)
     #expect(throws: RuntimeLockFailure.self) {
         _ = try ColliderFileLock(
             path: FilePath(path.path),
@@ -29,6 +32,9 @@ import Testing
     }
 
     owner = nil
+    // A clean release clears the record, so a record without a holder is
+    // evidence of a dead process rather than a current claim.
+    #expect(ColliderFileLock.holder(at: FilePath(path.path)) == nil)
     let replacement = try ColliderFileLock(
         path: FilePath(path.path),
         purpose: "artifact publication",
@@ -59,21 +65,23 @@ import Testing
             cancellation: cancellation)
     }
 
+    // A wait on a lease shared with another account names its holder, or a
+    // blocked terminal cannot tell contention from a stalled command. The
+    // rendered host phase is built from this resource, so the holder has to be
+    // in it rather than in a one-shot console line the next frame overwrites.
     for _ in 0..<100 {
         let state = try await registry.reducedEvents(
             in: try await registry.recordedRun(run.id))
-        if state.activeWaits.contains(
-            ActiveWait(task: nil, resource: "host execution admission"))
-        {
-            break
-        }
+        if !state.activeWaits.isEmpty { break }
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
     var state = try await registry.reducedEvents(
         in: try await registry.recordedRun(run.id))
-    #expect(
-        state.activeWaits
-            == [ActiveWait(task: nil, resource: "host execution admission")])
+    let waited = try #require(state.activeWaits.first)
+    #expect(state.activeWaits.count == 1)
+    #expect(waited.task == nil)
+    #expect(waited.resource.hasPrefix("host execution admission held by "))
+    #expect(waited.resource.contains("user=\(NSUserName())"))
 
     owner = nil
     let acquired = try await waiter.value

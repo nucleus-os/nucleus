@@ -264,6 +264,68 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         }
     }
 
+    /// Trims one workspace, returning its free blocks to the host image.
+    ///
+    /// This mirrors workspace ownership initialization: a container that mounts
+    /// exactly one workspace, runs exactly one tool, and exits, holding the
+    /// single capability that tool requires. `FITRIM` needs `CAP_SYS_ADMIN`,
+    /// which no build container may hold, so the operation lives here rather
+    /// than in anything an action can express. It carries no build input, no
+    /// build code, and no working directory of its own.
+    public func reclaimPersistentWorkspace(
+        _ workspace: PersistentWorkspaceDeclaration,
+        imageReference: String,
+        configuration: OCIRuntimeConfiguration,
+        cancellation: RuntimeCancellation
+    ) async throws {
+        try validateRunner()
+        let manager = ApplePersistentWorkspaceManager(configuration: configuration)
+        let volumeName = try manager.physicalName(for: workspace.identity)
+        let target = "/collider-workspace"
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: workspace.identity.artifactTarget,
+            imageID: FilePath("/collider/workspace-reclaim"),
+            hostname: "collider-workspace-reclaim",
+            workingDirectory: "/",
+            hostWorkingDirectory: FilePath("/"),
+            mounts: [],
+            persistentWorkspaceMounts: [
+                OCIPersistentWorkspaceMount(
+                    workspace: workspace,
+                    target: target,
+                    access: .readWrite)
+            ],
+            userPolicy: OCIUserPolicy(userID: 0, groupID: 0),
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: OCIResourceLimits(
+                cpuCount: 1,
+                memoryBytes: 512 * 1_024 * 1_024,
+                processCount: 128,
+                openFileCount: 1_024),
+            containerEnvironment: [:],
+            imageEntrypointOverride: "/usr/sbin/fstrim",
+            command: ["--verbose", target],
+            environment: [:],
+            output: .captured(limit: 64 * 1_024))
+        let outcome = try await AppleContainerLifecycle(
+            cancellation: cancellation,
+            configuration: configuration
+        ).execute(
+            execution,
+            name: appleContainerName(for: execution),
+            imageReference: imageReference,
+            output: execution.output,
+            logging: nil,
+            stage: nil,
+            persistentWorkspaceNames: [workspace.identity: volumeName],
+            addedCapabilities: ["CAP_SYS_ADMIN"])
+        try outcome.result.requireSuccess(
+            reason: "persistent workspace reclamation failed")
+    }
+
     private func initializePersistentWorkspace(
         _ mount: OCIPersistentWorkspaceMount,
         volumeName: String,

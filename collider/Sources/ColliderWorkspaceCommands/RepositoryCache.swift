@@ -17,11 +17,32 @@ struct StorageStatusRecord: Codable, Equatable {
 
 private struct StorageStatusReport: Codable {
     let hostFilesystem: HostFilesystemStatusRecord?
+    let totals: StorageTotalsRecord
     let storage: [StorageStatusRecord]
     let appleContainer: RuntimeObservation<OCIRuntimeDiskUsage>
     let appleContainerImages: RuntimeObservation<[OCIImageRetentionRecord]>
     let persistentWorkspaces: RuntimeObservation<[PersistentWorkspaceStatusRecord]>
     let unknownPaths: [String]
+}
+
+/// What Collider's state weighs on this host, summed from the three disjoint
+/// sources that hold it: declared host roots, persistent workspace images, and
+/// the container content store. Per-root detail answers where a byte went;
+/// this answers whether the host is running out, which is the question a
+/// terabyte-scale working set makes urgent and which no single record states.
+///
+/// Workspace and image totals come from the runtime and cost nothing. Declared
+/// host roots require a recursive walk, so `declaredRootBytes` is absent unless
+/// the caller asked for it, and `accountedBytes` then reports only what was
+/// actually counted.
+private struct StorageTotalsRecord: Codable {
+    let declaredRootBytes: UInt64?
+    let workspaceCount: Int
+    let workspaceAllocatedBytes: UInt64?
+    let workspaceCapacityBytes: UInt64?
+    let workspacesNearCapacity: Int
+    let containerStoreBytes: UInt64?
+    let accountedBytes: UInt64
 }
 
 private enum RuntimeObservation<Value: Codable & Sendable>: Codable, Sendable {
@@ -97,6 +118,15 @@ private struct PersistentWorkspaceStatusRecord: Codable {
     let allocatedBytes: UInt64
     let retentionPolicy: StorageRetentionPolicy?
     let state: String
+
+    /// Close enough to its declared ceiling that the next build may fail for
+    /// space rather than for anything it did. An ext4 image cannot grow past
+    /// the size it was created with, so this is the signal that matters about
+    /// a workspace; the sum of declared ceilings across workspaces is not,
+    /// because an unclaimed ceiling on a sparse image occupies nothing.
+    var isNearCapacity: Bool {
+        capacityBytes > 0 && allocatedBytes >= capacityBytes - capacityBytes / 5
+    }
 }
 
 private struct PersistentWorkspaceUsage {
@@ -108,6 +138,18 @@ struct StorageRemovalTarget: Codable, Equatable, Sendable {
     let id: String
     let path: String
     let allocatedBytes: UInt64
+}
+
+struct ReclaimedWorkspaceRecord: Codable, Equatable, Sendable {
+    let key: String
+    let allocatedBeforeBytes: UInt64
+    let allocatedAfterBytes: UInt64
+}
+
+struct ReclaimResult: Codable, Equatable, Sendable {
+    let workspaces: [ReclaimedWorkspaceRecord]
+    let reclaimedBytes: UInt64
+    let dryRun: Bool
 }
 
 struct StorageAllocationMeasurement: Equatable, Sendable {
@@ -333,12 +375,19 @@ struct RepositoryCache {
                     hasReclaimableStorage: !targets.isEmpty))
         }
         records.sort { $0.id < $1.id }
+        let resolvedContainer = await ociUsage
+        let resolvedWorkspaces = await persistentWorkspaces
         let report = StorageStatusReport(
             hostFilesystem: hostFilesystemStatus(),
+            totals: storageTotals(
+                storage: records,
+                measuredDeclaredRoots: measureAllocations,
+                appleContainer: resolvedContainer,
+                persistentWorkspaces: resolvedWorkspaces),
             storage: records,
-            appleContainer: await ociUsage,
+            appleContainer: resolvedContainer,
             appleContainerImages: await imageRetention,
-            persistentWorkspaces: await persistentWorkspaces,
+            persistentWorkspaces: resolvedWorkspaces,
             unknownPaths: unknownOwnedPaths())
         try emit(report)
     }
@@ -540,6 +589,105 @@ struct RepositoryCache {
             }
             rollbackCounts[repository] = preparation.rollbackGenerationCount
         }
+    }
+
+    /// The image a maintenance container runs. Any first-party Linux image
+    /// carries the tool, and one is present on every host that has built, so
+    /// reclamation introduces no pinned input of its own. A host that has never
+    /// built has nothing to reclaim.
+    static let reclamationImageRepositories = [
+        "localhost/nucleus-linux-build-dependencies",
+        "localhost/nucleus-apt-resolver",
+    ]
+
+    func reclaim(dryRun: Bool) async throws {
+        try validateStorageDeclarations()
+        let declared = try persistentWorkspaceUsage()
+        let present = try await context.runtime.ociPersistentWorkspaces()
+        let allocationBefore = Dictionary(
+            present.map { ($0.identity, $0.allocatedBytes) },
+            uniquingKeysWith: { first, _ in first })
+        let selected = present.compactMap { state in
+            declared[state.identity].map { ($0.declaration, state) }
+        }
+        guard !selected.isEmpty else {
+            try context.console.human("cache reclaim: no declared workspace is present")
+            return
+        }
+        if dryRun {
+            try emit(
+                ReclaimResult(
+                    workspaces: selected.map {
+                        ReclaimedWorkspaceRecord(
+                            key: $0.0.identity.key,
+                            allocatedBeforeBytes: $0.1.allocatedBytes,
+                            allocatedAfterBytes: $0.1.allocatedBytes)
+                    },
+                    reclaimedBytes: 0,
+                    dryRun: true))
+            return
+        }
+        let images = try await context.runtime.ociImages()
+        guard
+            let image = Self.reclamationImageRepositories.lazy.compactMap({ repository in
+                images.first { $0.repository == repository }
+            }).first
+        else {
+            throw WorkspaceFailure.message(
+                "no first-party Linux image is present to run workspace reclamation; "
+                    + "run a build or bootstrap first")
+        }
+        let phase = try await context.hostPhases.begin(
+            "reclaiming workspace allocation",
+            totalItems: selected.count)
+        do {
+            for (index, entry) in selected.enumerated() {
+                try Task.checkCancellation()
+                try await context.runtime.reclaimOCIPersistentWorkspace(
+                    entry.0,
+                    imageReference: image.reference)
+                try await context.hostPhases.advance(
+                    phase,
+                    completedItems: index + 1,
+                    totalItems: selected.count)
+            }
+            try await context.hostPhases.finish(phase)
+        } catch {
+            try? await context.hostPhases.fail(phase)
+            throw error
+        }
+        let after = try await context.runtime.ociPersistentWorkspaces()
+        var records: [ReclaimedWorkspaceRecord] = []
+        var reclaimed: UInt64 = 0
+        for state in after {
+            guard let before = allocationBefore[state.identity] else { continue }
+            guard declared[state.identity] != nil else { continue }
+            records.append(
+                ReclaimedWorkspaceRecord(
+                    key: state.identity.key,
+                    allocatedBeforeBytes: before,
+                    allocatedAfterBytes: state.allocatedBytes))
+            if before > state.allocatedBytes { reclaimed &+= before - state.allocatedBytes }
+        }
+        records.sort { $0.key < $1.key }
+        try emit(
+            ReclaimResult(workspaces: records, reclaimedBytes: reclaimed, dryRun: false))
+    }
+
+    private func emit(_ result: ReclaimResult) throws {
+        var lines = [
+            result.dryRun
+                ? "cache reclaim: would trim \(result.workspaces.count) workspace(s)"
+                : "cache reclaim: trimmed \(result.workspaces.count) workspace(s), "
+                    + "\(formatted(result.reclaimedBytes)) returned to the host"
+        ]
+        for workspace in result.workspaces
+        where workspace.allocatedBeforeBytes > workspace.allocatedAfterBytes {
+            lines.append(
+                "  \(workspace.key): \(formatted(workspace.allocatedBeforeBytes)) -> "
+                    + formatted(workspace.allocatedAfterBytes))
+        }
+        try context.console.report(result, text: lines.joined(separator: "\n"))
     }
 
     private func persistentWorkspaceUsage() throws -> [PersistentWorkspaceIdentity:
@@ -926,6 +1074,39 @@ struct RepositoryCache {
         return availableAfter > availableBefore ? availableAfter - availableBefore : 0
     }
 
+    private func storageTotals(
+        storage: [StorageStatusRecord],
+        measuredDeclaredRoots: Bool,
+        appleContainer: RuntimeObservation<OCIRuntimeDiskUsage>,
+        persistentWorkspaces: RuntimeObservation<[PersistentWorkspaceStatusRecord]>
+    ) -> StorageTotalsRecord {
+        let declaredRootBytes: UInt64? =
+            measuredDeclaredRoots
+            ? storage.reduce(UInt64(0)) { $0 &+ ($1.allocatedBytes ?? 0) }
+            : nil
+        var workspaces: [PersistentWorkspaceStatusRecord]?
+        if case .available(let value) = persistentWorkspaces { workspaces = value }
+        var containerStoreBytes: UInt64?
+        if case .available(let usage) = appleContainer {
+            containerStoreBytes =
+                usage.images.sizeInBytes &+ usage.containers.sizeInBytes
+        }
+        let workspaceAllocated = workspaces.map { workspaces in
+            workspaces.reduce(UInt64(0)) { $0 &+ $1.allocatedBytes }
+        }
+        return StorageTotalsRecord(
+            declaredRootBytes: declaredRootBytes,
+            workspaceCount: workspaces?.count ?? 0,
+            workspaceAllocatedBytes: workspaceAllocated,
+            workspaceCapacityBytes: workspaces.map { workspaces in
+                workspaces.reduce(UInt64(0)) { $0 &+ $1.capacityBytes }
+            },
+            workspacesNearCapacity: workspaces?.filter(\.isNearCapacity).count ?? 0,
+            containerStoreBytes: containerStoreBytes,
+            accountedBytes: (declaredRootBytes ?? 0) &+ (workspaceAllocated ?? 0)
+                &+ (containerStoreBytes ?? 0))
+    }
+
     private func storageState(
         declaration: StorageDeclaration,
         exists: Bool,
@@ -963,6 +1144,7 @@ struct RepositoryCache {
                     + "\(formatted(filesystem.totalBytes)) total")
             lines.append("  \(filesystem.path)")
         }
+        lines += totalsLines(report.totals)
         for entry in report.storage {
             let allocation =
                 entry.allocatedBytes.map(formatted)
@@ -1019,11 +1201,7 @@ struct RepositoryCache {
         switch report.persistentWorkspaces {
         case .available(let workspaces):
             for workspace in workspaces {
-                let capacityWarning =
-                    workspace.capacityBytes > 0
-                    && workspace.allocatedBytes
-                        >= workspace.capacityBytes - workspace.capacityBytes / 5
-                let warning = capacityWarning ? ", capacity warning" : ""
+                let warning = workspace.isNearCapacity ? ", capacity warning" : ""
                 lines.append(
                     "persistent-workspace:\(workspace.identity.key): \(workspace.state)\(warning), "
                         + "\(formatted(workspace.allocatedBytes)) allocated / "
@@ -1042,6 +1220,39 @@ struct RepositoryCache {
             lines.append("unknown: \(path)")
         }
         try context.console.report(report, text: lines.joined(separator: "\n"))
+    }
+
+    /// The headline the per-root detail cannot give: what Collider holds in
+    /// total, and how that compares to the disk it holds it on.
+    private func totalsLines(_ totals: StorageTotalsRecord) -> [String] {
+        var components: [String] = []
+        if let declared = totals.declaredRootBytes {
+            components.append("declared roots \(formatted(declared))")
+        }
+        if let allocated = totals.workspaceAllocatedBytes {
+            let logical =
+                totals.workspaceCapacityBytes.map {
+                    " of \(formatted($0)) logical"
+                } ?? ""
+            components.append(
+                "\(totals.workspaceCount) workspaces \(formatted(allocated))\(logical)")
+        }
+        if let store = totals.containerStoreBytes {
+            components.append("container store \(formatted(store))")
+        }
+        guard !components.isEmpty else { return [] }
+        let unmeasured =
+            totals.declaredRootBytes == nil
+            ? ", declared roots not measured; pass --measure-allocations" : ""
+        var lines = [
+            "storage-total: \(formatted(totals.accountedBytes)) accounted\(unmeasured)",
+            "  " + components.joined(separator: " · "),
+        ]
+        if totals.workspacesNearCapacity > 0 {
+            lines.append(
+                "  \(totals.workspacesNearCapacity) workspace(s) within 20% of declared capacity")
+        }
+        return lines
     }
 
     private func emit(_ result: PruneResult) throws {

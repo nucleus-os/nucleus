@@ -542,11 +542,10 @@ private struct FailAfterWriteAction: ColliderAction {
             selected: [task.id],
             stateRoot: root.appending("state"))
     }
-    let ownerRecord = FilePath(lockPath.string + ".owner")
-    for _ in 0..<100 where !FileManager.default.fileExists(atPath: ownerRecord.string) {
+    for _ in 0..<100 where ColliderFileLock.holder(at: lockPath) == nil {
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    #expect(FileManager.default.fileExists(atPath: ownerRecord.string))
+    #expect(ColliderFileLock.holder(at: lockPath) != nil)
     await cancellation.interruptAll()
 
     await #expect(throws: (any Error).self) {

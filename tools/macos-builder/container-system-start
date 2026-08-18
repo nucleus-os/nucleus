@@ -2,7 +2,14 @@
 set -euo pipefail
 
 readonly container_executable="/usr/local/bin/container"
-readonly app_root="$HOME/Library/Developer/Nucleus/Collider/apple-container"
+# One application root serves the host where a build store is installed, so the
+# builder's service owns it and no second account runs a container service.
+readonly build_store=/Library/Nucleus/Collider
+if [[ -d "$build_store" ]]; then
+  readonly app_root="$build_store/state/apple-container"
+else
+  readonly app_root="$HOME/Library/Developer/Nucleus/Collider/apple-container"
+fi
 
 if [[ ! -x "$container_executable" ]]; then
   echo "error: pinned Apple container executable is absent: $container_executable" >&2

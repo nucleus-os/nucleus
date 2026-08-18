@@ -4,15 +4,45 @@ import ColliderRuntime
 import Foundation
 import SystemPackage
 
+/// The domain that owns persistent workspaces.
+///
+/// Where a machine-wide build store exists, the store is that domain: the clean
+/// CI checkout and the authoritative development checkout resolve to the same
+/// value and therefore select the same volumes, which is the whole point of
+/// sharing warm state between them. Without a store, a checkout owns its own
+/// workspaces, which is the only correct answer where nothing is shared.
+///
+/// The value stays a digest rather than becoming absent. Volume names carry it,
+/// and two Collider domains sharing one container application root — production
+/// and an integration test among them — would otherwise collide on name alone
+/// while their labels disagreed.
+package func nucleusPersistentWorkspaceOwner(
+    workspaceRoot: FilePath,
+    buildStore: FilePath?
+) -> String {
+    let domain =
+        buildStore
+        ?? FilePath(
+            URL(fileURLWithPath: workspaceRoot.string)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+                .path)
+    return ArtifactHasher.digest(bytes: Array(domain.string.utf8)).hexadecimal
+}
+
 package func nucleusOCIRuntimeConfiguration(
     workspaceRoot: FilePath
 ) -> OCIRuntimeConfiguration {
-    let canonicalRoot = FilePath(
-        URL(fileURLWithPath: workspaceRoot.string)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-            .path)
-    let owner = ArtifactHasher.digest(bytes: Array(canonicalRoot.string.utf8)).hexadecimal
+    #if os(macOS)
+    let buildStore =
+        MacOSMachineStorageLayout.buildStoreIsInstalled()
+        ? MacOSMachineStorageLayout.buildStore : nil
+    #else
+    let buildStore: FilePath? = nil
+    #endif
+    let owner = nucleusPersistentWorkspaceOwner(
+        workspaceRoot: workspaceRoot,
+        buildStore: buildStore)
     return OCIRuntimeConfiguration(
         isolatedNetwork: "nucleus-build-internal",
         guestHome: "/home/nucleus-build",

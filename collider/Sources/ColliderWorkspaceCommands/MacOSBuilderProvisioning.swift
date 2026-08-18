@@ -43,10 +43,9 @@ enum BuilderRunnerState: String, Sendable, CaseIterable {
 }
 
 /// The single provisioning step that both states admit.
-enum BuilderHandoffAction: String, Sendable, CaseIterable {
+enum BuilderProvisioningAction: String, Sendable, CaseIterable {
     case provision
     case finalize
-    case verify
     case inconsistent
 }
 
@@ -68,7 +67,7 @@ func builderLocalState(
 }
 
 /// An empty group admits provisioning; exactly the declared runner admits
-/// finalization or verification. Any other membership stops for recovery.
+/// finalization. Any other membership stops for recovery.
 func builderRunnerState(
     registeredNames: [String],
     expected: String
@@ -78,14 +77,16 @@ func builderRunnerState(
     return .inconsistent
 }
 
-func builderHandoffAction(
+func builderProvisioningAction(
     local: BuilderLocalState,
     runner: BuilderRunnerState
-) -> BuilderHandoffAction {
+) -> BuilderProvisioningAction {
     switch (local, runner) {
     case (.fresh, .fresh), (.preArtifact, .fresh), (.unregistered, .fresh): .provision
-    case (.registered, .complete): .finalize
-    case (.complete, .complete): .verify
+    // A completed host finalizes again rather than only verifying. Finalization
+    // is convergent and ends in verification, so a contract that gains declared
+    // machine state installs it by re-running the commission.
+    case (.registered, .complete), (.complete, .complete): .finalize
     default: .inconsistent
     }
 }
@@ -147,7 +148,7 @@ private struct InstalledRunnerRegistration: Decodable {
 struct MacOSBuilderProvisioning {
     enum Operation: String, CaseIterable, Sendable {
         case prepare
-        case handoff
+        case commission
         case retire
     }
 
@@ -168,7 +169,7 @@ struct MacOSBuilderProvisioning {
         try validateInteractiveDeveloper()
         switch operation {
         case .prepare: try await prepare()
-        case .handoff: try await handoff()
+        case .commission: try await commission()
         case .retire: try await retire()
         }
     }
@@ -209,9 +210,9 @@ struct MacOSBuilderProvisioning {
         try context.console.human("archive: \(archivePath.string)")
     }
 
-    // MARK: Handoff
+    // MARK: Commission
 
-    private func handoff() async throws {
+    private func commission() async throws {
         try stage("validating local inputs")
         try validateCanonicalCheckout()
         guard try validatedArchive() != nil else {
@@ -237,7 +238,7 @@ struct MacOSBuilderProvisioning {
         let runner = builderRunnerState(
             registeredNames: registeredNames,
             expected: contract.builder.runnerName)
-        let action = builderHandoffAction(local: local, runner: runner)
+        let action = builderProvisioningAction(local: local, runner: runner)
         guard action != .inconsistent else {
             throw WorkspaceFailure.message(
                 "local state is \(local.rawValue) but runner-group state is "
@@ -253,14 +254,11 @@ struct MacOSBuilderProvisioning {
                 "provision-nucleus-builder.sh",
                 arguments: [archivePath.string],
                 standardInput: Array("\(token)\n".utf8))
-        case .verify:
-            try stage("re-verifying completed local provisioning")
-            try await sudoScript("verify-nucleus-builder.sh")
         case .finalize:
-            try stage("finalizing the registered builder identity")
+            try stage("reconciling and verifying the trusted host identity")
             try await sudoScript("finalize-nucleus-builder.sh")
         case .inconsistent:
-            throw WorkspaceFailure.message("unreachable handoff action")
+            throw WorkspaceFailure.message("unreachable provisioning action")
         }
 
         try stage("waiting for the registered runner")
@@ -274,7 +272,7 @@ struct MacOSBuilderProvisioning {
         }
         try stage("all local and GitHub gates passed")
         try context.console.human(
-            "builder handoff complete: runner group and trusted host identity are live")
+            "commission complete: runner group and trusted host identity are live")
     }
 
     // MARK: Retire
@@ -308,12 +306,12 @@ struct MacOSBuilderProvisioning {
         let local = try localState()
         guard local == .preArtifact || local == .fresh else {
             throw WorkspaceFailure.message(
-                "local state after retirement is \(local.rawValue); handoff resumes "
+                "local state after retirement is \(local.rawValue); commission resumes "
                     + "only from pre-artifact or fresh")
         }
         try stage("retirement complete; local state is \(local.rawValue)")
         try context.console.human(
-            "handoff re-provisions at the declared roots; the builder account, its "
+            "commission re-provisions at the declared roots; the builder account, its "
                 + "source ACLs, per-user Collider storage, and container service remain")
     }
 

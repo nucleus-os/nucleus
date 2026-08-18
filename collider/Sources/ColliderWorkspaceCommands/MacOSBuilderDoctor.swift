@@ -53,7 +53,9 @@ struct MacOSBuilderContract: Codable, Sendable {
         let runnerArchiveSize: UInt64
         let runnerServiceLabel: String
         let runnerRoot: String
+        let buildStateGroup: String
         let hostContractRoot: String
+        let hostExecutionLock: String
         let runnerWorkRoot: String
     }
 
@@ -86,9 +88,18 @@ struct MacOSBuilderContract: Codable, Sendable {
             throw MacOSBuilderContractFailure.invalid(
                 "selected macOS and Xcode major versions must be positive")
         }
+        // The reading group exists so the interactive developer can inspect run
+        // records and artifacts without gaining the builder's own group, which
+        // gates the runner registration credentials.
+        guard builder.buildStateGroup != builder.group else {
+            throw MacOSBuilderContractFailure.invalid(
+                "build-state group must be distinct from the builder's primary group")
+        }
         // A builder in staff would inherit read access to the whole
         // interactive home, which is mode 0750 and staff-readable.
-        guard builder.group != "staff", builder.group != "wheel", builder.group != "admin"
+        guard builder.group != "staff", builder.group != "wheel", builder.group != "admin",
+            builder.buildStateGroup != "staff", builder.buildStateGroup != "wheel",
+            builder.buildStateGroup != "admin"
         else {
             throw MacOSBuilderContractFailure.invalid(
                 "builder group must be dedicated, not a shared system group")
@@ -118,6 +129,17 @@ struct MacOSBuilderContract: Codable, Sendable {
                 throw MacOSBuilderContractFailure.invalid(
                     "machine-wide builder root is not an absolute whitespace-free path: \(root)")
             }
+        }
+        // Collider locks the machine-wide execution lease at a compiled-in
+        // path, because the machine, not a checkout it owns, decides which
+        // inode serializes its execution. The declared path exists so the
+        // privileged shell provisioning installs that same inode.
+        guard builder.hostContractRoot == MacOSMachineStorageLayout.contractRoot.string,
+            builder.hostExecutionLock
+                == MacOSMachineStorageLayout.hostExecutionAdmission.string
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "declared machine-wide paths disagree with the compiled Collider layout")
         }
         // Both roots share one machine-wide parent, so retirement removes the
         // installed builder state as one directory derived from the installed
@@ -197,6 +219,8 @@ struct MacOSBuilderDoctor {
             xcode(contract, scope: scope),
             swiftBootstrap(contract, scope: scope),
             resources(contract, scope: scope),
+            executionLease(scope: scope),
+            buildStore(contract, scope: scope),
             persistentService(contract, storageLayout: storageLayout, scope: scope),
             containerSystem(contract, storageLayout: storageLayout, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
@@ -305,6 +329,96 @@ struct MacOSBuilderDoctor {
                 memoryBytes == contract.resources.memoryBytes
             else { return nil }
             return "\(cpuCount) CPUs, \(memoryBytes) bytes"
+        }
+    }
+
+    /// The store is shared machine state, so its access contract is checked
+    /// from whichever account is about to use it rather than only by the
+    /// privileged provisioning that installs it.
+    private func buildStore(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "macos-builder:build-store",
+            scope: scope,
+            description: "machine-wide Collider build store",
+            remediation:
+                "run tools/macos-builder/migrate-collider-storage.sh; the store is "
+                + "created by the migration that fills it"
+        ) {
+            let fileManager = FileManager.default
+            let store = MacOSMachineStorageLayout.buildStore
+            // A host that has not migrated yet is a valid host: it runs from
+            // per-user storage, exactly as one with a single account does. Only
+            // an installed store carries a contract to check.
+            guard MacOSMachineStorageLayout.buildStoreIsInstalled() else {
+                return "per-user storage; no machine build store is installed"
+            }
+            guard
+                let attributes = try? fileManager.attributesOfItem(atPath: store.string),
+                let owner = attributes[.ownerAccountName] as? String,
+                owner == contract.builder.user,
+                let group = attributes[.groupOwnerAccountName] as? String,
+                group == contract.builder.buildStateGroup,
+                // Setgid keeps every object the builder creates in the group the
+                // interactive account reads, without that account writing any.
+                attributes[.posixPermissions] as? NSNumber == 0o2750,
+                // Signing material is the one subtree the reading group must not
+                // reach, because the identity that executes is the one that signs.
+                let identity = try? fileManager.attributesOfItem(
+                    atPath: store.appending("state/identity").string),
+                identity[.posixPermissions] as? NSNumber == 0o700
+            else { return nil }
+            return "\(store), written by \(owner) and read by \(group)"
+        }
+    }
+
+    /// The lease is the one piece of machine state both accounts touch, so it
+    /// is checked from whichever account is about to build rather than only by
+    /// the privileged provisioning that installs it.
+    private func executionLease(scope: String) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "macos-builder:execution-lease",
+            scope: scope,
+            description: "machine-wide Collider execution lease",
+            remediation:
+                "run 'collider provision macos-builder commission'; it installs one "
+                + "root-owned lock file that every account may lock and none may replace"
+        ) {
+            let fileManager = FileManager.default
+            let lease = MacOSMachineStorageLayout.hostExecutionAdmission
+            let contractRoot = MacOSMachineStorageLayout.contractRoot
+            guard
+                let leaseAttributes = try? fileManager.attributesOfItem(
+                    atPath: lease.string),
+                leaseAttributes[.type] as? FileAttributeType == .typeRegular,
+                leaseAttributes[.ownerAccountID] as? NSNumber == 0,
+                leaseAttributes[.groupOwnerAccountID] as? NSNumber == 0,
+                leaseAttributes[.posixPermissions] as? NSNumber == 0o666,
+                // Only root may write the containing directory, so no account
+                // can replace, unlink, or shadow the inode it locks.
+                let rootAttributes = try? fileManager.attributesOfItem(
+                    atPath: contractRoot.string),
+                rootAttributes[.ownerAccountID] as? NSNumber == 0,
+                rootAttributes[.posixPermissions] as? NSNumber == 0o755
+            else { return nil }
+            // Mode bits state an intent; only an acquisition proves this
+            // account can lock the inode, and it subsumes the read-write
+            // access the open requires. A lease another invocation already
+            // holds demonstrates the same thing, so contention is a pass.
+            do {
+                let acquired = try ColliderFileLock(
+                    path: lease,
+                    purpose: "machine-wide Collider execution lease",
+                    waitForExistingOwner: false)
+                withExtendedLifetime(acquired) {}
+                return "\(lease), locked and released by this account"
+            } catch RuntimeLockFailure.alreadyOwned {
+                return "\(lease), held by another invocation"
+            } catch {
+                return nil
+            }
         }
     }
 
