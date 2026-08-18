@@ -87,13 +87,16 @@ jobs:
       - name: Check out the admitted revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          # Full history is required, and shallowing this is a known trap.
-          # Provenance capture itself reads only the checked-out tree, but
-          # Collider resolves the SwiftPM graph, whose local dependencies on
-          # first-party submodules pin revisions that are ancestors of the
-          # submodule gitlink rather than the gitlink itself. A depth-limited
-          # fetch omits those objects and resolution fails with `unable to read
-          # tree`.
+          # Full history and tags are structurally required; shallowing this
+          # is a known trap. Provenance capture itself reads only the
+          # checked-out tree, but Collider resolves the SwiftPM graph, and
+          # tools/configure-swiftpm-mirrors.sh redirects upstream dependency
+          # URLs to the first-party submodules under third-party/. SwiftPM then
+          # resolves ordinary version requirements against those local mirrors,
+          # so each one must carry the tag it resolves to and that tag's
+          # history, which is generally not the commit the gitlink points at. A
+          # depth-limited fetch supplies one commit and no tags, and resolution
+          # fails with `unable to read tree`.
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.admission.outputs.revision }}

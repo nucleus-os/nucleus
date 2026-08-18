@@ -401,14 +401,17 @@ finalization no longer walks every submodule working tree twice to reassign
 ownership. Verification proves the work root is builder-owned and outside the
 runner installation.
 
-Automated checkout fetches complete history, including submodules. Provenance
-capture alone would not require it: the source snapshot uses only `rev-parse
-HEAD`, `symbolic-ref`, `diff --name-only HEAD`, `ls-files --others`, and the
-declared submodule paths. Resolution does. Collider resolves the SwiftPM graph,
-whose local dependencies on first-party submodules pin revisions that are
-ancestors of the submodule gitlink rather than the gitlink itself, and a
-depth-limited fetch omits those objects. Shallowing this checkout therefore
-fails at resolution, not at provenance, and the two must not be conflated.
+Automated checkout fetches complete history and tags, including submodules.
+Provenance capture alone would not require it: the source snapshot uses only
+`rev-parse HEAD`, `symbolic-ref`, `diff --name-only HEAD`, `ls-files --others`,
+and the declared submodule paths. Resolution does. Dependency mirroring
+redirects upstream dependency URLs to the first-party submodules, so SwiftPM
+resolves ordinary version requirements against those local mirrors and each
+must carry the tag it resolves to along with that tag's history. A mirror is
+routinely checked out past the tag a dependent resolves, so the required
+objects are not reachable from the gitlink alone. Shallowing this checkout
+therefore fails at resolution rather than at provenance, and the depth a mirror
+needs is a property of the mirroring, not something a pin update can remove.
 
 The machine-wide runner and host-contract roots are absolute, whitespace-free,
 and named once by the host contract. The Actions runner formats a `run:` step
