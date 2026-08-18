@@ -31,6 +31,14 @@ build the selected Android product in the declared Apple-container execution
 environment, sign it with the declared identity, and publish one immutable
 artifact generation.
 
+The local-development signing identity is account-local declared storage, not
+source. Each account generates and owns its own under its identity root, so no
+account reads another's private keys and the builder holds no developer signing
+material. Images signed by different accounts are therefore not update
+compatible on a device, which is the honest consequence of distinct trust
+domains: provenance records which identity signed a generation rather than
+leaving the producer indistinguishable.
+
 Gate: the source tree is clean, every selected revision is remotely resolvable,
 and the product provenance binds the exact manifest, compiler inputs, native
 Nucleus artifacts, configuration, and signing identity.

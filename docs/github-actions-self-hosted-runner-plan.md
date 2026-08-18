@@ -55,8 +55,13 @@ GitHub-hosted preflight validates the repository, event, workflow ref, full
 revision, and main reachability before checkout. The admitted revision alone
 may address the fixed `nucleus` runner group and `nucleus-m2-ultra` label, where
 Collider independently validates the protected-main provenance contract. The
-runner group and builder account are not provisioned yet, so no automated
-`main` build executes until Phase 3 establishes that host identity.
+runner group, builder account, and registered runner exist, and the first
+protected-main verification reached the builder. Its Collider step never
+executed: the Actions runner substitutes each `run:` step-script path into the
+shell command line unquoted, so a machine-wide root containing whitespace
+splits into separate arguments and `bash` fails before the step body. The host
+contract now pins whitespace-free machine-wide roots, and Phase 3 stays open
+until the builder is re-provisioned under them.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
@@ -343,7 +348,42 @@ The interactive home outside `~/Developer/nucleus`, SSH agents, browser
 profiles, personal developer state, and unrelated source remain unreadable and
 unsearchable by `nucleus-builder`. Give the builder traverse and read access to
 only the authoritative Nucleus checkout. It cannot create, modify, delete, or
-rename source, Git metadata, ignored state, or files in that checkout. The
+rename source, Git metadata, ignored state, or files in that checkout.
+
+The source boundary is an allow list, and the interactive home's mode is what
+makes it one. macOS makes every local account a member of `staff` through a
+well-known group GUID, so a private home cannot be expressed through group
+membership: at the macOS default of 0750 the builder reads the entire home
+through `staff`, and every exclusion has to be enumerated at provisioning time
+and kept current against state created later. Mode 0700 removes that access at
+its source, leaving exactly two traverse entries as the way in. `search` is
+execute-only, so neither the home nor its source directory can be listed. The
+checkout is then read through its ordinary other-readable mode.
+
+Mode removes enumeration, not reachability: a traverse grant reaches any child
+by name, so each sibling of the checkout carries an explicit deny. Those denies
+are bounded at one entry per top-level entry and are reasserted on every
+provisioning, which is what keeps them current. A sibling created between two
+provisionings is reachable by name until the next run, and closing that
+residual structurally means giving the checkout a parent directory that
+contains nothing else.
+
+The builder still holds a dedicated primary group, which is what objects it
+creates are grouped by, but that group is not what excludes it: membership of
+`staff` is not refusable on macOS, and provisioning does not pretend otherwise.
+
+No recursive pass over the working tree exists. A blanket per-file grant would
+have to override every mode the developer deliberately restricted, which is how
+owner-only local signing keys inside the checkout became builder-readable under
+the previous model. Those keys are no longer in the checkout at all: generated
+Android signing and tooling state moved to declared account-local storage, so
+the builder needs nothing from the interactive checkout that is not source.
+Ownership already denies the builder every write, so the
+only explicit write entries are one inheritable deny on the checkout root for
+objects created later and a bounded scan closing the world-writable objects
+package managers leave behind. The boundary is therefore a fixed handful of
+entries rather than one per file, and it neither weakens with time nor grows
+with the tree. The
 account also owns a separate clean checkout whose automated executable revision
 is the exact protected `main` commit admitted by Phase 2. The interactive
 account installs or runs no Actions service.
@@ -353,6 +393,34 @@ service for `nucleus-builder`. Keep runner configuration and service bootstrap
 outside the checkout-controlled work directory. Disable automatic runner
 replacement by job code; host provisioning owns runner upgrades after their
 exact versions are reviewed.
+
+The job checkout lives in builder-owned per-user storage, not under the machine
+root. Retiring or upgrading the runner therefore preserves a multi-gigabyte
+recursive submodule checkout instead of forcing a full re-clone, and
+finalization no longer walks every submodule working tree twice to reassign
+ownership. Verification proves the work root is builder-owned and outside the
+runner installation.
+
+Automated checkout is shallow. Provenance capture and every Collider action
+read the checked-out tree, never its history: the source snapshot uses only
+`rev-parse HEAD`, `symbolic-ref`, `diff --name-only HEAD`, `ls-files
+--others`, and the declared submodule paths, and no Collider or host script
+invokes `rev-list`, `merge-base`, or `git log`. Main reachability is already
+proven by the GitHub-hosted admission preflight before the revision may address
+the runner, so re-deriving it from a complete local history is redundant.
+
+The machine-wide runner and host-contract roots are absolute, whitespace-free,
+and named once by the host contract. The Actions runner formats a `run:` step
+into one command string and lets the process launcher resplit it, so any
+whitespace in these roots reaches `bash` as separate arguments and every `run:`
+step fails before its body executes. The work root carries the same
+requirement, because step scripts are written to its `_temp`.
+`/Library/Application Support` is therefore unusable for this role. The roots
+are `/Library/Nucleus/GitHubActionsRunner` and `/Library/Nucleus/Builder`.
+Provisioning refuses a contract that names a relative or whitespace-bearing
+root, and verification gates the installed roots the same way. Per-user
+Collider storage keeps its conventional `~/Library` locations, which no runner
+argument formatting reaches.
 
 Support two manual paths through the same identity. GitHub manual dispatch uses
 the protected workflow and clean builder checkout. A local invocation uses a
@@ -372,16 +440,37 @@ assigning artifacts to the earlier identity.
 
 The host contract now pins Actions runner `2.336.0`, its exact arm64 archive
 size and SHA-256, the runner group, label, name, service identity, account,
-home, organization, repository, and authoritative checkout. Preparation has
-downloaded and
-verified that archive in the interactive account's provisioning cache. The
-checked-in handoff creates or reconciles the workflow-restricted `nucleus`
-runner group, obtains a short-lived organization registration token, invokes one
-root provisioning boundary, and verifies the resulting GitHub registration.
-Before its first GitHub mutation it verifies the canonical checkout, executing
-user, complete pinned runner archive, provisioning executables, and local
-account/service state. Named handoff stages identify the exact failing control
-plane operation without printing credentials.
+home, organization, repository, and authoritative checkout. It selects the
+macOS and Xcode major releases rather than exact beta builds, because those
+build identifiers move under the host without changing what Nucleus compiles
+against; the selected developer directory, the Swift 6.4 compiler it provides,
+and its testing macro plugin remain exact. Doctor evidence still reports the
+observed macOS and Xcode build identifiers.
+
+Collider owns provisioning that needs no privilege. `collider provision
+macos-builder prepare` acquires and verifies the pinned runner archive into the
+interactive account's provisioning cache, as one more pinned host acquisition.
+`collider provision macos-builder handoff` creates or reconciles the
+workflow-restricted `nucleus` runner group, obtains a short-lived organization
+registration token, invokes one root provisioning boundary, and verifies the
+resulting GitHub registration. Before its first GitHub mutation it verifies the
+canonical checkout, executing user, complete pinned runner archive,
+provisioning executables, and local account/service state. Named stages
+identify the exact failing control-plane operation without printing
+credentials. The registration token bypasses the logging runtime entirely: it
+is read straight into memory, reaches the privileged boundary only on standard
+input, and never enters argv, the child environment, or the durable run log.
+Credential scrubbing covers JSON-encoded secret fields as well as form and
+header shapes, so a captured control-plane response cannot carry a secret into
+a run log.
+
+The language boundary sits on the privilege boundary. Collider decides and
+reconciles; every privileged mutation stays in a root-owned script it invokes
+through `sudo`, because Collider rebuilds itself from the working tree when its
+source fingerprint changes and must never do that as root. The local and
+runner-group state contract, its admitted transitions, and the machine-root
+removal guard are typed and directly tested rather than compared as shell
+output.
 Root provisioning is one-time and non-replacing: it creates the locked hidden
 account by assigning the non-authenticating directory password marker directly,
 applies the narrow source ACLs, installs a root-owned runner
@@ -393,12 +482,11 @@ The handoff is resumable across GitHub API failures. Fresh local state combines
 only with an empty runner group and selects provisioning. An exact pre-artifact
 state created before the runner, host contract, launcher, or service exists also
 combines only with an empty runner group and resumes provisioning. The source
-ACL pass never follows symbolic links, tolerates entries that vanish during a
-concurrent build, and installs inheritable directory entries so later source
-objects retain the read-only boundary.
+boundary never follows symbolic links, and its inheritable entry means objects
+created later retain the read-only contract without any traversal.
 An extracted runner whose organization registration failed before `.runner`
 and `.credentials` exist is also resumable: provisioning recreates only that
-unregistered staging tree from the pinned archive, preserves the completed ACL
+unregistered staging tree from the pinned archive, preserves the source
 boundary, and registers against the organization URL and runner group.
 Registration and local finalization are separate checkpoints. A runner with the
 exact `.runner` and credential contract but no host contract, launcher, or
@@ -416,6 +504,18 @@ any host state. Every other partial account/service pair, unexpected runner,
 multiple runners, or mismatch between local and GitHub state stops for explicit
 recovery.
 
+`collider provision macos-builder retire` returns a provisioned host to the
+pre-artifact state handoff resumes from. It refuses while the runner is
+executing a job, removes the LaunchDaemon, machine-wide builder state, and both
+installed launchers through the root boundary, then deletes the organization
+runner registration. It derives the installed machine root from the installed
+service rather than from the contract, so a host provisioned under an earlier
+root is retired completely. Recursive removal requires both that the root lives
+under the system Library and that it holds nothing but the two subtrees this
+provisioning creates; anything else stops retirement. The builder account, its
+source ACLs, per-user Collider storage, and Apple-container service are
+preserved, so re-provisioning never rebuilds the persistent cache.
+
 Collider launcher builds, fingerprints, SwiftPM configuration, resolution
 caches, security state, and scratch outputs now live under the invoking user's
 conventional Library roots. Local account-switched invocations enable effective
@@ -427,11 +527,17 @@ pairs.
 Runnable gate evidence: the root-owned checkout shim resolves and executes the
 externally built Collider, all provisioning scripts pass shell syntax and diff
 validation, and handoff execution reaches GitHub reconciliation only after the
-complete local preflight. Collider run
-`2026-08-17T18-01-08.931Z-63312` passed all four Collider test tasks, including
-fresh, complete, partial, unexpected-runner, superseded-run, and per-user service
-contracts. The pinned runner archive is present and verified;
-`nucleus-builder` and its LaunchDaemon remain absent by design until handoff.
+complete local preflight. Collider run `2026-08-18T04-01-58.146Z-36794`
+passed all four Collider test tasks, including the exhaustive local,
+runner-group, and handoff-action transition tables, the machine-root removal
+guard, credential-scrubbing, superseded-run, per-user service,
+machine-wide-root, and host-release-selection contracts. Run
+`2026-08-18T04-03-29.607Z-40483` passed every `ci-macos-builder` prerequisite
+on the current host, and run
+`2026-08-18T02-12-07.739Z-42176` verified the pinned runner archive against the
+contract through `collider provision macos-builder prepare`. Handoff has since
+provisioned, finalized, and registered the runner, and an admitted `main`
+revision reached it and exercised checkout on the builder.
 
 Gate: account and filesystem probes prove that the builder lacks admin, Secure
 Token, sudo, remote-login, GUI, TCC, Keychain, signing, publication, and
@@ -443,7 +549,7 @@ working-copy change; source mutation supersedes the run; and unsupported remote
 revisions fail before account switching or checkout.
 
 Handoff: the interactive owner grants the existing `gh` login the `admin:org`
-scope and runs `tools/macos-builder/handoff-nucleus-builder.sh`. Phase 3 becomes
+scope and runs `collider provision macos-builder handoff`. Phase 3 becomes
 complete only after that command's local and GitHub verification gates pass.
 
 ## Phase 4: Unify Persistent Cache and Host Admission

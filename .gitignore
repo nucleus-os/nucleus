@@ -59,8 +59,6 @@ Desktop.ini
 # Android build and source state
 /android-runtime/.gfxstream-build/
 /android-runtime/.aosp-build/
-/android-runtime/.aosp-signing/
-/android-runtime/.aosp-tools/
 /core/android/.gradle/
 /core/android/.cxx/
 /core/android/local.properties

@@ -11,6 +11,7 @@ extension WorkspaceContext {
         directory: URL? = nil,
         capture: Bool = false,
         environmentOverrides: [String: String] = [:],
+        input: CommandSpec.Input? = nil,
         output: CommandSpec.Output? = nil,
         timeoutSeconds: Int? = nil,
         timeoutIsSuccess: Bool = false,
@@ -29,7 +30,7 @@ extension WorkspaceContext {
             arguments: arguments,
             workingDirectory: directory.map(FilePath.init) ?? root,
             environment: childEnvironment,
-            input: terminal ? .terminal : .none,
+            input: input ?? (terminal ? .terminal : .none),
             output: output
                 ?? (terminal
                     ? .terminal

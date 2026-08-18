@@ -1,12 +1,10 @@
 {
   "operatingSystem": {
-    "productVersion": "27.0",
-    "buildVersion": "26A5388g"
+    "majorVersion": 27
   },
   "xcode": {
     "developerDirectory": "/Applications/Xcode-beta.app/Contents/Developer",
-    "version": "27.0",
-    "buildVersion": "27A5228h",
+    "majorVersion": 27,
     "swiftVersionFragment": "Apple Swift version 6.4",
     "testingMacroPluginRelativePath": "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib"
   },
@@ -26,6 +24,7 @@
   },
   "builder": {
     "user": "nucleus-builder",
+    "group": "nucleus-builder",
     "home": "/Users/nucleus-builder",
     "developerUser": "maddy",
     "authoritativeCheckout": "/Users/maddy/Developer/nucleus",
@@ -38,7 +37,10 @@
     "runnerArchiveURL": "https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-osx-arm64-2.336.0.tar.gz",
     "runnerArchiveSHA256": "8e8839c49b7060b6b2154f4931f815df330c27f167d53ef2239ee3dfce28b079",
     "runnerArchiveSize": 127389671,
-    "runnerServiceLabel": "com.nucleus.github-actions-runner"
+    "runnerServiceLabel": "com.nucleus.github-actions-runner",
+    "runnerRoot": "/Library/Nucleus/GitHubActionsRunner",
+    "hostContractRoot": "/Library/Nucleus/Builder",
+    "runnerWorkRoot": "/Users/nucleus-builder/Library/Developer/Nucleus/Collider/actions-runner-work"
   },
   "resources": {
     "physicalCPUCount": 24,

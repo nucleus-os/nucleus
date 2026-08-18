@@ -22,6 +22,7 @@ Subcommands:
 - `check`
 - `generate`
 - `package`: Assemble native Nucleus distribution packages.
+- `provision`: Provision and retire the trusted host builder identity.
 - `skill`: Maintain repository-scoped agent skills.
 - `benchmark`
 - `clean`: Remove a component's graph-declared rebuildable storage.
@@ -179,6 +180,23 @@ Arguments and options:
 - `--run-id` `<run-id>` — Resume an interrupted run.
 - `--android-arm64` `<android-arm64>`
 - `--android-x86-64` `<android-x86-64>`
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider provision`
+
+Provision and retire the trusted host builder identity.
+
+Usage: `collider provision [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] <target> <operation> [--version] [--help]`
+
+Arguments and options:
+
+- `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
+- `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
+- `<target>` — Provisioning target: macos-builder.; values: `macos-builder`
+- `<operation>` — Provisioning operation.; values: `prepare`, `handoff`, `retire`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

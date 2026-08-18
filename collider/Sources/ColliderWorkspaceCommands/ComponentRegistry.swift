@@ -119,6 +119,7 @@ package struct ComponentRegistry {
             cacheRoot: context.cacheRoot,
             buildRoot: context.hostBuildRoot,
             artifactRoot: context.artifactRoot,
+            identityRoot: context.identityRoot,
             logRoot: context.logRoot,
             environment: recipeEnvironment,
             buildContexts: buildContexts,

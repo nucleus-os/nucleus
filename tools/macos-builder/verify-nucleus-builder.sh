@@ -11,6 +11,7 @@ contract_value() { /usr/bin/plutil -extract "$1" raw -o - "$contract"; }
 fail() { echo "error: $*" >&2; exit 77; }
 
 readonly builder_user="$(contract_value builder.user)"
+readonly builder_group="$(contract_value builder.group)"
 readonly builder_home="$(contract_value builder.home)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly checkout="$(contract_value builder.authoritativeCheckout)"
@@ -20,7 +21,9 @@ readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
-readonly runner_root="/Library/Application Support/Nucleus/GitHubActionsRunner"
+readonly runner_root="$(contract_value builder.runnerRoot)"
+readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
 
 [[ $(/usr/bin/dscl . -read "/Users/$builder_user" IsHidden | /usr/bin/awk '{print $2}') == 1 ]] \
   || fail "$builder_user is not hidden"
@@ -29,6 +32,15 @@ readonly runner_root="/Library/Application Support/Nucleus/GitHubActionsRunner"
 for group in admin wheel com.apple.access_ssh com.apple.access_remote_ae; do
   /usr/sbin/dseditgroup -o checkmember -m "$builder_user" "$group" 2>/dev/null \
     | /usr/bin/grep -q 'yes' && fail "$builder_user belongs to $group"
+done
+[[ $(/usr/bin/id -gn "$builder_user") == "$builder_group" ]] \
+  || fail "$builder_user primary group is not the dedicated builder group"
+# Every local account is a staff member on macOS, so the interactive home must
+# grant nothing to group or other. This mode, not group membership, is what
+# makes the source boundary an allow list.
+for gate_directory in "/Users/$developer_user" "/Users/$developer_user/Developer"; do
+  [[ $(/usr/bin/stat -f '%Lp' "$gate_directory") == 700 ]] \
+    || fail "traverse gate is reachable by group or other: $gate_directory"
 done
 /usr/sbin/sysadminctl -secureTokenStatus "$builder_user" 2>&1 \
   | /usr/bin/grep -q 'DISABLED' || fail "$builder_user has a Secure Token"
@@ -47,6 +59,15 @@ sudo_access="$(/usr/bin/sudo -n -l -U "$builder_user" 2>&1 || true)"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   /bin/test ! -r "/Users/$developer_user/.ssh" \
   || fail "builder can read the developer SSH directory"
+# The traverse grant is execute-only, so the home is reachable but not
+# enumerable. This is the property that makes the boundary an allow list:
+# interactive state created after provisioning is unreachable by default.
+/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  /bin/ls "/Users/$developer_user" >/dev/null 2>&1 \
+  && fail "builder can list the developer home"
+/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  /bin/ls "/Users/$developer_user/Developer" >/dev/null 2>&1 \
+  && fail "builder can list the developer source directory"
 while IFS= read -r -d '' unrelated_path; do
   /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
     /bin/test ! -x "$unrelated_path" \
@@ -65,11 +86,21 @@ done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 
   || fail "constrained launcher ownership or mode drifted"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' /usr/local/bin/collider) == root:wheel:755 ]] \
   || fail "builder Collider shim ownership or mode drifted"
+for declared_path in "$runner_root" "$host_contract_root" "$runner_work_root"; do
+  [[ "$declared_path" == /* && ! "$declared_path" =~ [[:space:]] ]] \
+    || fail "declared builder root is not an absolute whitespace-free path: $declared_path"
+done
+[[ -f "$host_contract_root/authoritative-checkout" ]] \
+  || fail "host checkout contract is absent"
+[[ $(/usr/bin/sed -n '1p' "$host_contract_root/authoritative-checkout") == "$checkout" ]] \
+  || fail "host checkout contract does not name the authoritative checkout"
 [[ -f "$runner_root/.runner" ]] || fail "runner registration is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_root") == root:wheel:755 ]] \
   || fail "runner installation is not root-owned and immutable to jobs"
-[[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_root/_work") == "$builder_user:staff" ]] \
+[[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_work_root") == "$builder_user:$builder_group" ]] \
   || fail "runner work checkout is not builder-owned"
+[[ "$runner_work_root" != "$runner_root"/* ]] \
+  || fail "runner work checkout is inside the runner installation"
 [[ $(/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   "$runner_root/bin/Runner.Listener" --version) == "$runner_version" ]] \
   || fail "runner version drifted"

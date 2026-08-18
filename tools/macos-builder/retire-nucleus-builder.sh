@@ -1,0 +1,65 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly contract="$script_directory/contract.json"
+readonly machine_root_library="$script_directory/builder-machine-root.sh"
+
+if [[ $EUID -ne 0 || $# -ne 0 ]]; then
+  echo "usage: sudo $0" >&2
+  exit 64
+fi
+
+source "$machine_root_library"
+
+contract_value() {
+  /usr/bin/plutil -extract "$1" raw -o - "$contract"
+}
+
+readonly builder_user="$(contract_value builder.user)"
+readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly declared_runner_root="$(contract_value builder.runnerRoot)"
+readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+
+if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+  echo "error: a job is executing on this runner; drain it before retiring" >&2
+  exit 75
+fi
+
+# The installed service records what is actually installed, which may predate
+# the machine roots the current contract declares.
+installed_machine_root=""
+if [[ -f "$runner_plist" && ! -L "$runner_plist" ]]; then
+  installed_service="$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$runner_plist")"
+  installed_machine_root="$(/usr/bin/dirname "$(/usr/bin/dirname "$installed_service")")"
+fi
+
+if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
+  /bin/launchctl bootout "system/$runner_service_label" || true
+  for _ in {1..50}; do
+    /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 || break
+    /bin/sleep 0.2
+  done
+  ! /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
+    || { echo "error: runner LaunchDaemon is still loaded" >&2; exit 70; }
+fi
+/bin/rm -f \
+  "$runner_plist" \
+  /usr/local/bin/collider \
+  /usr/local/bin/nucleus-builder-run
+
+for machine_root in \
+  "$installed_machine_root" \
+  "$(/usr/bin/dirname "$declared_runner_root")"
+do
+  [[ -n "$machine_root" ]] || continue
+  [[ -e "$machine_root" || -L "$machine_root" ]] || continue
+  nucleus_supported_machine_root_path "$machine_root" \
+    && nucleus_machine_root_holds_only_builder_state "$machine_root" \
+    || { echo "error: refusing to remove unrecognized machine root: $machine_root" >&2; exit 73; }
+  /bin/rm -rf "$machine_root"
+done
+
+echo "retired the runner service, machine-wide builder state, and installed launchers"
+echo "preserved $builder_user, its source ACLs, per-user Collider storage, and container service"

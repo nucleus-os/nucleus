@@ -2476,6 +2476,8 @@ private func artifactInput(
                 "android-runtime"
             ).path),
         sourceInputRoot: FilePath("/cache/aosp/source-inputs"),
+        toolsRoot: FilePath("/cache/aosp/tools"),
+        identityRoot: FilePath("/identity"),
         artifactRoot: FilePath("/artifacts/aosp"),
         buildTool: buildTool,
         artifactTool: artifactTool,
@@ -2496,6 +2498,24 @@ private func artifactInput(
     let sourceLock = try #require(
         tasks.first { $0.id == AndroidRuntimeTaskIDs.aospSourceLock })
     #expect(sourceLock.assessmentPolicy == .incremental)
+    // Generated Android state is declared storage, never the source checkout.
+    // The builder consumes the checkout read-only and cannot write into it, so
+    // an output rooted there is unbuildable for one of the two accounts.
+    let signingIdentity = try #require(
+        tasks.first { $0.id.rawValue == "android-runtime.aosp-signing-identity" })
+    #expect(
+        signingIdentity.outputs.allSatisfy {
+            $0.path.string.hasPrefix("/identity/android-runtime/aosp-signing/")
+        })
+    #expect(!signingIdentity.outputs.isEmpty)
+    let checkoutPrefix = workspace.appendingPathComponent("android-runtime").path + "/."
+    for task in tasks {
+        for output in task.outputs {
+            #expect(
+                !output.path.string.hasPrefix(checkoutPrefix),
+                "\(task.id.rawValue) writes generated state into the checkout: \(output.path)")
+        }
+    }
     #expect(!pipelineIDs.contains("android-runtime.aosp-builder-image"))
     #expect(
         pipelineIDs.suffix(5) == [

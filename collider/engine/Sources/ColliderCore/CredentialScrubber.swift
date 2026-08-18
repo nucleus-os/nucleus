@@ -36,6 +36,7 @@ public enum CredentialScrubber {
             #"(?i)(authorization\s*:\s*)[^\r\n]+"#,
             #"(?i)(cookie\s*:\s*)[^\r\n]+"#,
             #"(?i)((?:credential|password|passwd|secret|token|api[-_]?key|access[-_]?key)=)[^\s&]+"#,
+            #"(?i)("(?:credential|password|passwd|secret|token|api[-_]?key|access[-_]?key)"\s*:\s*")[^"]*"#,
         ] {
             result = result.replacingOccurrences(
                 of: pattern,

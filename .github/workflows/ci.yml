@@ -87,7 +87,10 @@ jobs:
       - name: Check out the admitted revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          fetch-depth: 0
+          # Provenance verification and every Collider action read the checked
+          # out tree, never its history, and the admission job already proved
+          # main reachability through the API before this job was addressed.
+          fetch-depth: 1
           persist-credentials: false
           ref: ${{ needs.admission.outputs.revision }}
           submodules: recursive

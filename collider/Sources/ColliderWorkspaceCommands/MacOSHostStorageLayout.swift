@@ -95,8 +95,19 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
         developerRoot.appending("artifacts")
     }
 
+    /// Durable, account-local identity material such as local-development
+    /// signing keys. Each account owns its own; none of it is shared, so no
+    /// account ever reads another's private keys.
+    package var identity: FilePath {
+        developerRoot.appending("identity")
+    }
+
     package var downloads: FilePath {
         cacheRoot.appending("downloads")
+    }
+
+    package var provisioning: FilePath {
+        cacheRoot.appending("provisioning")
     }
 
     package var nativeSDKs: FilePath {

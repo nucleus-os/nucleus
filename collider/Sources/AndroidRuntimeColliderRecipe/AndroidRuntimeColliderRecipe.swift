@@ -140,6 +140,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             root: root,
             sourceInputRoot: context.cacheRoot.appending(
                 "android-runtime/aosp-source-inputs"),
+            toolsRoot: context.cacheRoot.appending("android-runtime/aosp-tools"),
+            identityRoot: context.identityRoot,
             artifactRoot: aospBuildRoot,
             buildTool: aospContainers.build,
             artifactTool: aospContainers.artifact,
@@ -261,8 +263,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     .task(TaskID(rawValue: "android-runtime.aosp-signing-identity"))
                 ],
                 storageClass: .identity,
-                root: root.appending(".aosp-signing"),
-                safetyRoot: root,
+                root: context.identityRoot.appending("android-runtime/aosp-signing"),
+                safetyRoot: context.identityRoot.appending("android-runtime"),
                 retentionPolicy: .protected),
             StorageDeclaration(
                 id: "android-aosp-tools",
@@ -272,8 +274,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     .task(TaskID(rawValue: "android-runtime.aosp-repo-launcher")),
                 ],
                 storageClass: .cache,
-                root: root.appending(".aosp-tools"),
-                safetyRoot: root,
+                root: context.cacheRoot.appending("android-runtime/aosp-tools"),
+                safetyRoot: context.cacheRoot.appending("android-runtime"),
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-artifact-root",
@@ -349,13 +351,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     public static func verifyAOSPSourceLock(
         root: FilePath,
+        toolsRoot: FilePath,
         environment: [String: String]
     ) throws -> TaskDeclaration {
         let launcher = try aospRepoLauncher(
             root: root,
+            toolsRoot: toolsRoot,
             environment: environment)
         return try aospSourceLockArtifacts(
             root: root,
+            toolsRoot: toolsRoot,
             environment: environment,
             launcher: launcher.executable
         ).task
@@ -363,12 +368,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospSourceLockArtifacts(
         root: FilePath,
+        toolsRoot: FilePath,
         environment: [String: String],
         launcher: ArtifactReference
     ) throws -> SourceLockArtifacts {
         let lockPath = root.appending("aosp.lock.json")
-        let report = root.appending(
-            ".aosp-tools/source-lock-verification.json")
+        let report = toolsRoot.appending("source-lock-verification.json")
         let lock = try loadAOSPSourceLock(root: root)
         let specification = try lock.specification()
         var builder = TaskBuilder(
@@ -428,6 +433,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospSourceArtifacts(
         root: FilePath,
+        toolsRoot: FilePath,
         sourceInputRoot: FilePath,
         sourceStateRoot: FilePath,
         buildTool: OCIMountedEntrypoint,
@@ -436,9 +442,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     ) throws -> SourceArtifacts {
         let launcher = try aospRepoLauncher(
             root: root,
+            toolsRoot: toolsRoot,
             environment: environment)
         let verification = try aospSourceLockArtifacts(
             root: root,
+            toolsRoot: toolsRoot,
             environment: environment,
             launcher: launcher.executable)
         let inputs = try aospSourceInputs(
@@ -464,6 +472,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     package static func aospImageTasks(
         root: FilePath,
         sourceInputRoot: FilePath,
+        toolsRoot: FilePath,
+        identityRoot: FilePath,
         artifactRoot: FilePath,
         buildTool: OCIMountedEntrypoint,
         artifactTool: OCIMountedEntrypoint,
@@ -477,16 +487,18 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         try productLock.validate()
         let source = try aospSourceArtifacts(
             root: root,
+            toolsRoot: toolsRoot,
             sourceInputRoot: sourceInputRoot,
             sourceStateRoot: artifactRoot.appending("source-state"),
             buildTool: buildTool,
             apiLevel: productLock.platformSDK,
             environment: environment)
         let signing = try aospSigningIdentity(
-            root: root,
+            identityRoot: identityRoot,
             environment: environment)
         let product = try aospProductImageTasks(
             root: root,
+            identityRoot: identityRoot,
             sourceWorkspace: source.workspace,
             aospBuildRoot: artifactRoot,
             environment: environment,
@@ -501,6 +513,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospRepoLauncher(
         root: FilePath,
+        toolsRoot: FilePath,
         environment _: [String: String]
     ) throws -> RepoLauncherArtifacts {
         let lock = try loadAOSPSourceLock(root: root)
@@ -511,7 +524,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
                 "Repo launcher download specification is invalid")
         }
-        let launcher = try aospRepoLauncherPath(root: root)
+        let launcher = try aospRepoLauncherPath(root: root, toolsRoot: toolsRoot)
         let specification = try DownloadSpec(
             url: url,
             permittedRedirectOrigins: ["https://storage.googleapis.com"],
@@ -656,11 +669,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     }
 
     private static func aospSigningIdentity(
-        root: FilePath,
+        identityRoot: FilePath,
         environment: [String: String]
     ) throws -> SigningArtifacts {
-        let signingIdentity = root.appending(
-            ".aosp-signing/local-development")
+        // Each account generates and owns its own local-development identity in
+        // its declared storage. Nothing signs with another account's private
+        // keys, and no account needs read access to another's.
+        let signingIdentity = identityRoot.appending(
+            "android-runtime/aosp-signing/local-development")
         var builder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.aosp-signing-identity"),
             component: component)
@@ -700,6 +716,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospProductImageTasks(
         root: FilePath,
+        identityRoot: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
         aospBuildRoot: FilePath,
         environment: [String: String],
@@ -713,8 +730,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             AOSPProductLock.self,
             from: Data(contentsOf: URL(fileURLWithPath: lockPath.string)))
         try lock.validate()
-        let signingIdentity = root.appending(
-            ".aosp-signing/local-development")
+        let signingIdentity = identityRoot.appending(
+            "android-runtime/aosp-signing/local-development")
         let productIdentity = Array(
             [
                 lock.product,
@@ -975,12 +992,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     }
 
     private static func aospRepoLauncherPath(
-        root: FilePath
+        root: FilePath,
+        toolsRoot: FilePath
     ) throws -> FilePath {
         let lock = try loadAOSPSourceLock(root: root)
         try lock.validate()
-        return root.appending(
-            ".aosp-tools/repo-\(lock.repo.launcherVersion)")
+        return toolsRoot.appending("repo-\(lock.repo.launcherVersion)")
     }
 
     package static func buildGfxstream(

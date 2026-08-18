@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly builder_user="nucleus-builder"
-readonly checkout_record="/Library/Application Support/Nucleus/Builder/authoritative-checkout"
+readonly checkout_record="/Library/Nucleus/Builder/authoritative-checkout"
 
 if [[ $EUID -ne 0 ]]; then
   echo "error: invoke this root-owned launcher through sudo" >&2

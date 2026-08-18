@@ -3,9 +3,6 @@ set -euo pipefail
 
 readonly script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly contract="$script_directory/contract.json"
-readonly acl_library="$script_directory/builder-acl.sh"
-
-source "$acl_library"
 
 if [[ $EUID -ne 0 || $# -ne 1 ]]; then
   echo "usage: sudo $0 <verified-runner-archive>  # registration token on stdin" >&2
@@ -27,6 +24,7 @@ run_as_builder() {
 
 readonly archive="$1"
 readonly builder_user="$(contract_value builder.user)"
+readonly builder_group="$(contract_value builder.group)"
 readonly builder_home="$(contract_value builder.home)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly checkout="$(contract_value builder.authoritativeCheckout)"
@@ -38,9 +36,18 @@ readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly expected_sha="$(contract_value builder.runnerArchiveSHA256)"
 readonly expected_size="$(contract_value builder.runnerArchiveSize)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
-readonly runner_root="/Library/Application Support/Nucleus/GitHubActionsRunner"
-readonly host_contract_root="/Library/Application Support/Nucleus/Builder"
+readonly runner_root="$(contract_value builder.runnerRoot)"
+readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
 readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+
+for declared_path in "$runner_root" "$host_contract_root" "$runner_work_root"; do
+  if [[ "$declared_path" != /* || "$declared_path" =~ [[:space:]] ]]; then
+    echo "error: declared builder root must be absolute and free of whitespace" >&2
+    echo "error: the Actions runner passes step-script paths to the shell unquoted" >&2
+    exit 78
+  fi
+done
 
 actual_sha="$(/usr/bin/shasum -a 256 "$archive" | /usr/bin/awk '{print $1}')"
 actual_size="$(/usr/bin/stat -f '%z' "$archive")"
@@ -57,7 +64,7 @@ runner_staging_state=fresh
 if [[ -e "$runner_root" || -L "$runner_root" ]]; then
   [[ ! -L "$runner_root" && -d "$runner_root" ]] \
     || { echo "error: runner staging root is not a directory" >&2; exit 73; }
-  [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_root") == "$builder_user:staff:755" ]] \
+  [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_root") == "$builder_user:$builder_group:755" ]] \
     || { echo "error: runner staging root ownership or mode drifted" >&2; exit 73; }
   if [[ -z "$(/usr/bin/find "$runner_root" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
     runner_staging_state=fresh
@@ -76,6 +83,27 @@ if [[ -e "$runner_root" || -L "$runner_root" ]]; then
 fi
 readonly runner_staging_state
 
+# The builder's own primary group is what makes the source boundary an allow
+# list. A member of staff would inherit read access to the whole interactive
+# home, which is mode 0750 and staff-readable, and every restriction would then
+# have to be enumerated and kept current.
+if /usr/bin/dscl . -read "/Groups/$builder_group" >/dev/null 2>&1; then
+  builder_gid="$(/usr/bin/dscl . -read "/Groups/$builder_group" PrimaryGroupID \
+    | /usr/bin/awk '{print $2}')"
+  [[ "$builder_gid" -ge 501 && "$builder_gid" -lt 1000 ]] \
+    || { echo "error: existing builder GID is outside the local service range" >&2; exit 77; }
+else
+  maximum_gid="$(/usr/bin/dscl . -list /Groups PrimaryGroupID \
+    | /usr/bin/awk '$2 >= 501 && $2 < 1000 {print $2}' \
+    | /usr/bin/sort -n | /usr/bin/tail -1)"
+  builder_gid="$(( ${maximum_gid:-500} + 1 ))"
+  /usr/bin/dscl . -create "/Groups/$builder_group"
+  /usr/bin/dscl . -create "/Groups/$builder_group" RealName "Nucleus Builder"
+  /usr/bin/dscl . -create "/Groups/$builder_group" PrimaryGroupID "$builder_gid"
+  /usr/bin/dscl . -create "/Groups/$builder_group" Password '*'
+fi
+readonly builder_gid
+
 if ! /usr/bin/dscl . -read "/Users/$builder_user" >/dev/null 2>&1; then
   maximum_uid="$(/usr/bin/dscl . -list /Users UniqueID \
     | /usr/bin/awk '$2 >= 501 && $2 < 1000 {print $2}' \
@@ -84,7 +112,7 @@ if ! /usr/bin/dscl . -read "/Users/$builder_user" >/dev/null 2>&1; then
   /usr/bin/dscl . -create "/Users/$builder_user"
   /usr/bin/dscl . -create "/Users/$builder_user" RealName "Nucleus Builder"
   /usr/bin/dscl . -create "/Users/$builder_user" UniqueID "$builder_uid"
-  /usr/bin/dscl . -create "/Users/$builder_user" PrimaryGroupID 20
+  /usr/bin/dscl . -create "/Users/$builder_user" PrimaryGroupID "$builder_gid"
   /usr/bin/dscl . -create "/Users/$builder_user" NFSHomeDirectory "$builder_home"
   /usr/bin/dscl . -create "/Users/$builder_user" UserShell /usr/bin/false
   /usr/bin/dscl . -create "/Users/$builder_user" IsHidden 1
@@ -92,9 +120,10 @@ else
   builder_uid="$(/usr/bin/id -u "$builder_user")"
   [[ "$builder_uid" -ge 501 && "$builder_uid" -lt 1000 ]] \
     || { echo "error: existing builder UID is outside the local service-account range" >&2; exit 77; }
+  /usr/bin/dscl . -create "/Users/$builder_user" PrimaryGroupID "$builder_gid"
   [[ $(/usr/bin/dscl . -read "/Users/$builder_user" PrimaryGroupID \
-      | /usr/bin/awk '{print $2}') == 20 ]] \
-    || { echo "error: existing builder primary group is not staff" >&2; exit 77; }
+      | /usr/bin/awk '{print $2}') == "$builder_gid" ]] \
+    || { echo "error: builder primary group is not the dedicated group" >&2; exit 77; }
   [[ $(/usr/bin/dscl . -read "/Users/$builder_user" NFSHomeDirectory \
       | /usr/bin/awk '{print $2}') == "$builder_home" ]] \
     || { echo "error: existing builder home does not match the contract" >&2; exit 77; }
@@ -110,6 +139,10 @@ if /usr/bin/dscl . -read "/Users/$builder_user" AuthenticationAuthority 2>/dev/n
   echo "error: existing builder account has a password authentication authority" >&2
   exit 77
 fi
+# staff is deliberately absent here. macOS makes every local account a member
+# through a well-known group GUID, so demanding non-membership is unsatisfiable;
+# the interactive home's mode, not group membership, is what excludes the
+# builder.
 if /usr/sbin/dseditgroup -o checkmember -m "$builder_user" admin | /usr/bin/grep -q 'yes'; then
   echo "error: $builder_user unexpectedly belongs to admin" >&2
   exit 77
@@ -120,33 +153,52 @@ readonly builder_uid
 /bin/launchctl print "user/$builder_uid" >/dev/null 2>&1 \
   || /bin/launchctl bootstrap "user/$builder_uid"
 /bin/chmod 0700 "$builder_home"
-/usr/sbin/chown "$builder_user":staff "$builder_home"
+/usr/sbin/chown "$builder_user":"$builder_group" "$builder_home"
 
-if [[ "$runner_staging_state" == fresh ]]; then
-  # These ACLs expose only the named source path. POSIX mode and an explicit
-  # deny retain a read-only boundary even though both accounts use staff.
-  /bin/chmod +a "$builder_user allow search" "/Users/$developer_user"
-  /bin/chmod +a "$builder_user allow search" "/Users/$developer_user/Developer"
-  nucleus_apply_acl_tree \
-    "$checkout" \
-    "$builder_user allow read,execute" \
-    "$builder_user allow read,execute,file_inherit,directory_inherit"
-  nucleus_apply_acl_tree \
-    "$checkout" \
+# The source boundary is an allow list, and the interactive home's mode is what
+# makes it one. macOS makes every local account a member of staff through a
+# well-known group GUID, so a private home cannot rely on group membership: at
+# the macOS default of 0750 the builder reads the whole home through staff, and
+# every exclusion has to be enumerated and kept current against state created
+# later. Mode 0700 removes that access at its source and leaves two traverse
+# grants as the only way in. `search` is execute-only, so neither directory can
+# be listed. The checkout is then read through its ordinary other-readable
+# mode, which is why no recursive pass over the working tree exists: a blanket
+# grant would also have to override every mode the developer deliberately
+# restricted.
+/bin/chmod 0700 "/Users/$developer_user"
+/bin/chmod 0700 "/Users/$developer_user/Developer"
+/bin/chmod +a "$builder_user allow search" "/Users/$developer_user"
+/bin/chmod +a "$builder_user allow search" "/Users/$developer_user/Developer"
+# A traverse grant is not a grant to one path: it reaches any child by name,
+# so mode alone removes enumeration but not access. Every sibling of the
+# checkout is therefore denied explicitly. These are bounded, one entry per
+# top-level entry, and are reasserted on every provisioning so entries created
+# since the last run are covered.
+while IFS= read -r -d '' unrelated_path; do
+  /bin/chmod -h +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
+done < <(/usr/bin/find "/Users/$developer_user" -mindepth 1 -maxdepth 1 \
+  ! -name Developer -print0)
+while IFS= read -r -d '' unrelated_path; do
+  /bin/chmod -h +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
+done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 1 \
+  ! -path "$checkout" -print0)
+# Ownership denies the builder every write in the checkout, so only the
+# world-writable objects package managers create need an explicit entry. The
+# inheritable entry covers objects created later; the bounded scan covers the
+# ones that predate it.
+/bin/chmod +a \
+  "$builder_user deny write,append,delete,writeattr,writeextattr,writesecurity,chown,file_inherit,directory_inherit" \
+  "$checkout"
+while IFS= read -r -d '' writable_path; do
+  /bin/chmod -h +a \
     "$builder_user deny write,append,delete,writeattr,writeextattr,writesecurity,chown" \
-    "$builder_user deny add_file,add_subdirectory,delete_child,delete,writeattr,writeextattr,writesecurity,chown,file_inherit,directory_inherit"
-  while IFS= read -r -d '' unrelated_path; do
-    /bin/chmod +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
-  done < <(/usr/bin/find "/Users/$developer_user" -mindepth 1 -maxdepth 1 \
-    ! -name Developer -print0)
-  while IFS= read -r -d '' unrelated_path; do
-    /bin/chmod +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
-  done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 1 \
-    ! -path "$checkout" -print0)
-fi
+    "$writable_path"
+done < <(/usr/bin/find -x "$checkout" -perm -o+w -print0)
 
-/usr/bin/install -d -o root -g wheel -m 0755 "/Library/Application Support/Nucleus"
-/usr/bin/install -d -o "$builder_user" -g staff -m 0755 "$runner_root"
+/usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$runner_root")"
+/usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$runner_root"
+/usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$runner_work_root"
 
 if [[ -e "$runner_plist" || -L "$runner_plist" ]]; then
   echo "error: runner service state already exists" >&2
@@ -156,7 +208,7 @@ if [[ "$runner_staging_state" == unregistered ]]; then
   /usr/bin/find -x "$runner_root" -mindepth 1 -delete
 fi
 /usr/bin/tar -xzf "$archive" -C "$runner_root"
-/usr/sbin/chown -R "$builder_user":staff "$runner_root"
+/usr/sbin/chown -R "$builder_user":"$builder_group" "$runner_root"
 run_as_builder "$runner_root/config.sh" \
   --unattended \
   --url "$organization" \
@@ -165,7 +217,7 @@ run_as_builder "$runner_root/config.sh" \
   --runnergroup "$runner_group" \
   --no-default-labels \
   --labels "$runner_label" \
-  --work _work \
+  --work "$runner_work_root" \
   --disableupdate
 registration_token=''
 "$script_directory/finalize-nucleus-builder.sh"

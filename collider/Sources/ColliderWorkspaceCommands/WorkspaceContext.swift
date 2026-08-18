@@ -74,6 +74,7 @@ package struct WorkspaceContext: Sendable {
     package let nativeSDKRoot: FilePath
     package let hostBuildRoot: FilePath
     package let artifactRoot: FilePath
+    package let identityRoot: FilePath
     package let logRoot: FilePath
     package let runtime: ColliderRuntime
     package let console: CommandConsole
@@ -91,6 +92,7 @@ package struct WorkspaceContext: Sendable {
         cacheRoot: FilePath? = nil,
         hostBuildRoot requestedHostBuildRoot: FilePath? = nil,
         artifactRoot requestedArtifactRoot: FilePath? = nil,
+        identityRoot requestedIdentityRoot: FilePath? = nil,
         logRoot requestedLogRoot: FilePath? = nil
     ) {
         self.root = root
@@ -121,10 +123,14 @@ package struct WorkspaceContext: Sendable {
         artifactRoot =
             requestedArtifactRoot ?? hostLayout?.artifacts
             ?? resolvedCacheRoot.appending("artifacts")
+        identityRoot =
+            requestedIdentityRoot ?? hostLayout?.identity
+            ?? resolvedCacheRoot.appending("identity")
         logRoot = requestedLogRoot ?? nucleusLogRoot(workspaceRoot: root)
         #else
         hostBuildRoot = requestedHostBuildRoot ?? resolvedCacheRoot.appending("build")
         artifactRoot = requestedArtifactRoot ?? resolvedCacheRoot.appending("artifacts")
+        identityRoot = requestedIdentityRoot ?? resolvedCacheRoot.appending("identity")
         logRoot = requestedLogRoot ?? nucleusLogRoot(workspaceRoot: root)
         #endif
         self.environment = normalizedEnvironment

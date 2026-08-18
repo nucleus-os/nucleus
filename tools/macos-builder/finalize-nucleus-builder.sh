@@ -17,6 +17,7 @@ run_as_builder() {
 }
 
 readonly builder_user="$(contract_value builder.user)"
+readonly builder_group="$(contract_value builder.group)"
 readonly builder_home="$(contract_value builder.home)"
 readonly checkout="$(contract_value builder.authoritativeCheckout)"
 readonly runner_group="$(contract_value builder.runnerGroup)"
@@ -24,10 +25,10 @@ readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
-readonly runner_root="/Library/Application Support/Nucleus/GitHubActionsRunner"
-readonly runner_work="$runner_root/_work"
+readonly runner_root="$(contract_value builder.runnerRoot)"
+readonly runner_work="$(contract_value builder.runnerWorkRoot)"
 readonly runner_logs="$builder_home/Library/Logs/Nucleus/GitHubActionsRunner"
-readonly host_contract_root="/Library/Application Support/Nucleus/Builder"
+readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_agent_directory="$builder_home/Library/LaunchAgents"
@@ -38,7 +39,7 @@ readonly builder_service_starter="$builder_service_directory/container-system-st
 [[ ! -L "$runner_root" && -d "$runner_root" ]] \
   || { echo "error: registered runner root is not a directory" >&2; exit 73; }
 runner_root_contract="$(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_root")"
-[[ "$runner_root_contract" == "$builder_user:staff:755" \
+[[ "$runner_root_contract" == "$builder_user:$builder_group:755" \
     || "$runner_root_contract" == root:wheel:755 ]] \
   || { echo "error: registered runner root ownership or mode drifted" >&2; exit 73; }
 for credential in .credentials .credentials_rsaparams .runner; do
@@ -49,7 +50,7 @@ done
   || { echo "error: registered runner name drifted" >&2; exit 73; }
 [[ $(/usr/bin/plutil -extract poolName raw -o - "$runner_root/.runner") == "$runner_group" ]] \
   || { echo "error: registered runner group drifted" >&2; exit 73; }
-[[ $(/usr/bin/plutil -extract workFolder raw -o - "$runner_root/.runner") == _work ]] \
+[[ $(/usr/bin/plutil -extract workFolder raw -o - "$runner_root/.runner") == "$runner_work" ]] \
   || { echo "error: registered runner work directory drifted" >&2; exit 73; }
 [[ ! -L "$host_contract_root" ]] \
   || { echo "error: host contract root is a symbolic link" >&2; exit 73; }
@@ -76,7 +77,7 @@ for builder_path in \
   "$runner_root/_diag" \
   "$runner_work"
 do
-  /usr/bin/install -d -o "$builder_user" -g staff -m 0755 "$builder_path"
+  /usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$builder_path"
 done
 if [[ -e "$runner_root/runsvc.sh" ]]; then
   /usr/bin/cmp -s "$runner_root/bin/runsvc.sh" "$runner_root/runsvc.sh" \
@@ -86,13 +87,18 @@ else
 fi
 /bin/chmod 0755 "$runner_root/runsvc.sh"
 /usr/sbin/chown -R root:wheel "$runner_root"
-/usr/sbin/chown -R "$builder_user":staff "$runner_root/_diag" "$runner_work"
+/usr/sbin/chown -R "$builder_user":"$builder_group" "$runner_root/_diag"
+# The work root is outside the installation the recursive pass above owns, so
+# its checkout keeps builder ownership without a recursive walk of every
+# submodule working tree.
+/usr/sbin/chown "$builder_user":"$builder_group" "$runner_work"
 /bin/chmod 0755 "$runner_root/_diag" "$runner_work"
 for credential in .credentials .credentials_rsaparams .runner; do
-  /usr/sbin/chown root:staff "$runner_root/$credential"
+  /usr/sbin/chown root:"$builder_group" "$runner_root/$credential"
   /bin/chmod 0640 "$runner_root/$credential"
 done
 
+/usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$host_contract_root")"
 /usr/bin/install -d -o root -g wheel -m 0755 "$host_contract_root"
 printf '%s\n' "$checkout" >"$host_contract_root/authoritative-checkout"
 /usr/sbin/chown root:wheel "$host_contract_root/authoritative-checkout"
@@ -134,7 +140,7 @@ for builder_service_directory_path in \
   "$builder_agent_directory" \
   "$builder_service_directory"
 do
-  /usr/bin/install -d -o "$builder_user" -g staff -m 0755 "$builder_service_directory_path"
+  /usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$builder_service_directory_path"
   /bin/chmod -N "$builder_service_directory_path"
 done
 for builder_service_file in \
@@ -146,7 +152,7 @@ do
       || { echo "error: builder service target is not a regular file" >&2; exit 73; }
     /usr/bin/chflags nouchg,noschg "$builder_service_file"
     /bin/chmod -N "$builder_service_file"
-    /usr/sbin/chown "$builder_user":staff "$builder_service_file"
+    /usr/sbin/chown "$builder_user":"$builder_group" "$builder_service_file"
     /bin/chmod 0644 "$builder_service_file"
   fi
 done

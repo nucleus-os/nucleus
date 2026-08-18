@@ -5,14 +5,12 @@ import SystemPackage
 
 struct MacOSBuilderContract: Codable, Sendable {
     struct OperatingSystem: Codable, Sendable {
-        let productVersion: String
-        let buildVersion: String
+        let majorVersion: Int
     }
 
     struct Xcode: Codable, Sendable {
         let developerDirectory: String
-        let version: String
-        let buildVersion: String
+        let majorVersion: Int
         let swiftVersionFragment: String
         let testingMacroPluginRelativePath: String
     }
@@ -40,6 +38,7 @@ struct MacOSBuilderContract: Codable, Sendable {
 
     struct Builder: Codable, Sendable {
         let user: String
+        let group: String
         let home: String
         let developerUser: String
         let authoritativeCheckout: String
@@ -53,6 +52,9 @@ struct MacOSBuilderContract: Codable, Sendable {
         let runnerArchiveSHA256: String
         let runnerArchiveSize: UInt64
         let runnerServiceLabel: String
+        let runnerRoot: String
+        let hostContractRoot: String
+        let runnerWorkRoot: String
     }
 
     let operatingSystem: OperatingSystem
@@ -78,6 +80,19 @@ struct MacOSBuilderContract: Codable, Sendable {
             throw MacOSBuilderContractFailure.invalid(
                 "launchd maximum open-file count must be positive")
         }
+        // The builder selects major macOS and Xcode releases. Their beta build
+        // identifiers move under the host without changing what Nucleus needs.
+        guard operatingSystem.majorVersion > 0, xcode.majorVersion > 0 else {
+            throw MacOSBuilderContractFailure.invalid(
+                "selected macOS and Xcode major versions must be positive")
+        }
+        // A builder in staff would inherit read access to the whole
+        // interactive home, which is mode 0750 and staff-readable.
+        guard builder.group != "staff", builder.group != "wheel", builder.group != "admin"
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "builder group must be dedicated, not a shared system group")
+        }
         guard builder.user == "nucleus-builder",
             builder.home == "/Users/nucleus-builder",
             builder.organization == "https://github.com/nucleus-os",
@@ -89,6 +104,43 @@ struct MacOSBuilderContract: Codable, Sendable {
             throw MacOSBuilderContractFailure.invalid(
                 "builder identity and pinned runner contract are invalid")
         }
+        // The Actions runner formats a `run:` step into one command string that
+        // the process launcher resplits, so whitespace in any of these roots
+        // reaches bash as separate arguments and fails every step body. The
+        // work root matters most: step scripts are written to its `_temp`.
+        for root in [builder.runnerRoot, builder.hostContractRoot, builder.runnerWorkRoot] {
+            guard root.hasPrefix("/"),
+                !root.hasSuffix("/"),
+                FilePath(root).components.count >= 2,
+                root.unicodeScalars.allSatisfy({ !CharacterSet.whitespacesAndNewlines.contains($0) }
+                )
+            else {
+                throw MacOSBuilderContractFailure.invalid(
+                    "machine-wide builder root is not an absolute whitespace-free path: \(root)")
+            }
+        }
+        // Both roots share one machine-wide parent, so retirement removes the
+        // installed builder state as one directory derived from the installed
+        // service rather than from the contract that may already have moved.
+        guard
+            FilePath(builder.runnerRoot).removingLastComponent()
+                == FilePath(builder.hostContractRoot).removingLastComponent()
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "runner root and host contract root must share one machine-wide parent")
+        }
+        // The job checkout lives in builder-owned per-user storage rather than
+        // under the machine root, so retiring or upgrading the runner never
+        // destroys a multi-gigabyte submodule checkout.
+        guard builder.runnerWorkRoot.hasPrefix(builder.home + "/") else {
+            throw MacOSBuilderContractFailure.invalid(
+                "runner work root must live in the builder's own storage, "
+                    + "outside the machine root retirement removes")
+        }
+    }
+
+    var machineRoot: FilePath {
+        FilePath(builder.runnerRoot).removingLastComponent()
     }
 }
 
@@ -100,6 +152,11 @@ enum MacOSBuilderContractFailure: Error, CustomStringConvertible {
         case .invalid(let message): message
         }
     }
+}
+
+/// Leading integer of a dotted Apple version string such as `27.0` or `27.1.2`.
+func appleMajorVersion(of version: String) -> Int? {
+    Int(version.prefix { $0.isNumber })
 }
 
 struct MacOSBuilderDoctor {
@@ -154,18 +211,17 @@ struct MacOSBuilderDoctor {
         HostPrerequisite(
             id: "macos-builder:operating-system",
             scope: scope,
-            description:
-                "macOS \(contract.operatingSystem.productVersion) build \(contract.operatingSystem.buildVersion)",
+            description: "macOS \(contract.operatingSystem.majorVersion)",
             remediation:
-                "provision the selected macOS 27 beta build from \(MacOSBuilderContract.relativePath)"
+                "install a macOS \(contract.operatingSystem.majorVersion) release; "
+                + "\(MacOSBuilderContract.relativePath) selects the major version only"
         ) {
             guard
                 let version = try? await context.run(
                     "/usr/bin/sw_vers", ["-productVersion"], capture: true),
+                appleMajorVersion(of: version) == contract.operatingSystem.majorVersion,
                 let build = try? await context.run(
-                    "/usr/bin/sw_vers", ["-buildVersion"], capture: true),
-                version == contract.operatingSystem.productVersion,
-                build == contract.operatingSystem.buildVersion
+                    "/usr/bin/sw_vers", ["-buildVersion"], capture: true)
             else { return nil }
             return "macOS \(version) (\(build))"
         }
@@ -178,10 +234,10 @@ struct MacOSBuilderDoctor {
         HostPrerequisite(
             id: "macos-builder:xcode",
             scope: scope,
-            description:
-                "Xcode \(contract.xcode.version) build \(contract.xcode.buildVersion)",
+            description: "Xcode \(contract.xcode.majorVersion)",
             remediation:
-                "install the selected Xcode 27 beta and select its developer directory during host provisioning"
+                "install an Xcode \(contract.xcode.majorVersion) release at "
+                + "\(contract.xcode.developerDirectory) and select its developer directory"
         ) {
             guard
                 let selected = try? await context.run(
@@ -190,8 +246,10 @@ struct MacOSBuilderDoctor {
                 selected == contract.xcode.developerDirectory,
                 let output = try? await context.run(
                     "/usr/bin/xcodebuild", ["-version"], capture: true),
-                output
-                    == "Xcode \(contract.xcode.version)\nBuild version \(contract.xcode.buildVersion)",
+                let versionLine = output.split(separator: "\n").first,
+                versionLine.hasPrefix("Xcode "),
+                appleMajorVersion(of: String(versionLine.dropFirst("Xcode ".count)))
+                    == contract.xcode.majorVersion,
                 FileManager.default.fileExists(
                     atPath: URL(
                         fileURLWithPath: contract.xcode.developerDirectory
@@ -199,7 +257,7 @@ struct MacOSBuilderDoctor {
                         contract.xcode.testingMacroPluginRelativePath
                     ).path)
             else { return nil }
-            return "Xcode \(contract.xcode.version) (\(contract.xcode.buildVersion))"
+            return output.split(separator: "\n").joined(separator: " ")
         }
     }
 

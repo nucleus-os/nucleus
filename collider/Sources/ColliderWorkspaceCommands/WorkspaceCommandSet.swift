@@ -9,6 +9,7 @@ package enum WorkspaceCommandSet {
         Check.self,
         Generate.self,
         PackageArtifacts.self,
+        Provision.self,
     ]
 
     package static let rootSuffix: [ParsableCommand.Type] = [
