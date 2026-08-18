@@ -147,6 +147,6 @@ package actor BoundedThemeAssetIO<
     /// Key assignment keeps an existing element's position, so a cache hit has
     /// to move that element to the eviction tail explicitly.
     private func touch(_ key: Key) {
-        completed.move(keys: [key], to: completed.endIndex)
+        completed.move(keys: [key], to: completed.count)
     }
 }

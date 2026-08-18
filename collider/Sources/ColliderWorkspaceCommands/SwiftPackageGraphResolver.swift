@@ -1,12 +1,13 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import Synchronization
 import SystemPackage
 
 /// Materializes SwiftPM's package graph on the host and retains it until one
 /// of the files that determine package structure or dependency resolution
 /// changes.
-package final class SwiftPackageGraphResolver: @unchecked Sendable {
+package final class SwiftPackageGraphResolver: Sendable {
     private struct Description: Codable {
         struct Dependency: Codable {
             let identity: String
@@ -66,8 +67,7 @@ package final class SwiftPackageGraphResolver: @unchecked Sendable {
 
     private let cacheRoot: FilePath
     private let environment: [String: String]
-    private let lock = NSLock()
-    private var memory: [FilePath: SwiftPackageSourceGraph] = [:]
+    private let memory = Mutex<[FilePath: SwiftPackageSourceGraph]>([:])
 
     package init(
         cacheRoot: FilePath,
@@ -81,8 +81,21 @@ package final class SwiftPackageGraphResolver: @unchecked Sendable {
         packageRoot: FilePath,
         swiftExecutable: FilePath
     ) throws -> SwiftPackageSourceGraph {
-        lock.lock()
-        defer { lock.unlock() }
+        try memory.withLock { memory in
+            try graph(
+                packageRoot: packageRoot,
+                swiftExecutable: swiftExecutable,
+                memory: &memory)
+        }
+    }
+
+    /// The caller holds the memory lock for the whole materialization, so one
+    /// package root is described, cached, and retained exactly once.
+    private func graph(
+        packageRoot: FilePath,
+        swiftExecutable: FilePath,
+        memory: inout [FilePath: SwiftPackageSourceGraph]
+    ) throws -> SwiftPackageSourceGraph {
         if let graph = memory[packageRoot] { return graph }
 
         let cacheFile = cacheRoot.appending(

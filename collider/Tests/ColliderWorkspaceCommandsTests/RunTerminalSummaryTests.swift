@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -13,16 +14,15 @@ private enum TerminalFixtureOutcome: CaseIterable, Sendable {
     case interrupted
 }
 
-private final class TerminalConsoleCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = Data()
+private final class TerminalConsoleCapture: Sendable {
+    private let storage = Mutex(Data())
 
     func write(_ data: Data) {
-        lock.withLock { storage.append(data) }
+        storage.withLock { $0.append(data) }
     }
 
     var text: String {
-        lock.withLock { String(decoding: storage, as: UTF8.self) }
+        storage.withLock { String(decoding: $0, as: UTF8.self) }
     }
 }
 

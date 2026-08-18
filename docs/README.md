@@ -33,21 +33,15 @@ reuse.
    initiated clean, branch, dirty, debug, and release builds onto its shared
    persistent Collider cache, and enforce source, account, credential, network,
    and recovery boundaries.
-2. Complete the four phases of the
-   [Apple Swift package adoption plan](swift-package-adoption-plan.md): replace
-   the exposed complete-span byte readers with `swift-binary-parsing`, replace
-   parallel keyed and ordering state with ordered collections, move residual
-   manual locks onto standard-library synchronization, and replace the Collider
-   progress side task with one explicitly terminating merged sequence.
-3. Complete Phases 5 and 6 of the
+2. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-4. Complete Phases 6 and 7 of the
+3. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-5. Complete the remaining qualification plans in the order listed below. Their
+4. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
 6. Complete Phases 6 and 7 of the
@@ -105,6 +99,12 @@ implementation inputs are available:
 - [macOS host storage consolidation](macos-host-storage-consolidation-plan.md)
   established the conventional per-user host layout and removed custom APFS
   volume policy.
+- [Apple Swift package adoption](swift-package-adoption-plan.md) moved the
+  exposed complete-span byte readers onto `swift-binary-parsing` and generated
+  `SwiftProtobuf` types, replaced parallel keyed and ordering state with ordered
+  collections and a deque, moved every residual manual lock onto
+  standard-library `Mutex`, and replaced the Collider progress side task with
+  one explicitly terminating merged sequence.
 
 ## Deferred product plans
 

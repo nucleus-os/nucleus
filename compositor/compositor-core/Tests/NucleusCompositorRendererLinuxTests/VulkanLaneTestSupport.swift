@@ -1,6 +1,7 @@
 import Foundation
 import Glibc
 import NucleusSkiaGraphiteBridge
+import Synchronization
 import Testing
 import Vulkan
 import VulkanC
@@ -14,21 +15,12 @@ import VulkanC
 /// exclusive so teardown finishes before another suite initializes the loader.
 private let requiredVulkanGraphiteGate = VulkanGraphiteTestGate()
 
-@safe private final class VulkanGraphiteTestGate: @unchecked Sendable {
-    private var mutex = unsafe pthread_mutex_t()
-
-    init() {
-        precondition(unsafe pthread_mutex_init(&mutex, nil) == 0)
-    }
-
-    deinit {
-        precondition(unsafe pthread_mutex_destroy(&mutex) == 0)
-    }
+private final class VulkanGraphiteTestGate: Sendable {
+    /// The gate carries no state; it serializes the lifetimes themselves.
+    private let mutex = Mutex<Void>(())
 
     func withLock<Result>(_ body: () throws -> Result) rethrows -> Result {
-        precondition(unsafe pthread_mutex_lock(&mutex) == 0)
-        defer { precondition(unsafe pthread_mutex_unlock(&mutex) == 0) }
-        return try body()
+        try mutex.withLock { _ in try body() }
     }
 }
 

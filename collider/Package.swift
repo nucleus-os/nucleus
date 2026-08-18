@@ -4,6 +4,7 @@ import PackageDescription
 var packageDependencies: [Package.Dependency] = [
     .package(path: "engine"),
     .package(name: "Nucleus", path: ".."),
+    .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.1.5"),
     .package(path: "../third-party/swift-argument-parser"),
 ]
 let nucleusSessionDependencies: [Target.Dependency] = [
@@ -67,6 +68,7 @@ let package = Package(
             name: "ColliderCLI",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
                 .product(
                     name: "ColliderAppleContainer",
                     package: "engine",

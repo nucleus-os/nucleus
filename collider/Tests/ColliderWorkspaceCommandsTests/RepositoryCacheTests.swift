@@ -3,21 +3,21 @@ import ColliderCore
 import ColliderEngine
 import ColliderRuntime
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
 @testable import ColliderWorkspaceCommands
 
-private final class StorageConsoleCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = ""
+private final class StorageConsoleCapture: Sendable {
+    private let storage = Mutex("")
 
     var text: String {
-        lock.withLock { storage }
+        storage.withLock { $0 }
     }
 
     func write(_ value: Data) {
-        lock.withLock { storage += String(decoding: value, as: UTF8.self) }
+        storage.withLock { $0 += String(decoding: value, as: UTF8.self) }
     }
 }
 

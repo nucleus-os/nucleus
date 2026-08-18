@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderRuntime
 import Foundation
 import Logging
+import Synchronization
 import SystemPackage
 
 #if os(macOS)
@@ -826,21 +827,21 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
     }
 }
 
-private final class AppleContainerDrainRace: @unchecked Sendable {
-    private let lock = NSLock()
-    private var resolved = false
+private final class AppleContainerDrainRace: Sendable {
+    private let resolved = Mutex(false)
 
     func resolve(
         _ value: Bool,
         continuation: CheckedContinuation<Bool, Never>
     ) {
-        lock.lock()
-        guard !resolved else {
-            lock.unlock()
-            return
+        // The continuation resumes outside the lock: exactly one caller wins
+        // the race, and resumption never runs with the lock held.
+        let won = resolved.withLock { resolved in
+            guard !resolved else { return false }
+            resolved = true
+            return true
         }
-        resolved = true
-        lock.unlock()
+        guard won else { return }
         continuation.resume(returning: value)
     }
 }
@@ -852,10 +853,13 @@ private final class AppleContainerPipe: @unchecked Sendable {
     private let reader: FileDescriptor
     private let writerDescriptor: FileDescriptor
     private let continuation: AsyncStream<Data>.Continuation
-    private let lock = NSLock()
-    private var finished = false
-    private var writerClosed = false
+    private let state = Mutex(State())
     private var readSource: (any DispatchSourceRead)!
+
+    private struct State {
+        var finished = false
+        var writerClosed = false
+    }
 
     init() throws {
         let pipe = try FileDescriptor.pipe(options: [.closeOnExec])
@@ -883,24 +887,24 @@ private final class AppleContainerPipe: @unchecked Sendable {
     }
 
     func closeWriter() throws {
-        lock.lock()
-        guard !writerClosed else {
-            lock.unlock()
-            return
+        let shouldClose = state.withLock { state in
+            guard !state.writerClosed else { return false }
+            state.writerClosed = true
+            return true
         }
-        writerClosed = true
-        lock.unlock()
+        guard shouldClose else { return }
         try writerDescriptor.close()
     }
 
     func finish() {
-        lock.lock()
-        guard !finished else {
-            lock.unlock()
-            return
+        // Cancellation and stream termination run outside the lock, so the
+        // cancel handler cannot re-enter it.
+        let shouldFinish = state.withLock { state in
+            guard !state.finished else { return false }
+            state.finished = true
+            return true
         }
-        finished = true
-        lock.unlock()
+        guard shouldFinish else { return }
         readSource.cancel()
         continuation.finish()
     }

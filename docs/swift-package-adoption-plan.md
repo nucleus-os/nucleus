@@ -1,6 +1,6 @@
 # Apple Swift package adoption
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -104,51 +104,55 @@ non-mutating generated-source verification task.
 
 ## Phase 2: Ordered collections replace parallel order state
 
-Status: active
+Status: complete
 
-`swift-collections` becomes a declared dependency of the root package. The
-`OrderedCollections` product attaches to
-`NucleusCompositorWaylandRuntime` and `NucleusThemeAssetIO`; `DequeModule`
-attaches only to `NucleusThemeAssetIO`.
+`swift-collections` is a declared dependency of the root package at `from:
+"1.6.0"`, the version its transitive edges already resolved. The
+`OrderedCollections` product attaches to `NucleusCompositorWaylandRuntime` and
+`NucleusThemeAssetIO`; `DequeModule` attaches only to `NucleusThemeAssetIO`.
 
-Three sites keep a dictionary and a parallel ordering array consistent by hand,
-and each repeats the removal logic across every mutating method:
+Three sites no longer keep a dictionary and a parallel ordering array
+consistent by hand. Each is one `OrderedDictionary` whose explicit element
+order is the eviction order:
 
-- `SeatSerialLedger` holds `records` and `order`, and repeats
-  `order.removeAll { $0 == serial }` in
-  `authorizes(serial:kinds:clientKey:surfaceID:consume:)` and in both
-  `invalidate` overloads. This is seat-serial provenance, where the two
-  structures diverging means a grant is authorized against a stale record.
-- `BoundedThemeAssetIO` holds `completed` and `lru`, and runs
-  `lru.removeAll { $0 == key }` on every cache hit through `touch(_:)`.
-- `XdgActivationManager` holds `grants` and `grantOrder` in the same shape.
+- `SeatSerialLedger` holds one `records` dictionary. Both `invalidate`
+  overloads are one `removeAll(where:)`, and the capacity trim is
+  `removeFirst()`. Re-recording an existing serial refreshes its provenance and
+  keeps its position, so a client cannot extend a serial's lifetime by
+  replaying it.
+- `BoundedThemeAssetIO` holds one `completed` dictionary. Key assignment does
+  not make an existing entry most-recently used, so `touch(_:)` moves that
+  element to the eviction tail with `move(keys:to:)` against `endIndex`.
+- `XdgActivationManager` holds one `grants` dictionary, and `consumeToken(_:)`
+  is one `removeValue(forKey:)`.
 
-Each collapses to one `OrderedDictionary` whose explicit element order is the
-eviction order. Key assignment does not make an existing entry most-recently
-used, so `BoundedThemeAssetIO.touch(_:)` explicitly moves the existing element
-to the end. Key removal remains O(count), so this is not a complexity-class
-change; it removes the possibility of keyed state and eviction order
-disagreeing.
+Key removal remains O(count), so this is not a complexity-class change; it
+removes the possibility of keyed state and eviction order disagreeing.
 
-`BoundedThemeAssetIO` also uses `pending` as an unbounded FIFO with
-`pending.removeFirst()` in `resolve(_:)` and `finish(_:value:)`. That becomes a
-`Deque`, which is a genuine O(n) to O(1) change on the admission path.
+`BoundedThemeAssetIO.pending` is a `Deque`, which makes `removeFirst()` in
+`resolve(_:)` and `finish(_:value:)` O(1) on the admission path.
 
 The bounded FIFOs stay `Array`. `IconThemeResolver.themeChain()` caps at sixteen
 entries and `PerOutputRenderRects.put(_:_:)` caps at the tracked-output limit;
 `Array` is the correct structure at those sizes and neither is converted.
 
-Gate: `collider test compositor` and `collider test core` pass, with
-`SeatSerialLedger`, `XdgActivation`, and `BoundedThemeAssetIO` behavior covered
-by their existing suites. Cache-hit coverage proves that touching an existing
-entry moves it to the eviction tail. `Package.resolved` shows no version change.
+Gate evidence: `collider test compositor` and `collider test core` pass.
+`SeatSerialLedgerTests` covers kind, client, and surface scoping, consumption,
+session and focus invalidation, and oldest-first capacity eviction, and
+`XdgActivationTokenTests` covers one-shot grants and active-collision retry.
+`BoundedThemeAssetIOTests` adds cache-hit coverage proving that a hit on the
+oldest of two entries makes it newest, so admitting a third entry evicts the
+other. `Package.resolved` records swift-collections `1.6.0` unchanged, adding no
+fetch and no checkout.
 
 ## Phase 3: Standard-library synchronization replaces residual manual locks
 
-`swift-atomics` is not adopted, and this phase closes the gap that its evaluation
+Status: complete
+
+`swift-atomics` is not adopted, and this phase closed the gap that its evaluation
 exposed instead.
 
-The Swift side is already on the standard library: `Synchronization` is imported
+The Swift side was already on the standard library: `Synchronization` is imported
 across the first-party graph, with `Atomic` and `Mutex` carrying concurrent
 state. Every remaining atomic is `std::atomic` in C++ (`Graphite.cpp`,
 `DeviceEventEmitter.cpp`, `TextRegistry.cpp`,
@@ -158,39 +162,55 @@ Swift neither owns nor should own the storage. The one capability
 over an existing mmap'd address — is precisely the shared ring, whose guest side
 is C in AOSP; moving those atomics into Swift would break the guest.
 
-Ten manual lock declarations remain across seven Nucleus-owned Swift files.
-Production owns three: one `NSLock` in `SwiftPackageGraphResolver.swift` and two
-in `AppleContainerLifecycle.swift`. Collider test support owns six `NSLock`
-declarations across `CommandConsoleTests.swift`, `RunProgressReporterTests.swift`,
-`RepositoryCacheTests.swift`, and `RunTerminalSummaryTests.swift`.
-`VulkanLaneTestSupport.swift` owns one `pthread_mutex_t`. Each moves to `Mutex`
-over the state it actually guards, and each now-unnecessary
-`@unchecked Sendable` annotation is removed.
+No Nucleus-owned Swift source declares a manual lock. Ten declarations moved to
+`Mutex` over the state each one actually guards:
 
-Gate: `collider test all` passes. No Nucleus-owned Swift source outside vendored
-third-party and `swift-sdk/source` trees declares `NSLock`, `pthread_mutex_t`, or
-`os_unfair_lock`.
+- `SwiftPackageGraphResolver` holds one `Mutex` over its memory map. The
+  materialization body moved to a private overload taking that map `inout`, so
+  the whole describe-cache-retain sequence still runs under one acquisition.
+- `AppleContainerDrainRace` holds one `Mutex<Bool>`, and `AppleContainerPipe`
+  holds one `Mutex` over a `State` value carrying its two termination flags.
+  Both resume continuations, cancel the read source, and finish the stream
+  outside the lock, so a cancel handler cannot re-enter it.
+- Six Collider test-support captures — in `CommandConsoleTests`,
+  `RunProgressReporterTests`, `RepositoryCacheTests`, and
+  `RunTerminalSummaryTests` — hold their recorded output directly in a `Mutex`.
+- `VulkanLaneTestSupport` replaces its hand-initialized `pthread_mutex_t`, and
+  the `init`/`deinit` pair that owned its lifetime, with a `Mutex<Void>` that
+  serializes the Vulkan lifetimes themselves.
+
+Nine `@unchecked Sendable` annotations became unnecessary and are removed, along
+with the `@safe` annotation the Vulkan gate needed for its unsafe pointer work.
+`AppleContainerPipe` keeps `@unchecked Sendable`: its `readSource` is a mutable
+`any DispatchSourceRead`, which the lock never guarded and which the conversion
+does not address.
+
+Gate evidence: `collider test all` passes. No Nucleus-owned Swift source outside
+vendored third-party and `swift-sdk/source` trees declares `NSLock`,
+`pthread_mutex_t`, or `os_unfair_lock`.
 
 ## Phase 4: One terminating sequence replaces the Collider progress side task
 
-`swift-async-algorithms` becomes a declared dependency of `collider`, and the
+Status: complete
+
+`swift-async-algorithms` is a declared dependency of `collider` at
+`from: "1.1.5"`, the version its transitive edges already resolved, and the
 `AsyncAlgorithms` product attaches to `ColliderCLI`.
 
-`consumeRunObservations(_:console:registry:run:)` currently combines a repaint
-ticker with the run-observation stream by spawning a side `Task` that sleeps in
-a loop, then tears it down through `defer { ticker.cancel() }`. The ticker and
-the observation loop call `RunProgressReporter` from separate tasks, leaving
-cross-source arrival ordering to actor scheduling.
-
-A shared event enum carries `.observation`, `.pulse`, and `.finished`.
-`chain(observations.map(Event.observation), [Event.finished].async)` appends one
-terminal event to the finite observation branch. That branch is merged with an
-`AsyncTimerSequence` mapped to `.pulse`, and one serial `for await` handles every
-event. The loop breaks on `.finished`, which retires the merged iterator and
-cancels the infinite timer branch before calling `RunProgressReporter.finish()`.
-The design guarantees one consumer and explicit termination; it preserves the
-merged sequence's arrival order and claims no deterministic ordering for events
-that become ready simultaneously.
+`consumeRunObservations(_:console:registry:run:repaintInterval:)` no longer
+spawns a side `Task` that sleeps in a loop, and no longer tears one down through
+`defer`. A shared `RunProgressEvent` enum carries `.observation`, `.pulse`, and
+`.finished`. `chain(observations.map(RunProgressEvent.observation),
+[RunProgressEvent.finished].async)` appends one terminal event to the finite
+observation branch. That branch is merged with an `AsyncTimerSequence` mapped to
+`.pulse`, and one serial `for await` handles every event. The loop breaks on
+`.finished`, which retires the merged iterator and cancels the infinite timer
+branch; `RunProgressReporter.finish()` runs once after the loop, reached by both
+the terminal event and caller cancellation. The design guarantees one consumer
+and explicit termination; it preserves the merged sequence's arrival order and
+claims no deterministic ordering for events that become ready simultaneously.
+The repaint interval is a defaulted parameter so cadence is provable without
+real-time waits at the production interval.
 
 `RunProgressReporter` keeps its hand-written throttle. `minimumAppendInterval`
 and `lastEmissionDate` in `canEmit(at:)` express what `_throttle` expresses, but
@@ -200,10 +220,12 @@ that operator is still underscored in 1.1.5 and is not adopted.
 a body, and a cancellation signal to a single winner; that is a task race, not a
 stream combination, and `TaskGroup` is already the right structure.
 
-Gate: `collider test collider` passes. `ColliderCLITests` prove observation
-delivery, repaint cadence, one final render, natural observation-stream
-completion, caller cancellation, and the absence of pulses after `.finished`.
-A build with progress reporting active preserves the current repaint cadence.
+Gate evidence: `collider test collider` passes. `ColliderCLITests` covers
+observation delivery and exactly one final render on natural stream completion,
+repaint cadence while the stream stays open, caller cancellation as the only
+exit when the stream never finishes, and a render count that stops growing once
+the terminal event retires the timer branch. `Package.resolved` records
+swift-async-algorithms `1.1.5` unchanged, adding no fetch and no checkout.
 
 ## Rejected surfaces
 

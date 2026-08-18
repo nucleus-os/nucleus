@@ -7,32 +7,30 @@ import Testing
 
 @testable import ColliderWorkspaceCommands
 
-private final class ConsoleCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = Data()
+private final class ConsoleCapture: Sendable {
+    private let storage = Mutex(Data())
 
     func write(_ data: Data) {
-        lock.withLock { storage.append(data) }
+        storage.withLock { $0.append(data) }
     }
 
     var text: String {
-        lock.withLock { String(decoding: storage, as: UTF8.self) }
+        storage.withLock { String(decoding: $0, as: UTF8.self) }
     }
 }
 
-private final class ConsoleRecording: @unchecked Sendable {
+private final class ConsoleRecording: Sendable {
     struct Entry: Sendable {
         let destination: ConsoleHumanDestination
         let text: String
     }
 
-    private let lock = NSLock()
-    private var storage: [Entry] = []
+    private let storage = Mutex<[Entry]>([])
 
     func writer(for destination: ConsoleHumanDestination) -> CommandConsole.Writer {
         { [self] data in
-            lock.withLock {
-                storage.append(
+            storage.withLock {
+                $0.append(
                     Entry(
                         destination: destination,
                         text: String(decoding: data, as: UTF8.self)))
@@ -41,24 +39,23 @@ private final class ConsoleRecording: @unchecked Sendable {
     }
 
     var entries: [Entry] {
-        lock.withLock { storage }
+        storage.withLock { $0 }
     }
 }
 
-private final class GeometryFixture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: TerminalGeometry
+private final class GeometryFixture: Sendable {
+    private let storage: Mutex<TerminalGeometry>
 
     init(_ geometry: TerminalGeometry) {
-        storage = geometry
+        storage = Mutex(geometry)
     }
 
     func set(_ geometry: TerminalGeometry) {
-        lock.withLock { storage = geometry }
+        storage.withLock { $0 = geometry }
     }
 
     func read() -> TerminalGeometry {
-        lock.withLock { storage }
+        storage.withLock { $0 }
     }
 }
 

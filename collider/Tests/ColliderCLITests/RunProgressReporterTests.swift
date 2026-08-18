@@ -1,22 +1,22 @@
 import ColliderCore
 import ColliderPersistence
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
 @testable import ColliderCLI
 @testable import ColliderWorkspaceCommands
 
-private final class ProgressCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
+private final class ProgressCapture: Sendable {
+    private let data = Mutex(Data())
 
     func write(_ bytes: Data) {
-        lock.withLock { data.append(bytes) }
+        data.withLock { $0.append(bytes) }
     }
 
     var text: String {
-        lock.withLock { String(decoding: data, as: UTF8.self) }
+        data.withLock { String(decoding: $0, as: UTF8.self) }
     }
 }
 
@@ -136,6 +136,154 @@ private final class ProgressCapture: @unchecked Sendable {
     #expect(capture.text.contains("::error title=Collider task fixture.build::"))
     #expect(capture.text.contains("fixture failed"))
     try await registry.finish(run, status: .failed, failedTask: task)
+}
+
+// MARK: - Merged run-observation consumption
+
+private func mergedFixture() -> (ProgressCapture, CommandConsole, RunRegistry, URL) {
+    let capture = ProgressCapture()
+    // Dynamic presentation renders only on a pulse or on the final render, so
+    // every rendered row in the capture is one of the two.
+    let console = CommandConsole(
+        progress: .always,
+        standardErrorIsTerminal: true,
+        standardOutput: { _ in },
+        standardError: capture.write)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-merged-observations-\(UUID().uuidString)",
+        isDirectory: true)
+    return (capture, console, RunRegistry(root: FilePath(directory.path)), directory)
+}
+
+/// A plan alone renders nothing: an active row needs a dirty planned task that
+/// has also started, and the rendered row is what the render count matches on.
+private func yieldFixture(into continuation: AsyncStream<RunObservation>.Continuation) {
+    let task = TaskID(rawValue: "fixture.build")
+    continuation.yield(
+        .plan(
+            RunPlanObservation(
+                runID: RunID(rawValue: "fixture"),
+                entries: [
+                    TaskPlanEntry(
+                        task: task,
+                        identity: ArtifactDigest(bytes: [1]),
+                        isClean: false,
+                        explanation: "artifact is dirty",
+                        coordinates: nil)
+                ])))
+    continuation.yield(
+        .event(
+            RunEvent(
+                sequence: 0,
+                timestamp: "2026-08-17T00:00:00Z",
+                runID: RunID(rawValue: "fixture"),
+                payload: .task(.started(task)))))
+}
+
+private func renderCount(_ capture: ProgressCapture) -> Int {
+    capture.text.components(separatedBy: "fixture.build").count - 1
+}
+
+/// Polls until `condition` holds, bounded so a broken merge fails rather than
+/// hanging the suite.
+private func waitFor(
+    _ condition: @Sendable () -> Bool,
+    within limit: Duration = .seconds(5)
+) async -> Bool {
+    let deadline = ContinuousClock.now + limit
+    while ContinuousClock.now < deadline {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(2))
+    }
+    return condition()
+}
+
+@Test func mergedObservationsRenderOnceWhenTheStreamCompletesNaturally() async {
+    let (capture, console, registry, directory) = mergedFixture()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (stream, continuation) = AsyncStream<RunObservation>.makeStream()
+    yieldFixture(into: continuation)
+    continuation.finish()
+
+    await consumeRunObservations(
+        stream,
+        console: console,
+        registry: registry,
+        run: nil,
+        // No pulse can fire, so the only render is the final one.
+        repaintInterval: .seconds(3_600))
+
+    #expect(renderCount(capture) == 1)
+}
+
+@Test func mergedObservationsRepaintOnTheTimerCadence() async {
+    let (capture, console, registry, directory) = mergedFixture()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (stream, continuation) = AsyncStream<RunObservation>.makeStream()
+    yieldFixture(into: continuation)
+
+    let consumer = Task {
+        await consumeRunObservations(
+            stream,
+            console: console,
+            registry: registry,
+            run: nil,
+            repaintInterval: .milliseconds(10))
+    }
+    // The stream is still open, so repeated renders can only be pulses.
+    #expect(await waitFor { renderCount(capture) >= 3 })
+    continuation.finish()
+    await consumer.value
+}
+
+@Test func mergedObservationsStopPulsingAfterTheTerminalEvent() async {
+    let (capture, console, registry, directory) = mergedFixture()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (stream, continuation) = AsyncStream<RunObservation>.makeStream()
+    yieldFixture(into: continuation)
+
+    let consumer = Task {
+        await consumeRunObservations(
+            stream,
+            console: console,
+            registry: registry,
+            run: nil,
+            repaintInterval: .milliseconds(10))
+    }
+    #expect(await waitFor { renderCount(capture) >= 2 })
+    continuation.finish()
+    await consumer.value
+
+    // The timer branch outlives the observations, so a surviving pulse would
+    // keep rendering well past the terminal event.
+    let settled = renderCount(capture)
+    try? await Task.sleep(for: .milliseconds(120))
+    #expect(renderCount(capture) == settled)
+}
+
+@Test func mergedObservationsFinishWhenTheCallerCancels() async {
+    let (capture, console, registry, directory) = mergedFixture()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (stream, continuation) = AsyncStream<RunObservation>.makeStream()
+    yieldFixture(into: continuation)
+
+    let consumer = Task {
+        await consumeRunObservations(
+            stream,
+            console: console,
+            registry: registry,
+            run: nil,
+            repaintInterval: .milliseconds(10))
+    }
+    #expect(await waitFor { renderCount(capture) >= 1 })
+    // The stream never finishes; cancellation is the only way out.
+    consumer.cancel()
+    await consumer.value
+    continuation.finish()
+
+    let settled = renderCount(capture)
+    try? await Task.sleep(for: .milliseconds(120))
+    #expect(renderCount(capture) == settled)
 }
 
 private func snapshot(

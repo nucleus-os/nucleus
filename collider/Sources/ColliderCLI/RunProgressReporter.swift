@@ -1,3 +1,4 @@
+import AsyncAlgorithms
 import ColliderCore
 import ColliderPersistence
 import ColliderWorkspaceCommands
@@ -178,11 +179,20 @@ actor RunProgressReporter {
     }
 }
 
+/// Observations, repaints, and the end of the run reach the reporter as one
+/// event kind, so a single consumer orders them instead of two tasks racing.
+private enum RunProgressEvent: Sendable {
+    case observation(RunObservation)
+    case pulse
+    case finished
+}
+
 func consumeRunObservations(
     _ observations: AsyncStream<RunObservation>,
     console: CommandConsole,
     registry: RunRegistry,
-    run: RunHandle?
+    run: RunHandle?,
+    repaintInterval: Duration = RunProgressReporter.repaintInterval
 ) async {
     let reporter = RunProgressReporter(console: console)
     let githubReporter = run.map {
@@ -191,17 +201,26 @@ func consumeRunObservations(
             registry: registry,
             run: $0)
     }
-    let ticker = Task {
-        while !Task.isCancelled {
-            try? await Task.sleep(for: RunProgressReporter.repaintInterval)
-            guard !Task.isCancelled else { return }
+    // The observation branch is finite, so chaining one terminal event gives the
+    // merged sequence an explicit end. The timer branch never ends on its own:
+    // leaving the loop retires the merged iterator, which cancels it.
+    let events = merge(
+        chain(
+            observations.map(RunProgressEvent.observation),
+            [RunProgressEvent.finished].async),
+        AsyncTimerSequence(interval: repaintInterval, clock: .continuous)
+            .map { _ in RunProgressEvent.pulse })
+    consumption: for await event in events {
+        switch event {
+        case .observation(let observation):
+            await reporter.consume(observation)
+            await githubReporter?.consume(observation)
+        case .pulse:
             await reporter.pulse()
+        case .finished:
+            break consumption
         }
     }
-    defer { ticker.cancel() }
-    for await observation in observations {
-        await reporter.consume(observation)
-        await githubReporter?.consume(observation)
-    }
+    // Reached once, by both the terminal event and caller cancellation.
     await reporter.finish()
 }
