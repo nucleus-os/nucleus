@@ -69,7 +69,10 @@ enum GitSourceCheckoutHasher {
             arguments: [
                 "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--",
             ] + pathspecs)
-        let trackedModes = try trackedModes(
+        let tracked = try trackedEntries(
+            repository: repository,
+            pathspecs: pathspecs)
+        let modified = try modifiedPaths(
             repository: repository,
             pathspecs: pathspecs)
 
@@ -97,12 +100,15 @@ enum GitSourceCheckoutHasher {
             return repositoryRelative
         }
         let paths = try Set(listedRelativePaths).filter { relative in
+            if gitIdentifiedMode(tracked[relative], modified: modified, path: relative) != nil {
+                return true
+            }
             let path = repository.appending(relative)
             do {
                 _ = try path.stat(followTargetSymlink: false)
                 return true
             } catch let error as Errno where error == .noSuchFileOrDirectory {
-                guard trackedModes[relative] == "160000" else {
+                guard tracked[relative]?.mode == "160000" else {
                     // Deleted tracked files are not members of the effective tree.
                     return false
                 }
@@ -114,6 +120,28 @@ enum GitSourceCheckoutHasher {
         }
 
         try encoder.appendSequence(paths) { entry, relative in
+            let indexEntry = tracked[relative]
+            // Content Git already identifies is never touched. The index holds
+            // an object identity for exactly the bytes on disk, and the mode
+            // gives the type and executable bit, whenever the path is tracked
+            // and does not differ from the index. The discriminator keeps
+            // object identities and content digests in separate domains so one
+            // can never be read as the other.
+            if let mode = gitIdentifiedMode(indexEntry, modified: modified, path: relative),
+                let indexEntry, mode != "160000"
+            {
+                entry.append(relative)
+                entry.append(mode == "100755")
+                entry.append(mode.gitEntryKind)
+                if mode == "120000" {
+                    entry.append(
+                        try FileManager.default.destinationOfSymbolicLink(
+                            atPath: repository.appending(relative).string))
+                } else {
+                    entry.append(indexEntry.object)
+                }
+                return
+            }
             let path = repository.appending(relative)
             let metadata = try path.stat(followTargetSymlink: false)
             entry.append(relative)
@@ -121,7 +149,7 @@ enum GitSourceCheckoutHasher {
             switch metadata.type {
             case .regular:
                 entry.append("file")
-                entry.append(bytes: try digestFile(path, metadata).bytes)
+                entry.append(try gitObjectIdentity(repository: repository, path: path))
             case .symbolicLink:
                 entry.append("symlink")
                 entry.append(
@@ -144,14 +172,21 @@ enum GitSourceCheckoutHasher {
     }
 }
 
-private func trackedModes(
+/// One index entry: the mode Git records and the object identity of the
+/// content it holds.
+struct TrackedEntry {
+    let mode: String
+    let object: String
+}
+
+private func trackedEntries(
     repository: FilePath,
     pathspecs: [String]
-) throws -> [String: String] {
+) throws -> [String: TrackedEntry] {
     let result = try git(
         at: repository,
-        arguments: ["ls-files", "--stage", "-z", "--"] + pathspecs)
-    var modes: [String: String] = [:]
+        arguments: ["ls-files", "-v", "--stage", "-z", "--"] + pathspecs)
+    var entries: [String: TrackedEntry] = [:]
     for record in result.output.split(separator: 0) {
         guard let tab = record.firstIndex(of: 0x09) else {
             throw GitSourceCheckoutFailure(
@@ -159,16 +194,94 @@ private func trackedModes(
         }
         let fields = record[..<tab].split(separator: 0x20)
         let pathBytes = record[record.index(after: tab)...]
-        guard fields.count == 3,
-            let mode = String(data: Data(fields[0]), encoding: .utf8),
+        guard fields.count == 4,
+            let tag = String(data: Data(fields[0]), encoding: .utf8)?.first,
+            let mode = String(data: Data(fields[1]), encoding: .utf8),
+            let object = String(data: Data(fields[2]), encoding: .utf8),
             let path = String(data: Data(pathBytes), encoding: .utf8)
         else {
             throw GitSourceCheckoutFailure(
                 "Git returned malformed staged-path data for \(repository)")
         }
-        modes[path] = mode
+        // Lowercase tags mark assume-unchanged; S marks skip-worktree. Both
+        // instruct Git to report a path as unmodified without inspecting it,
+        // which an identity contract cannot accept.
+        guard !tag.isLowercase, tag != "S" else {
+            throw GitSourceCheckoutFailure(
+                "source checkout marks a path unverifiable with assume-unchanged "
+                    + "or skip-worktree, so its identity cannot be established: "
+                    + path)
+        }
+        entries[path] = TrackedEntry(mode: mode, object: object)
     }
-    return modes
+    return entries
+}
+
+/// Paths whose working-tree content differs from the index.
+///
+/// Git re-reads content for entries whose modification time defeats stat
+/// comparison, so this is exact without refreshing, and therefore exact
+/// against a checkout this process may only read.
+private func modifiedPaths(
+    repository: FilePath,
+    pathspecs: [String]
+) throws -> Set<String> {
+    let result = try git(
+        at: repository,
+        arguments: ["diff-files", "--name-only", "-z", "--"] + pathspecs)
+    var modified: Set<String> = []
+    for record in result.output.split(separator: 0) {
+        guard let path = String(data: Data(record), encoding: .utf8) else {
+            throw GitSourceCheckoutFailure(
+                "Git returned a non-UTF-8 modified path for \(repository)")
+        }
+        modified.insert(path)
+    }
+    return modified
+}
+
+/// The Git object identity of a file's content.
+///
+/// Git computes this with collision detection and it is the same value the
+/// index records once the content is tracked, which is what keeps a closure
+/// identical across committing the content it already covers.
+private func gitObjectIdentity(
+    repository: FilePath,
+    path: FilePath
+) throws -> String {
+    try git(
+        at: repository,
+        arguments: ["hash-object", "--", path.string]
+    ).textOutput
+}
+
+/// The index mode identifying a path, or `nil` when the filesystem must be
+/// consulted.
+///
+/// Git answers for a tracked path that does not differ from its index entry.
+/// A deletion is a difference, so a path Git answers for is present, and its
+/// recorded mode gives its type and executable bit.
+private func gitIdentifiedMode(
+    _ entry: TrackedEntry?,
+    modified: Set<String>,
+    path: String
+) -> String? {
+    guard let entry, !modified.contains(path) else { return nil }
+    switch entry.mode {
+    case "100644", "100755", "120000", "160000": return entry.mode
+    default: return nil
+    }
+}
+
+extension String {
+    /// The entry kind an index mode denotes.
+    fileprivate var gitEntryKind: String {
+        switch self {
+        case "120000": "symlink"
+        case "160000": "nested-checkout"
+        default: "file"
+        }
+    }
 }
 
 private func canonicalFileSystemPath(_ path: FilePath) -> FilePath {

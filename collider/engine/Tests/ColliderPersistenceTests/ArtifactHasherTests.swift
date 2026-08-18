@@ -467,6 +467,32 @@ import Testing
     }
 }
 
+@Test func sourceCheckoutDigestRejectsPathsGitReportsWithoutInspecting() throws {
+    let repository = FileManager.default.temporaryDirectory
+        .appendingPathComponent("nucleus-unverifiable-\(UUID().uuidString)")
+    try initializeGitRepository(repository)
+    let tracked = repository.appendingPathComponent("source.txt")
+    try "one".write(to: tracked, atomically: true, encoding: .utf8)
+    try commitAll(repository)
+    defer { try? FileManager.default.removeItem(at: repository) }
+
+    let clean = try sourceCheckoutDigest(repository)
+
+    // assume-unchanged tells Git to report the path as unmodified without
+    // looking at it. An identity taken on that word would claim content the
+    // working tree no longer holds, so the capture must refuse instead.
+    try runGit(
+        at: repository, arguments: ["update-index", "--assume-unchanged", "source.txt"])
+    try "two".write(to: tracked, atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { try sourceCheckoutDigest(repository) }
+
+    try runGit(
+        at: repository, arguments: ["update-index", "--no-assume-unchanged", "source.txt"])
+    #expect(try sourceCheckoutDigest(repository) != clean)
+    try "one".write(to: tracked, atomically: true, encoding: .utf8)
+    #expect(try sourceCheckoutDigest(repository) == clean)
+}
+
 private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
     try PlanningArtifactDigestCache().digest(
         sourceCheckout: FilePath(url.path))
