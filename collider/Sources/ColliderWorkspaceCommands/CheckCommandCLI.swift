@@ -38,7 +38,9 @@ struct Check: TaskControlledCommand {
             case .protectedMainSource:
                 try ProtectedMainSourceAssertion(
                     environment: context.environment
-                ).validate(repositoryRoot: context.root)
+                ).validate(
+                    repositoryRoot: context.root,
+                    observe: context.sourceCaptureReporter())
             }
         }
     }

@@ -1,9 +1,27 @@
 import ColliderCore
+import ColliderPersistence
 import ColliderRuntime
 import Foundation
 import SystemPackage
 
 extension WorkspaceContext {
+    /// Renders source capture progress, which no task graph reports because
+    /// capture is not a task. A checkout whose paths Git all identifies costs
+    /// nothing to read, so naming the count still to be read distinguishes a
+    /// capture working through a dirty tree from one that has stalled.
+    package func sourceCaptureReporter() -> SourceCaptureObserver {
+        { [console] progress in
+            let checkout = progress.checkout.lastComponent?.string
+                ?? progress.checkout.string
+            let total = progress.identifiedPaths + progress.inspectedPaths
+            try? console.progress(
+                progress.inspectedPaths == 0
+                    ? "source: \(checkout) — \(total) paths identified by Git"
+                    : "source: \(checkout) — reading \(progress.inspectedPaths) "
+                        + "of \(total) paths")
+        }
+    }
+
     @discardableResult
     package func run(
         _ executable: String,

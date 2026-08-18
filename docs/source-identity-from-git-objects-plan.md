@@ -1,6 +1,6 @@
 # Source Identity From Git Objects Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -108,15 +108,19 @@ from the recursion as much as from the top level.
 
 ## Phase 3: Report Capture Progress
 
-Status: active
+Status: complete
 
-Capture is not a task, so no progress renders while it runs. Report the phase
-and the count of paths requiring content reads, so a capture that is slow
-because a working tree is genuinely dirty is distinguishable from one that is
-stalled.
+Capture is not a task, so no progress renders while it runs. Each checkout
+reports the paths Git identified and the paths whose content must be read,
+before reading any of them, so a capture that is slow because a working tree is
+genuinely dirty is distinguishable from one that is stalled. Commands render
+that through one shared reporter rather than each deciding for itself.
 
-Gate: a capture over a dirty tree reports the number of paths it must read
-before reading them.
+Gate: a capture over a clean fixture reports its paths as identified and none
+as read; a capture over the same fixture with one modified and one untracked
+path reports both as requiring reads before reading them. Against the
+authoritative checkout the report names each nested checkout as it is reached,
+so a sixteen-second capture is visibly progressing rather than silent.
 
 ## Identity Migration
 

@@ -39,11 +39,15 @@ package struct ProtectedMainSourceAssertion: Equatable, Sendable {
         self.commit = commit
     }
 
-    package func validate(repositoryRoot: FilePath) throws {
+    package func validate(
+        repositoryRoot: FilePath,
+        observe: SourceCaptureObserver? = nil
+    ) throws {
         _ = try ProductArtifactSourceSnapshot.capture(
             repositoryRoot: repositoryRoot,
             sourceAuthority: .protectedMain,
             assertedCommit: commit,
-            assertedBranch: "refs/heads/main")
+            assertedBranch: "refs/heads/main",
+            observe: observe)
     }
 }

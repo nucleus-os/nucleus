@@ -2,22 +2,48 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+/// What one checkout contributed to a source closure, reported before its
+/// content is read.
+///
+/// Capture is not a task, so nothing renders progress for it. A capture is slow
+/// in proportion to the paths Git cannot identify, and reporting that count
+/// before reading them separates a capture working through a dirty tree from
+/// one that has stalled.
+public struct SourceCaptureProgress: Sendable, Equatable {
+    public let checkout: FilePath
+    /// Paths whose identity came from Git without being read.
+    public let identifiedPaths: Int
+    /// Paths whose content must be read.
+    public let inspectedPaths: Int
+
+    public init(checkout: FilePath, identifiedPaths: Int, inspectedPaths: Int) {
+        self.checkout = checkout
+        self.identifiedPaths = identifiedPaths
+        self.inspectedPaths = inspectedPaths
+    }
+}
+
+public typealias SourceCaptureObserver = (SourceCaptureProgress) -> Void
+
 enum GitSourceCheckoutHasher {
     static func digest(
         _ checkout: FilePath,
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
-        digestNestedCheckout: (FilePath) throws -> ArtifactDigest
+        digestNestedCheckout: (FilePath) throws -> ArtifactDigest,
+        observe: SourceCaptureObserver? = nil
     ) throws -> ArtifactDigest {
         try digest(
             [checkout],
             digestFile: digestFile,
-            digestNestedCheckout: digestNestedCheckout)
+            digestNestedCheckout: digestNestedCheckout,
+            observe: observe)
     }
 
     static func digest(
         _ checkouts: [FilePath],
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
-        digestNestedCheckout: (FilePath) throws -> ArtifactDigest
+        digestNestedCheckout: (FilePath) throws -> ArtifactDigest,
+        observe: SourceCaptureObserver? = nil
     ) throws -> ArtifactDigest {
         let checkouts = Array(Set(checkouts.map { canonicalFileSystemPath($0) }))
             .sorted { $0.string < $1.string }
@@ -117,6 +143,19 @@ enum GitSourceCheckoutHasher {
             }
         }.sorted {
             $0.utf8.lexicographicallyPrecedes($1.utf8)
+        }
+
+        // Reported before any content is read, so the cost still to come is
+        // visible rather than inferred from a command that appears stalled.
+        if let observe {
+            let identified = paths.count {
+                gitIdentifiedMode(tracked[$0], modified: modified, path: $0) != nil
+            }
+            observe(
+                SourceCaptureProgress(
+                    checkout: repository,
+                    identifiedPaths: identified,
+                    inspectedPaths: paths.count - identified))
         }
 
         try encoder.appendSequence(paths) { entry, relative in

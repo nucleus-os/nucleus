@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -465,6 +466,48 @@ import Testing
             assertedBranch: "refs/heads/main",
             sourcePaths: [FilePath(source.path)])
     }
+}
+
+@Test func sourceCaptureReportsWhatItMustReadBeforeReadingIt() throws {
+    let repository = FileManager.default.temporaryDirectory
+        .appendingPathComponent("nucleus-capture-progress-\(UUID().uuidString)")
+    try initializeGitRepository(repository)
+    try "one".write(
+        to: repository.appendingPathComponent("first.txt"),
+        atomically: true, encoding: .utf8)
+    try "two".write(
+        to: repository.appendingPathComponent("second.txt"),
+        atomically: true, encoding: .utf8)
+    try commitAll(repository)
+    defer { try? FileManager.default.removeItem(at: repository) }
+
+    func capture() throws -> [SourceCaptureProgress] {
+        let recorded = Mutex<[SourceCaptureProgress]>([])
+        _ = try ProductArtifactSourceSnapshot.capture(
+            repositoryRoot: FilePath(repository.path),
+            sourceAuthority: .localDevelopment,
+            observe: { progress in recorded.withLock { $0.append(progress) } })
+        return recorded.withLock { $0 }
+    }
+
+    // A clean tree costs nothing to read, and says so.
+    let clean = try capture()
+    #expect(clean.count == 1)
+    #expect(clean.first?.identifiedPaths == 2)
+    #expect(clean.first?.inspectedPaths == 0)
+
+    // A modified path and an untracked path are both content Git cannot
+    // identify, and the count is reported before either is read.
+    try "changed".write(
+        to: repository.appendingPathComponent("first.txt"),
+        atomically: true, encoding: .utf8)
+    try "new".write(
+        to: repository.appendingPathComponent("third.txt"),
+        atomically: true, encoding: .utf8)
+    let dirty = try capture()
+    #expect(dirty.count == 1)
+    #expect(dirty.first?.identifiedPaths == 1)
+    #expect(dirty.first?.inspectedPaths == 2)
 }
 
 @Test func sourceCheckoutDigestRejectsPathsGitReportsWithoutInspecting() throws {

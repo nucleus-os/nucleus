@@ -22,7 +22,8 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         sourceAuthority: ProductArtifactSourceAuthority,
         assertedCommit: String? = nil,
         assertedBranch: String? = nil,
-        sourcePaths: [FilePath]? = nil
+        sourcePaths: [FilePath]? = nil,
+        observe: SourceCaptureObserver? = nil
     ) throws -> Self {
         let sourcePaths = sourcePaths ?? [repositoryRoot]
         guard !sourcePaths.isEmpty else {
@@ -35,7 +36,7 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             }
             return relative.string
         }
-        let closure = try sourceDigest(sourcePaths)
+        let closure = try sourceDigest(sourcePaths, observe: observe)
         let submodules = try submodulePaths(repositoryRoot).filter { relative in
             scopes.contains {
                 sourcePath(relative, isWithin: $0)
@@ -44,7 +45,8 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         }.map { relative in
             ProductArtifactSourceClosure(
                 relativePath: relative,
-                digest: try sourceDigest(repositoryRoot.appending(relative)))
+                digest: try sourceDigest(
+                    repositoryRoot.appending(relative), observe: observe))
         }
         let head = try gitText(
             at: repositoryRoot,
@@ -108,18 +110,26 @@ private func isFullGitCommit(_ value: String) -> Bool {
         }
 }
 
-private func sourceDigest(_ checkouts: [FilePath]) throws -> ArtifactDigest {
+private func sourceDigest(
+    _ checkouts: [FilePath],
+    observe: SourceCaptureObserver? = nil
+) throws -> ArtifactDigest {
     try GitSourceCheckoutHasher.digest(
         checkouts,
         digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: sourceDigest)
+        digestNestedCheckout: { try sourceDigest($0, observe: observe) },
+        observe: observe)
 }
 
-private func sourceDigest(_ checkout: FilePath) throws -> ArtifactDigest {
+private func sourceDigest(
+    _ checkout: FilePath,
+    observe: SourceCaptureObserver? = nil
+) throws -> ArtifactDigest {
     try GitSourceCheckoutHasher.digest(
         checkout,
         digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: sourceDigest)
+        digestNestedCheckout: { try sourceDigest($0, observe: observe) },
+        observe: observe)
 }
 
 private func sourcePath(_ candidate: String, isWithin scope: String) -> Bool {
