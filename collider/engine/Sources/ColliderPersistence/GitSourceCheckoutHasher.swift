@@ -369,6 +369,12 @@ private func git(
     let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
     let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
+    // Source capture runs Git once per checkout, and a source closure has
+    // hundreds. Waiting for these pipes to close on deallocation leaks four
+    // descriptors per invocation, which exhausts a default process limit long
+    // before the closure is hashed.
+    try? standardOutput.fileHandleForReading.close()
+    try? standardError.fileHandleForReading.close()
     guard process.terminationStatus == 0 else {
         let message = String(decoding: errorOutput, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)

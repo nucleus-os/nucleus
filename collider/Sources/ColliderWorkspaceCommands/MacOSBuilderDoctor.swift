@@ -364,6 +364,11 @@ struct MacOSBuilderDoctor {
                 // Setgid keeps every object the builder creates in the group the
                 // interactive account reads, without that account writing any.
                 attributes[.posixPermissions] as? NSNumber == 0o2750,
+                // Journalling is not executing, so both accounts write the log
+                // root while build state stays writable by the builder alone.
+                let logs = try? fileManager.attributesOfItem(
+                    atPath: store.appending("logs").string),
+                logs[.posixPermissions] as? NSNumber == 0o2770,
                 // Signing material is the one subtree the reading group must not
                 // reach, because the identity that executes is the one that signs.
                 let identity = try? fileManager.attributesOfItem(
@@ -422,6 +427,24 @@ struct MacOSBuilderDoctor {
         }
     }
 
+    /// Whether this account owns the container service.
+    ///
+    /// A store host runs exactly one, in the builder's launchd session, and a
+    /// Mach service in another account's session cannot be reached from here at
+    /// all. Reporting that as a fault would tell every developer invocation
+    /// that a healthy host is broken, so these checks state who owns the
+    /// service instead of asserting against one that was never theirs.
+    private func inspectsContainerService(_ contract: MacOSBuilderContract) -> Bool {
+        !MacOSMachineStorageLayout.buildStoreIsInstalled()
+            || NSUserName() == contract.builder.user
+    }
+
+    private func containerServiceOwnedElsewhere(
+        _ contract: MacOSBuilderContract
+    ) -> String {
+        "owned by \(contract.builder.user); this account runs no container service"
+    }
+
     private func persistentService(
         _ contract: MacOSBuilderContract,
         storageLayout: MacOSHostStorageLayout,
@@ -434,6 +457,9 @@ struct MacOSBuilderDoctor {
             remediation:
                 "stop the per-user service, then run tools/macos-builder/install-container-service.sh"
         ) {
+            guard inspectsContainerService(contract) else {
+                return containerServiceOwnedElsewhere(contract)
+            }
             let fileManager = FileManager.default
             let starterPath = storageLayout.containerServiceStarter.string
             let plistPath = storageLayout.launchAgentPlist(
@@ -475,6 +501,9 @@ struct MacOSBuilderDoctor {
             remediation:
                 "install the signed pinned package and provision the persistent per-user service"
         ) {
+            guard inspectsContainerService(contract) else {
+                return containerServiceOwnedElsewhere(contract)
+            }
             guard
                 let health = try? await context.runtime.ociRuntimeHealth(),
                 let detail = Self.containerSystemDetail(
@@ -498,6 +527,9 @@ struct MacOSBuilderDoctor {
             remediation:
                 "run any Collider build or bootstrap action; Collider creates and validates this network through the Apple container Swift API"
         ) {
+            guard inspectsContainerService(contract) else {
+                return containerServiceOwnedElsewhere(contract)
+            }
             guard
                 let network = try? await context.runtime.ociRuntimeNetwork(
                     named: contract.appleContainer.network),

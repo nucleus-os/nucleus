@@ -63,13 +63,15 @@ if [[ -e "$host_contract_root/authoritative-checkout" ]] \
   echo "error: installed authoritative checkout contract differs" >&2
   exit 73
 fi
+# The checkout is authoritative for these launchers, so a difference means this
+# provisioning carries a newer one, not that the host was tampered with;
+# refusing on difference would make the launchers unupdatable. A symbolic link
+# at the target is still refused, because it would redirect a root-owned entry
+# point somewhere this provisioning does not control.
 for executable in nucleus-builder-run collider-workspace-shim; do
   target=/usr/local/bin/${executable/collider-workspace-shim/collider}
-  if [[ ( -e "$target" || -L "$target" ) ]] \
-      && { [[ -L "$target" ]] || ! /usr/bin/cmp -s "$script_directory/$executable" "$target"; }; then
-    echo "error: installed executable differs: $target" >&2
-    exit 73
-  fi
+  [[ ! -L "$target" ]] \
+    || { echo "error: installed executable is a symbolic link: $target" >&2; exit 73; }
 done
 
 for builder_path in \
@@ -153,7 +155,9 @@ for executable in nucleus-builder-run collider-workspace-shim; do
   /usr/bin/install -o root -g wheel -m 0755 "$script_directory/$executable" "$target"
 done
 
-# One scoped, password-free path from the developer to the build launcher.
+# One scoped, password-free path from the developer to the build launcher. The
+# run-as target is root because the launcher itself drops to the builder through
+# launchd; granting it as the builder would leave every local build prompting.
 # Without it every local build prompts, and a build that prompts is a build that
 # gets run some other way. The grant is one exact root-owned program that takes
 # only a canonical checkout, a typed operation, and a declared configuration,
@@ -166,7 +170,7 @@ temporary_sudoers="$(/usr/bin/mktemp /tmp/nucleus-sudoers.XXXXXX)"
 trap '/bin/rm -f "$temporary_sudoers" "${temporary_plist:-}"' EXIT
 /bin/cat >"$temporary_sudoers" <<SUDOERS
 # Installed by tools/macos-builder/finalize-nucleus-builder.sh. Do not edit.
-$developer_user ALL=($builder_user) NOPASSWD: /usr/local/bin/nucleus-builder-run
+$developer_user ALL=(root) NOPASSWD: /usr/local/bin/nucleus-builder-run
 SUDOERS
 /usr/sbin/visudo -c -f "$temporary_sudoers" >/dev/null \
   || { echo "error: generated sudoers entry is invalid" >&2; exit 78; }
@@ -220,6 +224,14 @@ do
     /bin/chmod 0644 "$builder_service_file"
   fi
 done
+# Git refuses to parse a repository owned by another account, which is exactly
+# the arrangement this identity exists for: the builder reads the developer's
+# checkout and must never own it. The exception is granted for that checkout and
+# the repositories beneath it, because every submodule is a repository with the
+# same ownership. It is scoped to those paths rather than disabling the check.
+run_as_builder /usr/bin/git config --global --replace-all safe.directory "$checkout"
+run_as_builder /usr/bin/git config --global --add safe.directory "$checkout/*"
+
 run_as_builder "$script_directory/install-container-service.sh"
 if ! /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
   /bin/launchctl bootstrap system "$runner_plist"

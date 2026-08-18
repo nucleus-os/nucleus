@@ -51,6 +51,26 @@ package struct MacOSHostStorageLayout: Equatable, Sendable {
         launchAgentsDirectory = libraryDirectory.appending("LaunchAgents")
     }
 
+    /// The invoking account's own storage, never the shared build store.
+    ///
+    /// Reserved for state that belongs to the developer rather than to the
+    /// builds the store holds: an editor's scratch directory is the case that
+    /// matters, because its outputs never become an artifact and its writes are
+    /// not covered by the execution lease.
+    package static func developerOwned(
+        fileManager: FileManager = .default
+    ) -> MacOSHostStorageLayout {
+        MacOSHostStorageLayout(
+            homeDirectory: FilePath(fileManager.homeDirectoryForCurrentUser.path))
+    }
+
+    /// The SwiftPM scratch directory an editor prepares in. It is deliberately
+    /// not the build scratch path: the store admits one writer, and background
+    /// preparation is a second one the lease cannot serialize.
+    package var languageServerScratch: FilePath {
+        developerRoot.appending("language-server/swiftpm")
+    }
+
     package static func current(
         fileManager: FileManager = .default
     ) throws -> MacOSHostStorageLayout {

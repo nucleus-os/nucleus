@@ -54,6 +54,11 @@ public struct ColliderCommand: AsyncParsableCommand {
         environment = nucleusWorkspaceEnvironment(
             root: workspace,
             environment: environment)
+        // Before the registry opens a run, because recording one is itself a
+        // write into the store this account may not be permitted to make.
+        if workspaceCommand.requiresExecutionAdmission {
+            try requireBuildStoreWriteAccess()
+        }
         let registry = RunRegistry(
             root: nucleusRunRegistryRoot(workspaceRoot: workspace))
         try await registry.reconcileAbandonedRuns()
@@ -144,7 +149,6 @@ public struct ColliderCommand: AsyncParsableCommand {
         defer { withExtendedLifetime(executionAdmission) {} }
         do {
             if workspaceCommand.requiresExecutionAdmission {
-                try requireBuildStoreWriteAccess()
                 executionAdmission = try await acquireColliderFileLock(
                     path: hostExecutionAdmissionLockPath(
                         hostBuildRoot: application.workspace.hostBuildRoot,

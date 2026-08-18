@@ -47,6 +47,11 @@ package enum DurableFile {
         try write(data, to: path)
     }
 
+    /// Durable writes carry group read because the store they land in is shared:
+    /// the builder writes it and a second group reads it. Owner-only records
+    /// would leave run history and downloads unreadable to the account the
+    /// sharing exists for. Nothing widens beyond the group, and the store
+    /// directory itself grants nothing to others.
     package static func write(_ data: Data, to path: FilePath) throws {
         try FileManager.default.createDirectory(
             atPath: path.removingLastComponent().string,
@@ -56,7 +61,7 @@ package enum DurableFile {
             candidate,
             .writeOnly,
             options: [.create, .truncate],
-            permissions: .ownerReadWrite)
+            permissions: [.ownerReadWrite, .groupRead])
         do {
             try descriptor.writeAll(data)
             guard collider_sync_file(descriptor.rawValue) == 0 else {

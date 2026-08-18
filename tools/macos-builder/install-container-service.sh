@@ -132,7 +132,11 @@ for required_path in \
   "$service_logs" \
   "$agent_directory"
 do
-  /usr/bin/install -d -m 0755 "$required_path"
+  # Create only what is absent. `install -d` resets an existing directory's
+  # mode, and these resolve into the machine build store, whose setgid and
+  # group-write bits are what let the reading group see what the builder writes.
+  # Provisioning owns those modes; this installer must not flatten them.
+  [[ -d "$required_path" ]] || /usr/bin/install -d -m 0755 "$required_path"
   if [[ $(/usr/bin/stat -f '%u' "$required_path") -ne $service_uid ]]; then
     echo "error: $required_path is not owned by $service_user" >&2
     exit 77

@@ -59,25 +59,64 @@ if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
   fail "a job is executing on this runner; drain it before migrating"
 fi
 
+# Hold host execution admission for the duration. A build that started midway
+# through would write into roots this is moving out from under it. The
+# descriptor stays open for the life of this script, so the lease is held until
+# it exits however it exits.
+readonly execution_lease=/Library/Nucleus/Builder/host-execution.lock
+if [[ -f "$execution_lease" ]]; then
+  exec 9<>"$execution_lease"
+  /usr/bin/python3 -c 'import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit(1)' \
+    || fail "another Collider invocation holds host execution admission"
+fi
+
 # A live API server holds its application root open and rewrites state beneath
-# it, so both accounts' services stop before anything moves.
-for service_uid in "$(/usr/bin/id -u "$developer_user")" "$builder_uid"; do
-  for domain in "gui/$service_uid" "user/$service_uid"; do
+# it, so both accounts' services stop before anything moves. The starter agent
+# exits once Apple Container has launched its detached user services, so booting
+# the agent out leaves the API server running: each account's container system
+# is stopped through its own client, in that account's launchd session.
+stop_container_service() {
+  local account="$1"
+  local account_uid
+  account_uid="$(/usr/bin/id -u "$account")"
+  if $dry_run; then
+    step "would stop the container service for $account"
+    return 0
+  fi
+  local domain
+  for domain in "gui/$account_uid" "user/$account_uid"; do
     if /bin/launchctl print "$domain/$container_service_label" >/dev/null 2>&1; then
-      $dry_run || /bin/launchctl bootout "$domain/$container_service_label" || true
+      /bin/launchctl bootout "$domain/$container_service_label" >/dev/null 2>&1 || true
     fi
   done
-done
+  /bin/launchctl asuser "$account_uid" /usr/bin/sudo -H -u "$account" \
+    /usr/local/bin/container system stop >/dev/null 2>&1 || true
+}
+stop_container_service "$developer_user"
+stop_container_service "$builder_user"
 if ! $dry_run; then
   for _ in {1..50}; do
     /usr/bin/pgrep -f container-apiserver >/dev/null 2>&1 || break
     /bin/sleep 0.2
   done
-  /usr/bin/pgrep -f container-apiserver >/dev/null 2>&1 \
-    && fail "an Apple container API server is still running"
+  if /usr/bin/pgrep -f container-apiserver >/dev/null 2>&1; then
+    fail "an Apple container API server is still running: $(/usr/bin/pgrep -f container-apiserver | /usr/bin/tr '\n' ' ')"
+  fi
 fi
 
-readonly store_device="$(/usr/bin/stat -f '%d' "$build_store")"
+# The store does not exist yet, so the device it will live on is the one its
+# nearest existing ancestor is on. Getting this wrong turns every rename below
+# into a copy of the whole working set onto a disk that cannot hold it.
+store_ancestor="$build_store"
+while [[ ! -e "$store_ancestor" ]]; do
+  store_ancestor="$(/usr/bin/dirname "$store_ancestor")"
+done
+readonly store_ancestor
+readonly store_device="$(/usr/bin/stat -f '%d' "$store_ancestor")"
 for source_root in "$source_developer" "$source_cache" "$source_logs"; do
   [[ -d "$source_root" ]] || continue
   [[ "$(/usr/bin/stat -f '%d' "$source_root")" == "$store_device" ]] \
@@ -93,11 +132,24 @@ done
 if ! $dry_run; then
   step "creating the build store"
   /usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$build_store")"
+  # `install -d` drops the setgid bit, so every mode below is applied again with
+  # chmod. Without setgid, objects the builder creates take the builder's own
+  # group and the reading group never sees them.
   /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2750 "$build_store"
-  for store_directory in configuration state cache logs; do
+  /bin/chmod 2750 "$build_store"
+  for store_directory in configuration state cache; do
     /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2750 \
       "$build_store/$store_directory"
+    /bin/chmod 2750 "$build_store/$store_directory"
   done
+  # Recording a run is journalling, not executing build code, and both accounts
+  # journal: the developer's doctor, status, and dry-run invocations produce run
+  # records exactly as the builder's executions do. The log root is therefore
+  # the one subtree the reading group also writes, while build state stays
+  # writable by the builder alone.
+  /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2770 \
+    "$build_store/logs"
+  /bin/chmod 2770 "$build_store/logs"
   # Signing material is the one subtree the reading group must not reach: the
   # identity that executes is the identity that signs.
   /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 0700 \
@@ -135,9 +187,9 @@ elif [[ -d "$source_developer/identity" ]]; then
   step "$source_developer/identity/* -> $build_store/state/identity/"
 fi
 move_into_store "$source_cache" "$build_store/cache-migrated"
-move_into_store "$source_logs/runs" "$build_store/logs/runs"
-readonly source_logs_service="$source_logs/service"
-move_into_store "$source_logs_service" "$build_store/logs/service"
+for log_subtree in runs service latest locks; do
+  move_into_store "$source_logs/$log_subtree" "$build_store/logs/$log_subtree"
+done
 
 # The cache root moves as a whole and is then merged, because the store already
 # declares its own cache directory.
@@ -166,7 +218,13 @@ fi
 # `source` path, and one label. All four move from the checkout that created it
 # to the store that now owns it.
 
-readonly volumes="$build_store/state/apple-container/volumes"
+# A dry run reports the renames it would perform, so it reads the volumes where
+# they still are rather than where they are going.
+if $dry_run; then
+  readonly volumes="$source_developer/apple-container/volumes"
+else
+  readonly volumes="$build_store/state/apple-container/volumes"
+fi
 readonly previous_owner="$(/usr/bin/printf '%s' "$checkout" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 readonly current_owner="$(/usr/bin/printf '%s' "$build_store" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 step "workspace owner $previous_owner -> $current_owner"
@@ -198,6 +256,15 @@ PYTHON
   done < <(/usr/bin/find "$volumes" -mindepth 1 -maxdepth 1 -type d -print0)
 fi
 
+# Once the store exists the interactive account's starter resolves the store's
+# application root, which that account cannot write, so its agent would fail at
+# every login. One account runs the container service, and it is the builder's.
+readonly developer_agent="$developer_home/Library/LaunchAgents/$container_service_label.plist"
+if [[ -e "$developer_agent" ]]; then
+  step "removing the interactive account's container launch agent"
+  $dry_run || /bin/rm -f "$developer_agent"
+fi
+
 if $dry_run; then
   step "dry run complete; nothing moved"
   exit 0
@@ -208,6 +275,11 @@ fi
 step "assigning store ownership"
 /usr/sbin/chown -R "$builder_user":"$build_state_group" "$build_store"
 /bin/chmod 0700 "$build_store/state/identity"
+# Records written before the store existed carry owner-only modes, and the
+# account the sharing exists for cannot read them.
+/bin/chmod -R g+rw "$build_store/logs"
+/usr/bin/find "$build_store/logs" -type d -exec /bin/chmod g+s {} +
+/usr/bin/find "$build_store/cache/downloads" -type f -exec /bin/chmod g+r {} + 2>/dev/null || true
 
 step "verifying migrated volumes"
 if [[ -d "$volumes" ]]; then

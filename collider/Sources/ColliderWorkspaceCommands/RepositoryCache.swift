@@ -1240,12 +1240,29 @@ struct RepositoryCache {
         if let store = totals.containerStoreBytes {
             components.append("container store \(formatted(store))")
         }
+        // Workspace and container-store figures come from the container
+        // service, which one account owns on a host with a build store. Saying
+        // the total is partial is the report's job; printing nothing would read
+        // as a host holding nothing.
+        if totals.workspaceAllocatedBytes == nil {
+            components.append("workspaces unavailable without the container service")
+        }
         guard !components.isEmpty else { return [] }
         let unmeasured =
             totals.declaredRootBytes == nil
             ? ", declared roots not measured; pass --measure-allocations" : ""
+        // A measured zero and an unmeasurable total are different facts, and
+        // reporting the second as "0 B" would describe a terabyte-scale host as
+        // empty.
+        let measuredAnything =
+            totals.declaredRootBytes != nil || totals.workspaceAllocatedBytes != nil
+            || totals.containerStoreBytes != nil
+        let headline =
+            measuredAnything
+            ? "storage-total: \(formatted(totals.accountedBytes)) accounted\(unmeasured)"
+            : "storage-total: nothing measurable from this account\(unmeasured)"
         var lines = [
-            "storage-total: \(formatted(totals.accountedBytes)) accounted\(unmeasured)",
+            headline,
             "  " + components.joined(separator: " · "),
         ]
         if totals.workspacesNearCapacity > 0 {

@@ -22,8 +22,18 @@ fi
 
 export NUCLEUS_WORKSPACE_ROOT="$root"
 host_env="$root/tools/host-env.sh"
-if ! ( source "$host_env" ) >/dev/null 2>&1; then
-  echo "collider: the native host compiler is unavailable; run $root/collider-setup.sh" >&2
+# Report why, not merely that. The host environment fails for reasons that are
+# specific and actionable — a missing toolchain, an unreadable source graph, a
+# repository another account owns — and a generic message sends every one of
+# them to the same wrong remedy.
+if ! host_env_error="$( ( source "$host_env" ) 2>&1 >/dev/null )"; then
+  echo "collider: the host build environment is unavailable" >&2
+  if [[ -n "$host_env_error" ]]; then
+    while IFS= read -r host_env_line; do
+      echo "collider:   $host_env_line" >&2
+    done <<<"$host_env_error"
+  fi
+  echo "collider: if the toolchain itself is absent, run $root/collider-setup.sh" >&2
   exit 1
 fi
 source "$host_env"

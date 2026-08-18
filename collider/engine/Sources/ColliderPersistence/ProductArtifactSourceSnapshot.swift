@@ -213,6 +213,10 @@ private func runGit(
     }
     let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
     let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
+    defer {
+        try? standardOutput.fileHandleForReading.close()
+        try? standardError.fileHandleForReading.close()
+    }
     process.waitUntilExit()
     if process.terminationStatus != 0
         && !(permitsNoMatch && process.terminationStatus == 1)

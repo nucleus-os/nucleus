@@ -767,11 +767,16 @@ private final class RunLease {
     }
 
     static func tryAcquire(in directory: FilePath) throws -> RunLease? {
+        // Read-only: `flock` needs an open descriptor, not write access, and
+        // reconciliation probes the lease of every recorded run. On a shared
+        // store those runs belong to whichever account executed them, so
+        // requiring write here would make one account unable to reconcile the
+        // other's history at all.
         let descriptor = try FileDescriptor.open(
             directory.appending("run.lock"),
-            .readWrite,
+            .readOnly,
             options: .create,
-            permissions: [.ownerReadWrite, .groupRead, .otherRead])
+            permissions: [.ownerReadWrite, .groupReadWrite, .otherRead])
         guard collider_lock_exclusive(descriptor.rawValue, 0) == 0 else {
             let code = errno
             try? descriptor.close()
@@ -800,7 +805,8 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
     data.append(0x0a)
     let candidate = FilePath(path.string + ".candidate-\(getpid())")
     let descriptor = try FileDescriptor.open(
-        candidate, .writeOnly, options: [.create, .truncate], permissions: .ownerReadWrite)
+        candidate, .writeOnly, options: [.create, .truncate],
+        permissions: [.ownerReadWrite, .groupRead])
     do {
         try descriptor.writeAll(data)
         guard collider_sync_file(descriptor.rawValue) == 0 else { throw Errno(rawValue: errno) }
@@ -825,7 +831,8 @@ private func appendBytes(
     synchronized: Bool = true
 ) throws {
     let descriptor = try FileDescriptor.open(
-        path, .writeOnly, options: [.create, .append], permissions: .ownerReadWrite)
+        path, .writeOnly, options: [.create, .append],
+        permissions: [.ownerReadWrite, .groupRead])
     defer { try? descriptor.close() }
     try descriptor.writeAll(bytes)
     guard synchronized else { return }

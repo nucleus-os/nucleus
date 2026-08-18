@@ -55,6 +55,15 @@ sudo_access="$(/usr/bin/sudo -n -l -U "$builder_user" 2>&1 || true)"
 
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   /bin/test -r "$checkout/Package.swift" || fail "builder cannot read checkout"
+# Reading the files is not enough: Git refuses to parse a repository owned by
+# another account, and every Collider entry point begins by reading the source
+# graph through Git.
+/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  /usr/bin/git -C "$checkout" rev-parse --git-dir >/dev/null 2>&1 \
+  || fail "builder cannot read the checkout through Git"
+/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
+  /usr/bin/git -C "$checkout/third-party/swift-system" rev-parse --git-dir >/dev/null 2>&1 \
+  || fail "builder cannot read checkout submodules through Git"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   /bin/test ! -w "$checkout" || fail "builder can mutate checkout root"
 /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
@@ -93,6 +102,10 @@ readonly sudoers_file=/etc/sudoers.d/nucleus-builder
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$sudoers_file") == root:wheel:440 ]] \
   || fail "builder sudoers entry ownership or mode drifted"
 /usr/sbin/visudo -c -f "$sudoers_file" >/dev/null || fail "builder sudoers entry is invalid"
+# `sudo -l` reports a command as listed under any runas spec, so the grant is
+# checked for the target the launcher actually needs: root.
+/usr/bin/grep -q "ALL=(root) NOPASSWD: /usr/local/bin/nucleus-builder-run" "$sudoers_file" \
+  || fail "launcher grant does not admit the root the launcher requires"
 /usr/bin/sudo -n -l -U "$developer_user" /usr/local/bin/nucleus-builder-run >/dev/null 2>&1 \
   || fail "$developer_user cannot run the launcher without a password"
 developer_sudo="$(/usr/bin/sudo -n -l -U "$developer_user" 2>&1 || true)"
@@ -139,9 +152,11 @@ done
   | /usr/bin/grep -q 'yes' && fail "$developer_user belongs to the builder's own group"
 if [[ -e "$build_store" ]]; then
 [[ ! -L "$build_store" && -d "$build_store" ]] || fail "machine build store is not a directory"
-[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$build_store") == "$builder_user:$build_state_group:2750" ]] \
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Mp%Lp' "$build_store") == "$builder_user:$build_state_group:2750" ]] \
   || fail "build store ownership or mode drifted"
-[[ $(/usr/bin/stat -f '%Lp' "$build_store/state/identity") == 700 ]] \
+[[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/logs") == 2770 ]] \
+  || fail "build store log root is not group-writable with setgid"
+[[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/state/identity") == 0700 ]] \
   || fail "signing identity subtree is readable beyond the builder"
 /usr/bin/sudo -H -u "$builder_user" /bin/test -w "$build_store" \
   || fail "$builder_user cannot write the build store"
@@ -149,6 +164,10 @@ if [[ -e "$build_store" ]]; then
   || fail "$developer_user cannot read the build store"
 /usr/bin/sudo -H -u "$developer_user" /bin/test ! -w "$build_store" \
   || fail "$developer_user can write the build store"
+/usr/bin/sudo -H -u "$developer_user" /bin/test ! -w "$build_store/state" \
+  || fail "$developer_user can write build state"
+/usr/bin/sudo -H -u "$developer_user" /bin/test -w "$build_store/logs" \
+  || fail "$developer_user cannot record runs"
 /usr/bin/sudo -H -u "$developer_user" /bin/test ! -r "$build_store/state/identity" \
   || fail "$developer_user can read builder signing material"
 fi

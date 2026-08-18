@@ -1433,7 +1433,7 @@ private func artifactInput(
     #expect((inMemory ?? 0) >= descriptions)
 }
 
-@Test func languageServerSharesTheWorkspaceBuildDirectory() throws {
+@Test func languageServerPreparesInDeveloperOwnedStorage() throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-lsp-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: workspace) }
@@ -1466,24 +1466,31 @@ private func artifactInput(
     let first = try published()
     let firstSwiftPM = first["swiftPM"] as! [String: Any]
 
-    // The workspace build directory, named the way the workspace names it, so
-    // the language server's builds and the workspace's builds are the same work.
-    // The language server resolves a relative directory against each package it
-    // finds, so the name has to be absolute to mean one directory.
+    // The editor prepares in the developer's own storage, never in the build
+    // scratch directory. Background preparation is a writer the machine
+    // execution lease cannot serialize, and nothing the editor produces becomes
+    // an artifact, so sharing one directory would put a second uncoordinated
+    // writer inside the state deliveries are built from.
     #expect(
         firstSwiftPM["scratchPath"] as? String
-            == invocation("first").scratchPath.string)
+            != invocation("first").scratchPath.string)
+    #expect(
+        firstSwiftPM["scratchPath"] as? String
+            == MacOSHostStorageLayout.developerOwned().languageServerScratch.string)
+    // The language server resolves a relative directory against each package it
+    // finds, so the name has to be absolute to mean one directory.
     #expect((firstSwiftPM["scratchPath"] as? String)?.hasPrefix("/") == true)
     #expect(firstSwiftPM["configuration"] as? String == "debug")
     #expect(firstSwiftPM["workspacePlan"] == nil)
     #expect(first["backgroundPreparationMode"] as? String == "build")
 
-    // A build context that resolves somewhere new republishes rather than
-    // leaving the language server pointed at a directory nothing maintains.
+    // Because the editor's directory does not follow the build's, a build
+    // context that resolves somewhere new leaves the published configuration
+    // alone rather than rewriting it on every invocation.
     try context.publishLanguageServerConfiguration(invocation("second"))
     #expect(
         (try published()["swiftPM"] as! [String: Any])["scratchPath"] as? String
-            == invocation("second").scratchPath.string)
+            == firstSwiftPM["scratchPath"] as? String)
 }
 
 @Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {

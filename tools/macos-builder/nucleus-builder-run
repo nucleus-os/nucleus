@@ -8,8 +8,8 @@ if [[ $EUID -ne 0 ]]; then
   echo "error: invoke this root-owned launcher through sudo" >&2
   exit 77
 fi
-if [[ $# -ne 3 ]]; then
-  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package> <debug|release>" >&2
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package> <debug|release> [component]" >&2
   exit 64
 fi
 if [[ ! -f "$checkout_record" ]]; then
@@ -20,6 +20,7 @@ fi
 readonly requested_checkout="$1"
 readonly operation="$2"
 readonly configuration="$3"
+readonly component="${4:-}"
 readonly checkout="$(/usr/bin/sed -n '1p' "$checkout_record")"
 readonly canonical_requested="$(cd "$requested_checkout" 2>/dev/null && /bin/pwd -P)" || {
   echo "error: requested checkout does not exist" >&2
@@ -34,9 +35,26 @@ if [[ ! -f "$checkout/Package.swift" || ! -x "$checkout/tools/collider-launcher.
   exit 72
 fi
 
+# A component narrows an operation to one entry in the current catalog. It is
+# matched against a strict name pattern rather than passed through, so this
+# launcher still accepts a typed operation rather than an argument vector: no
+# option, path, or second word can reach Collider through it. Release
+# configurations already express themselves as a fixed selection, so combining
+# the two would be ambiguous and is refused rather than silently resolved.
+if [[ -n "$component" ]]; then
+  if [[ ! "$component" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "error: component must be a catalog component name" >&2
+    exit 64
+  fi
+  if [[ "$configuration" != debug ]]; then
+    echo "error: a component is accepted only with the debug configuration" >&2
+    exit 64
+  fi
+fi
+
 case "$configuration:$operation" in
-  debug:build) command=(build) ;;
-  debug:test) command=(test) ;;
+  debug:build) command=(build ${component:+"$component"}) ;;
+  debug:test) command=(test ${component:+"$component"}) ;;
   release:build) command=(build linux-runtime) ;;
   release:test) command=(test release-gate) ;;
   release:package) command=(package linux-runtime) ;;
@@ -45,6 +63,12 @@ case "$configuration:$operation" in
     exit 64
     ;;
 esac
+
+# launchd hands a process 256 open files by default, which is a desktop default
+# rather than a build one: source capture alone runs Git once per checkout
+# across dozens of submodules and SwiftPM checkout directories, and compilation
+# opens far more. The ceiling is the kernel's per-process maximum.
+ulimit -n "$(/usr/sbin/sysctl -n kern.maxfilesperproc)" 2>/dev/null || true
 
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 exec /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
