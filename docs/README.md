@@ -87,10 +87,6 @@ implementation inputs are available:
 
 ## Completed architecture consolidation
 
-- [Source identity from Git objects](source-identity-from-git-objects-plan.md)
-  derived source closure identity from the object identities Git already
-  maintains, reading content only where Git cannot answer, and reported capture
-  progress that no task graph renders.
 - [Collider throughput optimization](collider-throughput-optimization-plan.md)
   established concurrent architecture packaging, single-materialization
   payloads, independently cached family adapters, bounded control-only batches,

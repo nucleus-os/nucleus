@@ -112,6 +112,28 @@ materialized nested-checkout trees participate. Checkout placement, branch,
 commit, and dirty state do not. A task that consumes Git metadata declares that
 metadata separately as a semantic input.
 
+File content occupies one identity domain, the Git object identity, taken from
+the index where Git already holds it and computed where it does not. One domain
+is what makes identity a function of content rather than of commit state:
+distinguishing an index identity from a separately computed digest would change
+a closure when content is committed without changing, invalidating every
+derived identity on commit. The same reasoning forbids identifying a clean
+nested checkout by its recorded commit while walking a modified one, so nested
+checkouts are always walked.
+
+Content is read only where Git cannot answer for it. A tracked path that Git
+does not report as differing from the index carries the identity, type, and
+executable bit the index records, and is neither read nor stated. A deletion is
+a difference, so a path Git answers for is present without checking. Capture
+therefore costs the size of the working tree's divergence rather than the size
+of the tree. `assume-unchanged` and `skip-worktree` entries are rejected rather
+than trusted, because both instruct Git to report a path as unmodified without
+inspecting it, and an identity resting on that word would claim content the
+working tree may not hold.
+
+Capture is not a task, so each checkout reports the paths Git identified and
+the paths whose content must be read before reading any of them.
+
 A product crossing a build, qualification, packaging, or development-transport
 boundary uses `ProductArtifactEnvelope`. Its content identity covers source and
 submodule closures, producing task, runner/execution/artifact platforms,
