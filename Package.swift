@@ -57,6 +57,7 @@ let products: [Product] = [
 ]
 let dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-binary-parsing.git", exact: "0.0.2"),
+    .package(url: "https://github.com/apple/swift-collections.git", from: "1.6.0"),
     .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
     .package(url: "https://github.com/swift-server/async-http-client.git", branch: "main"),
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
@@ -459,6 +460,7 @@ let targets: [Target] = [
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "NucleusConfig", "Tracy",
             .product(name: "BinaryParsing", package: "swift-binary-parsing"),
+            .product(name: "OrderedCollections", package: "swift-collections"),
         ], path: "compositor/compositor-core/Sources/NucleusCompositorWaylandRuntime",
         swiftSettings: [
             .enableUpcomingFeature("InternalImportsByDefault"),
@@ -1108,7 +1110,11 @@ let targets: [Target] = [
     .target(
         name: "NucleusLinuxSessionC", path: "platform-linux/Sources/NucleusLinuxSessionC"),
     .target(
-        name: "NucleusThemeAssetIO", path: "platform-linux/Sources/NucleusThemeAssetIO"),
+        name: "NucleusThemeAssetIO",
+        dependencies: [
+            .product(name: "DequeModule", package: "swift-collections"),
+            .product(name: "OrderedCollections", package: "swift-collections"),
+        ], path: "platform-linux/Sources/NucleusThemeAssetIO"),
     .executableTarget(
         name: "NucleusLinuxThreadSanitizerHarness",
         dependencies: ["NucleusLinuxReactor", "NucleusLinuxReactorC"],

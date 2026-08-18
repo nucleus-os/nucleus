@@ -1,6 +1,7 @@
 import Dispatch
 import Synchronization
 import Testing
+
 @testable import NucleusThemeAssetIO
 
 @Suite struct BoundedThemeAssetIOTests {
@@ -34,6 +35,28 @@ import Testing
         let snapshot = await service.snapshot
         #expect(snapshot.completed == 1)
         #expect(snapshot.completedCost == 4)
+    }
+
+    @Test func aCacheHitMovesTheEntryToTheEvictionTail() async {
+        let calls = Mutex<[Int: Int]>([:])
+        let service = BoundedThemeAssetIO<Int, Int>(
+            label: "theme-io-touch-test",
+            maximumCompletedEntries: 2
+        ) { key in
+            calls.withLock { $0[key, default: 0] += 1 }
+            return key
+        }
+        #expect(await service.resolve(1) == 1)
+        #expect(await service.resolve(2) == 2)
+        // The hit on the oldest entry makes it the newest, so admitting a third
+        // entry evicts 2 rather than 1.
+        #expect(await service.resolve(1) == 1)
+        #expect(await service.resolve(3) == 3)
+
+        #expect(await service.resolve(1) == 1)
+        #expect(calls.withLock { $0[1] } == 1)
+        #expect(await service.resolve(2) == 2)
+        #expect(calls.withLock { $0[2] } == 2)
     }
 
     @Test func dropsTheOldestNonStartedRequestAtTheQueueBound() async {

@@ -401,13 +401,14 @@ finalization no longer walks every submodule working tree twice to reassign
 ownership. Verification proves the work root is builder-owned and outside the
 runner installation.
 
-Automated checkout is shallow. Provenance capture and every Collider action
-read the checked-out tree, never its history: the source snapshot uses only
-`rev-parse HEAD`, `symbolic-ref`, `diff --name-only HEAD`, `ls-files
---others`, and the declared submodule paths, and no Collider or host script
-invokes `rev-list`, `merge-base`, or `git log`. Main reachability is already
-proven by the GitHub-hosted admission preflight before the revision may address
-the runner, so re-deriving it from a complete local history is redundant.
+Automated checkout fetches complete history, including submodules. Provenance
+capture alone would not require it: the source snapshot uses only `rev-parse
+HEAD`, `symbolic-ref`, `diff --name-only HEAD`, `ls-files --others`, and the
+declared submodule paths. Resolution does. Collider resolves the SwiftPM graph,
+whose local dependencies on first-party submodules pin revisions that are
+ancestors of the submodule gitlink rather than the gitlink itself, and a
+depth-limited fetch omits those objects. Shallowing this checkout therefore
+fails at resolution, not at provenance, and the two must not be conflated.
 
 The machine-wide runner and host-contract roots are absolute, whitespace-free,
 and named once by the host contract. The Actions runner formats a `run:` step

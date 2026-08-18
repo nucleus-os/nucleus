@@ -1,4 +1,6 @@
+import DequeModule
 import Dispatch
+import OrderedCollections
 
 /// A process-local filesystem worker with bounded pending work, duplicate
 /// coalescing, and a cost-bounded completed-result LRU.
@@ -26,11 +28,11 @@ package actor BoundedThemeAssetIO<
     private let cost: Cost
     private let queue: DispatchQueue
 
-    private var pending: [Key] = []
+    private var pending: Deque<Key> = []
     private var running: Set<Key> = []
     private var waiters: [Key: [CheckedContinuation<Value?, Never>]] = [:]
-    private var completed: [Key: CacheEntry] = [:]
-    private var lru: [Key] = []
+    /// Element order is eviction order: the least recently used entry is first.
+    private var completed: OrderedDictionary<Key, CacheEntry> = [:]
     private var completedCost = 0
 
     package init(
@@ -84,7 +86,6 @@ package actor BoundedThemeAssetIO<
 
     package func invalidateAll() {
         completed.removeAll(keepingCapacity: true)
-        lru.removeAll(keepingCapacity: true)
         completedCost = 0
     }
 
@@ -132,24 +133,20 @@ package actor BoundedThemeAssetIO<
         guard entryCost <= maximumCompletedCost else { return }
         if let previous = completed.removeValue(forKey: key) {
             completedCost -= previous.cost
-            lru.removeAll { $0 == key }
         }
         completed[key] = CacheEntry(value: value, cost: entryCost)
-        lru.append(key)
         completedCost += entryCost
         while completed.count > maximumCompletedEntries
             || completedCost > maximumCompletedCost
         {
-            guard !lru.isEmpty else { break }
-            let evicted = lru.removeFirst()
-            if let entry = completed.removeValue(forKey: evicted) {
-                completedCost -= entry.cost
-            }
+            guard !completed.isEmpty else { break }
+            completedCost -= completed.removeFirst().value.cost
         }
     }
 
+    /// Key assignment keeps an existing element's position, so a cache hit has
+    /// to move that element to the eviction tail explicitly.
     private func touch(_ key: Key) {
-        lru.removeAll { $0 == key }
-        lru.append(key)
+        completed.move(keys: [key], to: completed.endIndex)
     }
 }

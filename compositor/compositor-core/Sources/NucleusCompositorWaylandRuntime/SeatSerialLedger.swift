@@ -1,3 +1,4 @@
+import OrderedCollections
 import WaylandServer
 
 /// Provenance for serials minted by one `wl_seat`.
@@ -23,8 +24,10 @@ struct SeatSerialRecord: Equatable, Sendable {
 
 final class SeatSerialLedger {
     private var sessionGeneration: UInt64 = 1
-    private var records: [SeatInputSerial: SeatSerialRecord] = [:]
-    private var order: [SeatInputSerial] = []
+    /// Element order is eviction order: the oldest recorded serial is first.
+    /// Re-recording an existing serial refreshes its provenance and keeps its
+    /// position, so a client cannot extend a serial's lifetime by replaying it.
+    private var records: OrderedDictionary<SeatInputSerial, SeatSerialRecord> = [:]
     private let capacity: Int
 
     init(capacity: Int = 256) {
@@ -44,11 +47,8 @@ final class SeatSerialLedger {
             clientKey: clientKey,
             surfaceID: surfaceID,
             sessionGeneration: sessionGeneration)
-        if records[serial] == nil { order.append(serial) }
         records[serial] = record
-        while order.count > capacity {
-            records[order.removeFirst()] = nil
-        }
+        while records.count > capacity { records.removeFirst() }
         return record
     }
 
@@ -65,38 +65,22 @@ final class SeatSerialLedger {
             kinds.contains(record.kind),
             surfaceID == nil || record.surfaceID == surfaceID
         else { return false }
-        if consume {
-            records[serial] = nil
-            order.removeAll { $0 == serial }
-        }
+        if consume { records.removeValue(forKey: serial) }
         return true
     }
 
     func invalidate(kind: SeatSerialKind, clientKey: WaylandClientID? = nil) {
-        let rejected = Set<SeatInputSerial>(
-            records.values.compactMap { record -> SeatInputSerial? in
-                guard record.kind == kind,
-                    clientKey == nil || record.clientKey == clientKey
-                else { return nil }
-                return record.serial
-            })
-        guard !rejected.isEmpty else { return }
-        for serial in rejected { records[serial] = nil }
-        order.removeAll { rejected.contains($0) }
+        records.removeAll { _, record in
+            record.kind == kind && (clientKey == nil || record.clientKey == clientKey)
+        }
     }
 
     func invalidate(clientKey: WaylandClientID) {
-        let rejected = Set<SeatInputSerial>(
-            records.values.compactMap {
-                $0.clientKey == clientKey ? $0.serial : nil
-            })
-        for serial in rejected { records[serial] = nil }
-        order.removeAll { rejected.contains($0) }
+        records.removeAll { $1.clientKey == clientKey }
     }
 
     func beginNewSession() {
         sessionGeneration &+= 1
         records.removeAll(keepingCapacity: true)
-        order.removeAll(keepingCapacity: true)
     }
 }

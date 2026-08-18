@@ -5,6 +5,7 @@
 //
 // Tokens are one-shot grants backed by an exact input serial from this seat.
 
+import OrderedCollections
 import WaylandProtocolTypes
 import WaylandServer
 import WaylandServerC
@@ -21,8 +22,8 @@ protocol XdgActivationDelegate: AnyObject {
     weak var delegate: (any XdgActivationDelegate)?
     weak var seat: WlSeat?
     private let tokenGenerator: () -> String
-    private var grants: [String: Bool] = [:]
-    private var grantOrder: [String] = []
+    /// Element order is eviction order: the oldest live grant is first.
+    private var grants: OrderedDictionary<String, Bool> = [:]
 
     init(tokenGenerator: (() -> String)? = nil) {
         self.tokenGenerator = tokenGenerator ?? Self.randomToken
@@ -33,20 +34,13 @@ protocol XdgActivationDelegate: AnyObject {
             let token = tokenGenerator()
             guard grants[token] == nil else { continue }
             grants[token] = authorized
-            grantOrder.append(token)
-            while grantOrder.count > 256 {
-                grants[grantOrder.removeFirst()] = nil
-            }
+            while grants.count > 256 { grants.removeFirst() }
             return token
         }
     }
 
     func consumeToken(_ token: String) -> Bool {
-        guard let authorized = grants.removeValue(forKey: token) else {
-            return false
-        }
-        grantOrder.removeAll { $0 == token }
-        return authorized
+        grants.removeValue(forKey: token) ?? false
     }
 
     /// A fixed-width 128-bit token from the standard library's operating-system
