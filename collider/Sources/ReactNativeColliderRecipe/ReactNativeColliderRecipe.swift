@@ -1047,6 +1047,12 @@ private struct PublishReactNativeSDKAction: ColliderAction {
                 linkEncoder.append(link.name)
                 linkEncoder.append(path: link.target)
             }
+            // Bumped when what this action does with identical inputs changes,
+            // so a published tree that predates the change is republished
+            // everywhere rather than only where someone thinks to delete it.
+            // 2: the declared links became the complete set, and publishing
+            // removes the ones it no longer names.
+            encoder.append(2)
         }
     }
 
@@ -1069,7 +1075,10 @@ private struct PublishReactNativeSDKAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(boostSource)),
-                ActionEffect(.write, scope: .publication(sdk)),
+                // Read as well as written: publishing now reads what the
+                // include directory holds so it can remove links it no longer
+                // declares.
+                ActionEffect(.readWrite, scope: .publication(sdk)),
             ], executionPlatform: .macOSARM64Native)
     }
 
@@ -1080,6 +1089,31 @@ private struct PublishReactNativeSDKAction: ColliderAction {
             try context.files.replaceSymlink(
                 at: sdk.appending(link.name),
                 target: link.target.string)
+        }
+        try pruneUndeclaredLinks(in: context)
+    }
+
+    /// Removes links this action no longer declares.
+    ///
+    /// The declared set is the whole set: a link that stops being declared
+    /// keeps naming wherever it pointed when it was, which outlives the layout
+    /// that produced it. Publishing writes each declared link and would
+    /// otherwise leave the rest untouched, so a renamed or retired one stays on
+    /// the include path forever, pointing at a tree that has since moved or
+    /// disappeared. Only symbolic links are considered: the boost headers next
+    /// to them are a real directory this action copies.
+    private func pruneUndeclaredLinks(in context: ActionContext) throws {
+        let includeRoot = sdk.appending("include")
+        let prefix = "include/"
+        let declared = Set(
+            links.map(\.name)
+                .filter { $0.hasPrefix(prefix) }
+                .map { String($0.dropFirst(prefix.count)) })
+        for entry in try context.files.listDirectory(includeRoot)
+        where entry.metadata.type == .symbolicLink
+            && !declared.contains(entry.relativePath)
+        {
+            try context.files.remove(entry.path)
         }
     }
 }

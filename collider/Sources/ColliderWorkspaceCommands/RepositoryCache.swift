@@ -1122,16 +1122,22 @@ struct RepositoryCache {
         return exists ? "reusable" : "missing"
     }
 
+    /// The filesystem holding the storage this report concerns.
+    ///
+    /// Not the invoking account's home: the storage reported here is the build
+    /// store, which on a provisioned host belongs to no home at all. Reporting
+    /// the home's filesystem names a volume the reader did not ask about, and
+    /// answers with its free space wherever the two differ.
     private func hostFilesystemStatus() -> HostFilesystemStatusRecord? {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let root = context.cacheRoot
         guard
             let attributes = try? FileManager.default.attributesOfFileSystem(
-                forPath: home.path),
+                forPath: root.string),
             let total = attributes[.systemSize] as? NSNumber,
             let available = attributes[.systemFreeSize] as? NSNumber
         else { return nil }
         return HostFilesystemStatusRecord(
-            path: home.path,
+            path: root.string,
             totalBytes: total.uint64Value,
             availableBytes: available.uint64Value)
     }

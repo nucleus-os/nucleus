@@ -881,6 +881,7 @@ public struct ActionFileSystem: Sendable {
     private let readSymbolicLinkBody: @Sendable (FilePath) throws -> String
     private let removeBody: @Sendable (FilePath) throws -> Void
     private let moveBody: @Sendable (FilePath, FilePath) throws -> Void
+    private let listDirectoryBody: @Sendable (FilePath) throws -> [Entry]
     private let listRecursivelyBody: @Sendable (FilePath) throws -> [Entry]
     private let digestFileBody: @Sendable (FilePath) throws -> ArtifactDigest
     private let digestTreeBody: @Sendable (FilePath, Set<String>) throws -> ArtifactDigest
@@ -917,6 +918,9 @@ public struct ActionFileSystem: Sendable {
         move: @escaping @Sendable (FilePath, FilePath) throws -> Void = {
             _, _ in throw ActionFileSystemFailure.unavailable("move")
         },
+        listDirectory: @escaping @Sendable (FilePath) throws -> [Entry] = {
+            _ in throw ActionFileSystemFailure.unavailable("listDirectory")
+        },
         listRecursively: @escaping @Sendable (FilePath) throws -> [Entry] = {
             _ in throw ActionFileSystemFailure.unavailable("listRecursively")
         },
@@ -952,6 +956,7 @@ public struct ActionFileSystem: Sendable {
         readSymbolicLinkBody = readSymbolicLink
         removeBody = remove
         moveBody = move
+        listDirectoryBody = listDirectory
         listRecursivelyBody = listRecursively
         digestFileBody = digestFile
         digestTreeBody = digestTree
@@ -1038,6 +1043,12 @@ public struct ActionFileSystem: Sendable {
 
     public func move(from source: FilePath, to destination: FilePath) throws {
         try named("move", [source, destination]) { try moveBody(source, destination) }
+    }
+
+    /// The entries directly inside a directory, without descending and without
+    /// resolving a symbolic link to what it names.
+    public func listDirectory(_ root: FilePath) throws -> [Entry] {
+        try named("list-directory", [root]) { try listDirectoryBody(root) }
     }
 
     public func listRecursively(_ root: FilePath) throws -> [Entry] {
@@ -1139,6 +1150,10 @@ public struct ActionFileSystem: Sendable {
                 try require(.write, source)
                 try require(.write, destination)
                 try moveBody(source, destination)
+            },
+            listDirectory: { root in
+                try require(.read, root)
+                return try listDirectoryBody(root)
             },
             listRecursively: { root in
                 try require(.read, root)

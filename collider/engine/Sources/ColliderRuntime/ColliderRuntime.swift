@@ -492,6 +492,18 @@ public actor ColliderRuntime {
                     atPath: source.string,
                     toPath: destination.string)
             },
+            listDirectory: { root in
+                let names = try FileManager.default.contentsOfDirectory(
+                    atPath: root.string)
+                return try names.compactMap { name -> ActionFileSystem.Entry? in
+                    let path = root.appending(name)
+                    guard let metadata = try inspect(path, false) else { return nil }
+                    return ActionFileSystem.Entry(
+                        path: path,
+                        relativePath: name,
+                        metadata: metadata)
+                }
+            },
             listRecursively: { root in
                 guard
                     let enumerator = FileManager.default.enumerator(

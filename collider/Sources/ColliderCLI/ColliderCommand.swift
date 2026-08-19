@@ -57,7 +57,7 @@ public struct ColliderCommand: AsyncParsableCommand {
         // Before the registry opens a run, because recording one is itself a
         // write into the store this account may not be permitted to make. The
         // command does not fail here: it continues as the identity that may.
-        if workspaceCommand.requiresExecutionAdmission,
+        if workspaceCommand.requiresBuilderIdentity,
             !BuilderElevation.executesDirectly()
         {
             #if os(macOS)

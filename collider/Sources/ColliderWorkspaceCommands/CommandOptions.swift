@@ -82,6 +82,15 @@ package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfigure
     var presentationKind: CommandPresentationKind { get }
     var recordsRun: Bool { get }
     var requiresExecutionAdmission: Bool { get }
+    /// Whether this command must run as the identity that owns the build store.
+    ///
+    /// Distinct from admission: one says which account executes, the other says
+    /// whether the host may execute anything else at the same time. Executing a
+    /// task graph needs both. Measuring what persistent workspaces allocate
+    /// needs only the first, because the container service answering that
+    /// question lives in the builder's session while the question itself
+    /// changes nothing and need not serialize against a running build.
+    var requiresBuilderIdentity: Bool { get }
     mutating func run(in context: WorkspaceContext) async throws
 }
 
@@ -89,6 +98,7 @@ extension ColliderWorkspaceCommand {
     package var presentationKind: CommandPresentationKind { .phase }
     package var recordsRun: Bool { true }
     package var requiresExecutionAdmission: Bool { true }
+    package var requiresBuilderIdentity: Bool { requiresExecutionAdmission }
 
     package mutating func run() async throws {
         throw WorkspaceFailure.message(

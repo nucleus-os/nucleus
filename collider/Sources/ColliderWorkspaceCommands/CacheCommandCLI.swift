@@ -20,6 +20,10 @@ struct Cache: AsyncParsableCommand {
         var measureAllocations = false
         @OptionGroup var outputOptions: CommandOutputOptions
         var requiresExecutionAdmission: Bool { false }
+        /// Measuring reaches the container service, which answers only in the
+        /// builder's session. Reporting without measuring reads the filesystem
+        /// and stays wherever it was invoked.
+        var requiresBuilderIdentity: Bool { measureAllocations }
         mutating func run(in context: WorkspaceContext) async throws {
             let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
