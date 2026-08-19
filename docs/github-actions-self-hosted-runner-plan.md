@@ -585,6 +585,18 @@ component and architecture concurrency. A blocked invocation renders the account
 and run holding the lease, so a build waiting behind the other account is
 distinguishable from a stalled command.
 
+No build writes the checkout it reads. Generated sources were the last
+construct that did: generation wrote its result beside the sources, so the
+build that produced them could not run as an identity holding the checkout
+read-only. Generation now writes the build store, a verification task in each
+owning component's test lane proves the committed copy still matches, and
+`collider adopt <component>` is the one supported way the store's output enters
+the checkout. Generation and adoption run as different identities by
+construction, because the builder may not write the checkout and the developer
+may not write the store. Gradle's Android outputs and project cache moved out of
+the checkout the same way, leaving the tree writable only by the account that
+owns it.
+
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.
 
@@ -605,7 +617,9 @@ against the physical disk; trimming a workspace returns its free space to the
 host while no build container carries the trim capability; every migrated volume
 matches its declaration and the previous location holds no retained state; a
 dirty-tree build observes every declared working-copy change and source mutation
-during execution supersedes the run; a dirty build followed by committing the
+during execution supersedes the run; every component that commits generated
+sources verifies them without writing the checkout, and adoption is the only
+path that updates the committed copy; a dirty build followed by committing the
 identical tree does not compile identical source again; debug and release
 coexist without collisions or mutual cleaning; neither ordering performs a clean
 rebuild; a semantic source or configuration change invalidates only the expected

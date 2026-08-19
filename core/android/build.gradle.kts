@@ -6,7 +6,11 @@ plugins {
     alias(libs.plugins.androidLibrary) apply false
 }
 
-val repoRoot = layout.projectDirectory.dir("..")
+// Every Gradle output goes where the caller says, never into the checkout: the
+// identity that runs builds has read-only access to the source it builds.
+val nucleusBuildRoot =
+    providers.gradleProperty("nucleus.buildRoot").map { File(it) }.orNull
+        ?: layout.projectDirectory.dir("../.gradle-out").asFile
 val requiredGradle = libs.versions.gradle.get()
 check(GradleVersion.current() == GradleVersion.version(requiredGradle)) {
     "Nucleus Android requires Gradle $requiredGradle; the running version is "
@@ -42,5 +46,7 @@ tasks.register("verifyDebug") {
 }
 
 allprojects {
-    layout.buildDirectory.set(repoRoot.dir("zig-out/android-gradle/${project.path.replace(':', '/').trimStart('/')}"))
+    layout.buildDirectory.set(
+        File(nucleusBuildRoot, project.path.replace(':', '/').trimStart('/'))
+    )
 }

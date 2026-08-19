@@ -146,6 +146,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             environment: context.environment)
         let androidBuild = try buildAndroidProject(
             root: root,
+            buildRoot: context.buildRoot,
             environment: context.environment,
             validation: androidValidation.ordering,
             host: androidHost,
@@ -170,13 +171,13 @@ public enum CoreColliderRecipe: ColliderComponent {
                 safetyRoot: root,
                 retentionPolicy: .protected),
             StorageDeclaration(
-                id: "core-android-project",
+                id: "core-android-gradle",
                 owner: descriptor.id,
                 producers: producers { $0 == "core.android.build" },
-                storageClass: .source,
-                root: root.appending("android"),
-                safetyRoot: root,
-                retentionPolicy: .protected),
+                storageClass: .incremental,
+                root: context.buildRoot.appending("core/android-gradle"),
+                safetyRoot: context.buildRoot,
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "core-skia-inputs",
                 owner: descriptor.id,
@@ -526,12 +527,14 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func buildAndroidProject(
         root: FilePath,
+        buildRoot: FilePath,
         environment: [String: String],
         validation: TaskOrderingReference,
         host: AndroidHostArtifacts,
         ndk: FilePath
     ) throws -> TaskDeclaration {
         let android = root.appending("android")
+        let gradleRoot = buildRoot.appending("core/android-gradle")
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidBuild,
             component: descriptor.id)
@@ -554,6 +557,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     VerifyAndroidProjectAction(
                         project: android,
+                        buildRoot: gradleRoot,
                         ndk: ndk,
                         nucleusLibrary: host.library.path,
                         swiftJavaLibrary: host.swiftJavaLibrary.path,
@@ -844,6 +848,7 @@ private struct PublishRenderSDKAction: ColliderAction {
 private struct VerifyAndroidProjectAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let project: FilePath
+        let buildRoot: FilePath
         let ndk: FilePath
         let nucleusLibrary: FilePath
         let swiftJavaLibrary: FilePath
@@ -852,6 +857,7 @@ private struct VerifyAndroidProjectAction: ColliderAction {
         func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: project)
             encoder.append("verifyDebug")
+            encoder.append(path: buildRoot)
             encoder.append(path: ndk)
             encoder.append(path: nucleusLibrary)
             encoder.append(path: swiftJavaLibrary)
@@ -862,6 +868,7 @@ private struct VerifyAndroidProjectAction: ColliderAction {
     static let kind: ActionKind = "core.verify-android-project"
 
     let project: FilePath
+    let buildRoot: FilePath
     let ndk: FilePath
     let nucleusLibrary: FilePath
     let swiftJavaLibrary: FilePath
@@ -871,6 +878,7 @@ private struct VerifyAndroidProjectAction: ColliderAction {
     var identity: Identity {
         Identity(
             project: project,
+            buildRoot: buildRoot,
             ndk: ndk,
             nucleusLibrary: nucleusLibrary,
             swiftJavaLibrary: swiftJavaLibrary,
@@ -886,7 +894,9 @@ private struct VerifyAndroidProjectAction: ColliderAction {
                     role: .semantic)
             ],
             effects: [
-                ActionEffect(.readWrite, scope: .checkout(project)),
+                // Gradle reads the project and writes only where it is told.
+                ActionEffect(.read, scope: .checkout(project)),
+                ActionEffect(.readWrite, scope: .output(buildRoot)),
                 ActionEffect(.read, scope: .input(nucleusLibrary)),
                 ActionEffect(.read, scope: .input(swiftJavaLibrary)),
                 ActionEffect(.read, scope: .input(generatedJava)),
@@ -900,6 +910,10 @@ private struct VerifyAndroidProjectAction: ColliderAction {
                 executable: .path(project.appending("gradlew")),
                 arguments: [
                     "verifyDebug",
+                    // Gradle keeps its project cache beside its outputs rather
+                    // than in the checkout's `.gradle`.
+                    "--project-cache-dir", buildRoot.appending("project-cache").string,
+                    "-Pnucleus.buildRoot=\(buildRoot.appending("projects").string)",
                     "-Pnucleus.androidNdk=\(ndk.string)",
                     "-Pnucleus.nativeLibrary=\(nucleusLibrary.string)",
                     "-Pnucleus.swiftJavaLibrary=\(swiftJavaLibrary.string)",
