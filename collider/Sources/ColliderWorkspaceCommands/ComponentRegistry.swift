@@ -825,6 +825,24 @@ package struct ComponentRegistry {
                 mounts: [
                     OCIMount(source: root, target: root.string, access: .readOnly),
                     OCIMount(source: nativeSDK, target: nativeSDK.string, access: .readOnly),
+                    // The native SDK's include tree links into the materialized
+                    // JavaScript workspace and the generated sources beside it,
+                    // so both have to be reachable at the same path inside the
+                    // container as the links record on the host.
+                    OCIMount(
+                        source: ReactNativeColliderRecipe.javaScriptWorkspace(
+                            cacheRoot: context.cacheRoot),
+                        target: ReactNativeColliderRecipe.javaScriptWorkspace(
+                            cacheRoot: context.cacheRoot
+                        ).string,
+                        access: .readOnly),
+                    OCIMount(
+                        source: ReactNativeColliderRecipe.codegenRoot(
+                            cacheRoot: context.cacheRoot),
+                        target: ReactNativeColliderRecipe.codegenRoot(
+                            cacheRoot: context.cacheRoot
+                        ).string,
+                        access: .readOnly),
                     OCIMount(
                         source: builder.swiftSDKRoot,
                         target: guestSDKRoot,
