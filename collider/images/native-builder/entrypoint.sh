@@ -112,8 +112,15 @@ case "${1:-}" in
       echo "error: /ccache is not the writable compiler cache" >&2
       exit 64
     fi
-    if [[ ! -x /src/bin/gn || ! -f /src/DEPS ]]; then
+    if [[ ! -f /src/DEPS ]]; then
       echo "error: /src is not the complete read-only Skia checkout" >&2
+      exit 64
+    fi
+    # GN is mounted from the storage it was installed into. It used to be
+    # written into the source tree and read back out of /src, which a read-only
+    # checkout cannot supply.
+    if [[ ! -x /gn/gn ]]; then
+      echo "error: /gn does not carry the installed gn executable" >&2
       exit 64
     fi
     shift
