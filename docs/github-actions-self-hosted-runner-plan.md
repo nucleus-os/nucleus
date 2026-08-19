@@ -467,14 +467,10 @@ Local-development signing material is a builder-only subtree at mode 0700 inside
 that store: the identity that executes is the identity that signs, and no other
 account can read its private keys.
 
-The migration that fills the store is what creates it. The store's existence is
-what switches every Collider consumer away from per-user storage, so a store
-that existed while still empty would leave the retained volumes behind an owner
-that no longer addresses them, and a container service pointed at an application
-root that does not yet exist. Commissioning provisions the reading group and the
-developer's password-free path to the launcher; the migration provisions the
-store itself, in one pass, and a host that has not migrated runs from per-user
-storage exactly as a single-account host does.
+Commissioning provisions the store: the reading group, the four roots with the
+setgid bit that keeps every object the builder creates in the group the
+developer reads, the log root the developer also writes, the signing subtree
+only the builder reads, and the developer's password-free path to the launcher.
 
 Two groups keep those facts separate. `nucleus-builder` remains the builder's
 primary group and gates the runner registration credentials.
@@ -518,12 +514,14 @@ mounts one volume, trims it, and exits, carrying the single capability the
 operation requires and no build input, build code, or network. No build
 container carries that capability.
 
-Retained state is migrated rather than rebuilt. The volume set is roughly
-nine-tenths live data, and reconstructing it means rebuilding the complete
-native dependency graph, so the store receives the existing volumes. Reclamation
-runs first so the migration moves less; each volume is then renamed and its
-recorded name, label, and source path rewritten; and every volume is enumerated
-and matched against its declaration before the previous location is released.
+The interactive account's retained state was migrated into the store rather than
+rebuilt, because the volume set was roughly nine-tenths live data whose
+reconstruction cost is the complete native dependency graph. That migration was
+a one-way pass over state that no longer exists in its previous shape, so it is
+deleted rather than maintained. It moved each root by rename on one filesystem,
+renamed every volume, rewrote each volume's recorded name, label, and source
+path, and repointed every absolute symlink addressing a migrated root, the
+container's default kernel and the staged native SDK include trees among them.
 
 Persistent workspaces are owned by the build store rather than by a checkout.
 The owner a volume name and label carry is derived from the store, so the clean

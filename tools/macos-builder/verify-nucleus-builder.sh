@@ -150,8 +150,7 @@ done
   | /usr/bin/grep -q 'yes' || fail "$developer_user cannot read the build store"
 /usr/sbin/dseditgroup -o checkmember -m "$developer_user" "$builder_group" 2>/dev/null \
   | /usr/bin/grep -q 'yes' && fail "$developer_user belongs to the builder's own group"
-if [[ -e "$build_store" ]]; then
-[[ ! -L "$build_store" && -d "$build_store" ]] || fail "machine build store is not a directory"
+[[ ! -L "$build_store" && -d "$build_store" ]] || fail "machine build store is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Mp%Lp' "$build_store") == "$builder_user:$build_state_group:2750" ]] \
   || fail "build store ownership or mode drifted"
 [[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/logs") == 2770 ]] \
@@ -170,7 +169,6 @@ if [[ -e "$build_store" ]]; then
   || fail "$developer_user cannot record runs"
 /usr/bin/sudo -H -u "$developer_user" /bin/test ! -r "$build_store/state/identity" \
   || fail "$developer_user can read builder signing material"
-fi
 
 [[ -f "$runner_root/.runner" ]] || fail "runner registration is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_root") == root:wheel:755 ]] \

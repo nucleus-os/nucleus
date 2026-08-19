@@ -979,16 +979,42 @@ public struct ActionFileSystem: Sendable {
         try contentsEqualBody(first, second)
     }
 
+    /// Every operation names what it touched when it fails.
+    ///
+    /// These wrap raw filesystem calls, whose errors are an errno and nothing
+    /// else. A build that reads a checkout it may not write, writes a store it
+    /// may not own, and stages inputs between them produces the same errno for
+    /// three unrelated faults, and a message without a path sends every one of
+    /// them to the same wrong diagnosis.
+    private func named<Value>(
+        _ operation: String,
+        _ paths: [FilePath],
+        _ body: () throws -> Value
+    ) throws -> Value {
+        do {
+            return try body()
+        } catch let failure as ActionFileSystemFailure {
+            throw failure
+        } catch {
+            throw ActionFileSystemFailure.operationFailed(
+                operation: operation,
+                paths: paths.map(\.string),
+                reason: String(describing: error))
+        }
+    }
+
     public func createDirectory(_ path: FilePath) throws {
-        try createDirectoryBody(path)
+        try named("create directory", [path]) { try createDirectoryBody(path) }
     }
 
     public func copy(from source: FilePath, to destination: FilePath) throws {
-        try copyBody(source, destination)
+        try named("copy", [source, destination]) { try copyBody(source, destination) }
     }
 
     public func copyTree(from source: FilePath, to destination: FilePath) throws {
-        try copyTreeBody(source, destination)
+        try named("copy tree", [source, destination]) {
+            try copyTreeBody(source, destination)
+        }
     }
 
     public func read(_ path: FilePath) throws -> [UInt8] {
@@ -1007,11 +1033,11 @@ public struct ActionFileSystem: Sendable {
     }
 
     public func remove(_ path: FilePath) throws {
-        try removeBody(path)
+        try named("remove", [path]) { try removeBody(path) }
     }
 
     public func move(from source: FilePath, to destination: FilePath) throws {
-        try moveBody(source, destination)
+        try named("move", [source, destination]) { try moveBody(source, destination) }
     }
 
     public func listRecursively(_ root: FilePath) throws -> [Entry] {
@@ -1182,6 +1208,7 @@ public enum ActionFileSystemFailure: Error, CustomStringConvertible, Sendable {
     case invalidReadCount(Int)
     case unavailable(String)
     case undeclaredEffect(access: ActionEffectAccess, path: FilePath)
+    case operationFailed(operation: String, paths: [String], reason: String)
 
     public var description: String {
         switch self {
@@ -1191,6 +1218,9 @@ public enum ActionFileSystemFailure: Error, CustomStringConvertible, Sendable {
             "action filesystem capability '\(capability)' is unavailable"
         case .undeclaredEffect(let access, let path):
             "action attempted an undeclared \(access.rawValue) filesystem effect at '\(path)'"
+        case .operationFailed(let operation, let paths, let reason):
+            "action filesystem \(operation) failed: \(reason)\n"
+                + paths.map { "  path: \($0)" }.joined(separator: "\n")
         }
     }
 }

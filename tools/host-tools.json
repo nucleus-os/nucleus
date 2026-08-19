@@ -1,0 +1,51 @@
+{
+  "comment": "Host tools tasks name rather than produce. Pinned by version and digest so every account and the Actions runner resolve the same binary, and so the semantic tool identity that feeds task hashes is stable rather than drifting with whatever a shell happened to activate.",
+  "tools": [
+    {
+      "name": "node",
+      "version": "26.5.1",
+      "platforms": {
+        "macos-arm64": {
+          "url": "https://nodejs.org/dist/v26.5.1/node-v26.5.1-darwin-arm64.tar.xz",
+          "sha256": "f4665a1e764653ec6fe7686309e8907e9ebb9ba68c4b88b9185fdc29f221559b",
+          "format": "tar",
+          "binaryDirectory": "node-v26.5.1-darwin-arm64/bin",
+          "executables": [
+            "node",
+            "npm",
+            "npx"
+          ],
+          "mediaTypes": [
+            "application/x-xz"
+          ],
+          "redirectOrigins": [
+            "https://nodejs.org"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bun",
+      "version": "1.3.14",
+      "platforms": {
+        "macos-arm64": {
+          "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-darwin-aarch64.zip",
+          "sha256": "d8b96221828ad6f97ac7ac0ab7e95872341af763001e8803e8267652c2652620",
+          "format": "zip",
+          "binaryDirectory": "bun-darwin-aarch64",
+          "executables": [
+            "bun"
+          ],
+          "mediaTypes": [
+            "application/octet-stream"
+          ],
+          "redirectOrigins": [
+            "https://github.com",
+            "https://objects.githubusercontent.com",
+            "https://release-assets.githubusercontent.com"
+          ]
+        }
+      }
+    }
+  ]
+}

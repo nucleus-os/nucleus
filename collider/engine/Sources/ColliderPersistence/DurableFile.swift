@@ -16,9 +16,15 @@ package enum DurableFile {
         let candidate = FilePath(path.string + ".candidate-\(getpid())")
         try? FileManager.default.removeItem(atPath: candidate.string)
         do {
-            try FileManager.default.copyItem(
-                atPath: source.string,
-                toPath: candidate.string)
+            // Contents and mode, never the source's access-control list. A
+            // build stages inputs out of a checkout whose ACL exists to stop
+            // the executing identity from modifying it; carrying that onto the
+            // copy leaves the builder owning a file it may not delete.
+            guard
+                unsafe collider_copy_file_without_acl(source.string, candidate.string) == 0
+            else {
+                throw Errno(rawValue: errno)
+            }
             let descriptor = try FileDescriptor.open(candidate, .readOnly)
             do {
                 guard collider_sync_file(descriptor.rawValue) == 0 else {

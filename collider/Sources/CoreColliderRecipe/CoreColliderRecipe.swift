@@ -182,6 +182,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 owner: descriptor.id,
                 producers: producers {
                     $0 == CoreTaskIDs.gnDownload.rawValue
+                        || $0 == CoreTaskIDs.gnInstall.rawValue
                 },
                 storageClass: .cache,
                 root: skiaInputRoot,
@@ -308,16 +309,21 @@ public enum CoreColliderRecipe: ColliderComponent {
             component: ComponentID(rawValue: "core"))
         installBuilder.consume(archive)
         installBuilder.consume(builder.image)
+        // GN is a build tool the checkout happens to name a location for, not
+        // source. Installing it into the tree would have a build write the
+        // source it is reading, which the executing identity is denied and
+        // which no build may do.
+        let gnExecutable = downloadRoot.appending("bin/gn")
         let gn: ExecutableReference = try installBuilder.executableOutput(
             "gn",
-            path: skia.appending("bin/gn"))
+            path: gnExecutable)
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
             action:
                 try AnyColliderAction(
                     InstallSkiaGNAction(
                         archive: gnArchive,
-                        executable: skia.appending("bin/gn"),
+                        executable: gnExecutable,
                         builder: builder)))
         return SkiaSourceArtifacts(
             tasks: [download, sources, install],
@@ -1338,6 +1344,12 @@ private func skiaTask(
             source: builder.swiftSDKRoot,
             target: "/swift-sdk",
             access: .readOnly),
+        // GN is mounted from the storage it was installed into, rather than
+        // read out of the read-only source mount it used to be written into.
+        OCIMount(
+            source: gn.path.removingLastComponent(),
+            target: "/gn",
+            access: .readOnly),
     ]
     let persistentWorkspaceMounts = [
         OCIPersistentWorkspaceMount(
@@ -1376,7 +1388,7 @@ private func skiaTask(
     }
     let executions = [
         execution([
-            "/src/bin/gn", "gen", containerBuildDirectory,
+            "/gn/gn", "gen", containerBuildDirectory,
             "--args=" + gnArguments.joined(separator: " "),
         ]),
         execution(

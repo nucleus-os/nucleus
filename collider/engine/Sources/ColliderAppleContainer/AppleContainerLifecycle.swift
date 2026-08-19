@@ -19,6 +19,11 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
     case cleanupFailed(name: String, reason: String)
     case invalidImageDigest
     case imageDeletionRefused(String)
+    case imagePreparationFailed(
+        image: String,
+        context: FilePath,
+        containerFile: FilePath,
+        reason: String)
     case invalidIsolatedNetwork(name: String, mode: String)
     case invalidPersistentWorkspaceOwner(String?)
     case persistentWorkspaceConfigurationMismatch(name: String, reason: String)
@@ -35,6 +40,10 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
             "Apple container cleanup failed for \(name): \(reason)"
         case .invalidImageDigest:
             "Apple container image API did not return one OCI digest"
+        case .imagePreparationFailed(let image, let context, let containerFile, let reason):
+            "Apple container image preparation failed for \(image): \(reason)\n"
+                + "  context: \(context)\n"
+                + "  container file: \(containerFile)"
         case .imageDeletionRefused(let reference):
             "refusing to delete Apple container image used by an active container: \(reference)"
         case .invalidIsolatedNetwork(let name, let mode):
@@ -63,8 +72,20 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         let cleanup = AppleContainerCleanup(
             client: ContainerClient(),
             name: Builder.builderContainerId)
-        return try await AppleContainerBuilderSession(cleanup: cleanup).run {
-            try await AppleContainerImageBuilder().build(preparation)
+        do {
+            return try await AppleContainerBuilderSession(cleanup: cleanup).run {
+                try await AppleContainerImageBuilder().build(preparation)
+            }
+        } catch {
+            // A bare errno says which rule was violated and nothing about what
+            // it was applied to. An image build reads a context directory,
+            // writes an application root, and runs a builder container, so the
+            // same code can mean three different faults.
+            throw AppleContainerFailure.imagePreparationFailed(
+                image: preparation.imageName,
+                context: preparation.context,
+                containerFile: preparation.containerFile,
+                reason: String(describing: error))
         }
     }
 

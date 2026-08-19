@@ -458,9 +458,15 @@ public actor ColliderRuntime {
                     at: URL(
                         fileURLWithPath: destination.removingLastComponent().string),
                     withIntermediateDirectories: true)
-                try FileManager.default.copyItem(
-                    at: resolved,
-                    to: URL(fileURLWithPath: destination.string))
+                // Contents and modes, never the source's access-control list:
+                // a tree staged out of the checkout would otherwise carry the
+                // rule that denies the executing identity from deleting it.
+                guard
+                    unsafe collider_copy_tree_without_acl(
+                        resolved.path, destination.string) == 0
+                else {
+                    throw Errno(rawValue: errno)
+                }
             },
             read: { path in
                 Array(try Data(contentsOf: URL(fileURLWithPath: path.string)))

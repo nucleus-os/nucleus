@@ -183,8 +183,23 @@ package struct WorkspaceContext: Sendable {
     package var lockRoot: FilePath { stateRoot.appending("locks") }
     package var workRoot: FilePath { hostBuildRoot.appending("work") }
 
+    /// The pinned host tools, ahead of anything the invoking environment
+    /// offers. A named tool's file digest feeds task identity, so resolution
+    /// has to be a property of this repository rather than of whichever shell,
+    /// launchd session, or account started the build.
+    package var hostToolBinaryDirectories: [FilePath] {
+        guard let manifest = try? HostToolManifest.load(root: root) else { return [] }
+        return HostToolchain(manifest: manifest, cacheRoot: cacheRoot).binaryDirectories
+    }
+
     package var taskEnvironment: [String: String] {
         var environment = sanitizedEnvironment(self.environment)
+        let pinned = hostToolBinaryDirectories.map(\.string)
+        if !pinned.isEmpty {
+            environment["PATH"] = (pinned + [environment["PATH"] ?? ""])
+                .filter { !$0.isEmpty }
+                .joined(separator: ":")
+        }
         environment.removeValue(forKey: "NUCLEUS_RUN_DIR")
         environment.removeValue(forKey: "NUCLEUS_RUN_LOG")
         environment["CCACHE_BASEDIR"] = root.string

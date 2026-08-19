@@ -23,6 +23,7 @@
 #include <sys/syscall.h>
 #include <sys/un.h>
 #elif defined(__APPLE__)
+#include <copyfile.h>
 #include <sys/clonefile.h>
 #include <sys/stdio.h>
 #endif
@@ -33,6 +34,33 @@ int32_t collider_lock_exclusive(int32_t descriptor, int32_t wait) {
 
 int32_t collider_unlock(int32_t descriptor) {
     return flock(descriptor, LOCK_UN);
+}
+
+int32_t collider_copy_file_without_acl(const char *source, const char *destination) {
+#if defined(__APPLE__)
+    // COPYFILE_DATA and COPYFILE_STAT without COPYFILE_ACL: mode, timestamps,
+    // and contents travel with the copy; the source's access-control list does
+    // not.
+    return (int32_t)copyfile(source, destination, NULL, COPYFILE_DATA | COPYFILE_STAT);
+#else
+    (void)source;
+    (void)destination;
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+int32_t collider_copy_tree_without_acl(const char *source, const char *destination) {
+#if defined(__APPLE__)
+    return (int32_t)copyfile(
+        source, destination, NULL,
+        COPYFILE_DATA | COPYFILE_STAT | COPYFILE_RECURSIVE);
+#else
+    (void)source;
+    (void)destination;
+    errno = ENOTSUP;
+    return -1;
+#endif
 }
 
 int32_t collider_sync_file(int32_t descriptor) {

@@ -159,6 +159,11 @@ public struct ColliderCommand: AsyncParsableCommand {
                     registry: registry,
                     cancellation: cancellation)
             }
+            // Planning resolves every declared tool, so the pinned host tools
+            // must exist before it runs rather than being produced by it.
+            if workspaceCommand.presentationKind == .taskGraph {
+                try await stageHostToolchain(in: application.workspace)
+            }
             if workspaceCommand.presentationKind == .phase {
                 try await hostPhases.withPhase(commandPhaseName(arguments)) {
                     try await workspaceCommand.run(in: application.workspace)

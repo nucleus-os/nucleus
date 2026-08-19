@@ -59,12 +59,24 @@ nucleus_toolchain="$(cd "$(dirname "$nucleus_swiftc")/.." && pwd)"
 export SWIFT_TOOLCHAIN="$nucleus_toolchain"
 export SWIFT="$nucleus_toolchain/bin/swift"
 export SWIFTC="$nucleus_toolchain/bin/swiftc"
+# Host tools that tasks name rather than pin — bun among them — are resolved
+# through PATH, so the PATH has to be a property of this contract rather than of
+# whichever shell invoked the build. The interactive developer inherits a login
+# shell's PATH; the builder and the Actions runner are started by launchd with a
+# minimal one, and would otherwise fail to find tools the same repository builds
+# with everywhere else.
+for nucleus_tool_prefix in /opt/homebrew/bin /usr/local/bin; do
+  if [[ -d "$nucleus_tool_prefix" && ":$PATH:" != *":$nucleus_tool_prefix:"* ]]; then
+    export PATH="$PATH:$nucleus_tool_prefix"
+  fi
+done
 export PATH="$nucleus_toolchain/bin:$PATH"
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
 : "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk/linux-$(uname -m | sed 's/aarch64/arm64/; s/amd64/x86_64/')}"
 export NUCLEUS_NATIVE_SDK_ROOT
 
+unset nucleus_tool_prefix
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment nucleus_source_index nucleus_source_digest
 unset nucleus_generator_source_id nucleus_toolchain nucleus_swiftc nucleus_source_id

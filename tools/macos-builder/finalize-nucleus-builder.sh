@@ -145,10 +145,29 @@ fi
 # membership grants the other's, so the reading group never reaches the runner
 # registration credentials the builder's own group gates.
 /usr/sbin/dseditgroup -o edit -a "$developer_user" -t user "$build_state_group" 2>/dev/null || true
-# The store itself is created by the migration that fills it, never here. Its
-# existence is what switches every Collider consumer from per-user storage to
-# the store, so a store that exists while still empty would strand the retained
-# volumes behind an owner that no longer addresses them.
+# The machine-wide build store. `install -d` drops the setgid bit, so every mode
+# is applied again with chmod: without setgid, objects the builder creates take
+# the builder's own group and the reading group never sees them.
+/usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$build_store")"
+/usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2750 "$build_store"
+/bin/chmod 2750 "$build_store"
+for store_directory in configuration state cache; do
+  /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2750 \
+    "$build_store/$store_directory"
+  /bin/chmod 2750 "$build_store/$store_directory"
+done
+# Recording a run is journalling, not executing build code, and both accounts
+# journal: the developer's doctor, status, and dry-run invocations produce run
+# records exactly as the builder's executions do. The log root is therefore the
+# one subtree the reading group also writes.
+/usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2770 \
+  "$build_store/logs"
+/bin/chmod 2770 "$build_store/logs"
+# Signing material is the one subtree the reading group must not reach: the
+# identity that executes is the identity that signs.
+/usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 0700 \
+  "$build_store/state/identity"
+/bin/chmod 0700 "$build_store/state/identity"
 
 for executable in nucleus-builder-run collider-workspace-shim; do
   target=/usr/local/bin/${executable/collider-workspace-shim/collider}
