@@ -77,6 +77,7 @@ public enum ReactNativeColliderRecipe {
             environment: context.environment)
         let codegen = try generateReactNativeCode(
             root: root,
+            cacheRoot: context.cacheRoot,
             dependencies: javascript.nodeModules,
             environment: context.environment)
         let boost = try provisionBoost(
@@ -87,6 +88,8 @@ public enum ReactNativeColliderRecipe {
         var bootstrapRoots: Set<TaskID> = []
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         var hermesHostTools: ArtifactReference?
+        let nodeModules = javaScriptWorkspace(cacheRoot: context.cacheRoot)
+            .appending("node_modules")
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
             guard let icuLibrary = icuLibraries[target] else {
@@ -94,6 +97,7 @@ public enum ReactNativeColliderRecipe {
             }
             let hermes = try buildHermes(
                 root: root,
+                nodeModules: nodeModules,
                 sdkRoot: native.nativeSDK(for: target),
                 environment: context.environment,
                 target: target,
@@ -107,12 +111,15 @@ public enum ReactNativeColliderRecipe {
             }
             let support = try buildSupportLibraries(
                 root: root,
+                nodeModules: nodeModules,
                 sdkRoot: native.nativeSDK(for: target),
                 environment: context.environment,
                 target: target,
+                dependencies: javascript.nodeModules,
                 builder: native.builder)
             let cxx = try buildCxxRuntime(
                 root: root,
+                nodeModules: nodeModules,
                 sdkRoot: native.nativeSDK(for: target),
                 environment: context.environment,
                 target: target,
@@ -124,6 +131,9 @@ public enum ReactNativeColliderRecipe {
                 builder: native.builder)
             let sdk = try publishNativeSDK(
                 root: root,
+                nodeModules: javaScriptWorkspace(cacheRoot: context.cacheRoot)
+                    .appending("node_modules"),
+                codegen: codegenRoot(cacheRoot: context.cacheRoot),
                 sdkRoot: native.nativeSDK(for: target),
                 target: target,
                 dependencies: javascript.nodeModules,
@@ -153,20 +163,25 @@ public enum ReactNativeColliderRecipe {
                 safetyRoot: context.cacheRoot.appending("inputs/react-native"),
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
-                id: "rn-node-modules",
+                // The materialized workspace, manifests and installed packages
+                // alike: it is one derived working set, and the installer
+                // writes all of it.
+                id: "rn-javascript-workspace",
                 owner: descriptor.id,
                 producers: javascriptProducers,
                 storageClass: .incremental,
-                root: root.appending("node_modules"),
-                safetyRoot: root,
+                root: ReactNativeColliderRecipe.javaScriptWorkspace(
+                    cacheRoot: context.cacheRoot),
+                safetyRoot: context.cacheRoot,
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "rn-codegen",
                 owner: descriptor.id,
                 producers: codegenProducers,
                 storageClass: .incremental,
-                root: root.appending(".rn-build/codegen"),
-                safetyRoot: root.appending(".rn-build"),
+                root: ReactNativeColliderRecipe.codegenRoot(
+                    cacheRoot: context.cacheRoot),
+                safetyRoot: context.cacheRoot,
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "rn-javascript-cache",
@@ -207,6 +222,19 @@ public enum ReactNativeColliderRecipe {
             artifacts: Artifacts(nativeSDKs: nativeSDKs))
     }
 
+    /// The materialized JavaScript workspace. It is derived from the checkout
+    /// and lives in declared storage, so no build writes the tree it reads.
+    package static func javaScriptWorkspace(cacheRoot: FilePath) -> FilePath {
+        cacheRoot.appending("js-workspace")
+    }
+
+    /// Generated JavaScript-side sources, derived from the workspace and the
+    /// checkout and therefore stored beside the workspace rather than in the
+    /// checkout they are derived from.
+    package static func codegenRoot(cacheRoot: FilePath) -> FilePath {
+        cacheRoot.appending("codegen")
+    }
+
     package static func installJavaScriptDependencies(
         root: FilePath,
         cacheRoot: FilePath,
@@ -214,7 +242,10 @@ public enum ReactNativeColliderRecipe {
     ) throws -> JavaScriptDependencyArtifacts {
         let packageManifest = root.appending("package.json")
         let lockfile = root.appending("bun.lock")
-        let active = root.appending("node_modules")
+        // The materialized JavaScript workspace, in declared storage rather
+        // than in the checkout it is derived from.
+        let workspace = javaScriptWorkspace(cacheRoot: cacheRoot)
+        let active = workspace.appending("node_modules")
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
@@ -237,6 +268,7 @@ public enum ReactNativeColliderRecipe {
                 try AnyColliderAction(
                     InstallReactNativeJavaScriptDependenciesAction(
                         root: root,
+                        workspace: workspace,
                         cache: cache,
                         environment: environment)))
         return JavaScriptDependencyArtifacts(
@@ -246,10 +278,11 @@ public enum ReactNativeColliderRecipe {
 
     package static func generateReactNativeCode(
         root: FilePath,
+        cacheRoot: FilePath,
         dependencies: ArtifactReference,
         environment: [String: String]
     ) throws -> ReactNativeCodegenArtifacts {
-        let output = root.appending(".rn-build/codegen")
+        let output = codegenRoot(cacheRoot: cacheRoot)
         var builder = TaskBuilder(
             id: TaskID(rawValue: "rn.codegen"),
             component: ComponentID(rawValue: "rn"))
@@ -353,6 +386,7 @@ public enum ReactNativeColliderRecipe {
 
     package static func buildHermes(
         root: FilePath,
+        nodeModules: FilePath,
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
@@ -442,6 +476,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DICU_LIBRARIES=/icu/lib/libicu.a",
                                 ] + importedHostToolsArguments,
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -472,6 +507,7 @@ public enum ReactNativeColliderRecipe {
                                 containerBuild: "/build/hermes",
                                 targets: ["hermesvmlean", "jsi", "hermesc"],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -492,6 +528,7 @@ public enum ReactNativeColliderRecipe {
                                 ] + importedHostToolsMounts),
                             try nativeContainerOperation(
                                 root: root,
+                                nodeModules: nodeModules,
                                 builder: builder,
                                 command: [
                                     "/tools/merge-static-archives.sh",
@@ -504,6 +541,7 @@ public enum ReactNativeColliderRecipe {
                                 workspaces: workspaces),
                             try nativeContainerOperation(
                                 root: root,
+                                nodeModules: nodeModules,
                                 builder: builder,
                                 command: [
                                     "bash", "-lc",
@@ -546,9 +584,11 @@ public enum ReactNativeColliderRecipe {
 
     package static func buildSupportLibraries(
         root: FilePath,
+        nodeModules: FilePath,
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        dependencies: ArtifactReference,
         builder: NativeOCIConfiguration
     ) throws -> SupportLibraryArtifacts {
         let artifacts = sdkRoot.appending("rn/lib/rn/support")
@@ -558,6 +598,7 @@ public enum ReactNativeColliderRecipe {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.support.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(dependencies)
         taskBuilder.consume(builder.image)
         taskBuilder.consume(builder.swiftSDK)
         let fmt: ArtifactReference = try taskBuilder.output(
@@ -589,6 +630,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DFMT_TEST=OFF", "-DFMT_DOC=OFF", "-DFMT_INSTALL=OFF",
                                 ],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -596,7 +638,8 @@ public enum ReactNativeColliderRecipe {
                             try nativeNinja(
                                 containerBuild: "/build/fmt",
                                 targets: ["fmt"],
-                                root: root, environment: environment,
+                                root: root,
+                                nodeModules: nodeModules, environment: environment,
                                 target: target,
                                 builder: builder,
                                 workspaces: workspaces),
@@ -608,6 +651,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON",
                                 ],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -615,12 +659,14 @@ public enum ReactNativeColliderRecipe {
                             try nativeNinja(
                                 containerBuild: "/build/double-conversion",
                                 targets: ["double-conversion"],
-                                root: root, environment: environment,
+                                root: root,
+                                nodeModules: nodeModules, environment: environment,
                                 target: target,
                                 builder: builder,
                                 workspaces: workspaces),
                             try nativeContainerOperation(
                                 root: root,
+                                nodeModules: nodeModules,
                                 builder: builder,
                                 command: [
                                     "bash", "-lc",
@@ -648,6 +694,7 @@ public enum ReactNativeColliderRecipe {
 
     package static func buildCxxRuntime(
         root: FilePath,
+        nodeModules: FilePath,
         sdkRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
@@ -720,6 +767,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DHAVE_EXECINFO_H=0", "-DHAVE_UNWIND_H=0",
                                 ],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -727,7 +775,8 @@ public enum ReactNativeColliderRecipe {
                             try nativeNinja(
                                 containerBuild: "/build/glog",
                                 targets: ["glog"],
-                                root: root, environment: environment,
+                                root: root,
+                                nodeModules: nodeModules, environment: environment,
                                 target: target,
                                 builder: builder,
                                 workspaces: workspaces),
@@ -752,6 +801,7 @@ public enum ReactNativeColliderRecipe {
                                     "-DRN_LIBRARY_CODEGEN_ROOT=/rn-codegen/android/app/build/generated/source/codegen/jni",
                                 ],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -773,6 +823,7 @@ public enum ReactNativeColliderRecipe {
                                     "react_cxx_platform", "yogacore", "worklets", "reanimated",
                                 ],
                                 root: root,
+                                nodeModules: nodeModules,
                                 environment: environment,
                                 target: target,
                                 builder: builder,
@@ -789,6 +840,7 @@ public enum ReactNativeColliderRecipe {
                                 ]),
                             try nativeContainerOperation(
                                 root: root,
+                                nodeModules: nodeModules,
                                 builder: builder,
                                 command: [
                                     "bash", "-lc",
@@ -822,6 +874,8 @@ public enum ReactNativeColliderRecipe {
 
     package static func publishNativeSDK(
         root: FilePath,
+        nodeModules: FilePath,
+        codegen: FilePath,
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
         dependencies: ArtifactReference,
@@ -853,23 +907,23 @@ public enum ReactNativeColliderRecipe {
             ),
             (
                 "include/react-native",
-                root.appending("node_modules/react-native")
+                nodeModules.appending("react-native")
             ),
             (
                 "include/react-native-worklets",
-                root.appending("node_modules/react-native-worklets/Common/cpp")
+                nodeModules.appending("react-native-worklets/Common/cpp")
             ),
             (
                 "include/react-native-reanimated",
-                root.appending("node_modules/react-native-reanimated/Common/cpp")
+                nodeModules.appending("react-native-reanimated/Common/cpp")
             ),
             (
                 "include/react-native-reanimated-native-view",
-                root.appending("node_modules/react-native-reanimated/Common/NativeView")
+                nodeModules.appending("react-native-reanimated/Common/NativeView")
             ),
             (
                 "include/rn-library-codegen",
-                root.appending(".rn-build/codegen/android/app/build/generated/source/codegen/jni")
+                codegen.appending("android/app/build/generated/source/codegen/jni")
             ),
             (
                 "include/react-cxx-platform",
@@ -1196,6 +1250,7 @@ private func nativeCMake(
     containerBuild: String,
     arguments: [String],
     root: FilePath,
+    nodeModules: FilePath,
     environment: [String: String],
     target: NativeLinuxTarget,
     builder: NativeOCIConfiguration,
@@ -1206,6 +1261,7 @@ private func nativeCMake(
 ) throws -> OCIExecution {
     return try nativeContainerOperation(
         root: root,
+        nodeModules: nodeModules,
         builder: builder,
         command: [
             "cmake",
@@ -1226,6 +1282,7 @@ private func nativeNinja(
     containerBuild: String,
     targets: [String],
     root: FilePath,
+    nodeModules: FilePath,
     environment: [String: String],
     target: NativeLinuxTarget,
     builder: NativeOCIConfiguration,
@@ -1234,6 +1291,7 @@ private func nativeNinja(
 ) throws -> OCIExecution {
     return try nativeContainerOperation(
         root: root,
+        nodeModules: nodeModules,
         builder: builder,
         command: ["ninja", "-C", containerBuild] + targets,
         environment: environment,
@@ -1244,6 +1302,7 @@ private func nativeNinja(
 
 private func nativeContainerOperation(
     root: FilePath,
+    nodeModules: FilePath,
     builder: NativeOCIConfiguration,
     command: [String],
     environment: [String: String],
@@ -1264,15 +1323,15 @@ private func nativeContainerOperation(
                 target: "/src",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("node_modules/react-native"),
+                source: nodeModules.appending("react-native"),
                 target: "/react-native",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("node_modules/react-native-worklets"),
+                source: nodeModules.appending("react-native-worklets"),
                 target: "/worklets",
                 access: .readOnly),
             OCIMount(
-                source: root.appending("node_modules/react-native-reanimated"),
+                source: nodeModules.appending("react-native-reanimated"),
                 target: "/reanimated",
                 access: .readOnly),
             OCIMount(
@@ -1330,6 +1389,7 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
     static let kind: ActionKind = "rn.install-javascript-dependencies"
 
     let root: FilePath
+    let workspace: FilePath
     let cache: FilePath
     let environment: [String: String]
 
@@ -1343,9 +1403,7 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.read, scope: .checkout(root)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .publication(root.appending("node_modules"))),
+                ActionEffect(.readWrite, scope: .scratch(workspace)),
                 ActionEffect(.readWrite, scope: .scratch(cache)),
             ],
             lane: .hostExclusive,
@@ -1353,7 +1411,45 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
             executionPlatform: .macOSARM64Native)
     }
 
+    /// The manifests bun reads to resolve `bun.lock`. Staging exactly these
+    /// materializes the workspace without copying the sources it describes.
+    private func stagedManifests(
+        in context: ActionContext
+    ) throws -> [(source: FilePath, relative: String)] {
+        var staged: [(FilePath, String)] = [
+            (root.appending("package.json"), "package.json"),
+            (root.appending("bun.lock"), "bun.lock"),
+        ]
+        // `packages/*` and `packages/*/js`, declared by the workspace itself.
+        let packages = root.appending("packages")
+        for entry in try context.files.listRecursively(packages)
+        where entry.relativePath.hasSuffix("package.json")
+            && entry.relativePath.split(separator: "/").count <= 3
+        {
+            staged.append((entry.path, "packages/\(entry.relativePath)"))
+        }
+        let patches = root.appending("patches")
+        if (try? context.files.listRecursively(patches)) != nil {
+            for entry in try context.files.listRecursively(patches)
+            where entry.metadata.type == .regular {
+                staged.append((entry.path, "patches/\(entry.relativePath)"))
+            }
+        }
+        return staged.map { (source: $0.0, relative: $0.1) }
+    }
+
     func execute(in context: ActionContext) async throws {
+        // bun installs into its working directory, and the working directory
+        // may not be the checkout: a build that writes `node_modules` into a
+        // checkout leaves that checkout permanently dirty, so source identity
+        // would carry an exception for a directory the build itself created.
+        // The workspace it needs is exactly a set of manifests, materialized
+        // here the way every other build input is.
+        for staged in try stagedManifests(in: context) {
+            try context.files.copy(
+                from: staged.source,
+                to: workspace.appending(staged.relative))
+        }
         let result = try await context.commands.execute(
             CommandSpec(
                 executable: .named("bun"),
@@ -1366,7 +1462,7 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
                     "--backend", "copyfile",
                     "--cache-dir", cache.string,
                 ],
-                workingDirectory: root,
+                workingDirectory: workspace,
                 environment: environment))
         guard result.succeeded else {
             throw result.executionFailure(
