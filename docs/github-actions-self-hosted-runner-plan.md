@@ -417,11 +417,12 @@ resume tests the builder home's owner and mode but not its group, because
 provisioning is what assigns the group.
 
 Support two manual paths through the same identity. GitHub manual dispatch uses
-the protected workflow and clean builder checkout. A local invocation uses a
-root-owned, synchronous account-switching launcher accepting only the canonical
-authoritative-checkout path, a typed existing Collider operation, and declared
-debug or release configuration. It grants no arbitrary shell and is not a
-daemon, worker protocol, source copy, or remote-execution service. Launcher,
+the protected workflow and clean builder checkout. A local invocation is
+`collider` itself, which re-runs as the builder through a root-owned,
+synchronous account-switching launcher accepting the canonical
+authoritative-checkout path, typed Collider command words, and options from a
+closed list. It grants no arbitrary shell and is not a daemon, worker protocol,
+source copy, or remote-execution service. Launcher,
 SwiftPM, package-resolution, generated-configuration, and host-acquisition
 writes live in builder-owned declared storage rather than the source checkout,
 and the effective source identity is revalidated before local outputs are
@@ -541,14 +542,27 @@ retention states whether its state stays continuously resident or is
 materialized on demand, so residency is a recorded decision rather than a
 consequence of whatever was built last.
 
-The interactive developer initiates a local build through the existing root
-launcher without a password: one sudoers entry admits exactly
-`/usr/local/bin/nucleus-builder-run` for that account. The launcher accepts only
-the canonical authoritative checkout, a typed operation, and a declared
-configuration, and grants no shell. The identity it runs code as has no sudo, no
-keys, and no read access to the interactive home, so the entry lowers privilege
-rather than raising it. A direct `collider build` in the interactive account
-refuses and names the launcher, because one store admits one writer.
+The interactive developer initiates a local build by running `collider`. One
+store admits one writer, so a command that executes a task graph must run as the
+builder; which commands those are is Collider's own knowledge, and it re-runs
+itself as that identity rather than refusing and naming a second command for a
+person to retype. The switch is announced on standard error every time, because
+an identity change the operator cannot observe is worse than one they perform.
+Inspection and dry runs do not cross, and stay in the developer's account.
+
+The crossing goes through one root launcher reached without a password: one
+sudoers entry admits exactly `/usr/local/bin/nucleus-builder-run` for that
+account. What crosses is typed rather than passed through. The launcher accepts
+the canonical authoritative checkout, command words matching a pattern that
+cannot express a path, an option, or a shell metacharacter, and options from a
+closed list each carrying its own value pattern; it grants no shell. That is
+what keeps a password-free grant from becoming a way to run something else as
+another identity, and it covers the command tree without the launcher becoming a
+second command surface that has to grow whenever Collider does. An option
+outside the list refuses rather than being dropped, because a build that
+silently ignored `--rebuild` would answer a question nobody asked. The identity
+it runs code as has no sudo, no keys, and no access to the interactive home, so
+the entry lowers privilege rather than raising it.
 
 Every supported run reuses this state. Exact source, submodule, toolchain,
 configuration, platform, and semantic input identities decide whether an action

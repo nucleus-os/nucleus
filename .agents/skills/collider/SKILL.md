@@ -9,12 +9,13 @@ Read the repository `AGENTS.md` before changing code or running a workflow.
 
 1. On a fresh clone, run `./collider-setup.sh` once to provision dependencies and install the `collider` launcher.
 2. After setup, invoke `collider` from anywhere inside the clone. Never invoke the built executable directly and never source `tools/host-env.sh` for normal Collider usage.
-3. Select the narrowest component or task surface that satisfies the request. Use `--dry-run` before an expensive build when task selection or cache state is uncertain.
-4. Let Collider own Apple-container creation, persistent workspaces, cancellation, logs, and cleanup. Do not replace its Swift container API path with `container` CLI commands.
-5. Keep container actions offline. Host-side Collider actions own downloads and caches; retry an intermittent host download instead of reducing package-manager concurrency or enabling container networking.
-6. Inspect durable execution state with `collider runs` and `collider logs`; use the run or task log named by a failure before changing behavior.
-7. Preserve the build graph's incremental contract. Use `--rebuild` only when the user requests a forced rebuild or the declared outputs cannot establish the required state.
-8. After changing Collider's Swift sources, run `collider test collider` once the change is complete; it verifies both the Collider CLI package and its engine package. Documentation, plan, and comment-only changes do not require it, and a passing run stays valid until Collider sources change again.
+3. On a host with a machine build store, a command that executes a task graph re-runs itself as the builder identity and reports that on standard error; inspection and dry runs stay in the invoking account. Never invoke the root launcher by hand.
+4. Select the narrowest component or task surface that satisfies the request. Use `--dry-run` before an expensive build when task selection or cache state is uncertain.
+5. Let Collider own Apple-container creation, persistent workspaces, cancellation, logs, and cleanup. Do not replace its Swift container API path with `container` CLI commands.
+6. Keep container actions offline. Host-side Collider actions own downloads and caches; retry an intermittent host download instead of reducing package-manager concurrency or enabling container networking.
+7. Inspect durable execution state with `collider runs` and `collider logs`; use the run or task log named by a failure before changing behavior.
+8. Preserve the build graph's incremental contract. Use `--rebuild` only when the user requests a forced rebuild or the declared outputs cannot establish the required state.
+9. After changing Collider's Swift sources, run `collider test collider` once the change is complete; it verifies both the Collider CLI package and its engine package. Documentation, plan, and comment-only changes do not require it, and a passing run stays valid until Collider sources change again.
 
 Read [references/commands.md](references/commands.md) when exact command, argument, option, or subcommand syntax is needed. That reference is generated from Swift Argument Parser's structured representation of the current Collider command tree.
 
