@@ -300,6 +300,8 @@ public enum ReactNativeColliderRecipe {
             action: try AnyColliderAction(
                 GenerateReactNativeCodeAction(
                     root: root,
+                    nodeModules: javaScriptWorkspace(cacheRoot: cacheRoot)
+                        .appending("node_modules"),
                     output: output,
                     environment: environment)))
         return ReactNativeCodegenArtifacts(task: task, output: artifact)
@@ -1473,10 +1475,12 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
 private struct GenerateReactNativeCodeAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let root: FilePath
+        let nodeModules: FilePath
         let output: FilePath
 
         func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: root)
+            encoder.append(path: nodeModules)
             encoder.append(path: output)
             encoder.append("android")
             encoder.append("app")
@@ -1487,10 +1491,13 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
     static let kind: ActionKind = "rn.generate-codegen"
 
     let root: FilePath
+    let nodeModules: FilePath
     let output: FilePath
     let environment: [String: String]
 
-    var identity: Identity { Identity(root: root, output: output) }
+    var identity: Identity {
+        Identity(root: root, nodeModules: nodeModules, output: output)
+    }
 
     var requirements: ActionRequirements {
         ActionRequirements(
@@ -1500,6 +1507,7 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.read, scope: .checkout(root)),
+                ActionEffect(.read, scope: .input(nodeModules)),
                 ActionEffect(.write, scope: .output(output)),
             ],
             executionPlatform: .macOSARM64Native)
@@ -1512,7 +1520,12 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
             CommandSpec(
                 executable: .named("node"),
                 arguments: [
-                    "node_modules/react-native/scripts/generate-codegen-artifacts.js",
+                    // Named absolutely in the materialized workspace: the
+                    // checkout carries no `node_modules`, because a build that
+                    // installed one there would be writing the tree it reads.
+                    nodeModules.appending(
+                        "react-native/scripts/generate-codegen-artifacts.js"
+                    ).string,
                     "--path", root.string,
                     "--targetPlatform", "android",
                     "--outputPath", output.string,
