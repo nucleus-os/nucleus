@@ -963,7 +963,7 @@ public struct ActionFileSystem: Sendable {
     }
 
     public func metadata(for path: FilePath) throws -> Metadata? {
-        try metadataBody(path)
+        try named("metadata", [path]) { try metadataBody(path) }
     }
 
     public func metadataWithoutFollowingSymlinks(
@@ -1018,7 +1018,7 @@ public struct ActionFileSystem: Sendable {
     }
 
     public func read(_ path: FilePath) throws -> [UInt8] {
-        try readBody(path)
+        try named("read", [path]) { try readBody(path) }
     }
 
     public func readPrefix(_ path: FilePath, count: Int) throws -> [UInt8] {
@@ -1041,7 +1041,7 @@ public struct ActionFileSystem: Sendable {
     }
 
     public func listRecursively(_ root: FilePath) throws -> [Entry] {
-        try listRecursivelyBody(root)
+        try named("list", [root]) { try listRecursivelyBody(root) }
     }
 
     public func digest(file path: FilePath) throws -> ArtifactDigest {
@@ -1068,15 +1068,17 @@ public struct ActionFileSystem: Sendable {
     }
 
     public func replaceSymlink(at path: FilePath, target: String) throws {
-        try replaceSymlinkBody(path, target)
+        try named("replace symlink", [path, FilePath(target)]) {
+            try replaceSymlinkBody(path, target)
+        }
     }
 
     public func setPermissions(_ permissions: UInt16, for path: FilePath) throws {
-        try setPermissionsBody(path, permissions)
+        try named("set permissions", [path]) { try setPermissionsBody(path, permissions) }
     }
 
     public func write(_ bytes: [UInt8], to path: FilePath) throws {
-        try writeBody(bytes, path)
+        try named("write", [path]) { try writeBody(bytes, path) }
     }
 
     package func scoped(to effects: [ActionEffect]) -> ActionFileSystem {

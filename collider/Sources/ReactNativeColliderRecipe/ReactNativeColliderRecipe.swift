@@ -896,8 +896,7 @@ public enum ReactNativeColliderRecipe {
             ),
             (
                 "include/rn-codegen",
-                root.appending(
-                    "node_modules/react-native/React/FBReactNativeSpec")
+                nodeModules.appending("react-native/React/FBReactNativeSpec")
             ),
             ("include/fmt", root.appending("third-party/fmt")),
             ("include/fast_float", root.appending("third-party/fast_float")),
