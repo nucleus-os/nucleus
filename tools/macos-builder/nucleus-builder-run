@@ -8,8 +8,8 @@ if [[ $EUID -ne 0 ]]; then
   echo "error: invoke this root-owned launcher through sudo" >&2
   exit 77
 fi
-if [[ $# -lt 3 || $# -gt 4 ]]; then
-  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package|generate> <debug|release> [component]" >&2
+if [[ $# -lt 2 ]]; then
+  echo "usage: nucleus-builder-run <canonical-checkout> <command-word>... [option]..." >&2
   exit 64
 fi
 if [[ ! -f "$checkout_record" ]]; then
@@ -18,9 +18,7 @@ if [[ ! -f "$checkout_record" ]]; then
 fi
 
 readonly requested_checkout="$1"
-readonly operation="$2"
-readonly configuration="$3"
-readonly component="${4:-}"
+shift
 readonly checkout="$(/usr/bin/sed -n '1p' "$checkout_record")"
 readonly canonical_requested="$(cd "$requested_checkout" 2>/dev/null && /bin/pwd -P)" || {
   echo "error: requested checkout does not exist" >&2
@@ -35,43 +33,68 @@ if [[ ! -f "$checkout/Package.swift" || ! -x "$checkout/tools/collider-launcher.
   exit 72
 fi
 
-# A component narrows an operation to one entry in the current catalog. It is
-# matched against a strict name pattern rather than passed through, so this
-# launcher still accepts a typed operation rather than an argument vector: no
-# option, path, or second word can reach Collider through it. Release
-# configurations already express themselves as a fixed selection, so combining
-# the two would be ambiguous and is refused rather than silently resolved.
-if [[ -n "$component" ]]; then
-  if [[ ! "$component" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-    echo "error: component must be a catalog component name" >&2
-    exit 64
-  fi
-  if [[ "$configuration" != debug ]]; then
-    echo "error: a component is accepted only with the debug configuration" >&2
-    exit 64
-  fi
-fi
+# The grant is password-free, so what crosses it is typed rather than passed
+# through. Command words name a subcommand or a catalog selection and match a
+# pattern that cannot express a path, an option, or a shell metacharacter.
+# Options come from a closed list, each with its own value pattern. Together
+# these keep the one exact program this grant admits from becoming a way to run
+# anything else as another identity.
+command=()
+options=()
+readonly maximum_words=4
 
-case "$configuration:$operation" in
-  debug:build) command=(build ${component:+"$component"}) ;;
-  debug:test) command=(test ${component:+"$component"}) ;;
-  # Generation writes the build store, so it runs as the builder, and it names
-  # exactly one generator rather than defaulting to every one of them.
-  debug:generate)
-    if [[ -z "$component" ]]; then
-      echo "error: generate requires a generator target" >&2
+expect_value() {
+  [[ $# -ge 2 ]] || { echo "error: $1 requires a value" >&2; exit 64; }
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --rebuild|--dry-run|--verbose|--quiet|--measure-allocations)
+      options+=("$1")
+      shift
+      ;;
+    --format|--progress-format)
+      expect_value "$@"
+      [[ "$2" =~ ^(text|json|human)$ ]] \
+        || { echo "error: $1 accepts text, json, or human" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
+      ;;
+    --color|--progress)
+      expect_value "$@"
+      [[ "$2" =~ ^(auto|always|never)$ ]] \
+        || { echo "error: $1 accepts auto, always, or never" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
+      ;;
+    --run-id)
+      expect_value "$@"
+      [[ "$2" =~ ^[0-9A-Za-z:._-]{1,128}$ ]] \
+        || { echo "error: --run-id is not a run identifier" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
+      ;;
+    -*)
+      echo "error: option is not admitted through this launcher: $1" >&2
       exit 64
-    fi
-    command=(generate "$component")
-    ;;
-  release:build) command=(build linux-runtime) ;;
-  release:test) command=(test release-gate) ;;
-  release:package) command=(package linux-runtime) ;;
-  *)
-    echo "error: unsupported operation/configuration pair: $operation/$configuration" >&2
-    exit 64
-    ;;
-esac
+      ;;
+    *)
+      [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
+        || { echo "error: command word is not a Collider command word: $1" >&2; exit 64; }
+      [[ ${#command[@]} -lt $maximum_words ]] \
+        || { echo "error: too many command words" >&2; exit 64; }
+      command+=("$1")
+      shift
+      ;;
+  esac
+done
+
+[[ ${#command[@]} -gt 0 ]] || { echo "error: no command words given" >&2; exit 64; }
+# Expanding an empty array under `set -u` is an error in the bash this host
+# ships, so the append is conditional rather than unconditional.
+if [[ ${#options[@]} -gt 0 ]]; then
+  command+=("${options[@]}")
+fi
 
 # launchd hands a process 256 open files by default, which is a desktop default
 # rather than a build one: source capture alone runs Git once per checkout

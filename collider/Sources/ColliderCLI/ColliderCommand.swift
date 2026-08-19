@@ -55,9 +55,16 @@ public struct ColliderCommand: AsyncParsableCommand {
             root: workspace,
             environment: environment)
         // Before the registry opens a run, because recording one is itself a
-        // write into the store this account may not be permitted to make.
-        if workspaceCommand.requiresExecutionAdmission {
-            try requireBuildStoreWriteAccess()
+        // write into the store this account may not be permitted to make. The
+        // command does not fail here: it continues as the identity that may.
+        if workspaceCommand.requiresExecutionAdmission,
+            !BuilderElevation.executesDirectly()
+        {
+            #if os(macOS)
+            try BuilderElevation.reexecuteAsBuilder(
+                arguments: arguments,
+                workspaceRoot: workspace)
+            #endif
         }
         let registry = RunRegistry(
             root: nucleusRunRegistryRoot(workspaceRoot: workspace))
@@ -262,26 +269,6 @@ public struct ColliderCommand: AsyncParsableCommand {
 private func commandPhaseName(_ arguments: [String]) -> String {
     let commandPath = arguments.prefix { !$0.hasPrefix("-") }
     return commandPath.isEmpty ? "collider" : commandPath.joined(separator: " ")
-}
-
-/// Refuses an invocation that would execute into a build store it cannot write.
-///
-/// A provisioned host has one store and one identity permitted to write it.
-/// Without this check the invocation acquires admission, plans, and then fails
-/// partway through on a permission error from somewhere deep in the graph. The
-/// account is told instead, before any work, what does have write access.
-/// Inspection never reaches here, so run and log reading stay available to the
-/// group that can read the store.
-func requireBuildStoreWriteAccess() throws {
-    #if os(macOS)
-    let store = MacOSMachineStorageLayout.buildStore
-    guard MacOSMachineStorageLayout.buildStoreIsInstalled(),
-        !FileManager.default.isWritableFile(atPath: store.string)
-    else { return }
-    throw WorkspaceFailure.message(
-        "this account cannot write the machine build store at \(store); "
-            + "run builds through \(MacOSMachineStorageLayout.builderLauncher)")
-    #endif
 }
 
 /// The machine-wide execution lease, where a privileged provisioning step has

@@ -257,6 +257,15 @@ done
 # same ownership. It is scoped to those paths rather than disabling the check.
 run_as_builder /usr/bin/git config --global --replace-all safe.directory "$checkout"
 run_as_builder /usr/bin/git config --global --add safe.directory "$checkout/*"
+# The same refusal in the other direction. Resolving a package graph
+# materializes dependency checkouts into the store, which the builder owns, and
+# the developer reads them when planning a run or describing a dry run. Both
+# accounts are this host's own build identities, so each is told the other's
+# repositories are not a stranger's.
+/usr/bin/sudo -u "$developer_user" /usr/bin/git config --global \
+  --replace-all safe.directory "$build_store"
+/usr/bin/sudo -u "$developer_user" /usr/bin/git config --global \
+  --add safe.directory "$build_store/*"
 
 run_as_builder "$script_directory/install-container-service.sh"
 if ! /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
