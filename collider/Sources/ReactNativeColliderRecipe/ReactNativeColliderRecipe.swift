@@ -1485,6 +1485,11 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
             encoder.append("android")
             encoder.append("app")
             encoder.append(true)
+            // Bumped when what this action does with identical inputs changes,
+            // so the stale output invalidates everywhere rather than only where
+            // someone thinks to delete it. 2: discovery scans the materialized
+            // workspace instead of the checkout.
+            encoder.append(2)
         }
     }
 
@@ -1526,13 +1531,19 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
                     nodeModules.appending(
                         "react-native/scripts/generate-codegen-artifacts.js"
                     ).string,
-                    "--path", root.string,
+                    // The workspace, not the checkout: the script discovers
+                    // which libraries declare a codegen configuration by
+                    // scanning `node_modules` under this path, and pointing it
+                    // at a tree without one silently generates the application
+                    // spec alone, leaving every library's component headers
+                    // missing at C++ compile time rather than failing here.
+                    "--path", nodeModules.removingLastComponent().string,
                     "--targetPlatform", "android",
                     "--outputPath", output.string,
                     "--source", "app",
                     "--forceOutputPath",
                 ],
-                workingDirectory: root,
+                workingDirectory: nodeModules.removingLastComponent(),
                 environment: environment))
         guard result.succeeded else {
             throw result.executionFailure(reason: "React Native code generation failed")

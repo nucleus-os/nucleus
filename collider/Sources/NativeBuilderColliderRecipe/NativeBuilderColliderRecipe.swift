@@ -30,7 +30,8 @@ public enum NativeBuilderColliderRecipe {
         context sourceContext: FilePath,
         cacheRoot: FilePath,
         ccache: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        identityPathMap: IdentityPathMap
     ) throws -> NativeBuilderArtifacts {
         let inputRoot = cacheRoot.appending("inputs")
         let dependencyContext = cacheRoot.appending("dependency-context")
@@ -137,7 +138,8 @@ public enum NativeBuilderColliderRecipe {
                                 + "/opt/swift-compat/arm64",
                             "NUCLEUS_SWIFTPM_RETAIN_CONTEXTS": "1",
                         ],
-                        commandPrefix: ["swiftpm"]))),
+                        commandPrefix: ["swiftpm"])),
+                identityPathMap: identityPathMap),
             scratchPath: cacheRoot.appending("swiftbuild-regression/scratch"),
             dependencyLock: swiftBuildSource.appending("Package.resolved"))
         let swiftBuildRegression = swiftBuildInvocation.testProduct(
@@ -200,7 +202,8 @@ public enum NativeBuilderColliderRecipe {
                                 + "/opt/swift-compat/arm64",
                             "NUCLEUS_SWIFTPM_RETAIN_CONTEXTS": "1",
                         ],
-                        commandPrefix: ["swiftpm"]))),
+                        commandPrefix: ["swiftpm"])),
+                identityPathMap: identityPathMap),
             scratchPath: cacheRoot.appending("swiftpm-overlay/scratch"),
             dependencyLock: swiftPMSource.appending("Package.resolved"))
         let swiftPMRegression = swiftPMInvocation.testProduct(

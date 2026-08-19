@@ -422,3 +422,60 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(product.inputs.contains(.file(fixturePackageRoot.appending("Package.swift"))))
     #expect(product.inputs.contains(.tree(fixturePackageRoot)))
 }
+
+/// Two checkouts of identical source at different absolute locations compile
+/// once and share their results.
+///
+/// The CI checkout and the authoritative checkout are exactly that pair, and so
+/// is one checkout before and after it moves. Placement is not a compilation
+/// input, so it must not reach the identity that decides reuse, nor the
+/// directory names derived from it.
+@Test func swiftBuildContextIdentityIgnoresWhereTheCheckoutSits() {
+    func context(checkout: FilePath) -> SwiftBuildContext {
+        SwiftBuildContext(
+            packageRoot: checkout.appending("collider"),
+            configuration: .debug,
+            target: .host(identity: "aarch64-linux"),
+            toolchainIdentity: "swiftc@fixture",
+            toolsets: [checkout.appending("toolsets/linux.json")],
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: checkout),
+                IdentityPathRoot(name: "cache", path: FilePath("/store/cache")),
+            ]))
+    }
+
+    let authoritative = context(checkout: FilePath("/Library/Nucleus/checkout"))
+    let ci = context(checkout: FilePath("/Users/builder/work/nucleus/nucleus"))
+    #expect(authoritative.identityBytes == ci.identityBytes)
+
+    // Without a declared root there is nothing to resolve through, so the two
+    // locations are genuinely different builds and must not collide.
+    func unmapped(checkout: FilePath) -> SwiftBuildContext {
+        SwiftBuildContext(
+            packageRoot: checkout.appending("collider"),
+            configuration: .debug,
+            target: .host(identity: "aarch64-linux"),
+            toolchainIdentity: "swiftc@fixture")
+    }
+    #expect(
+        unmapped(checkout: FilePath("/Library/Nucleus/checkout")).identityBytes
+            != unmapped(checkout: FilePath("/Users/builder/work/nucleus/nucleus"))
+            .identityBytes)
+
+    // A real difference still separates them, so canonicalization cannot be
+    // hiding inputs that decide reuse. The path here differs outside every
+    // declared root, which is a genuinely different toolset rather than the
+    // same one seen from another location.
+    let foreignToolset = SwiftBuildContext(
+        packageRoot: FilePath("/Library/Nucleus/checkout/collider"),
+        configuration: .debug,
+        target: .host(identity: "aarch64-linux"),
+        toolchainIdentity: "swiftc@fixture",
+        toolsets: [FilePath("/opt/other/linux.json")],
+        identityPathMap: IdentityPathMap(roots: [
+            IdentityPathRoot(
+                name: "workspace", path: FilePath("/Library/Nucleus/checkout")),
+            IdentityPathRoot(name: "cache", path: FilePath("/store/cache")),
+        ]))
+    #expect(authoritative.identityBytes != foreignToolset.identityBytes)
+}

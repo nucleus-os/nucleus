@@ -152,6 +152,15 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public let staticSwiftStandardLibrary: Bool
     public let maximumParallelism: UInt32
     public let execution: SwiftPMExecution
+    /// Placement-only roots this context's identity resolves through.
+    ///
+    /// Absolute paths that merely say where the host keeps things must not
+    /// reach an identity, or the same source at two locations compiles twice
+    /// and shares nothing. The CI checkout and the authoritative checkout are
+    /// exactly that pair, and so are one checkout before and after it moves.
+    /// Empty means no canonicalization, which is correct only where no such
+    /// root exists.
+    public let identityPathMap: IdentityPathMap
 
     public init(
         packageRoot: FilePath,
@@ -169,7 +178,8 @@ public struct SwiftBuildContext: Hashable, Sendable {
         toolsets: [FilePath] = [],
         staticSwiftStandardLibrary: Bool = false,
         maximumParallelism: UInt32 = SwiftBuildContext.defaultMaximumParallelism,
-        execution: SwiftPMExecution = .host
+        execution: SwiftPMExecution = .host,
+        identityPathMap: IdentityPathMap = .empty
     ) {
         precondition(packageRoot.isAbsolute && packageRoot.isLexicallyNormal)
         precondition(maximumParallelism > 0)
@@ -189,12 +199,13 @@ public struct SwiftBuildContext: Hashable, Sendable {
         self.staticSwiftStandardLibrary = staticSwiftStandardLibrary
         self.maximumParallelism = maximumParallelism
         self.execution = execution
+        self.identityPathMap = identityPathMap
     }
 
     /// Stable canonical bytes used both in task identity and to derive the
     /// package scratch directory.
     public var identityBytes: [UInt8] {
-        identityBytes(identityPathMap: .empty)
+        identityBytes(identityPathMap: identityPathMap)
     }
 
     public func identityBytes(identityPathMap: IdentityPathMap) -> [UInt8] {

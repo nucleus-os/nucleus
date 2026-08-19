@@ -178,6 +178,18 @@ package struct WorkspaceContext: Sendable {
 
     func repository(_ name: String) -> FilePath { root.appending(name) }
 
+    /// The placement-only roots every identity in this workspace resolves
+    /// through. Task identities, SwiftPM task ids, host scratch directories,
+    /// and container workspaces all use this one definition, because a
+    /// disagreement between them would place the same build in two locations
+    /// while claiming they were the same.
+    package var identityPathMap: IdentityPathMap {
+        IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: root),
+            IdentityPathRoot(name: "cache", path: cacheRoot),
+        ])
+    }
+
     package var stateRoot: FilePath { hostBuildRoot.appending("state") }
     package var taskStateRoot: FilePath { stateRoot.appending("tasks") }
     package var lockRoot: FilePath { stateRoot.appending("locks") }

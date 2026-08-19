@@ -79,7 +79,8 @@ extension WorkspaceContext {
             toolsets: toolsets,
             staticSwiftStandardLibrary: staticSwiftStandardLibrary,
             maximumParallelism: maximumParallelism,
-            execution: execution)
+            execution: execution,
+            identityPathMap: identityPathMap)
         let invocation = SwiftPMInvocation(
             context: context,
             scratchPath: layout.swiftScratch(
@@ -141,10 +142,7 @@ extension WorkspaceContext {
             catalog: catalog,
             requests: requests,
             stateRoot: stateRoot,
-            identityPathMap: IdentityPathMap(roots: [
-                IdentityPathRoot(name: "workspace", path: root),
-                IdentityPathRoot(name: "cache", path: cacheRoot),
-            ]),
+            identityPathMap: identityPathMap,
             workflowLocks: [sdkRebuildLock],
             lowerings: [SwiftPMLowering()],
             hostPhases: hostPhases,

@@ -45,7 +45,8 @@ package struct ComponentRegistry {
             context: context.root.appending("collider/images/native-builder"),
             cacheRoot: nativeBuilderCache.appending("build-containers/native"),
             ccache: nativeBuilderCache.appending("ccache/native"),
-            environment: recipeEnvironment)
+            environment: recipeEnvironment,
+            identityPathMap: context.identityPathMap)
         let androidToolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
         let targetSDKInputs = try SwiftTargetSDKInputs.load(
