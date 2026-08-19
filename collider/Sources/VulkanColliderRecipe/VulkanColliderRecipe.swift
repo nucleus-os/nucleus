@@ -107,6 +107,9 @@ public enum VulkanColliderRecipe: ColliderComponent {
                         formatConfiguration: root.removingLastComponent()
                             .appending(".swift-format"),
                         environment: environment)))
+        let mappings = [
+            GeneratedSourceMapping(generated: output, committed: committed)
+        ]
         var verifier = TaskBuilder(
             id: TaskID(rawValue: "vulkan.verify-generated-sources"),
             component: descriptor.id)
@@ -116,16 +119,12 @@ public enum VulkanColliderRecipe: ColliderComponent {
             locks: [.checkout("vulkan")],
             action:
                 try AnyColliderAction(
-                    VerifyVulkanGeneratedSourceAction(
-                        generated: output,
-                        committed: committed)))
+                    VerifyVulkanGeneratedSourceAction(mappings: mappings)))
         return Generation(
             tasks: [tool, task, verification],
             task: task,
             verification: verification,
-            mappings: [
-                GeneratedSourceMapping(generated: output, committed: committed)
-            ])
+            mappings: mappings)
     }
 }
 

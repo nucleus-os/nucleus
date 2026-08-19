@@ -120,14 +120,13 @@ let reactNativeRuntimeLinkerSettings: [LinkerSetting] = [
 let targets: [Target] = [
     .plugin(
         name: "GenerateApexManifestPlugin",
+        // No package-directory permission: generation writes the output
+        // directory it is given, and adopting the result into the checkout is a
+        // separate act by the account that owns the checkout.
         capability: .command(
             intent: .custom(
                 verb: "generate-apex-manifest",
-                description: "Generate or verify the checked-in APEX manifest Swift source"),
-            permissions: [
-                .writeToPackageDirectory(
-                    reason: "Publish the generated APEX manifest Swift source")
-            ]),
+                description: "Generate the APEX manifest Swift source")),
         dependencies: [
             .product(name: "protoc", package: "swift-protobuf"),
             .product(name: "protoc-gen-swift", package: "swift-protobuf"),

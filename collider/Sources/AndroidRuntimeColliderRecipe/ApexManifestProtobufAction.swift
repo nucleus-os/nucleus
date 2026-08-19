@@ -2,21 +2,14 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
-package enum ApexManifestProtobufMode: String, Hashable, Sendable {
-    case publish
-    case verify
-}
-
 package struct ApexManifestProtobufAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
-        package let mode: ApexManifestProtobufMode
         package let packageRoot: FilePath
         package let scratchPath: FilePath
         package let generatedSource: FilePath
         package let result: FilePath
 
         package func encode(into encoder: inout IdentityEncoder) {
-            encoder.append(mode.rawValue)
             encoder.append(path: packageRoot)
             encoder.append(path: scratchPath)
             encoder.append(path: generatedSource)
@@ -27,7 +20,6 @@ package struct ApexManifestProtobufAction: ColliderAction {
 
     package static let kind: ActionKind = "android-runtime.generate-apex-manifest"
 
-    package let mode: ApexManifestProtobufMode
     package let packageRoot: FilePath
     package let scratchPath: FilePath
     package let swiftExecutable: CommandSpec.Executable
@@ -37,7 +29,6 @@ package struct ApexManifestProtobufAction: ColliderAction {
 
     package var identity: Identity {
         Identity(
-            mode: mode,
             packageRoot: packageRoot,
             scratchPath: scratchPath,
             generatedSource: generatedSource,
@@ -45,15 +36,15 @@ package struct ApexManifestProtobufAction: ColliderAction {
     }
 
     package var requirements: ActionRequirements {
-        var effects = [
+        // Generation writes its own output and the marker, and reads the
+        // checkout. It no longer writes generated source back into the
+        // checkout, so there is no publication effect.
+        let effects = [
             ActionEffect(.read, scope: .checkout(packageRoot)),
             ActionEffect(.readWrite, scope: .scratch(scratchPath)),
+            ActionEffect(.readWrite, scope: .output(generatedSource)),
             ActionEffect(.write, scope: .output(result)),
         ]
-        if mode == .publish {
-            effects.append(
-                ActionEffect(.write, scope: .publication(generatedSource)))
-        }
         return ActionRequirements(
             tools: [
                 ActionToolRequirement(
@@ -72,11 +63,10 @@ package struct ApexManifestProtobufAction: ColliderAction {
             "--scratch-path", scratchPath.string,
             "--only-use-versions-from-resolved-file",
             "plugin",
-            "--allow-writing-to-package-directory",
         ]
         arguments += [
             "generate-apex-manifest",
-            mode == .publish ? "--publish" : "--verify",
+            "--output", generatedSource.removingLastComponent().string,
         ]
         let execution = try await context.commands.execute(
             CommandSpec(
@@ -99,6 +89,46 @@ package struct ApexManifestProtobufTasks: Sendable {
     package let verification: TaskDeclaration
     package let generatedSource: FilePath
     package let verificationRoot: FilePath
+    package let mappings: [GeneratedSourceMapping]
+}
+
+/// Compares the committed APEX manifest source against regenerating it.
+package struct VerifyAndroidRuntimeGeneratedSourceAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
+        package let mappings: [GeneratedSourceMapping]
+
+        package func encode(into encoder: inout IdentityEncoder) {
+            encoder.appendSequence(mappings) {
+                $0.append(path: $1.generated)
+                $0.append(path: $1.committed)
+            }
+        }
+    }
+
+    // An action kind is namespaced to the component that owns the task.
+    package static let kind: ActionKind = "android-runtime.verify-generated-sources"
+
+    package let mappings: [GeneratedSourceMapping]
+
+    package var identity: Identity { Identity(mappings: mappings) }
+
+    package var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: mappings.flatMap {
+                [
+                    ActionEffect(.read, scope: .input($0.generated)),
+                    ActionEffect(.read, scope: .checkout($0.committed)),
+                ]
+            },
+            executionPlatform: .macOSARM64Native)
+    }
+
+    package func execute(in context: ActionContext) async throws {
+        try GeneratedSourceVerification.check(
+            mappings,
+            component: "android-runtime",
+            in: context)
+    }
 }
 
 extension AndroidRuntimeColliderRecipe {
@@ -110,14 +140,17 @@ extension AndroidRuntimeColliderRecipe {
         swiftPM: SwiftPMInvocation
     ) throws -> ApexManifestProtobufTasks {
         let schema = root.appending("Protos/apex_manifest.proto")
-        let generatedSource = root.appending(
+        // Generation writes storage; the copy beside the sources is authored
+        // state a human adopts.
+        let committedSource = root.appending(
             "Sources/NucleusAndroidContainerContract/apex_manifest.pb.swift")
+        let generatedSource = buildRoot.appending(
+            "android-runtime/generated/apex_manifest.pb.swift")
         let pluginSource = packageRoot.appending(
             "tools/generate-apex-manifest/plugin.swift")
         let verificationRoot = buildRoot.appending(
             "android-runtime/apex-manifest-protobuf")
         let generation = verificationRoot.appending("generation.json")
-        let verification = verificationRoot.appending("verification.json")
         let sharedInputs =
             [
                 ArtifactInput.file(packageRoot.appending("Package.swift")),
@@ -144,7 +177,6 @@ extension AndroidRuntimeColliderRecipe {
             assessmentPolicy: .always,
             action: try AnyColliderAction(
                 ApexManifestProtobufAction(
-                    mode: .publish,
                     packageRoot: packageRoot,
                     scratchPath: swiftPM.scratchPath,
                     swiftExecutable: swiftPM.swiftExecutable,
@@ -152,31 +184,27 @@ extension AndroidRuntimeColliderRecipe {
                     result: generationMarker.path,
                     environment: environment)))
 
+        let mappings = [
+            GeneratedSourceMapping(
+                generated: generatedSource,
+                committed: committedSource)
+        ]
         var verificationBuilder = TaskBuilder(
             id: AndroidRuntimeTaskIDs.apexManifestVerify,
             component: descriptor.id)
-        let marker: ArtifactReference = try verificationBuilder.output(
-            "verification",
-            path: verification,
-            validation: .json)
+        verificationBuilder.consume(generationMarker)
         let verificationTask = verificationBuilder.build(
-            inputs: sharedInputs + [.file(generatedSource)],
-            locks: locks,
+            inputs: [.file(committedSource)],
+            locks: [TaskLock.checkout("android-runtime-apex-manifest-protobuf")],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
-                ApexManifestProtobufAction(
-                    mode: .verify,
-                    packageRoot: packageRoot,
-                    scratchPath: swiftPM.scratchPath,
-                    swiftExecutable: swiftPM.swiftExecutable,
-                    generatedSource: generatedSource,
-                    result: marker.path,
-                    environment: environment)))
+                VerifyAndroidRuntimeGeneratedSourceAction(mappings: mappings)))
 
         return ApexManifestProtobufTasks(
             generation: generationTask,
             verification: verificationTask,
             generatedSource: generatedSource,
-            verificationRoot: verificationRoot)
+            verificationRoot: verificationRoot,
+            mappings: mappings)
     }
 }

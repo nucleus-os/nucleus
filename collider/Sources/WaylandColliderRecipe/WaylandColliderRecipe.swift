@@ -423,6 +423,9 @@ public enum WaylandColliderRecipe: ColliderComponent {
                         ],
                         manifests: manifests))
         )
+        let mappings = zip(generatedOutputDirectories, generatedDirectories).map {
+            GeneratedSourceMapping(generated: $0, committed: $1)
+        }
         var verifier = TaskBuilder(
             id: TaskID(rawValue: "wayland.verify-generated-sources"),
             component: descriptor.id)
@@ -434,16 +437,12 @@ public enum WaylandColliderRecipe: ColliderComponent {
             locks: [.checkout("wayland")],
             action:
                 try AnyColliderAction(
-                    VerifyWaylandGeneratedSourcesAction(
-                        generated: generatedOutputDirectories,
-                        committed: generatedDirectories)))
+                    VerifyWaylandGeneratedSourcesAction(mappings: mappings)))
         return Generation(
             tasks: [generatorTask, generationTask, verificationTask],
             task: generationTask,
             verification: verificationTask,
-            mappings: zip(generatedOutputDirectories, generatedDirectories).map {
-                GeneratedSourceMapping(generated: $0, committed: $1)
-            })
+            mappings: mappings)
     }
 }
 

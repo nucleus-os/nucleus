@@ -226,21 +226,20 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 AndroidRuntimeTaskIDs.aospImage.rawValue,
             ].map { StorageProducer.task(TaskID(rawValue: $0)) })
         var storage = [
+            // What generation produces. The committed copy beside the sources
+            // is authored state no task declares itself the producer of.
             StorageDeclaration(
                 id: "android-apex-manifest-generated-source",
                 owner: descriptor.id,
                 producers: [.task(protobuf.generation.id)],
-                storageClass: .source,
-                root: protobuf.generatedSource,
-                safetyRoot: root,
-                retentionPolicy: .protected),
+                storageClass: .published,
+                root: protobuf.generatedSource.removingLastComponent(),
+                safetyRoot: context.buildRoot,
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-apex-manifest-generation-state",
                 owner: descriptor.id,
-                producers: [
-                    .task(protobuf.generation.id),
-                    .task(protobuf.verification.id),
-                ],
+                producers: [.task(protobuf.generation.id)],
                 storageClass: .cache,
                 root: protobuf.verificationRoot,
                 safetyRoot: context.buildRoot,
@@ -323,7 +322,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: entrypoints,
-            storage: storage)
+            storage: storage,
+            generatedSources: protobuf.mappings)
         return PreparedComponent(
             component: component,
             artifacts: Artifacts(
