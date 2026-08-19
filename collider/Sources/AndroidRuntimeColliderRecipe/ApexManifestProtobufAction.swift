@@ -57,16 +57,20 @@ package struct ApexManifestProtobufAction: ColliderAction {
     }
 
     package func execute(in context: ActionContext) async throws {
-        var arguments = [
+        let output = generatedSource.removingLastComponent()
+        // The plugin sandbox permits writes only where the invocation says.
+        // Naming the one output directory replaces the blanket permission to
+        // write the package directory, which is what let generation reach the
+        // checkout at all.
+        let arguments = [
             "package",
             "--package-path", packageRoot.string,
             "--scratch-path", scratchPath.string,
             "--only-use-versions-from-resolved-file",
             "plugin",
-        ]
-        arguments += [
+            "--allow-writing-to-directory", output.string,
             "generate-apex-manifest",
-            "--output", generatedSource.removingLastComponent().string,
+            "--output", output.string,
         ]
         let execution = try await context.commands.execute(
             CommandSpec(
