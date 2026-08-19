@@ -40,6 +40,23 @@ public struct IdentityEncoder: Sendable {
         append(.path, payload: Array(identityPathMap.canonicalize(path.string).utf8))
     }
 
+    /// Distinguishes what an action does from what it is given.
+    ///
+    /// Identity records the inputs that decide reuse, so an action whose
+    /// behavior changes while its inputs do not stays clean and its outputs
+    /// stay as the previous behavior left them. Raising this revision is how
+    /// such a change reaches every machine, rather than only the one where
+    /// someone deletes a directory by hand. It is spelled distinctly because a
+    /// bare appended number reads as payload, and a reviewer cannot tell the
+    /// difference at the point where it matters.
+    ///
+    /// Hashing the action's own code instead would invalidate every task on any
+    /// Collider edit, which is the cost semantic identity exists to avoid.
+    public mutating func appendBehaviorRevision(_ revision: UInt64) {
+        append("behavior-revision")
+        append(revision)
+    }
+
     public mutating func appendEnum<Value>(_ value: Value)
     where Value: RawRepresentable, Value.RawValue == String {
         append(.enumeration, payload: Array(value.rawValue.utf8))

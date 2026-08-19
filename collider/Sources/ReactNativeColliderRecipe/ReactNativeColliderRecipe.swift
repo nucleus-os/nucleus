@@ -1052,7 +1052,7 @@ private struct PublishReactNativeSDKAction: ColliderAction {
             // everywhere rather than only where someone thinks to delete it.
             // 2: the declared links became the complete set, and publishing
             // removes the ones it no longer names.
-            encoder.append(2)
+            encoder.appendBehaviorRevision(2)
         }
     }
 
@@ -1130,8 +1130,8 @@ private struct ProvisionBoostAction: ColliderAction {
             encoder.append(path: candidate)
             encoder.append(path: generation)
             encoder.append(path: active)
-            encoder.append("boost_1_84_0/boost")
-            encoder.append(2)
+            encoder.append(boostArchiveMember)
+            encoder.append(UInt64(boostStrippedComponents))
         }
     }
 
@@ -1175,9 +1175,9 @@ private struct ProvisionBoostAction: ColliderAction {
                 executable: .named("tar"),
                 arguments: [
                     "xzf", archive.string,
-                    "--strip-components=2",
+                    "--strip-components=\(boostStrippedComponents)",
                     "-C", candidate.string,
-                    "boost_1_84_0/boost",
+                    boostArchiveMember,
                 ],
                 workingDirectory: workingDirectory,
                 environment: environment))
@@ -1195,6 +1195,11 @@ private struct ProvisionBoostAction: ColliderAction {
 }
 
 private let boostVersion = "1.84.0"
+// What is extracted and how deeply it is unwrapped, named once so the identity
+// and the command cannot describe different extractions. The identity's bare
+// `2` read as a revision marker until the command was consulted.
+private let boostArchiveMember = "boost_1_84_0/boost"
+private let boostStrippedComponents = 2
 private let boostArchiveName = "boost_1_84_0.tar.gz"
 private let boostArchiveSHA256 =
     "a5800f405508f5df8114558ca9855d2640a2de8f0445f051fa1c7c3383045724"
@@ -1523,7 +1528,7 @@ private struct GenerateReactNativeCodeAction: ColliderAction {
             // so the stale output invalidates everywhere rather than only where
             // someone thinks to delete it. 2: discovery scans the materialized
             // workspace instead of the checkout.
-            encoder.append(2)
+            encoder.appendBehaviorRevision(2)
         }
     }
 

@@ -14,7 +14,7 @@ package struct ApexManifestProtobufAction: ColliderAction {
             encoder.append(path: scratchPath)
             encoder.append(path: generatedSource)
             encoder.append(path: result)
-            encoder.append(2)
+            encoder.appendBehaviorRevision(2)
         }
     }
 

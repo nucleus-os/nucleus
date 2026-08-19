@@ -138,7 +138,7 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
             encoder.append(path: generator)
             encoder.append(path: registry)
             encoder.append(path: output)
-            encoder.append(1)
+            encoder.appendBehaviorRevision(1)
         }
     }
 
