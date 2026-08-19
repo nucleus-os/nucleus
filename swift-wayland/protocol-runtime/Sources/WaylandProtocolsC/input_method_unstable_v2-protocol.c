@@ -52,6 +52,7 @@ static const struct wl_interface *input_method_unstable_v2_types[] = {
 	&wl_seat_interface,
 	&zwp_input_method_v2_interface,
 };
+
 static const struct wl_message zwp_input_method_v2_requests[] = {
 	{ "commit_string", "s", input_method_unstable_v2_types + 0 },
 	{ "set_preedit_string", "sii", input_method_unstable_v2_types + 0 },
@@ -119,3 +120,4 @@ WL_EXPORT const struct wl_interface zwp_input_method_manager_v2_interface = {
 	2, zwp_input_method_manager_v2_requests,
 	0, NULL,
 };
+

@@ -8,6 +8,7 @@ package enum WorkspaceCommandSet {
         Test.self,
         Check.self,
         Generate.self,
+        Adopt.self,
         PackageArtifacts.self,
         Provision.self,
     ]

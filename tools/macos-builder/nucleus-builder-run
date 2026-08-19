@@ -9,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 77
 fi
 if [[ $# -lt 3 || $# -gt 4 ]]; then
-  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package> <debug|release> [component]" >&2
+  echo "usage: nucleus-builder-run <canonical-checkout> <build|test|package|generate> <debug|release> [component]" >&2
   exit 64
 fi
 if [[ ! -f "$checkout_record" ]]; then
@@ -55,6 +55,15 @@ fi
 case "$configuration:$operation" in
   debug:build) command=(build ${component:+"$component"}) ;;
   debug:test) command=(test ${component:+"$component"}) ;;
+  # Generation writes the build store, so it runs as the builder, and it names
+  # exactly one generator rather than defaulting to every one of them.
+  debug:generate)
+    if [[ -z "$component" ]]; then
+      echo "error: generate requires a generator target" >&2
+      exit 64
+    fi
+    command=(generate "$component")
+    ;;
   release:build) command=(build linux-runtime) ;;
   release:test) command=(test release-gate) ;;
   release:package) command=(package linux-runtime) ;;

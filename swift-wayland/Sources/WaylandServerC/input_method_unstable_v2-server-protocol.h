@@ -577,7 +577,7 @@ struct zwp_input_method_keyboard_grab_v2_interface {
 	/**
 	 * release the grab object
 	 *
-	 *
+	 * 
 	 */
 	void (*release)(struct wl_client *client,
 			struct wl_resource *resource);

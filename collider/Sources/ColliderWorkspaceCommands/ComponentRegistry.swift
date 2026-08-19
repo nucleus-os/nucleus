@@ -271,6 +271,9 @@ package struct ComponentRegistry {
             "vulkan": ComponentEntrypointReference(
                 component: VulkanColliderRecipe.descriptor.id,
                 entrypoint: ComponentEntrypointID.verifyGeneratedSources),
+            "wayland": ComponentEntrypointReference(
+                component: WaylandColliderRecipe.descriptor.id,
+                entrypoint: ComponentEntrypointID.verifyGeneratedSources),
         ]
         var shellBootstrapDestinations = [
             ComponentEntrypointReference(
@@ -616,6 +619,69 @@ package struct ComponentRegistry {
                     selection: selection)
             ],
             controls: controls)
+    }
+
+    /// Copies what generation produced into the checkout.
+    ///
+    /// This is the adoption half of the generated-source contract and the only
+    /// supported way generated sources enter the checkout. A build cannot do
+    /// it: the identity that executes builds is denied write access to the
+    /// checkout precisely so that a build cannot rewrite what it reads. So a
+    /// build proves the two copies agree, and this makes them agree.
+    ///
+    /// Writing the checkout is an edit, not an execution, so this takes neither
+    /// the execution lease nor a run record. It is the same act as opening the
+    /// file and saving it, performed by the account that owns the checkout.
+    func adoptGeneratedSources(
+        _ selection: String
+    ) throws -> GeneratedSourceAdoption {
+        let catalog = try componentCatalog()
+        let components = catalog.components.filter {
+            $0.descriptor.canonicalName == selection
+                || $0.descriptor.aliases.contains(selection)
+        }
+        guard !components.isEmpty else {
+            throw WorkspaceFailure.message("unknown component: \(selection)")
+        }
+        let mappings = components.flatMap(\.generatedSources)
+        guard !mappings.isEmpty else {
+            throw WorkspaceFailure.message(
+                "component '\(selection)' commits no generated sources")
+        }
+        let files = context.runtime.actionFileSystem()
+        var adopted: [FilePath] = []
+        var current: [FilePath] = []
+        for mapping in mappings {
+            guard try files.metadata(for: mapping.generated) != nil else {
+                throw WorkspaceFailure.message(
+                    "generated sources are not in the build store: "
+                        + "\(mapping.generated)\n"
+                        + "  run 'collider generate \(selection)' first")
+            }
+            if try files.metadata(for: mapping.committed) != nil,
+                try files.contentsEqual(at: mapping.generated, and: mapping.committed)
+            {
+                current.append(mapping.committed)
+                continue
+            }
+            // Through a sibling so an interrupted adoption leaves either the
+            // old tree or the new one, never a half-replaced mixture of both.
+            guard let name = mapping.committed.lastComponent?.string else {
+                throw WorkspaceFailure.message(
+                    "generated source destination has no name: \(mapping.committed)")
+            }
+            let staging = mapping.committed.removingLastComponent()
+                .appending("\(name).collider-adopting")
+            try files.remove(staging)
+            try files.copyTree(from: mapping.generated, to: staging)
+            try files.remove(mapping.committed)
+            try files.move(from: staging, to: mapping.committed)
+            adopted.append(mapping.committed)
+        }
+        return GeneratedSourceAdoption(
+            component: selection,
+            adopted: adopted.map(\.string),
+            current: current.map(\.string))
     }
 
     func packageLinuxRuntime(

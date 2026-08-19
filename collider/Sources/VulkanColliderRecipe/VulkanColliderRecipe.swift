@@ -36,13 +36,15 @@ public enum VulkanColliderRecipe: ColliderComponent {
                     root: context.cacheRoot.appending("generated/vulkan"),
                     safetyRoot: context.cacheRoot,
                     retentionPolicy: .singleWorkingSet)
-            ])
+            ],
+            generatedSources: generation.mappings)
     }
 
     package struct Generation: Sendable {
         package let tasks: [TaskDeclaration]
         package let task: TaskDeclaration
         package let verification: TaskDeclaration
+        package let mappings: [GeneratedSourceMapping]
     }
 
     package static func generate(
@@ -120,7 +122,10 @@ public enum VulkanColliderRecipe: ColliderComponent {
         return Generation(
             tasks: [tool, task, verification],
             task: task,
-            verification: verification)
+            verification: verification,
+            mappings: [
+                GeneratedSourceMapping(generated: output, committed: committed)
+            ])
     }
 }
 

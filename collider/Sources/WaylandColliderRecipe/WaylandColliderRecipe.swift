@@ -24,6 +24,8 @@ public enum WaylandColliderRecipe: ColliderComponent {
     package struct Generation: Sendable {
         package let tasks: [TaskDeclaration]
         package let task: TaskDeclaration
+        package let verification: TaskDeclaration
+        package let mappings: [GeneratedSourceMapping]
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -67,29 +69,24 @@ public enum WaylandColliderRecipe: ColliderComponent {
         let bootstrapRoots: Set<TaskID> = [armSDK.task.id, x86SDK.task.id]
         let generation = try generate(
             root: root,
-            stagingRoot: context.cacheRoot.appending("generation/wayland"),
+            generationRoot: context.cacheRoot.appending("generation/wayland"),
             environment: context.environment,
             swiftPM: context.swiftPM(.linux(.arm64)),
             builder: native.builder,
             scanner: scanner)
         tasks.append(contentsOf: generation.tasks)
         var storage = [
+            // What generation produces. It was staging for a publication into
+            // the checkout; now it is the output itself, and the committed copy
+            // is authored state no task declares itself the producer of.
             StorageDeclaration(
                 id: "wayland-generated-sources",
                 owner: descriptor.id,
                 producers: [.task(generation.task.id)],
-                storageClass: .source,
-                root: root,
-                safetyRoot: root.removingLastComponent(),
-                retentionPolicy: .protected),
-            StorageDeclaration(
-                id: "wayland-generation-staging",
-                owner: descriptor.id,
-                producers: [.task(generation.task.id)],
-                storageClass: .cache,
+                storageClass: .published,
                 root: context.cacheRoot.appending("generation/wayland"),
                 safetyRoot: context.cacheRoot.appending("generation"),
-                retentionPolicy: .singleWorkingSet),
+                retentionPolicy: .singleWorkingSet)
         ]
         storage += PlatformArchitecture.allCases.flatMap { architecture in
             let target = NativeLinuxTarget(architecture: architecture)
@@ -114,8 +111,12 @@ public enum WaylandColliderRecipe: ColliderComponent {
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
                 ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
+                ComponentEntrypoint(
+                    id: .verifyGeneratedSources,
+                    roots: [generation.verification.id]),
             ],
-            storage: storage)
+            storage: storage,
+            generatedSources: generation.mappings)
         return ComponentArtifacts(
             component: component,
             nativeSDKs: [
@@ -252,7 +253,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
 
     package static func generate(
         root: FilePath,
-        stagingRoot: FilePath,
+        generationRoot: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
         builder: NativeOCIConfiguration,
@@ -276,25 +277,25 @@ public enum WaylandColliderRecipe: ColliderComponent {
         let generatedDirectories = [
             server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
         ]
-        let stagedServer = waylandGenerationCandidate(
-            "server-c", under: stagingRoot)
-        let stagedClient = waylandGenerationCandidate(
-            "client-c", under: stagingRoot)
-        let stagedProtocols = waylandGenerationCandidate(
-            "protocols-c", under: stagingRoot)
-        let stagedProtocolTypes = waylandGenerationCandidate(
-            "protocol-types", under: stagingRoot)
-        let stagedServerDispatch = waylandGenerationCandidate(
-            "server-dispatch", under: stagingRoot)
-        let stagedClientDispatch = waylandGenerationCandidate(
-            "client-dispatch", under: stagingRoot)
-        let stagedDirectories = [
-            stagedServer,
-            stagedClient,
-            stagedProtocols,
-            stagedProtocolTypes,
-            stagedServerDispatch,
-            stagedClientDispatch,
+        let generatedServer = waylandGeneratedDirectory(
+            "server-c", under: generationRoot)
+        let generatedClient = waylandGeneratedDirectory(
+            "client-c", under: generationRoot)
+        let generatedProtocols = waylandGeneratedDirectory(
+            "protocols-c", under: generationRoot)
+        let generatedProtocolTypes = waylandGeneratedDirectory(
+            "protocol-types", under: generationRoot)
+        let generatedServerDispatch = waylandGeneratedDirectory(
+            "server-dispatch", under: generationRoot)
+        let generatedClientDispatch = waylandGeneratedDirectory(
+            "client-dispatch", under: generationRoot)
+        let generatedOutputDirectories = [
+            generatedServer,
+            generatedClient,
+            generatedProtocols,
+            generatedProtocolTypes,
+            generatedServerDispatch,
+            generatedClientDispatch,
         ]
         let waylandXML = root.appending("third-party/wayland/protocol/wayland.xml")
         guard case .oci(let swiftOCI) = swiftPM.context.execution else {
@@ -327,16 +328,16 @@ public enum WaylandColliderRecipe: ColliderComponent {
         for record in records {
             scannerArguments += [
                 "server-header", record.path.string,
-                stagedServer.appending("\(record.name)-server-protocol.h").string,
+                generatedServer.appending("\(record.name)-server-protocol.h").string,
                 "client-header", record.path.string,
-                stagedClient.appending("\(record.name)-client-protocol.h").string,
+                generatedClient.appending("\(record.name)-client-protocol.h").string,
                 "public-code", record.path.string,
-                stagedProtocols.appending("\(record.name)-protocol.c").string,
+                generatedProtocols.appending("\(record.name)-protocol.c").string,
             ]
         }
         let manifests = [
-            stagedServer.appending("generated-protocols.tsv"),
-            stagedClient.appending("generated-protocols.tsv"),
+            generatedServer.appending("generated-protocols.tsv"),
+            generatedClient.appending("generated-protocols.tsv"),
         ]
         var task = TaskBuilder(
             id: TaskID(rawValue: "wayland.generate"),
@@ -345,11 +346,13 @@ public enum WaylandColliderRecipe: ColliderComponent {
         task.consume(scanner)
         task.consume(swiftOCI.image)
         task.consume(builder.swiftSDK)
-        for (index, directory) in generatedDirectories.enumerated() {
-            let _: ArtifactReference = try task.output(
+        var generatedOutputs: [ArtifactReference] = []
+        for (index, directory) in generatedOutputDirectories.enumerated() {
+            let output: ArtifactReference = try task.output(
                 OutputSlotID(rawValue: "generated-\(index)"),
                 path: directory,
                 validation: .nonEmptyDirectory)
+            generatedOutputs.append(output)
         }
         let generationTask = task.build(
             inputs: [
@@ -365,12 +368,12 @@ public enum WaylandColliderRecipe: ColliderComponent {
                         protocolsRoot: protocolsRoot,
                         waylandXML: waylandXML,
                         generatedDirectories: generatedDirectories,
-                        stagedDirectories: stagedDirectories,
-                        stagedProtocols: stagedProtocols,
+                        generatedOutputDirectories: generatedOutputDirectories,
+                        generatedProtocols: generatedProtocols,
                         executions: [
                             sourceGenerationExecution(
                                 root: root,
-                                generatedDirectories: stagedDirectories,
+                                generatedDirectories: generatedOutputDirectories,
                                 generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
@@ -379,15 +382,15 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 command: [generator.path.string]
                                     + serverArguments(
                                         protocolsRoot: protocolsRoot,
-                                        protocolTypes: stagedProtocolTypes,
-                                        serverDispatch: stagedServerDispatch,
-                                        server: stagedServer,
+                                        protocolTypes: generatedProtocolTypes,
+                                        serverDispatch: generatedServerDispatch,
+                                        server: generatedServer,
                                         waylandXML: waylandXML,
                                         xmlPaths: records.map(\.path)),
                                 environment: environment),
                             sourceGenerationExecution(
                                 root: root,
-                                generatedDirectories: stagedDirectories,
+                                generatedDirectories: generatedOutputDirectories,
                                 generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
@@ -403,7 +406,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 environment: environment),
                             sourceGenerationExecution(
                                 root: root,
-                                generatedDirectories: stagedDirectories,
+                                generatedDirectories: generatedOutputDirectories,
                                 generatorScratch: swiftPM.productsDirectory,
                                 scannerSDK: scanner.path.removingLastComponent()
                                     .removingLastComponent(),
@@ -412,17 +415,35 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 command: [generator.path.string]
                                     + clientArguments(
                                         protocolsRoot: protocolsRoot,
-                                        clientDispatch: stagedClientDispatch,
-                                        client: stagedClient,
+                                        clientDispatch: generatedClientDispatch,
+                                        client: generatedClient,
                                         waylandXML: waylandXML,
                                         xmlPaths: records.map(\.path)),
                                 environment: environment),
                         ],
                         manifests: manifests))
         )
+        var verifier = TaskBuilder(
+            id: TaskID(rawValue: "wayland.verify-generated-sources"),
+            component: descriptor.id)
+        for output in generatedOutputs {
+            verifier.consume(output)
+        }
+        let verificationTask = verifier.build(
+            inputs: generatedDirectories.map { .sourceCheckout($0) },
+            locks: [.checkout("wayland")],
+            action:
+                try AnyColliderAction(
+                    VerifyWaylandGeneratedSourcesAction(
+                        generated: generatedOutputDirectories,
+                        committed: generatedDirectories)))
         return Generation(
-            tasks: [generatorTask, generationTask],
-            task: generationTask)
+            tasks: [generatorTask, generationTask, verificationTask],
+            task: generationTask,
+            verification: verificationTask,
+            mappings: zip(generatedOutputDirectories, generatedDirectories).map {
+                GeneratedSourceMapping(generated: $0, committed: $1)
+            })
     }
 }
 
@@ -433,8 +454,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         let protocolsRoot: FilePath
         let waylandXML: FilePath
         let generatedDirectories: [FilePath]
-        let stagedDirectories: [FilePath]
-        let stagedProtocols: FilePath
+        let generatedOutputDirectories: [FilePath]
+        let generatedProtocols: FilePath
         let pipeline: OCIExecutionPipelineIdentity
         let manifests: [FilePath]
 
@@ -444,10 +465,10 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
             encoder.append(path: protocolsRoot)
             encoder.append(path: waylandXML)
             encoder.appendSequence(generatedDirectories) { $0.append(path: $1) }
-            encoder.appendSequence(stagedDirectories) { $0.append(path: $1) }
+            encoder.appendSequence(generatedOutputDirectories) { $0.append(path: $1) }
             encoder.append(nested: pipeline)
             encoder.appendSequence(manifests) { $0.append(path: $1) }
-            encoder.append(path: stagedProtocols)
+            encoder.append(path: generatedProtocols)
         }
     }
 
@@ -458,8 +479,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
     let protocolsRoot: FilePath
     let waylandXML: FilePath
     let generatedDirectories: [FilePath]
-    let stagedDirectories: [FilePath]
-    let stagedProtocols: FilePath
+    let generatedOutputDirectories: [FilePath]
+    let generatedProtocols: FilePath
     let pipeline: OCIExecutionPipeline
     let manifests: [FilePath]
 
@@ -469,8 +490,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         protocolsRoot: FilePath,
         waylandXML: FilePath,
         generatedDirectories: [FilePath],
-        stagedDirectories: [FilePath],
-        stagedProtocols: FilePath,
+        generatedOutputDirectories: [FilePath],
+        generatedProtocols: FilePath,
         executions: [OCIExecution],
         manifests: [FilePath]
     ) throws {
@@ -479,8 +500,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         self.protocolsRoot = protocolsRoot
         self.waylandXML = waylandXML
         self.generatedDirectories = generatedDirectories
-        self.stagedDirectories = stagedDirectories
-        self.stagedProtocols = stagedProtocols
+        self.generatedOutputDirectories = generatedOutputDirectories
+        self.generatedProtocols = generatedProtocols
         pipeline = try OCIExecutionPipeline(executions)
         self.manifests = manifests
     }
@@ -492,8 +513,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
             protocolsRoot: protocolsRoot,
             waylandXML: waylandXML,
             generatedDirectories: generatedDirectories,
-            stagedDirectories: stagedDirectories,
-            stagedProtocols: stagedProtocols,
+            generatedOutputDirectories: generatedOutputDirectories,
+            generatedProtocols: generatedProtocols,
             pipeline: pipeline.identity,
             manifests: manifests)
     }
@@ -504,11 +525,10 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
                 ActionEffect(.read, scope: .checkout(protocolsRoot)),
                 ActionEffect(.read, scope: .input(waylandXML)),
             ]
-            + generatedDirectories.map {
+            // Generation writes storage only. The committed copy is read by
+            // verification and written by a human.
+            + generatedOutputDirectories.map {
                 ActionEffect(.readWrite, scope: .output($0))
-            }
-            + generatedDirectories.map {
-                ActionEffect(.readWrite, scope: .scratch(waylandGenerationBackup($0)))
             }
         for effect in pipeline.requirements.effects where !effects.contains(effect) {
             effects.append(effect)
@@ -534,17 +554,12 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
     var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        for directory in stagedDirectories {
+        for directory in generatedOutputDirectories {
             try context.files.remove(directory)
             try context.files.createDirectory(directory)
         }
-        defer {
-            for directory in stagedDirectories {
-                try? context.files.remove(directory)
-            }
-        }
-        try context.files.createDirectory(stagedProtocols.appending("include"))
-        try context.files.write([], to: stagedProtocols.appending("include/.gitkeep"))
+        try context.files.createDirectory(generatedProtocols.appending("include"))
+        try context.files.write([], to: generatedProtocols.appending("include/.gitkeep"))
 
         for execution in pipeline.executions.dropLast() {
             try context.cancellation.check()
@@ -560,73 +575,37 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         for manifest in manifests {
             try context.files.remove(manifest)
         }
-        try validateStagedDirectories(context.files)
-        try publishStagedDirectories(context.files)
+        // Generation stops here. What it produced is the output; the copy
+        // beside the sources is authored state a human adopts, and a build that
+        // wrote it would be rewriting the checkout it reads.
+        try validateGeneratedDirectories(context.files)
     }
 
-    private func validateStagedDirectories(_ files: ActionFileSystem) throws {
-        guard stagedDirectories.count == generatedDirectories.count else {
+    private func validateGeneratedDirectories(_ files: ActionFileSystem) throws {
+        guard generatedOutputDirectories.count == generatedDirectories.count else {
             throw WaylandGenerationFailure.mismatchedDirectorySets
         }
-        for directory in stagedDirectories {
+        for directory in generatedOutputDirectories {
             guard try files.metadata(for: directory)?.type == .directory,
                 try !files.listRecursively(directory).isEmpty
             else {
-                throw WaylandGenerationFailure.emptyCandidate(directory)
+                throw WaylandGenerationFailure.emptyOutput(directory)
             }
         }
     }
 
-    private func publishStagedDirectories(_ files: ActionFileSystem) throws {
-        var publications: [(destination: FilePath, backup: FilePath, replaced: Bool)] = []
-        do {
-            for (candidate, destination) in zip(stagedDirectories, generatedDirectories) {
-                let backup = waylandGenerationBackup(destination)
-                try files.remove(backup)
-                let replaced = try files.metadataWithoutFollowingSymlinks(for: destination) != nil
-                if replaced {
-                    try files.move(from: destination, to: backup)
-                }
-                do {
-                    try files.move(from: candidate, to: destination)
-                } catch {
-                    if replaced { try? files.move(from: backup, to: destination) }
-                    throw error
-                }
-                publications.append((destination, backup, replaced))
-            }
-        } catch {
-            for publication in publications.reversed() {
-                try? files.remove(publication.destination)
-                if publication.replaced {
-                    try? files.move(
-                        from: publication.backup,
-                        to: publication.destination)
-                }
-            }
-            throw error
-        }
-        for publication in publications where publication.replaced {
-            try files.remove(publication.backup)
-        }
-    }
 }
 
 private enum WaylandGenerationFailure: Error {
     case mismatchedDirectorySets
-    case emptyCandidate(FilePath)
+    case emptyOutput(FilePath)
 }
 
-private func waylandGenerationCandidate(
+private func waylandGeneratedDirectory(
     _ name: String,
-    under stagingRoot: FilePath
+    under generationRoot: FilePath
 ) -> FilePath {
-    stagingRoot.appending(".\(name).collider-candidate")
-}
-
-private func waylandGenerationBackup(_ destination: FilePath) -> FilePath {
-    destination.removingLastComponent().appending(
-        ".\(destination.lastComponent?.string ?? "generated").collider-previous")
+    generationRoot.appending(name)
 }
 
 private func sourceGenerationExecution(

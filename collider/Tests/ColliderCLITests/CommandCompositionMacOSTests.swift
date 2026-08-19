@@ -9,7 +9,7 @@ import Testing
 func macOSCommandCompositionContainsOnlyWorkspaceOperations() {
     let expectedRoot: [ParsableCommand.Type] = [
         Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self,
-        PackageArtifacts.self, Provision.self, Skill.self, Benchmark.self,
+        Adopt.self, PackageArtifacts.self, Provision.self, Skill.self, Benchmark.self,
         Clean.self, Cache.self, Tasks.self, Graph.self, Runs.self, Logs.self,
         Status.self,
     ]

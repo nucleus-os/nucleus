@@ -20,7 +20,8 @@ Subcommands:
 - `build`
 - `test`
 - `check`
-- `generate`
+- `generate`: Regenerate a component's generated sources into the build store.
+- `adopt`: Adopt generated sources from the build store into the checkout.
 - `package`: Assemble native Nucleus distribution packages.
 - `provision`: Provision and retire the trusted host builder identity.
 - `skill`: Maintain repository-scoped agent skills.
@@ -129,6 +130,8 @@ Arguments and options:
 
 ## `collider generate`
 
+Regenerate a component's generated sources into the build store.
+
 Usage: `collider generate [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
 
 Arguments and options:
@@ -142,6 +145,22 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `<target>` — Generator target: android-runtime, vulkan, or wayland.
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider adopt`
+
+Adopt generated sources from the build store into the checkout.
+
+Usage: `collider adopt [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] <target> [--version] [--help]`
+
+Arguments and options:
+
+- `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
+- `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<target>` — Generator target: android-runtime, vulkan, or wayland.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.

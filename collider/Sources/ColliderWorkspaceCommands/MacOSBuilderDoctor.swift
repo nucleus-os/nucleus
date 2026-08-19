@@ -220,6 +220,7 @@ struct MacOSBuilderDoctor {
             swiftBootstrap(contract, scope: scope),
             resources(contract, scope: scope),
             executionLease(scope: scope),
+            builderLauncher(scope: scope),
             buildStore(contract, scope: scope),
             persistentService(contract, storageLayout: storageLayout, scope: scope),
             containerSystem(contract, storageLayout: storageLayout, scope: scope),
@@ -424,6 +425,39 @@ struct MacOSBuilderDoctor {
             } catch {
                 return nil
             }
+        }
+    }
+
+    /// Whether the installed launcher still matches the checkout it came from.
+    ///
+    /// The launcher is root-owned provisioned state compiled from a tracked
+    /// file, and only a privileged step can update it. Nothing else would
+    /// notice the two diverging: the stale copy keeps working and simply
+    /// refuses operations the current checkout believes it accepts, which reads
+    /// as a Collider bug rather than as un-reinstalled provisioning.
+    private func builderLauncher(scope: String) -> HostPrerequisite {
+        let source = context.root.appending(
+            "tools/macos-builder/nucleus-builder-run")
+        return HostPrerequisite(
+            id: "macos-builder:launcher",
+            scope: scope,
+            description: "installed builder launcher matches the checkout",
+            remediation:
+                "run 'sudo tools/macos-builder/finalize-nucleus-builder.sh' to "
+                + "reinstall \(MacOSMachineStorageLayout.builderLauncher) from "
+                + "\(source)"
+        ) {
+            let installed = MacOSMachineStorageLayout.builderLauncher
+            let fileManager = FileManager.default
+            guard fileManager.isExecutableFile(atPath: installed.string),
+                let attributes = try? fileManager.attributesOfItem(
+                    atPath: installed.string),
+                attributes[.ownerAccountID] as? NSNumber == 0,
+                fileManager.contentsEqual(
+                    atPath: installed.string,
+                    andPath: source.string)
+            else { return nil }
+            return "\(installed), identical to \(source)"
         }
     }
 

@@ -22,6 +22,14 @@ import WaylandColliderRecipe
 @testable import ColliderWorkspaceCommands
 
 private let fixtureSwiftPackageRoot = FilePath("/workspace")
+// The materialized JavaScript workspace and codegen output live in the cache
+// rather than the checkout, so fixtures resolve them exactly as the recipe does.
+private let fixtureJavaScriptWorkspace =
+    ReactNativeColliderRecipe
+    .javaScriptWorkspace(cacheRoot: FilePath("/cache"))
+private let fixtureCodegenRoot =
+    ReactNativeColliderRecipe
+    .codegenRoot(cacheRoot: FilePath("/cache"))
 private let fixtureRepositoryRoot = FilePath(
     URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -1568,6 +1576,7 @@ private func artifactInput(
 
     let vulkan = try VulkanColliderRecipe.generate(
         root: root.appending("swift-vulkan"),
+        generatedRoot: root.appending("cache/generated/vulkan"),
         environment: environment,
         swiftPM: swiftPM)
     guard let vulkanAction = vulkan.task.action else {
@@ -1582,9 +1591,8 @@ private func artifactInput(
     #expect(
         vulkanAction.kind == ActionKind(rawValue: "vulkan.generate-bindings"))
     let vulkanTools = vulkanAction.requirements.tools
-    #expect(vulkanTools.count == 1)
-    let vulkanTool = try #require(vulkanTools.first)
-    #expect(vulkanTool.name == "vulkan-generator")
+    #expect(vulkanTools.map(\.name).sorted() == ["swift-format", "vulkan-generator"])
+    let vulkanTool = try #require(vulkanTools.first { $0.name == "vulkan-generator" })
     #expect(vulkanTool.role == .semantic)
     guard case .artifact = vulkanTool.executable else {
         Issue.record("Vulkan generator must be a typed artifact executable")
@@ -1615,7 +1623,7 @@ private func artifactInput(
     let scanner = try #require(nativeSDK.scanner)
     let generation = try WaylandColliderRecipe.generate(
         root: root,
-        stagingRoot: FilePath("/cache/generation/wayland"),
+        generationRoot: FilePath("/cache/generation/wayland"),
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
@@ -1675,9 +1683,9 @@ private func artifactInput(
         })
 }
 
-@Test func waylandGenerationPublishesTransactionally() async throws {
+@Test func waylandGenerationWritesStorageAndNotTheCheckout() async throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-wayland-publication-\(UUID().uuidString)", isDirectory: true)
+        "collider-wayland-generation-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: workspace) }
     let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
     let protocolDirectory = root.appending("Protocols/protocols")
@@ -1687,6 +1695,8 @@ private func artifactInput(
     try Data("<protocol name=\"fixture\"/>".utf8).write(
         to: URL(fileURLWithPath: protocolDirectory.appending("fixture.xml").string))
 
+    let generationRoot = FilePath(
+        workspace.appendingPathComponent("generation", isDirectory: true).path)
     let generatedDirectories = [
         root.appending("Sources/WaylandServerC"),
         root.appending("Sources/WaylandClientC"),
@@ -1699,8 +1709,8 @@ private func artifactInput(
         try FileManager.default.createDirectory(
             atPath: directory.string,
             withIntermediateDirectories: true)
-        try Data("published".utf8).write(
-            to: URL(fileURLWithPath: directory.appending("published.marker").string))
+        try Data("committed".utf8).write(
+            to: URL(fileURLWithPath: directory.appending("committed.source").string))
     }
 
     let builder = try fixtureNativeBuilder(
@@ -1717,8 +1727,7 @@ private func artifactInput(
         builder: builder)
     let generation = try WaylandColliderRecipe.generate(
         root: root,
-        stagingRoot: root.removingLastComponent().appending(
-            "wayland-generation-candidates"),
+        generationRoot: generationRoot,
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
@@ -1749,13 +1758,15 @@ private func artifactInput(
         downloads: ActionDownloader { _, _ in },
         containers: ActionContainerExecutor(run: { _ in CommandResult(status: 1) }))
 
+    // A failed generation leaves the committed sources exactly as it found
+    // them, because it never had any business writing them.
     await #expect(throws: (any Error).self) {
         try await action.execute(in: context)
     }
     for directory in generatedDirectories {
         #expect(
             FileManager.default.fileExists(
-                atPath: directory.appending("published.marker").string))
+                atPath: directory.appending("committed.source").string))
     }
 
     let successfulContext = ActionContext(
@@ -1767,7 +1778,7 @@ private func artifactInput(
         containers: ActionContainerExecutor(run: { execution in
             for mount in execution.mounts
             where mount.purpose == .boundedExport
-                && mount.source.string.hasSuffix(".collider-candidate")
+                && mount.source.starts(with: generationRoot)
             {
                 try Data("generated".utf8).write(
                     to: URL(
@@ -1775,14 +1786,22 @@ private func artifactInput(
             }
             return CommandResult(status: 0)
         }))
+    // Nor does a successful one: what it produced is storage, and adoption is
+    // the separate act that moves it into the checkout.
     try await action.execute(in: successfulContext)
     for directory in generatedDirectories {
         #expect(
+            FileManager.default.fileExists(
+                atPath: directory.appending("committed.source").string))
+        #expect(
             !FileManager.default.fileExists(
-                atPath: directory.appending("published.marker").string))
+                atPath: directory.appending("generated.marker").string))
+    }
+    for mapping in generation.mappings {
+        #expect(generatedDirectories.contains(mapping.committed))
         #expect(
             FileManager.default.fileExists(
-                atPath: directory.appending("generated.marker").string))
+                atPath: mapping.generated.appending("generated.marker").string))
     }
 }
 
@@ -1901,7 +1920,7 @@ private func artifactInput(
                     && persistentTargets.contains("/ccache")
                     && persistentTargets.contains("/build")
             })
-        #expect(executions[0].command.contains("/src/bin/gn"))
+        #expect(executions[0].command.contains("/gn/gn"))
         #expect(executions[1].command.contains("ninja"))
         #expect(executions[2].command.first == "skia-export")
         let workspaceKeys = Set(
@@ -2001,10 +2020,12 @@ private func artifactInput(
     let dependencies = try fixtureReactNativeNodeModules(root: reactNativeRoot)
     let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
         root: reactNativeRoot,
+        cacheRoot: FilePath("/cache"),
         dependencies: dependencies,
         environment: environment)
     let armHermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: arm64,
@@ -2014,6 +2035,7 @@ private func artifactInput(
         builder: builder)
     let x86Hermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-x86_64"),
         environment: environment,
         target: x8664,
@@ -2024,15 +2046,19 @@ private func artifactInput(
         builder: builder)
     let armSupport = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: reactNativeRoot,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: arm64,
+        dependencies: dependencies,
         builder: builder)
     let x86Support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: reactNativeRoot,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-x86_64"),
         environment: environment,
         target: x8664,
+        dependencies: dependencies,
         builder: builder)
     let architecturePairs = [
         (
@@ -2058,6 +2084,7 @@ private func artifactInput(
         (
             try ReactNativeColliderRecipe.buildCxxRuntime(
                 root: reactNativeRoot,
+                nodeModules: fixtureJavaScriptWorkspace,
                 sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
                 environment: environment,
                 target: arm64,
@@ -2070,6 +2097,7 @@ private func artifactInput(
             ).task,
             try ReactNativeColliderRecipe.buildCxxRuntime(
                 root: reactNativeRoot,
+                nodeModules: fixtureJavaScriptWorkspace,
                 sdkRoot: FilePath("/cache/native-sdk/linux-x86_64"),
                 environment: environment,
                 target: x8664,
@@ -2124,10 +2152,12 @@ private func artifactInput(
     let dependencies = try fixtureReactNativeNodeModules(root: root)
     let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
         root: root,
+        cacheRoot: FilePath("/cache"),
         dependencies: dependencies,
         environment: environment)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: target,
@@ -2137,12 +2167,15 @@ private func artifactInput(
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: target,
+        dependencies: dependencies,
         builder: builder)
     let runtime = try ReactNativeColliderRecipe.buildCxxRuntime(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
         environment: environment,
         target: target,
@@ -2216,6 +2249,7 @@ private func artifactInput(
         environment: environment)
     let task = try ReactNativeColliderRecipe.buildHermes(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: FilePath("/cache/native-sdk/linux-x86_64"),
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
@@ -2404,10 +2438,12 @@ private func artifactInput(
     let dependencies = try fixtureReactNativeNodeModules(root: root)
     let codegen = try ReactNativeColliderRecipe.generateReactNativeCode(
         root: root,
+        cacheRoot: FilePath("/cache"),
         dependencies: dependencies,
         environment: environment)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: sdkRoot,
         environment: environment,
         target: target,
@@ -2418,12 +2454,15 @@ private func artifactInput(
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: sdkRoot,
         environment: environment,
         target: target,
+        dependencies: dependencies,
         builder: builder)
     let runtime = try ReactNativeColliderRecipe.buildCxxRuntime(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
         sdkRoot: sdkRoot,
         environment: environment,
         target: target,
@@ -2435,6 +2474,8 @@ private func artifactInput(
         builder: builder)
     let nativeArtifacts = try ReactNativeColliderRecipe.publishNativeSDK(
         root: root,
+        nodeModules: fixtureJavaScriptWorkspace,
+        codegen: fixtureCodegenRoot,
         sdkRoot: sdkRoot,
         target: target,
         dependencies: dependencies,

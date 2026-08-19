@@ -60,7 +60,8 @@ enum GeneratedSourceFailure: Error, CustomStringConvertible {
         case .stale(let committed, let generated):
             "committed generated source is stale: \(committed)\n"
                 + "  regenerated: \(generated)\n"
-                + "  run 'collider generate' and adopt the result"
+                + "  run 'collider generate vulkan', then "
+                + "'collider adopt vulkan'"
         }
     }
 }

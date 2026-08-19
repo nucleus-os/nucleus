@@ -94,6 +94,9 @@ public func inertActionFileSystem() -> ActionFileSystem {
         createDirectory: { _ in },
         copy: { _, _ in },
         remove: { _ in },
+        // An empty tree rather than an absent capability: an action that stages
+        // what it finds should see nothing here, not fail on the lookup.
+        listRecursively: { _ in [] },
         setPermissions: { _, _ in },
         write: { _, _ in })
 }

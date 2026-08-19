@@ -48,18 +48,37 @@ public struct ComponentEntrypoint: Hashable, Sendable {
     }
 }
 
+/// One generated source tree, in both of the places it exists.
+///
+/// Generation writes `generated` inside the build store; a human adopts it to
+/// `committed` inside the checkout and commits the result. Declaring the pair
+/// once is what keeps verification and adoption from disagreeing about which
+/// file answers to which: verification proves the two are equal, and adoption
+/// is the only supported way to make them so.
+public struct GeneratedSourceMapping: Hashable, Sendable {
+    public let generated: FilePath
+    public let committed: FilePath
+
+    public init(generated: FilePath, committed: FilePath) {
+        self.generated = generated
+        self.committed = committed
+    }
+}
+
 public struct ComponentDefinition: Sendable {
     public let descriptor: ComponentDescriptor
     public let tasks: [TaskDeclaration]
     public let entrypoints: [ComponentEntrypointID: ComponentEntrypoint]
     public let storage: [StorageDeclaration]
+    public let generatedSources: [GeneratedSourceMapping]
     public let persistentWorkspaces: [PersistentWorkspaceDeclaration]
 
     public init(
         descriptor: ComponentDescriptor,
         tasks: [TaskDeclaration],
         entrypoints: [ComponentEntrypoint],
-        storage: [StorageDeclaration] = []
+        storage: [StorageDeclaration] = [],
+        generatedSources: [GeneratedSourceMapping] = []
     ) throws {
         var tasksByID: [TaskID: TaskDeclaration] = [:]
         for task in tasks {
@@ -113,6 +132,7 @@ public struct ComponentDefinition: Sendable {
         self.tasks = tasks
         self.entrypoints = entrypointsByID
         self.storage = storage
+        self.generatedSources = generatedSources
         persistentWorkspaces = workspacesByIdentity.values.sorted {
             $0.identity.schedulingKey < $1.identity.schedulingKey
         }
@@ -125,7 +145,8 @@ public struct ComponentDefinition: Sendable {
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: Array(entrypoints.values),
-            storage: storage + declarations)
+            storage: storage + declarations,
+            generatedSources: generatedSources)
     }
 
     private static func persistentWorkspaces(
