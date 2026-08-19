@@ -345,8 +345,9 @@ struct MacOSBuilderDoctor {
             scope: scope,
             description: "machine-wide Collider build store",
             remediation:
-                "run 'collider provision macos-builder commission'; it installs one "
-                + "store the builder writes and the build-state group reads"
+                "run 'collider provision macos-builder commission'; it installs the "
+                + "store the builder writes and the build-state group reads, and "
+                + "resets its ownership and modes to the contract"
         ) {
             let fileManager = FileManager.default
             let store = MacOSMachineStorageLayout.buildStore

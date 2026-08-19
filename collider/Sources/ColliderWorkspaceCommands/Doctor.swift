@@ -260,6 +260,15 @@ struct WorkspaceDoctor {
             scope: scope,
             description: "\(backend) OCI executor"
         ) {
+            // On a store host the executor runs in the builder's launchd
+            // session, and a Mach service in another account's session cannot
+            // be reached from here at all. Asserting against it would tell
+            // every developer invocation that a healthy host is broken, so this
+            // states who owns the executor instead.
+            if !buildStoreIsWritableHere() {
+                return "owned by the builder account; "
+                    + "this account runs no container service"
+            }
             guard let health = try? await context.runtime.ociRuntimeHealth(),
                 health.apiServerAppName == "container-apiserver"
             else { return nil }
@@ -351,4 +360,20 @@ struct WorkspaceDoctor {
         context.cacheRoot.appending(
             "swift-target-sdks/current/swift-sdks")
     }
+}
+
+/// Whether this account is the one that executes builds on this host.
+///
+/// A host with no machine build store runs Collider from one account, which is
+/// therefore the executing account. A host with one has exactly one identity
+/// that may write it, and every other account only reads what that identity
+/// produced.
+private func buildStoreIsWritableHere() -> Bool {
+    #if os(macOS)
+    guard MacOSMachineStorageLayout.buildStoreIsInstalled() else { return true }
+    return FileManager.default.isWritableFile(
+        atPath: MacOSMachineStorageLayout.buildStore.string)
+    #else
+    return true
+    #endif
 }
