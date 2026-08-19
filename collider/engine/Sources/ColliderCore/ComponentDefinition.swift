@@ -11,6 +11,10 @@ public struct ComponentEntrypointID: RawRepresentable, Hashable, Codable, Sendab
     public static let build = Self(rawValue: "build")
     public static let bootstrap = Self(rawValue: "bootstrap")
     public static let generate = Self(rawValue: "generate")
+    /// Compares a component's committed generated sources against regenerating
+    /// them. Generation writes storage and a human adopts the result, so this
+    /// is what a build runs: it reads both and writes neither.
+    public static let verifyGeneratedSources = Self(rawValue: "verify.generated-sources")
     public static let install = Self(rawValue: "install")
     public static let testDefault = Self(rawValue: "test.default")
 }

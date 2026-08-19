@@ -6,8 +6,6 @@ import SystemPackage
 package enum AndroidRuntimeEntrypoints {
     package static let packageInput = ComponentEntrypointID(
         rawValue: "package.android-input")
-    package static let verifyGeneratedSources = ComponentEntrypointID(
-        rawValue: "verify.generated-sources")
 }
 
 package enum AndroidRuntimeTaskIDs {
@@ -172,7 +170,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 id: .generate,
                 roots: [protobuf.generation.id]),
             ComponentEntrypoint(
-                id: AndroidRuntimeEntrypoints.verifyGeneratedSources,
+                id: ComponentEntrypointID.verifyGeneratedSources,
                 roots: [protobuf.verification.id]),
             ComponentEntrypoint(
                 id: ComponentEntrypointID(rawValue: "aosp.source-lock"),

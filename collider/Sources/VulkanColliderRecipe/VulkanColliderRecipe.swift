@@ -12,34 +12,42 @@ public enum VulkanColliderRecipe: ColliderComponent {
     ) throws -> ComponentDefinition {
         let generation = try generate(
             root: context.componentRoot(descriptor),
+            generatedRoot: context.cacheRoot.appending("generated/vulkan"),
             environment: context.environment,
             swiftPM: try context.swiftPM(.hostDebug))
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: generation.tasks,
             entrypoints: [
-                ComponentEntrypoint(id: .generate, roots: [generation.task.id])
+                ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
+                ComponentEntrypoint(
+                    id: .verifyGeneratedSources,
+                    roots: [generation.verification.id]),
             ],
             storage: [
+                // The generated bindings live in storage. The committed file
+                // beside the sources is authored state a human adopts, so no
+                // task declares itself its producer.
                 StorageDeclaration(
                     id: "vulkan-generated-sources",
                     owner: descriptor.id,
                     producers: [.task(generation.task.id)],
-                    storageClass: .source,
-                    root: context.componentRoot(descriptor).appending(
-                        "Sources/Vulkan/Vulkan.swift"),
-                    safetyRoot: context.componentRoot(descriptor),
-                    retentionPolicy: .protected)
+                    storageClass: .published,
+                    root: context.cacheRoot.appending("generated/vulkan"),
+                    safetyRoot: context.cacheRoot,
+                    retentionPolicy: .singleWorkingSet)
             ])
     }
 
     package struct Generation: Sendable {
         package let tasks: [TaskDeclaration]
         package let task: TaskDeclaration
+        package let verification: TaskDeclaration
     }
 
     package static func generate(
         root: FilePath,
+        generatedRoot: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation
     ) throws -> Generation {
@@ -68,12 +76,17 @@ public enum VulkanColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("vulkan")])
 
-        let output = root.appending("Sources/Vulkan/Vulkan.swift")
+        // Generation writes declared storage. The committed file beside the
+        // sources is adopted by the developer who commits it, because a build
+        // that rewrites the checkout it is reading makes every checkout dirty
+        // and lets build code modify source that is later committed.
+        let committed = root.appending("Sources/Vulkan/Vulkan.swift")
+        let output = generatedRoot.appending("Vulkan.swift")
         var builder = TaskBuilder(
             id: TaskID(rawValue: "vulkan.generate"),
             component: descriptor.id)
         builder.consume(generator)
-        let _: ArtifactReference = try builder.output(
+        let generated: ArtifactReference = try builder.output(
             "bindings",
             path: output,
             validation: .regularFile)
@@ -89,8 +102,25 @@ public enum VulkanColliderRecipe: ColliderComponent {
                         registry: root.appending("third-party/vk.xml"),
                         output: output,
                         workingDirectory: root,
+                        formatConfiguration: root.removingLastComponent()
+                            .appending(".swift-format"),
                         environment: environment)))
-        return Generation(tasks: [tool, task], task: task)
+        var verifier = TaskBuilder(
+            id: TaskID(rawValue: "vulkan.verify-generated-sources"),
+            component: descriptor.id)
+        verifier.consume(generated)
+        let verification = verifier.build(
+            inputs: [.file(committed)],
+            locks: [.checkout("vulkan")],
+            action:
+                try AnyColliderAction(
+                    VerifyVulkanGeneratedSourceAction(
+                        generated: output,
+                        committed: committed)))
+        return Generation(
+            tasks: [tool, task, verification],
+            task: task,
+            verification: verification)
     }
 }
 
@@ -114,6 +144,7 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
     let registry: FilePath
     let output: FilePath
     let workingDirectory: FilePath
+    let formatConfiguration: FilePath
     let environment: [String: String]
 
     var identity: Identity {
@@ -126,10 +157,15 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
                 ActionToolRequirement(
                     "vulkan-generator",
                     executable: generator.executable,
-                    role: .semantic)
+                    role: .semantic),
+                ActionToolRequirement(
+                    "swift-format",
+                    executable: .named("swift-format"),
+                    role: .semantic),
             ],
             effects: [
                 ActionEffect(.read, scope: .input(registry)),
+                ActionEffect(.read, scope: .checkout(formatConfiguration)),
                 ActionEffect(.write, scope: .output(output)),
             ],
             executionPlatform: .macOSARM64Native)
@@ -144,6 +180,26 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
                 environment: environment))
         guard result.succeeded else {
             throw result.executionFailure(reason: "Vulkan binding generation failed")
+        }
+        // The repository's formatting contract covers every Swift source,
+        // including this one, and the committed copy is formatted. Generation
+        // therefore produces formatted output, so what a human adopts is
+        // byte-identical to what verification regenerates. The configuration is
+        // named explicitly because the output no longer sits under the
+        // repository root for swift-format to discover.
+        let formatted = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("swift-format"),
+                arguments: [
+                    "format", "--in-place",
+                    "--configuration", formatConfiguration.string,
+                    output.string,
+                ],
+                workingDirectory: workingDirectory,
+                environment: environment))
+        guard formatted.succeeded else {
+            throw formatted.executionFailure(
+                reason: "generated Vulkan bindings could not be formatted")
         }
     }
 }

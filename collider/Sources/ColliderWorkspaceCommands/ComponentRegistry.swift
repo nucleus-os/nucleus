@@ -260,9 +260,18 @@ package struct ComponentRegistry {
         let linuxTest = ComponentEntrypointReference(
             component: linux,
             entrypoint: .testDefault)
-        let androidGeneratedSourceVerification = ComponentEntrypointReference(
-            component: AndroidRuntimeColliderRecipe.descriptor.id,
-            entrypoint: AndroidRuntimeEntrypoints.verifyGeneratedSources)
+        // Generated sources are authored: a human adopts what generation
+        // produced, so a build proves the committed copy still matches rather
+        // than rewriting it. Each component that commits generated sources
+        // verifies them in its own test lane.
+        let generatedSourceVerifications: [String: ComponentEntrypointReference] = [
+            "android-runtime": ComponentEntrypointReference(
+                component: AndroidRuntimeColliderRecipe.descriptor.id,
+                entrypoint: ComponentEntrypointID.verifyGeneratedSources),
+            "vulkan": ComponentEntrypointReference(
+                component: VulkanColliderRecipe.descriptor.id,
+                entrypoint: ComponentEntrypointID.verifyGeneratedSources),
+        ]
         var shellBootstrapDestinations = [
             ComponentEntrypointReference(
                 component: core,
@@ -289,10 +298,9 @@ package struct ComponentRegistry {
                 ComponentEntrypointRoute(
                     spelling: spelling,
                     requestedEntrypoint: .testDefault,
-                    destinations:
-                        spelling == "android-runtime"
-                        ? [linuxTest, androidGeneratedSourceVerification]
-                        : [linuxTest]),
+                    destinations: generatedSourceVerifications[spelling].map {
+                        [linuxTest, $0]
+                    } ?? [linuxTest]),
             ]
         }
         routes += [

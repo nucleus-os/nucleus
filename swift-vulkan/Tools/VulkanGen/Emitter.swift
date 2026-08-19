@@ -8,7 +8,7 @@ private let header = """
 // shadow Swift stdlib or other modules; dispatch tables are typed against
 // the raw `PFN_vk*` function-pointer typedefs imported from VulkanC.
 
-public import VulkanC
+package import VulkanC
 
 /// Cast a loader-returned void function pointer to a typed PFN. Returns nil
 /// when the command is unavailable (extension not enabled / not present).
@@ -36,7 +36,7 @@ final class Emitter {
         for decl in registry.decls { declMap[decl.name] = decl.type }
 
         out += header
-        out += "public enum VK {\n"
+        out += "package enum VK {\n"
 
         var seenTypes = Set<String>()
         for decl in registry.decls {
@@ -69,7 +69,7 @@ final class Emitter {
         let typeName = self.typeName(vkName)
         let isResult = vkName == "VkResult"
 
-        out += "    public enum \(typeName): Int32, Equatable, Hashable, Sendable {\n"
+        out += "    package enum \(typeName): Int32, Equatable, Hashable, Sendable {\n"
 
         var seenValues = Set<Int32>()
         var seenMembers = Set<String>()
@@ -91,14 +91,14 @@ final class Emitter {
             if case .alias(let a) = field.value { targetName = a } else { targetName = field.name }
             let target = enumMember(vkName, targetName)
             if member == target { continue }
-            out += "        public static let \(member) = \(typeName).\(target)\n"
+            out += "        package static let \(member) = \(typeName).\(target)\n"
         }
 
         if isResult {
             out += "        /// Non-negative codes (VK_SUCCESS and the *_KHR success\n"
             out += "        /// variants) report success; negative codes are errors.\n"
-            out += "        public var isSuccess: Bool { rawValue >= 0 }\n"
-            out += "        public var isError: Bool { rawValue < 0 }\n"
+            out += "        package var isSuccess: Bool { rawValue >= 0 }\n"
+            out += "        package var isError: Bool { rawValue < 0 }\n"
         }
 
         out += "    }\n"
@@ -108,9 +108,9 @@ final class Emitter {
         let typeName = self.typeName(vkName)
         let intType = bitwidth == 64 ? "UInt64" : "UInt32"
 
-        out += "    public struct \(typeName): OptionSet, Equatable, Hashable, Sendable {\n"
-        out += "        public let rawValue: \(intType)\n"
-        out += "        public init(rawValue: \(intType)) { self.rawValue = rawValue }\n"
+        out += "    package struct \(typeName): OptionSet, Equatable, Hashable, Sendable {\n"
+        out += "        package let rawValue: \(intType)\n"
+        out += "        package init(rawValue: \(intType)) { self.rawValue = rawValue }\n"
 
         if let bitsName = bitsEnum, case .enumeration(let bitsDecl)? = declMap[bitsName] {
             var seenMembers = Set<String>()
@@ -126,9 +126,9 @@ final class Emitter {
                 case .alias: continue
                 }
                 if raw == 0 {
-                    out += "        public static let \(member) = \(typeName)([])\n"
+                    out += "        package static let \(member) = \(typeName)([])\n"
                 } else {
-                    out += "        public static let \(member) = \(typeName)(rawValue: 0x\(String(raw, radix: 16, uppercase: true)))\n"
+                    out += "        package static let \(member) = \(typeName)(rawValue: 0x\(String(raw, radix: 16, uppercase: true)))\n"
                 }
             }
         }
@@ -141,24 +141,24 @@ final class Emitter {
         if isDispatchable {
             out += "    /// An immutable opaque identity. The wrapper never dereferences the handle;\n"
             out += "    /// Vulkan operations remain unsafe and require the caller to uphold handle lifetime.\n"
-            out += "    @safe public struct \(typeName): Equatable, Hashable, @unchecked Sendable {\n"
-            out += "        public let raw: OpaquePointer?\n"
-            out += "        public init(_ raw: OpaquePointer? = nil) { unsafe self.raw = raw }\n"
-            out += "        public static let null = unsafe \(typeName)(nil)\n"
-            out += "        public var isNull: Bool { unsafe raw == nil }\n"
-            out += "        public static func == (lhs: Self, rhs: Self) -> Bool {\n"
+            out += "    @safe package struct \(typeName): Equatable, Hashable, @unchecked Sendable {\n"
+            out += "        package let raw: OpaquePointer?\n"
+            out += "        package init(_ raw: OpaquePointer? = nil) { unsafe self.raw = raw }\n"
+            out += "        package static let null = unsafe \(typeName)(nil)\n"
+            out += "        package var isNull: Bool { unsafe raw == nil }\n"
+            out += "        package static func == (lhs: Self, rhs: Self) -> Bool {\n"
             out += "            unsafe lhs.raw == rhs.raw\n"
             out += "        }\n"
-            out += "        public func hash(into hasher: inout Hasher) {\n"
+            out += "        package func hash(into hasher: inout Hasher) {\n"
             out += "            unsafe hasher.combine(raw)\n"
             out += "        }\n"
             out += "    }\n"
         } else {
-            out += "    public struct \(typeName): Equatable, Hashable, Sendable {\n"
-            out += "        public var raw: UInt64\n"
-            out += "        public init(_ raw: UInt64 = 0) { self.raw = raw }\n"
-            out += "        public static let null = \(typeName)(0)\n"
-            out += "        public var isNull: Bool { raw == 0 }\n"
+            out += "    package struct \(typeName): Equatable, Hashable, Sendable {\n"
+            out += "        package var raw: UInt64\n"
+            out += "        package init(_ raw: UInt64 = 0) { self.raw = raw }\n"
+            out += "        package static let null = \(typeName)(0)\n"
+            out += "        package var isNull: Bool { raw == 0 }\n"
             out += "    }\n"
         }
     }
@@ -230,11 +230,11 @@ final class Emitter {
         for (lvl, typeName) in levels {
             out += "    /// Immutable process-loader function pointers. Sharing the table does not invoke\n"
             out += "    /// Vulkan; each invocation remains unsafe and enforces Vulkan's synchronization rules.\n"
-            out += "    @safe public struct \(typeName): @unchecked Sendable {\n"
+            out += "    @safe package struct \(typeName): @unchecked Sendable {\n"
 
             var seen = Set<String>()
             if lvl == .base {
-                out += "        public let vkGetInstanceProcAddr: PFN_vkGetInstanceProcAddr\n"
+                out += "        package let vkGetInstanceProcAddr: PFN_vkGetInstanceProcAddr\n"
                 seen.insert("vkGetInstanceProcAddr")
             }
             for decl in registry.decls {
@@ -242,16 +242,16 @@ final class Emitter {
                 if !available.contains(decl.name) { continue }
                 if classify(decl.name, firstParamTypeName: firstParam) != lvl { continue }
                 if !seen.insert(decl.name).inserted { continue }
-                out += "        public let \(decl.name): PFN_\(decl.name)?\n"
+                out += "        package let \(decl.name): PFN_\(decl.name)?\n"
             }
 
             switch lvl {
             case .base:
-                out += "        public init(loader: PFN_vkGetInstanceProcAddr) {\n            unsafe self.vkGetInstanceProcAddr = loader\n"
+                out += "        package init(loader: PFN_vkGetInstanceProcAddr) {\n            unsafe self.vkGetInstanceProcAddr = loader\n"
             case .instance:
-                out += "        public init(_ handle: VkInstance?, loader: PFN_vkGetInstanceProcAddr) {\n"
+                out += "        package init(_ handle: VkInstance?, loader: PFN_vkGetInstanceProcAddr) {\n"
             case .device:
-                out += "        public init(_ handle: VkDevice?, loader: PFN_vkGetDeviceProcAddr) {\n"
+                out += "        package init(_ handle: VkDevice?, loader: PFN_vkGetDeviceProcAddr) {\n"
             }
             seen.removeAll(keepingCapacity: true)
             if lvl == .base { seen.insert("vkGetInstanceProcAddr") }
@@ -268,18 +268,18 @@ final class Emitter {
     }
 
     private func renderInventory(_ registry: Registry) {
-        out += "    public struct FeatureLevel: Equatable, Sendable {\n"
-        out += "        public let name: String\n"
-        out += "        public let major: UInt32\n"
-        out += "        public let minor: UInt32\n"
+        out += "    package struct FeatureLevel: Equatable, Sendable {\n"
+        out += "        package let name: String\n"
+        out += "        package let major: UInt32\n"
+        out += "        package let minor: UInt32\n"
         out += "    }\n"
-        out += "    public static let featureLevels: [FeatureLevel] = [\n"
+        out += "    package static let featureLevels: [FeatureLevel] = [\n"
         for feature in registry.features {
             out += "        FeatureLevel(name: \"\(feature.name)\", major: \(feature.level.major), minor: \(feature.level.minor)),\n"
         }
         out += "    ]\n"
 
-        out += "    public enum Ext {\n"
+        out += "    package enum Ext {\n"
         var seen = Set<String>()
         for ext in registry.extensions {
             if !vulkanExts.contains(ext.name) { continue }
@@ -287,7 +287,7 @@ final class Emitter {
             let tail = startsWith(nameBytes, bytes("VK_")) ? Array(nameBytes[3...]) : nameBytes
             let member = caseName(tail)
             if !seen.insert(member).inserted { continue }
-            out += "        public static let \(member) = \"\(ext.name)\"\n"
+            out += "        package static let \(member) = \"\(ext.name)\"\n"
         }
         out += "    }\n"
     }
