@@ -18,6 +18,13 @@ trap 'registration_token=' EXIT
 contract_value() {
   /usr/bin/plutil -extract "$1" raw -o - "$contract"
 }
+
+# Commands run as the builder inherit this working directory, and the builder
+# reaches exactly one tree: the checkout. Invoked from anywhere else -- a
+# developer home most of all -- those children could not resolve their own
+# current directory. Anchor somewhere every identity on this host can read.
+cd /
+
 run_as_builder() {
   /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" "$@"
 }

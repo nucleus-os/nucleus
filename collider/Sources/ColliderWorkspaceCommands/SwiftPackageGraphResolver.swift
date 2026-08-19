@@ -236,8 +236,20 @@ package final class SwiftPackageGraphResolver: Sendable {
         let output = Pipe()
         let errors = Pipe()
         process.executableURL = URL(fileURLWithPath: swift.string)
+        // Describing a package makes SwiftPM materialize workspace state, and
+        // without a scratch path it writes `.build` beside the manifest. The
+        // packages described here are vendored inside the checkout, which the
+        // identity that builds may only read, so the scratch belongs in the
+        // cache. One directory per package: SwiftPM treats a scratch path as
+        // belonging to a single workspace.
+        let scratch = cacheRoot.appending(
+            "package-graph/scratch/"
+                + ArtifactDigest.sha256(Array(packageRoot.string.utf8)).hexadecimal)
         process.arguments =
-            ["package", "--package-path", packageRoot.string]
+            [
+                "package", "--package-path", packageRoot.string,
+                "--scratch-path", scratch.string,
+            ]
             + arguments
         process.currentDirectoryURL = URL(fileURLWithPath: packageRoot.string)
         var processEnvironment = environment

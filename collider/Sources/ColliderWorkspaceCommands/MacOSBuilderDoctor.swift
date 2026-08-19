@@ -119,7 +119,10 @@ struct MacOSBuilderContract: Codable, Sendable {
         // the process launcher resplits, so whitespace in any of these roots
         // reaches bash as separate arguments and fails every step body. The
         // work root matters most: step scripts are written to its `_temp`.
-        for root in [builder.runnerRoot, builder.hostContractRoot, builder.runnerWorkRoot] {
+        for root in [
+            builder.runnerRoot, builder.hostContractRoot, builder.runnerWorkRoot,
+            builder.authoritativeCheckout,
+        ] {
             guard root.hasPrefix("/"),
                 !root.hasSuffix("/"),
                 FilePath(root).components.count >= 2,
@@ -129,6 +132,15 @@ struct MacOSBuilderContract: Codable, Sendable {
                 throw MacOSBuilderContractFailure.invalid(
                     "machine-wide builder root is not an absolute whitespace-free path: \(root)")
             }
+        }
+        // Two accounts share the checkout, so it lives in neither home. A
+        // checkout inside one leaves the builder able to traverse that home but
+        // not read it, which makes the tree's own absolute path unresolvable to
+        // the identity that builds it.
+        guard !builder.authoritativeCheckout.hasPrefix("/Users/") else {
+            throw MacOSBuilderContractFailure.invalid(
+                "authoritative checkout must not live in a user home: "
+                    + builder.authoritativeCheckout)
         }
         // Collider locks the machine-wide execution lease at a compiled-in
         // path, because the machine, not a checkout it owns, decides which
