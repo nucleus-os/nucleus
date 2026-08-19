@@ -37,6 +37,13 @@ if [[ "${NUCLEUS_RELOCATION_STAGED:-}" != 1 ]]; then
   NUCLEUS_RELOCATION_STAGED=1 exec "$staging/relocate.sh" "$@"
 fi
 
+# Every later step either removes the developer home's access entries or runs a
+# command as the builder, and a child inherits this working directory. Standing
+# in the home would leave those children unable to resolve their own current
+# directory the moment the entries are gone -- the exact fault this relocation
+# exists to remove.
+cd /
+
 readonly destination="$(contract_value builder.authoritativeCheckout)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly builder_user="$(contract_value builder.user)"
@@ -46,38 +53,43 @@ readonly lease="$(contract_value builder.hostExecutionLock)"
 
 [[ -f "$record" ]] || { echo "error: builder checkout contract is not installed" >&2; exit 72; }
 readonly source="$(/usr/bin/sed -n '1p' "$record")"
-
-if [[ "$source" == "$destination" ]]; then
-  echo "authoritative checkout is already at $destination"
-  exit 0
-fi
-[[ -d "$source" ]] || { echo "error: recorded checkout does not exist: $source" >&2; exit 72; }
-[[ ! -e "$destination" ]] || { echo "error: destination already exists: $destination" >&2; exit 73; }
 [[ "$destination" != "/Users/"* ]] \
   || { echo "error: destination must not live in a user home" >&2; exit 78; }
-[[ -f "$source/Package.swift" ]] \
-  || { echo "error: recorded checkout is not a Nucleus clone" >&2; exit 72; }
 
-# A build holding the lease is reading the tree this is about to rename.
-if [[ -s "$lease" ]]; then
-  echo "error: a Collider run holds the execution lease; wait for it to finish" >&2
-  /usr/bin/sed -n '1,3p' "$lease" >&2
-  exit 75
+# Each step is applied only where it is not already true, so a run interrupted
+# partway is completed by running it again rather than needing its remaining
+# steps performed by hand.
+if [[ -d "$destination" && ! -L "$destination" ]]; then
+  echo "checkout is already at $destination; completing the remaining steps"
+else
+  [[ -d "$source" ]] || { echo "error: recorded checkout does not exist: $source" >&2; exit 72; }
+  [[ ! -e "$destination" ]] || { echo "error: destination exists but is not the checkout" >&2; exit 73; }
+  [[ -f "$source/Package.swift" ]] \
+    || { echo "error: recorded checkout is not a Nucleus clone" >&2; exit 72; }
+
+  # A build holding the lease is reading the tree this is about to rename.
+  if [[ -s "$lease" ]]; then
+    echo "error: a Collider run holds the execution lease; wait for it to finish" >&2
+    /usr/bin/sed -n '1,3p' "$lease" >&2
+    exit 75
+  fi
+
+  echo "moving $source -> $destination"
+  /usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$destination")"
+  # Same volume, so this is a rename: atomic, and it carries ownership, modes,
+  # and the inheritable access-control entry that makes the tree read-only to
+  # the builder. A cross-volume fallback would silently copy 100+ GB, so refuse.
+  /bin/mv "$source" "$destination" \
+    || { echo "error: rename failed; destination must share the source volume" >&2; exit 74; }
 fi
-
-echo "moving $source -> $destination"
-/usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$destination")"
-# Same volume, so this is a rename: atomic, and it carries ownership, modes,
-# and the inheritable access-control entry that makes the tree read-only to the
-# builder. A cross-volume fallback would silently copy 100+ GB, so refuse.
-/bin/mv "$source" "$destination" \
-  || { echo "error: rename failed; destination must share the source volume" >&2; exit 74; }
+[[ -f "$destination/Package.swift" ]] \
+  || { echo "error: $destination is not a Nucleus clone" >&2; exit 72; }
 /bin/chmod 0755 "$destination"
 
 # Daily ergonomics: the old path keeps working for shells, editors, and SSH
 # remotes. Collider resolves the physical path, so the symlink never becomes a
 # second identity for the same tree.
-if [[ ! -e "$source" ]]; then
+if [[ ! -e "$source" && ! -L "$source" ]]; then
   /usr/bin/sudo -u "$developer_user" /bin/ln -s "$destination" "$source"
 fi
 
