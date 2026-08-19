@@ -79,6 +79,16 @@ esac
 # opens far more. The ceiling is the kernel's per-process maximum.
 ulimit -n "$(/usr/sbin/sysctl -n kern.maxfilesperproc)" 2>/dev/null || true
 
+# The builder inherits this working directory, and it reaches exactly one tree.
+# Invoked from anywhere else -- the developer's home most of all, which the
+# builder may not read at all -- every child fails to resolve its own current
+# directory before it runs. This is the single entry point for builder
+# execution, so anchoring here is what spares each of them from knowing.
+cd "$checkout" || {
+  echo "error: cannot enter the authoritative checkout: $checkout" >&2
+  exit 72
+}
+
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 exec /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   /usr/bin/env -i \
