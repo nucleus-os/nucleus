@@ -11,7 +11,7 @@ artifact model.
 ## Invariant
 
 The M2 Ultra is the Nucleus development and build host. The authoritative Git
-checkout lives at `~/Developer/nucleus`. Durable source state, including
+checkout lives at `/Library/Nucleus/checkout`. Durable source state, including
 submodule selections, is pushed to a remote. Uncommitted work and dirty
 submodule worktrees are transient and explicitly outside the host-loss recovery
 guarantee. Remote computers are replaceable SSH, editor, and terminal clients;
@@ -19,6 +19,19 @@ they do not own a second checkout that must be uploaded before it can build. A
 declared Linux presentation target may receive an immutable user-owned
 development generation for local VT testing, but it never receives source or
 becomes a build host.
+
+The checkout sits outside every account home because two accounts share it, and
+shared state belongs to neither, exactly as the build store does. The developer
+owns and edits it; the builder reads it to compile dirty local source without
+that source being copied anywhere. Its parent is root-owned and world-readable,
+which is what lets the builder resolve the checkout's own absolute path: a
+directory an identity may traverse but not read cannot be named, and any tool
+calling `getcwd()` inside such a tree fails. Placing it in the home instead cost
+a traverse grant on that home plus a deny entry re-enumerated onto every sibling
+to contain a grant that reaches children by name, and still left the path
+unresolvable. `~/Developer/nucleus` remains as a symbolic link for shells,
+editors, and SSH remotes; Collider resolves the physical path, so the link never
+becomes a second identity for one tree.
 
 The interactive development account runs no GitHub Actions service. Automated
 CI/CD supports only protected `main` and uses the separate non-admin
@@ -88,20 +101,20 @@ inspection and dry-run commands lock-free. Contended runs publish wait events,
 and cancellation releases admission after normal runtime shutdown and run
 finalization.
 
-The authoritative checkout already lives at `~/Developer/nucleus`. The
+The authoritative checkout already lives at `/Library/Nucleus/checkout`. The
 [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md)
 removes the remaining custom APFS storage contract and places Collider-managed
 state in conventional per-user directories. No custom volume owns source.
 
 ## Phase 1: Correct Host Storage Ownership
 
-Status: complete. The authoritative checkout is `~/Developer/nucleus`, Collider
+Status: complete. The authoritative checkout is `/Library/Nucleus/checkout`, Collider
 discovers it directly, and Git plus its remotes own durable source history.
 Custom APFS source and snapshot volumes are not part of the endpoint. The
 remaining builder-storage migration belongs exclusively to the
 [macOS host storage consolidation plan](macos-host-storage-consolidation-plan.md).
 
-Gate evidence: the active checkout is `~/Developer/nucleus`; local editing and
+Gate evidence: the active checkout is `/Library/Nucleus/checkout`; local editing and
 Collider workspace discovery use that checkout directly; and no source move,
 backup service, snapshot service, or worker-owned source role remains.
 
@@ -122,7 +135,7 @@ Do not add editor-specific commands to Collider. VS Code, Zed, JetBrains,
 terminal clients, and future clients remain interchangeable implementations of
 the SSH client boundary.
 
-Gate: a clean remote client opens `~/Developer/nucleus`, edits a tracked
+Gate: a clean remote client opens the authoritative checkout, edits a tracked
 file, creates a non-ignored untracked file, performs Git operations, and runs a
 Collider dry-run without installing a Nucleus build toolchain locally.
 

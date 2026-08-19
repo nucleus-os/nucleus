@@ -88,7 +88,7 @@ func machineBuildStoreSupersedesPerUserDataRootsButNotLaunchAgents() {
 func persistentWorkspaceOwnerFollowsTheStoreRatherThanTheCheckout() {
     let store = FilePath("/Library/Nucleus/Collider")
     let ciCheckout = FilePath("/Users/nucleus-builder/actions-runner-work/nucleus/nucleus")
-    let authoritative = FilePath("/Users/maddy/Developer/nucleus")
+    let authoritative = FilePath("/Library/Nucleus/checkout")
 
     #expect(
         nucleusPersistentWorkspaceOwner(workspaceRoot: ciCheckout, buildStore: store)

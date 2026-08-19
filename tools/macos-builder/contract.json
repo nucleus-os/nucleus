@@ -28,7 +28,7 @@
     "buildStateGroup": "nucleus-build-state",
     "home": "/Users/nucleus-builder",
     "developerUser": "maddy",
-    "authoritativeCheckout": "/Users/maddy/Developer/nucleus",
+    "authoritativeCheckout": "/Library/Nucleus/checkout",
     "organization": "https://github.com/nucleus-os",
     "repository": "https://github.com/nucleus-os/nucleus",
     "runnerGroup": "nucleus",

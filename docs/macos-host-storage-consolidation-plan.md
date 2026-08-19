@@ -25,7 +25,8 @@ The final host layout is:
 - `~/Library/Caches/Nucleus/Collider` for downloaded inputs and reproducible,
   prunable host caches.
 - `~/Library/Logs/Nucleus/Collider` for service and Collider logs.
-- `~/Developer/nucleus` for the authoritative developer checkout.
+- `/Library/Nucleus/checkout` for the authoritative developer checkout, whose
+  root-owned parent both accounts can resolve.
 
 Collider resolves these locations through one typed host-storage layout. Static
 contracts do not contain absolute home-directory paths. No compatibility path
@@ -41,7 +42,7 @@ unaffected, and measurement since confirms them: no custom APFS volume is
 created or required, and case-sensitive workloads stay inside sparse container
 volumes on the default Data volume because a block device outperforms a shared
 host filesystem by an order of magnitude on the metadata operations that
-dominate build work. The authoritative checkout remains `~/Developer/nucleus`.
+dominate build work. The authoritative checkout is `/Library/Nucleus/checkout`.
 
 ## Phase 1: Introduce the standard host-storage layout
 
@@ -267,7 +268,7 @@ Never rely on previously observed `diskNsM` identifiers.
 Delete migration-only code, APFS inventory models, quota documentation,
 volume-oriented tests, mount repair instructions, and obsolete remote-development
 storage assumptions. Update the remote-development plan so the authoritative
-checkout remains in `~/Developer/nucleus` and its recovery policy is independent
+checkout remains in `/Library/Nucleus/checkout` and its recovery policy is independent
 of build storage.
 
 Gate: Collider resolves no managed path below `/Volumes`, the internal APFS

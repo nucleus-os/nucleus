@@ -157,32 +157,27 @@ readonly builder_uid
 
 # The source boundary is an allow list, and the interactive home's mode is what
 # makes it one. macOS makes every local account a member of staff through a
-# well-known group GUID, so a private home cannot rely on group membership: at
-# the macOS default of 0750 the builder reads the whole home through staff, and
-# every exclusion has to be enumerated and kept current against state created
-# later. Mode 0700 removes that access at its source and leaves two traverse
-# grants as the only way in. `search` is execute-only, so neither directory can
-# be listed. The checkout is then read through its ordinary other-readable
-# mode, which is why no recursive pass over the working tree exists: a blanket
-# grant would also have to override every mode the developer deliberately
-# restricted.
-/bin/chmod 0700 "/Users/$developer_user"
-/bin/chmod 0700 "/Users/$developer_user/Developer"
-/bin/chmod +a "$builder_user allow search" "/Users/$developer_user"
-/bin/chmod +a "$builder_user allow search" "/Users/$developer_user/Developer"
-# A traverse grant is not a grant to one path: it reaches any child by name,
-# so mode alone removes enumeration but not access. Every sibling of the
-# checkout is therefore denied explicitly. These are bounded, one entry per
-# top-level entry, and are reasserted on every provisioning so entries created
-# since the last run are covered.
-while IFS= read -r -d '' unrelated_path; do
-  /bin/chmod -h +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
-done < <(/usr/bin/find "/Users/$developer_user" -mindepth 1 -maxdepth 1 \
-  ! -name Developer -print0)
-while IFS= read -r -d '' unrelated_path; do
-  /bin/chmod -h +a "$builder_user deny read,write,execute,delete" "$unrelated_path"
-done < <(/usr/bin/find "/Users/$developer_user/Developer" -mindepth 1 -maxdepth 1 \
-  ! -path "$checkout" -print0)
+# well-known group GUID, so a private home cannot rely on group membership. The
+# authoritative checkout is therefore not in the home at all: it is state two
+# accounts share, and shared state belongs to neither of them, exactly as the
+# build store does. Its parent is root-owned and world-readable, which is what
+# lets the builder resolve the checkout's own absolute path -- a directory the
+# builder may traverse but not read cannot be named, and any tool calling
+# getcwd() inside it fails.
+#
+# Keeping it outside the home removes the entire traverse-and-deny mechanism
+# this provisioning used to need: no `allow search` on the developer's home, no
+# per-sibling deny entry re-enumerated on every run to contain a traverse grant
+# that reaches children by name, and no dependence on the home's mode. The
+# builder reaches exactly one directory tree and nothing else.
+[[ "$checkout" != "/Users/"* ]] \
+  || { echo "error: authoritative checkout must not live in a user home" >&2; exit 78; }
+/usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$checkout")"
+[[ -d "$checkout" ]] \
+  || { echo "error: authoritative checkout does not exist: $checkout" >&2; exit 72; }
+[[ $(/usr/bin/stat -f '%Su' "$checkout") == "$developer_user" ]] \
+  || { echo "error: authoritative checkout is not owned by $developer_user" >&2; exit 78; }
+/bin/chmod 0755 "$checkout"
 # Ownership denies the builder every write in the checkout, so only the
 # world-writable objects package managers create need an explicit entry. The
 # inheritable entry covers objects created later; the bounded scan covers the
