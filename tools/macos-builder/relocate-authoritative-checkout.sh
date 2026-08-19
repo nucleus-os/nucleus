@@ -24,23 +24,25 @@ if [[ $EUID -ne 0 ]]; then
   exit 77
 fi
 
+# This script and the contract it reads both live in the tree it is about to
+# move, and bash reads a script incrementally: relocating the file out from
+# under the interpreter mid-read truncates execution at an arbitrary line.
+# Continue from a staged copy of both, before reading either, so nothing this
+# run depends on can move underneath it.
+if [[ "${NUCLEUS_RELOCATION_STAGED:-}" != 1 ]]; then
+  staging="$(/usr/bin/mktemp -d /tmp/nucleus-relocate.XXXXXX)"
+  /bin/cp "$script_directory/$(/usr/bin/basename "$0")" "$staging/relocate.sh"
+  /bin/cp "$contract" "$staging/contract.json"
+  /bin/chmod 0700 "$staging/relocate.sh"
+  NUCLEUS_RELOCATION_STAGED=1 exec "$staging/relocate.sh" "$@"
+fi
+
 readonly destination="$(contract_value builder.authoritativeCheckout)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly builder_user="$(contract_value builder.user)"
 readonly contract_root="$(contract_value builder.hostContractRoot)"
 readonly record="$contract_root/authoritative-checkout"
 readonly lease="$(contract_value builder.hostExecutionLock)"
-
-# This script lives in the tree it is about to move, and bash reads a script
-# incrementally: relocating the file out from under the interpreter mid-read
-# truncates execution at an arbitrary line. Continue from a copy instead.
-readonly self="$script_directory/$(/usr/bin/basename "$0")"
-if [[ "${NUCLEUS_RELOCATION_STAGED:-}" != 1 ]]; then
-  staged="$(/usr/bin/mktemp /tmp/nucleus-relocate.XXXXXX)"
-  /bin/cp "$self" "$staged"
-  /bin/chmod 0700 "$staged"
-  NUCLEUS_RELOCATION_STAGED=1 exec "$staged" "$@"
-fi
 
 [[ -f "$record" ]] || { echo "error: builder checkout contract is not installed" >&2; exit 72; }
 readonly source="$(/usr/bin/sed -n '1p' "$record")"
@@ -103,15 +105,55 @@ run_as_builder() {
 run_as_builder /usr/bin/git config --global --replace-all safe.directory "$destination"
 run_as_builder /usr/bin/git config --global --add safe.directory "$destination/*"
 
+# Every check reports rather than aborting, so one failure does not hide the
+# rest: the move has already happened and the complete picture is what tells
+# the operator whether it landed correctly.
 echo
 echo "relocated. verifying builder access:"
-run_as_builder /usr/bin/git -C "$destination" rev-parse --short HEAD
-run_as_builder /bin/test -r "$destination/Package.swift" \
-  && echo "  builder reads the checkout"
-run_as_builder /bin/sh -c "cd '$destination' && pwd -P >/dev/null" \
-  && echo "  builder resolves the checkout path"
-if run_as_builder /bin/ls "$home" >/dev/null 2>&1; then
-  echo "  WARNING: builder can still list $home" >&2
-else
-  echo "  builder cannot reach $home"
+failures=0
+check() {
+  local description="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "  ok      $description"
+  else
+    echo "  FAILED  $description" >&2
+    failures=$((failures + 1))
+  fi
+}
+refute() {
+  local description="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "  FAILED  $description" >&2
+    failures=$((failures + 1))
+  else
+    echo "  ok      $description"
+  fi
+}
+
+check "builder reads the checkout" \
+  run_as_builder /bin/test -r "$destination/Package.swift"
+# The fault that motivated the move: resolving the tree's own absolute path.
+check "builder resolves the checkout path" \
+  run_as_builder /bin/sh -c "cd '$destination' && pwd -P"
+check "builder reads Git history" \
+  run_as_builder /usr/bin/git -C "$destination" rev-parse HEAD
+refute "builder cannot write the checkout" \
+  run_as_builder /usr/bin/touch "$destination/.relocation-write-probe"
+# Removed unconditionally: if the probe unexpectedly succeeded it left a file
+# in the tree, and that is the case where cleanup matters most.
+/bin/rm -f "$destination/.relocation-write-probe"
+refute "builder cannot list the developer home" \
+  run_as_builder /bin/ls "$home"
+refute "builder cannot list the old parent" \
+  run_as_builder /bin/ls "$home/Developer"
+
+if [[ $failures -ne 0 ]]; then
+  echo >&2
+  echo "error: $failures access check(s) failed; report this before building" >&2
+  exit 70
 fi
+echo
+echo "authoritative checkout is now $destination"
+echo "next: sudo $destination/tools/macos-builder/finalize-nucleus-builder.sh"
