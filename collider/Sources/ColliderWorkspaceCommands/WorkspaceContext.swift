@@ -266,12 +266,16 @@ package struct WorkspaceContext: Sendable {
         {
             environment.removeValue(forKey: name)
         }
-        let pinned = hostToolBinaryDirectories.map(\.string)
-        if !pinned.isEmpty {
-            environment["PATH"] = (pinned + [environment["PATH"] ?? ""])
-                .filter { !$0.isEmpty }
-                .joined(separator: ":")
+        environment.removeValue(forKey: "LANG")
+        environment.removeValue(forKey: "SHELL")
+        environment.removeValue(forKey: "TMPDIR")
+        for name in Array(environment.keys) where name.hasPrefix("LC_") {
+            environment.removeValue(forKey: name)
         }
+        let pinned = hostToolBinaryDirectories.map(\.string)
+        environment["PATH"] =
+            (pinned + ["/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"])
+            .joined(separator: ":")
         environment["CCACHE_BASEDIR"] = root.string
         environment["CCACHE_COMPILERCHECK"] = "content"
         environment["CCACHE_DIR"] = cacheRoot.appending("host-ccache").string

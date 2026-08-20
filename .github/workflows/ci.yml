@@ -106,12 +106,6 @@ jobs:
             "$(stat -f '%u' "${GITHUB_WORKSPACE}")"
           test "$(id -un)" = nucleus-builder
           test "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" = nucleus-builder
-      - name: Observe build environment contract
-        shell: bash
-        run: |
-          for name in HOME USER LOGNAME PATH TMPDIR LANG LC_ALL LC_CTYPE TERM SHELL SDKROOT JAVA_HOME CC CXX LD_LIBRARY_PATH PKG_CONFIG_PATH SWIFTCI_USE_LOCAL_DEPS XDG_CACHE_HOME NUCLEUS_NATIVE_SDK_ROOT ANDROID_HOME ANDROID_SDK_ROOT SWIFT_TOOLCHAIN; do
-            printf '%s=%q\n' "${name}" "${!name-<unset>}"
-          done
       - name: Verify protected main provenance
         run: collider check protected-main-source
       - name: Build the catalog

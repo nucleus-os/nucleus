@@ -1494,6 +1494,31 @@ private func artifactInput(
     #expect(launched.taskEnvironment == baseline.taskEnvironment)
 }
 
+@Test func ambientSessionEnvironmentDoesNotChangeTaskEnvironment() {
+    let baseline = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: ["HOME": "/home/fixture"],
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
+    let interactive = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: [
+            "HOME": "/home/fixture",
+            "LANG": "en_US.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "PATH": "/developer/bin:/usr/bin:/bin",
+            "SHELL": "/bin/zsh",
+            "TMPDIR": "/private/tmp/session",
+        ],
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
+
+    #expect(interactive.taskEnvironment == baseline.taskEnvironment)
+    #expect(
+        interactive.taskEnvironment["PATH"]
+            == "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+}
+
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {
     let context = WorkspaceContext(
         root: FilePath("/workspace"),
