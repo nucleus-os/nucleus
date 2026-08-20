@@ -656,6 +656,11 @@ than compiling it again. The executed-versus-cached task count is the gate.
 Tests, packaging, qualification, and delivery join the workflow only after that
 measurement passes.
 
+The clean checkout resolves every root-owned SwiftPM dependency at an immutable
+revision equal to its gitlink commit. Its local mirrors therefore require only
+the checked-out object, not a mutable branch ref or repository state retained
+by an earlier runner job before planning the catalog.
+
 Verify the store's ownership, mode, and group access from both accounts before
 any state enters it, and verify the builder reads every migrated volume and
 artifact root before the interactive copies are released. The store is

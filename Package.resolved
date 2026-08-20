@@ -1,12 +1,11 @@
 {
-  "originHash" : "0681780024a7d57f8dcc187bfaa48994fdcf05bb89264eb8c1b13291ae4da137",
+  "originHash" : "b0e449fe8723cbbcf5a5cf6fad9854611affdbd14c9783341dbfa91a76e13664",
   "pins" : [
     {
       "identity" : "async-http-client",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-server/async-http-client.git",
       "state" : {
-        "branch" : "main",
         "revision" : "f95c908967e98c68c5ce3fd61a7974e7e869e303"
       }
     },
@@ -132,7 +131,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio.git",
       "state" : {
-        "branch" : "main",
         "revision" : "48119dbbd23e3eabba48952ac7f75ebeeb87c217"
       }
     },
@@ -159,7 +157,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio-ssl.git",
       "state" : {
-        "branch" : "main",
         "revision" : "d930168b86f46ca51a4bc09c5ca45c1833db8067"
       }
     },
@@ -213,8 +210,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/nucleus-os/swift-subprocess.git",
       "state" : {
-        "branch" : "nucleus-local-swift-system",
-        "revision" : "d1704deb70cebd7fe2699b8c0c93ee7a4a626211"
+        "revision" : "4d4764f18f82c52e6cc83575f164f9558ec5ffe9"
       }
     },
     {
@@ -230,7 +226,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "branch" : "nucleus",
         "revision" : "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"
       }
     }

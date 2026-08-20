@@ -36,7 +36,6 @@ Desktop.ini
 !/.swiftpm/configuration/mirrors.json
 /collider/.nucleus/
 /collider/.sourcekit-lsp/
-/collider/engine/Package.resolved
 
 # Native build products
 **/.tracy-build/

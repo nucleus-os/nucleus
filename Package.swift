@@ -59,15 +59,23 @@ let dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-binary-parsing.git", exact: "0.0.2"),
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.6.0"),
     .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
-    .package(url: "https://github.com/swift-server/async-http-client.git", branch: "main"),
+    .package(
+        url: "https://github.com/swift-server/async-http-client.git",
+        revision: "f95c908967e98c68c5ce3fd61a7974e7e869e303"),
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
     .package(name: "swift-java", path: "third-party/swift-java"),
-    .package(url: "https://github.com/apple/swift-nio.git", branch: "main"),
-    .package(url: "https://github.com/apple/swift-nio-ssl.git", branch: "main"),
+    .package(
+        url: "https://github.com/apple/swift-nio.git",
+        revision: "48119dbbd23e3eabba48952ac7f75ebeeb87c217"),
+    .package(
+        url: "https://github.com/apple/swift-nio-ssl.git",
+        revision: "d930168b86f46ca51a4bc09c5ca45c1833db8067"),
     .package(
         url: "https://github.com/swiftlang/swift-syntax.git",
         revision: "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf"),
-    .package(url: "https://github.com/nucleus-os/swift-system.git", branch: "nucleus"),
+    .package(
+        url: "https://github.com/nucleus-os/swift-system.git",
+        revision: "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"),
 ]
 
 let reactNativeSwiftSettings: [SwiftSetting] = [

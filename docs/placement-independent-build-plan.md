@@ -44,6 +44,15 @@ passes to the command, which its `hostWorkingDirectory` and `workingDirectory`
 pair already anticipates. Every command argument, working directory, search
 path, and toolset entry crossing into a container is canonical.
 
+Root-owned SwiftPM source dependencies declare immutable revisions equal to
+their gitlink commits. SwiftPM mirrors redirect those URL identities to the
+root-owned source without requiring a branch ref to exist in the checkout-local
+repository. The revision and gitlink are one validated source coordinate, and
+remote dependencies declare immutable revisions or versions pinned by the
+lockfile. Every SwiftPM package Collider resolves from the read-only checkout,
+including `collider/engine`, checks in its lockfile so resolution never needs
+to mutate authoritative source.
+
 Gate: no container command line, environment value, or mount target contains
 the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
