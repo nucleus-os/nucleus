@@ -105,6 +105,13 @@ Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
+This phase needs a real second checkout and cannot be reached earlier. Planning
+a second location resolves its package graph, which reaches the network and is
+therefore not something a test performs; and the launcher admits one canonical
+checkout, so a second one cannot be built locally at all. Until then the
+invariant is held by two narrower guards: one identity resolves two locations
+to the same bytes, and no container mount names the checkout.
+
 Gate: an automated build followed by a local build of one revision, and the
 reverse ordering, execute no compilation the other already performed and
 produce identical bytes; and a second machine reproduces the same product
