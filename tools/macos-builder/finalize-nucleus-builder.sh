@@ -308,15 +308,34 @@ run_as_builder "$script_directory/install-container-service.sh"
 # running as the same UID is still in the system bootstrap namespace and cannot
 # resolve the per-user Mach service.
 if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
-  if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+  if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
     echo "error: a job is executing on the legacy runner LaunchDaemon" >&2
     exit 75
   fi
   /bin/launchctl bootout "system/$runner_service_label"
 fi
 /bin/rm -f "$legacy_runner_plist"
+# `launchctl bootstrap user/<uid>` selects a bootstrap namespace but does not
+# change the caller's Unix credentials. A root caller therefore creates a root
+# job inside the builder's Mach-service domain. Replace that legacy state only
+# while idle, then perform bootstrap as the builder so namespace and effective
+# UID agree.
+if /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
+  runner_service_pid="$(
+    /bin/launchctl print "$runner_service_domain/$runner_service_label" \
+      | /usr/bin/awk '/^[[:space:]]*pid = / { print $3; exit }'
+  )"
+  if [[ -z "$runner_service_pid" \
+      || $(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs) != "$builder_uid" ]]; then
+    if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
+      echo "error: a job is executing on the runner being re-identified" >&2
+      exit 75
+    fi
+    /bin/launchctl bootout "$runner_service_domain/$runner_service_label"
+  fi
+fi
 if ! /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
-  /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
+  run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
 fi
 
 "$script_directory/verify-nucleus-builder.sh"

@@ -198,6 +198,13 @@ done < <(/usr/bin/find "$runner_work_root" -mindepth 2 -maxdepth 2 -type d -prin
   || fail "legacy runner LaunchDaemon descriptor remains installed"
 /bin/launchctl print "user/$builder_uid/$runner_service_label" >/dev/null \
   || fail "runner per-user LaunchAgent is not loaded"
+runner_service_pid="$(
+  /bin/launchctl print "user/$builder_uid/$runner_service_label" \
+    | /usr/bin/awk '/^[[:space:]]*pid = / { print $3; exit }'
+)"
+[[ -n "$runner_service_pid" \
+    && $(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs) == "$builder_uid" ]] \
+  || fail "runner LaunchAgent is not executing as $builder_user"
 /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
   && fail "runner remains loaded in the system launchd domain"
 /bin/launchctl print "user/$builder_uid/$container_service_label" >/dev/null \

@@ -31,7 +31,10 @@ Apple Container publishes its XPC API as a per-user Mach service, which a
 system-domain LaunchDaemon cannot resolve even when launchd assigns that daemon
 the builder UID. Both services are persistent LaunchAgents, while the runner
 installation and its registration credentials remain root-owned and immutable
-to jobs.
+to jobs. Finalization bootstraps both agents from the builder identity as well
+as into its `user/502` domain: selecting a user bootstrap namespace does not
+drop a root caller's Unix credentials. Verification resolves the live service
+PID from launchd and rejects a listener whose effective UID is not 502.
 
 Finalization also reconciles any retained Actions checkout left by the retired
 system-domain service. The work root and each ephemeral repository beneath it
