@@ -33,6 +33,12 @@ the builder UID. Both services are persistent LaunchAgents, while the runner
 installation and its registration credentials remain root-owned and immutable
 to jobs.
 
+Finalization also reconciles any retained Actions checkout left by the retired
+system-domain service. The work root and each ephemeral repository beneath it
+are builder-owned; a checkout whose root still has the legacy owner is corrected
+recursively once, including its submodules. Git therefore validates CI-owned
+source by ordinary ownership rather than a broad safe-directory exception.
+
 The interactive `maddy` account owns the authoritative development checkout,
 personal credentials, and remote-development sessions but runs no GitHub
 Actions service. CI uses a separate clean checkout owned by `nucleus-builder`.

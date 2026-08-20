@@ -177,6 +177,10 @@ done
   || fail "runner installation is not root-owned and immutable to jobs"
 [[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_work_root") == "$builder_user:$builder_group" ]] \
   || fail "runner work checkout is not builder-owned"
+while IFS= read -r -d '' runner_checkout; do
+  [[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_checkout") == "$builder_user:$builder_group" ]] \
+    || fail "runner checkout ownership drifted: $runner_checkout"
+done < <(/usr/bin/find "$runner_work_root" -mindepth 2 -maxdepth 2 -type d -print0)
 [[ "$runner_work_root" != "$runner_root"/* ]] \
   || fail "runner work checkout is inside the runner installation"
 [[ $(/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \

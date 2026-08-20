@@ -103,10 +103,18 @@ fi
 /bin/chmod 0755 "$runner_root/runsvc.sh"
 /usr/sbin/chown -R root:wheel "$runner_root"
 /usr/sbin/chown -R "$builder_user":"$builder_group" "$runner_root/_diag"
-# The work root is outside the installation the recursive pass above owns, so
-# its checkout keeps builder ownership without a recursive walk of every
-# submodule working tree.
+# The work root is outside the installation the recursive pass above owns.
+# Reconcile a retained checkout only when its root still belongs to the retired
+# service identity; Actions owns this ephemeral tree, so all nested submodules
+# must belong to the builder too. Current checkouts avoid the recursive walk.
 /usr/sbin/chown "$builder_user":"$builder_group" "$runner_work"
+for runner_checkout in "$runner_work"/*/*; do
+  [[ -d "$runner_checkout" ]] || continue
+  if [[ $(/usr/bin/stat -f '%Su:%Sg' "$runner_checkout") \
+      != "$builder_user:$builder_group" ]]; then
+    /usr/sbin/chown -R "$builder_user:$builder_group" "$runner_checkout"
+  fi
+done
 /bin/chmod 0755 "$runner_root/_diag" "$runner_work"
 for credential in .credentials .credentials_rsaparams .runner; do
   /usr/sbin/chown root:"$builder_group" "$runner_root/$credential"
