@@ -103,11 +103,12 @@ identity; the following local and automated source-equivalent runs are the
 two-ordering gate.
 
 The installed workspace launcher fingerprints Collider's actual compilation
-closure rather than the repository commit. Tracked and staged inputs contribute
-their scoped Git index modes and object identities, working-copy edits
-contribute their scoped binary diff, and untracked inputs contribute their
-content digest. A commit that changes no Collider compiler input therefore does
-not rebuild the host CLI before the task graph can measure reuse.
+closure rather than the repository commit or Git representation. Tracked and
+untracked inputs contribute their effective paths, Git modes, and content
+digests; deleted inputs contribute their absence. A commit that changes no
+Collider compiler input, including committing an already-built dirty Collider
+tree unchanged, therefore does not rebuild the host CLI before the task graph
+can measure reuse.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,

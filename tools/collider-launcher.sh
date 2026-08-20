@@ -70,19 +70,51 @@ append_repository_state() {
   local repository="$1"
   local label="$2"
   shift 2
-  local path
   printf 'repository\0%s\0' "$label"
-  # The index records the effective committed or staged content of the
-  # requested compilation closure. Repository HEAD is provenance for the
-  # checkout as a whole; including it makes an unrelated documentation commit
-  # rebuild Collider even though no compiler input changed.
-  git -C "$repository" ls-files --stage -z -- "$@"
-  git -C "$repository" diff \
-    --binary --no-ext-diff --ignore-submodules=all -- "$@"
-  while IFS= read -r -d '' path; do
-    printf 'untracked\0%s\0' "$path"
-    git -C "$repository" hash-object --no-filters -- "$path"
-  done < <(git -C "$repository" ls-files --others --exclude-standard -z -- "$@")
+  # Hash the effective tree directly. Encoding index objects plus a working
+  # diff represents identical content differently before and after commit;
+  # paths, Git modes, and content digests do not. Repository HEAD remains
+  # provenance for the checkout as a whole rather than a compiler input.
+  # One streaming reader avoids spawning Git once per file. Tracked and
+  # untracked paths deliberately share one representation, and missing tracked
+  # paths are omitted, so adding or deleting the effective tree and then
+  # committing it leaves this byte stream unchanged.
+  {
+    git -C "$repository" ls-files --cached -z -- "$@"
+    git -C "$repository" ls-files --others --exclude-standard -z -- "$@"
+  } | /usr/bin/perl -e '
+    use strict;
+    use warnings;
+    my $repository = shift @ARGV;
+    local $/ = "\0";
+    my %paths;
+    while (defined(my $path = <STDIN>)) {
+      chop $path;
+      $paths{$path} = 1;
+    }
+    binmode STDOUT;
+    for my $path (sort keys %paths) {
+      my $full = "$repository/$path";
+      my ($mode, $size);
+      if (-l $full) {
+        my $target = readlink($full);
+        defined $target or die "cannot read symlink $full: $!\n";
+        $mode = 120000;
+        $size = length($target);
+        print "file\0$path\0$mode\0$size\0$target";
+        next;
+      }
+      next unless -e $full;
+      -f $full or die "unsupported launcher input $full\n";
+      $mode = -x $full ? 100755 : 100644;
+      $size = -s $full;
+      print "file\0$path\0$mode\0$size\0";
+      open my $input, "<:raw", $full or die "cannot read $full: $!\n";
+      my $buffer;
+      while (read($input, $buffer, 1024 * 1024)) { print $buffer; }
+      close $input or die "cannot close $full: $!\n";
+    }
+  ' "$repository"
 }
 
 collider_source_fingerprint() {
