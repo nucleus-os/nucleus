@@ -23,6 +23,12 @@ run_as_builder() {
   /bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" "$@"
 }
 
+runner_worker_is_active() {
+  /bin/ps -axo command= \
+    | /usr/bin/awk -v worker="$runner_root/bin/Runner.Worker" \
+      '$1 == worker { found = 1 } END { exit(found ? 0 : 1) }'
+}
+
 readonly builder_user="$(contract_value builder.user)"
 readonly builder_group="$(contract_value builder.group)"
 readonly builder_home="$(contract_value builder.home)"
@@ -33,6 +39,7 @@ readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly runner_work="$(contract_value builder.runnerWorkRoot)"
 readonly runner_logs="$builder_home/Library/Logs/Nucleus/GitHubActionsRunner"
@@ -40,7 +47,8 @@ readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
 readonly build_store=/Library/Nucleus/Collider
-readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly runner_plist="$host_contract_root/$runner_service_label.plist"
+readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly runner_service_domain="user/$builder_uid"
 readonly container_service_label="$(contract_value launchd.label)"
@@ -256,14 +264,13 @@ if [[ -e "$runner_plist" || -L "$runner_plist" ]]; then
     || { echo "error: runner LaunchAgent descriptor ownership or mode drifted" >&2; exit 73; }
   if ! /usr/bin/cmp -s "$temporary_plist" "$runner_plist" \
       && /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
-    if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+    if runner_worker_is_active; then
       echo "error: a job is executing on the runner being updated" >&2
       exit 75
     fi
     /bin/launchctl bootout "$runner_service_domain/$runner_service_label"
   fi
 fi
-/usr/bin/install -d -o root -g wheel -m 0755 /Library/LaunchAgents
 /usr/bin/install -o root -g wheel -m 0644 "$temporary_plist" "$runner_plist"
 for builder_service_directory_path in \
   "$builder_agent_directory" \
@@ -307,27 +314,40 @@ run_as_builder "$script_directory/install-container-service.sh"
 # domain. The Actions listener must inhabit that same domain; a LaunchDaemon
 # running as the same UID is still in the system bootstrap namespace and cannot
 # resolve the per-user Mach service.
-# Booting out the retired launchd job can leave its service shell orphaned under
-# PID 1. Two listeners then present one registration and GitHub may dispatch to
-# the obsolete identity. Reconcile only the exact installed service command,
-# and never terminate it while any worker is executing a job.
-stale_runner_service_pids=()
+# A global LaunchAgent is loaded independently into login and background
+# sessions, while an explicit bootstrap adds another instance. Keep the runner
+# descriptor in the root-owned host-contract directory instead, drain every
+# legacy domain, and create exactly one service from the builder identity.
+if runner_worker_is_active; then
+  echo "error: a job is executing on the runner being rehomed" >&2
+  exit 75
+fi
+/bin/rm -f "$legacy_runner_agent_plist" "$legacy_runner_plist"
+for runner_domain in \
+  system \
+  user/0 \
+  gui/0 \
+  "$runner_service_domain" \
+  "gui/$builder_uid" \
+  "user/$developer_uid" \
+  "gui/$developer_uid"
+do
+  /bin/launchctl bootout "$runner_domain/$runner_service_label" >/dev/null 2>&1 || true
+done
+runner_service_pids=()
 while IFS= read -r runner_service_pid; do
-  [[ -n "$runner_service_pid" ]] || continue
-  runner_service_uid="$(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs)"
-  if [[ "$runner_service_uid" != "$builder_uid" ]]; then
-    stale_runner_service_pids+=("$runner_service_pid")
-  fi
+  [[ -n "$runner_service_pid" ]] && runner_service_pids+=("$runner_service_pid")
 done < <(/usr/bin/pgrep -f "^/bin/bash $runner_root/runsvc[.]sh$" || true)
-if [[ ${#stale_runner_service_pids[@]} -gt 0 ]]; then
-  if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
-    echo "error: a job is executing on a stale runner service" >&2
-    exit 75
-  fi
-  /bin/kill -TERM "${stale_runner_service_pids[@]}"
+remaining_runner_services=0
+if [[ ${#runner_service_pids[@]} -gt 0 ]]; then
+  # A booted-out KeepAlive job may finish between the snapshot and signal.
+  # Cleanup is complete in that case, so signal each still-live PID separately.
+  for runner_service_pid in "${runner_service_pids[@]}"; do
+    /bin/kill -TERM "$runner_service_pid" >/dev/null 2>&1 || true
+  done
   for attempt in {1..10}; do
     remaining_runner_services=0
-    for runner_service_pid in "${stale_runner_service_pids[@]}"; do
+    for runner_service_pid in "${runner_service_pids[@]}"; do
       if /bin/kill -0 "$runner_service_pid" >/dev/null 2>&1; then
         remaining_runner_services=$((remaining_runner_services + 1))
       fi
@@ -335,39 +355,10 @@ if [[ ${#stale_runner_service_pids[@]} -gt 0 ]]; then
     [[ $remaining_runner_services -eq 0 ]] && break
     /bin/sleep 1
   done
-  [[ $remaining_runner_services -eq 0 ]] \
-    || { echo "error: stale runner service did not terminate" >&2; exit 75; }
 fi
-if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
-  if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
-    echo "error: a job is executing on the legacy runner LaunchDaemon" >&2
-    exit 75
-  fi
-  /bin/launchctl bootout "system/$runner_service_label"
-fi
-/bin/rm -f "$legacy_runner_plist"
-# `launchctl bootstrap user/<uid>` selects a bootstrap namespace but does not
-# change the caller's Unix credentials. A root caller therefore creates a root
-# job inside the builder's Mach-service domain. Replace that legacy state only
-# while idle, then perform bootstrap as the builder so namespace and effective
-# UID agree.
-if /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
-  runner_service_pid="$(
-    /bin/launchctl print "$runner_service_domain/$runner_service_label" \
-      | /usr/bin/awk '/^[[:space:]]*pid = / { print $3; exit }'
-  )"
-  if [[ -z "$runner_service_pid" \
-      || $(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs) != "$builder_uid" ]]; then
-    if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
-      echo "error: a job is executing on the runner being re-identified" >&2
-      exit 75
-    fi
-    /bin/launchctl bootout "$runner_service_domain/$runner_service_label"
-  fi
-fi
-if ! /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
-  run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
-fi
+[[ $remaining_runner_services -eq 0 ]] \
+  || { echo "error: stale runner service did not terminate" >&2; exit 75; }
+run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
 
 "$script_directory/verify-nucleus-builder.sh"
 echo "finalized trusted builder identity and pinned runner $runner_version"

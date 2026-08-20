@@ -21,10 +21,12 @@ readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
-readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
-readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly runner_plist="$host_contract_root/$runner_service_label.plist"
+readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
 readonly build_store=/Library/Nucleus/Collider
@@ -194,6 +196,8 @@ done < <(/usr/bin/find "$runner_work_root" -mindepth 2 -maxdepth 2 -type d -prin
   || fail "runner LaunchAgent descriptor is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_plist") == root:wheel:644 ]] \
   || fail "runner LaunchAgent descriptor ownership or mode drifted"
+[[ ! -e "$legacy_runner_agent_plist" && ! -L "$legacy_runner_agent_plist" ]] \
+  || fail "global runner LaunchAgent descriptor remains installed"
 [[ ! -e "$legacy_runner_plist" && ! -L "$legacy_runner_plist" ]] \
   || fail "legacy runner LaunchDaemon descriptor remains installed"
 /bin/launchctl print "user/$builder_uid/$runner_service_label" >/dev/null \
@@ -216,6 +220,16 @@ done < <(/usr/bin/pgrep -f "^/bin/bash $runner_root/runsvc[.]sh$" || true)
   || fail "expected exactly one runner service, found $runner_service_count"
 /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
   && fail "runner remains loaded in the system launchd domain"
+/bin/launchctl print "user/0/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the root user domain"
+/bin/launchctl print "gui/0/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the root GUI domain"
+/bin/launchctl print "gui/$builder_uid/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the GUI launchd domain"
+/bin/launchctl print "user/$developer_uid/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the developer user domain"
+/bin/launchctl print "gui/$developer_uid/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the developer GUI domain"
 /bin/launchctl print "user/$builder_uid/$container_service_label" >/dev/null \
   || fail "builder Apple-container service is not loaded"
 

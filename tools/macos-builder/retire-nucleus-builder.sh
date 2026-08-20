@@ -17,14 +17,20 @@ contract_value() {
 }
 
 readonly builder_user="$(contract_value builder.user)"
+readonly developer_user="$(contract_value builder.developerUser)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly declared_runner_root="$(contract_value builder.runnerRoot)"
-readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly runner_plist="$host_contract_root/$runner_service_label.plist"
+readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_service_domain="user/$builder_uid"
 
-if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+if /bin/ps -axo command= \
+    | /usr/bin/awk -v worker="$declared_runner_root/bin/Runner.Worker" \
+      '$1 == worker { found = 1 } END { exit(found ? 0 : 1) }'; then
   echo "error: a job is executing on this runner; drain it before retiring" >&2
   exit 75
 fi
@@ -32,7 +38,7 @@ fi
 # The installed service records what is actually installed, which may predate
 # the machine roots the current contract declares.
 installed_machine_root=""
-for installed_plist in "$runner_plist" "$legacy_runner_plist"; do
+for installed_plist in "$runner_plist" "$legacy_runner_agent_plist" "$legacy_runner_plist"; do
   if [[ -f "$installed_plist" && ! -L "$installed_plist" ]]; then
     installed_service="$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$installed_plist")"
     installed_machine_root="$(/usr/bin/dirname "$(/usr/bin/dirname "$installed_service")")"
@@ -40,7 +46,15 @@ for installed_plist in "$runner_plist" "$legacy_runner_plist"; do
   fi
 done
 
-for service_domain in "$runner_service_domain" system; do
+for service_domain in \
+  "$runner_service_domain" \
+  "gui/$builder_uid" \
+  "user/$developer_uid" \
+  "gui/$developer_uid" \
+  user/0 \
+  gui/0 \
+  system
+do
   if ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1; then
     continue
   fi
@@ -54,6 +68,7 @@ for service_domain in "$runner_service_domain" system; do
 done
 /bin/rm -f \
   "$runner_plist" \
+  "$legacy_runner_agent_plist" \
   "$legacy_runner_plist" \
   /etc/sudoers.d/nucleus-builder \
   /usr/local/bin/collider \
