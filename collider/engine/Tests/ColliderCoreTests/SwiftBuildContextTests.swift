@@ -478,4 +478,14 @@ private let fixturePackageRoot = FilePath("/workspace")
             IdentityPathRoot(name: "cache", path: FilePath("/store/cache")),
         ]))
     #expect(authoritative.identityBytes != foreignToolset.identityBytes)
+
+    // Equality alone would also hold if the checkout path reached both
+    // identities verbatim and simply matched, so the placement itself must be
+    // absent rather than merely consistent.
+    let map = IdentityPathMap(roots: [
+        IdentityPathRoot(
+            name: "workspace", path: FilePath("/Library/Nucleus/checkout")),
+        IdentityPathRoot(name: "cache", path: FilePath("/store/cache")),
+    ])
+    #expect(!map.containsDeclaredRoot(inEncoded: authoritative.identityBytes))
 }

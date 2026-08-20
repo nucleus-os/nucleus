@@ -20,6 +20,14 @@ public struct IdentityEncoder: Sendable {
         self.identityPathMap = identityPathMap
     }
 
+    /// Splices in identity bytes another encoder produced.
+    ///
+    /// Those bytes were canonicalized by whatever map that encoder held, which
+    /// is not necessarily this one. A declared root surviving into them means
+    /// the same source at a second location would produce a different identity
+    /// and reuse nothing from the first, which is exactly the fault the roots
+    /// are declared to prevent and one that otherwise shows up only as an
+    /// unexplained full rebuild.
     public mutating func append(bytes value: [UInt8]) {
         append(.bytes, payload: value)
     }

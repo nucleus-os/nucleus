@@ -611,6 +611,21 @@ may not write the store. Gradle's Android outputs and project cache moved out of
 the checkout the same way, leaving the tree writable only by the account that
 owns it.
 
+Placement roots are declared so that where the host keeps things cannot reach
+an identity, and the checkout is such a root: the CI checkout and the
+authoritative checkout hold identical source at different paths, and an
+identity that records which one it was compiled from shares nothing with the
+other. SwiftPM task identities, host scratch directories, and container build
+workspaces resolve through the declared roots, and a symbolic link's target
+resolves as the path it is rather than as an opaque string.
+
+Two placements still reach identities and are the remaining work for this gate.
+Container mount targets repeat the host path as a string, so a task naming the
+checkout as a mount target still records which checkout it was. Compiler search
+flags carry absolute cache paths, which both accounts resolve identically
+because they share one store, so those do not divide this host's warm state but
+do keep an identity from being reproducible on another machine.
+
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.
 

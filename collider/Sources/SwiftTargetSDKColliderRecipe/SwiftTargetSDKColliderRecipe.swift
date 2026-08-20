@@ -1434,7 +1434,11 @@ package struct PublishSwiftSDKDiscoveryAction: ColliderAction {
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: path)
-            encoder.append(target)
+            // The symbolic link's target is a path, and identity resolves paths
+            // through the declared placement roots. Appending it as an ordinary
+            // string kept the host's own directory in the identity, so the same
+            // link published from a second checkout hashed differently.
+            encoder.append(path: FilePath(target))
             encoder.append(path: displacedItem)
         }
     }

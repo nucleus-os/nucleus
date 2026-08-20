@@ -50,6 +50,35 @@ public struct IdentityPathMap: Hashable, Sendable {
     }
 }
 
+extension IdentityPathMap {
+    /// Whether a declared root appears literally in already-encoded bytes.
+    ///
+    /// Identity bytes computed elsewhere may have resolved through a different
+    /// map, or none. A declared root surviving into them is placement leaking
+    /// into identity: the same source at another location hashes differently
+    /// and shares nothing with it, which is the whole cost these roots exist to
+    /// remove.
+    public func containsDeclaredRoot(inEncoded bytes: [UInt8]) -> Bool {
+        guard !roots.isEmpty else { return false }
+        // Identity payloads are mostly digests, so the scan looks for the roots
+        // rather than decoding the bytes as text.
+        return roots.contains { root in
+            bytes.containsSubsequence(Array(root.path.string.utf8))
+        }
+    }
+}
+
+extension [UInt8] {
+    fileprivate func containsSubsequence(_ pattern: [UInt8]) -> Bool {
+        guard !pattern.isEmpty, count >= pattern.count else { return false }
+        for start in 0...(count - pattern.count)
+        where Array(self[start..<(start + pattern.count)]) == pattern {
+            return true
+        }
+        return false
+    }
+}
+
 public enum PortableIdentityPathFailure: Error, CustomStringConvertible, Sendable {
     case unrecognizedAbsoluteHostPath(String)
 
