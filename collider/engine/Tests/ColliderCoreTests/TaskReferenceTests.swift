@@ -121,6 +121,43 @@ private func inertActionFileSystem() -> ActionFileSystem {
                 entrypoint: "/collider-entrypoints/build"))
 }
 
+@Test func ociEnvironmentIdentityIgnoresDeclaredHostPlacement() {
+    func identity(workspace: FilePath) -> [UInt8] {
+        let map = IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: workspace)
+        ])
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: workspace.appending("image-id"),
+            hostname: "fixture",
+            workingDirectory: "/nucleus-workspace",
+            hostWorkingDirectory: workspace,
+            mounts: [
+                OCIMount(
+                    source: workspace,
+                    target: "/nucleus-workspace",
+                    access: .readOnly)
+            ],
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .build,
+            containerEnvironment: ["CCACHE_BASEDIR": workspace.string],
+            command: ["build"],
+            environment: [:],
+            output: .logged)
+        var encoder = IdentityEncoder(identityPathMap: map)
+        OCIExecutionActionIdentity(execution).encode(into: &encoder)
+        return encoder.bytes
+    }
+
+    #expect(
+        identity(workspace: FilePath("/Library/Nucleus/checkout"))
+            == identity(workspace: FilePath("/Users/builder/work/nucleus")))
+}
+
 @Test func mountedOCIEntrypointBindsItsContainingDirectory() throws {
     var builder = TaskBuilder(
         id: TaskID(rawValue: "fixture.image"),

@@ -110,7 +110,11 @@ log coordinates alongside product provenance. Those values control how one
 invocation enters and records Collider; they do not describe what a task builds.
 A regression test proves that changing every invocation coordinate leaves the
 complete task environment equal. The transition run completed all 54 selected
-execution tasks under the narrowed identities. The following local and
+execution tasks under the narrowed identities. The first reverse-order
+measurement then exposed one placement value still encoded opaquely:
+`CCACHE_BASEDIR` carried the physical checkout root through task and container
+environments. Environment values and host SwiftPM arguments now resolve through
+the same placement map as files and compiler arguments. The following local and
 automated source-equivalent runs are the two-ordering gate.
 
 The installed workspace launcher fingerprints Collider's actual compilation
@@ -723,14 +727,16 @@ experiment: it introduced immutable fork revisions and followed a deliberately
 superseded local diagnostic rather than a completed source-equivalent warm run.
 The subsequent automated sequence proved that product provenance and an
 unrelated repository commit no longer invalidate compilation state. The local
-follow-up then isolated invocation control state as the final whole-graph leak,
-and that state is now absent from task environments. The clean-checkout
-transition completed all 54 selected execution tasks under the corrected
-identities. The next source-equivalent local run must consume that state, and a
-following automated run must consume the local state. Their
-executed-versus-cached task counts are the placement gate. Tests, packaging,
-qualification, and delivery join the workflow only after that measurement
-passes.
+follow-up then isolated invocation control state, and that state is now absent
+from task environments. The clean-checkout transition completed all 54 selected
+execution tasks under those corrected identities. A source-equivalent local run
+completed, but the following automated plan selected the prior CI identity for
+35 tasks; the run was cancelled before repeating the full graph. Comparing the
+two plans isolated a physical checkout path in environment values and host
+SwiftPM arguments, which now resolves through the declared placement map. The
+next local-to-automated pair establishes these corrected identities and measures
+the placement gate. Tests, packaging, qualification, and delivery join the
+workflow only after that measurement passes.
 
 Read-only commands no longer create durable run records, reconcile abandoned
 builder runs, create task-state directories, or persist planning digest indexes.

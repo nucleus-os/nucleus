@@ -232,7 +232,7 @@ struct TaskIdentityBuilder {
         }
         encoder.appendSequence(artifactEnvironment(action.environment)) { entry, pair in
             entry.append(pair.key)
-            entry.append(pair.value)
+            entry.append(argument: pair.value)
         }
     }
 }

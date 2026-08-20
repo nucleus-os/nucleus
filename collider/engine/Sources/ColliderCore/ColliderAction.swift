@@ -321,7 +321,7 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.appendSequence(execution.containerEnvironment.sorted { $0.key < $1.key }) {
             entry, value in
             entry.append(value.key)
-            entry.append(value.value)
+            entry.append(argument: value.value)
         }
         encoder.appendOptional(execution.imageEntrypointOverride) {
             $0.append($1)

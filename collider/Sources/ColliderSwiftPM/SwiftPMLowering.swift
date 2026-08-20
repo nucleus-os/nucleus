@@ -766,9 +766,9 @@ private struct HostSwiftPMCommandIdentity: ColliderActionIdentity {
             }).sorted(by: { $0.key < $1.key })
         ) { environment, entry in
             environment.append(entry.key)
-            environment.append(entry.value)
+            environment.append(argument: entry.value)
         }
-        encoder.appendSequence(command.arguments) { $0.append($1) }
+        encoder.appendSequence(command.arguments) { $0.append(argument: $1) }
     }
 }
 

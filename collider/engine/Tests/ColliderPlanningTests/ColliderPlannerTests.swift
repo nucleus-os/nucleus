@@ -175,7 +175,8 @@ import Testing
                     input: input,
                     output: output,
                     environment: [
-                        "FIXTURE_MODE": "release"
+                        "CCACHE_BASEDIR": workspace.string,
+                        "FIXTURE_MODE": "release",
                     ])))
         let services = deterministicHashingServices(
             identityPathMap: IdentityPathMap(roots: [
