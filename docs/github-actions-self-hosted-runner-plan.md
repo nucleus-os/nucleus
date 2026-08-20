@@ -35,6 +35,10 @@ to jobs. Finalization bootstraps both agents from the builder identity as well
 as into its `user/502` domain: selecting a user bootstrap namespace does not
 drop a root caller's Unix credentials. Verification resolves the live service
 PID from launchd and rejects a listener whose effective UID is not 502.
+It also requires exactly one installed runner service process. Finalization
+terminates an exact idle `runsvc.sh` orphan left under PID 1 by the retired
+launchd job before the builder listener is admitted; it refuses that migration
+while any runner worker is active.
 
 Finalization also reconciles any retained Actions checkout left by the retired
 system-domain service. The work root and each ephemeral repository beneath it

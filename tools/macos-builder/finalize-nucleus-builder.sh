@@ -307,6 +307,37 @@ run_as_builder "$script_directory/install-container-service.sh"
 # domain. The Actions listener must inhabit that same domain; a LaunchDaemon
 # running as the same UID is still in the system bootstrap namespace and cannot
 # resolve the per-user Mach service.
+# Booting out the retired launchd job can leave its service shell orphaned under
+# PID 1. Two listeners then present one registration and GitHub may dispatch to
+# the obsolete identity. Reconcile only the exact installed service command,
+# and never terminate it while any worker is executing a job.
+stale_runner_service_pids=()
+while IFS= read -r runner_service_pid; do
+  [[ -n "$runner_service_pid" ]] || continue
+  runner_service_uid="$(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs)"
+  if [[ "$runner_service_uid" != "$builder_uid" ]]; then
+    stale_runner_service_pids+=("$runner_service_pid")
+  fi
+done < <(/usr/bin/pgrep -f "^/bin/bash $runner_root/runsvc[.]sh$" || true)
+if [[ ${#stale_runner_service_pids[@]} -gt 0 ]]; then
+  if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
+    echo "error: a job is executing on a stale runner service" >&2
+    exit 75
+  fi
+  /bin/kill -TERM "${stale_runner_service_pids[@]}"
+  for attempt in {1..10}; do
+    remaining_runner_services=0
+    for runner_service_pid in "${stale_runner_service_pids[@]}"; do
+      if /bin/kill -0 "$runner_service_pid" >/dev/null 2>&1; then
+        remaining_runner_services=$((remaining_runner_services + 1))
+      fi
+    done
+    [[ $remaining_runner_services -eq 0 ]] && break
+    /bin/sleep 1
+  done
+  [[ $remaining_runner_services -eq 0 ]] \
+    || { echo "error: stale runner service did not terminate" >&2; exit 75; }
+fi
 if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
   if /usr/bin/pgrep -f "$runner_root/bin/Runner.Worker" >/dev/null 2>&1; then
     echo "error: a job is executing on the legacy runner LaunchDaemon" >&2

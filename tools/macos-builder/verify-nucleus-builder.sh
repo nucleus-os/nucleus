@@ -205,6 +205,15 @@ runner_service_pid="$(
 [[ -n "$runner_service_pid" \
     && $(/bin/ps -p "$runner_service_pid" -o uid= | /usr/bin/xargs) == "$builder_uid" ]] \
   || fail "runner LaunchAgent is not executing as $builder_user"
+runner_service_count=0
+while IFS= read -r runner_process_pid; do
+  [[ -n "$runner_process_pid" ]] || continue
+  runner_service_count=$((runner_service_count + 1))
+  [[ $(/bin/ps -p "$runner_process_pid" -o uid= | /usr/bin/xargs) == "$builder_uid" ]] \
+    || fail "an orphaned runner service has the wrong effective UID"
+done < <(/usr/bin/pgrep -f "^/bin/bash $runner_root/runsvc[.]sh$" || true)
+[[ $runner_service_count -eq 1 ]] \
+  || fail "expected exactly one runner service, found $runner_service_count"
 /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
   && fail "runner remains loaded in the system launchd domain"
 /bin/launchctl print "user/$builder_uid/$container_service_label" >/dev/null \
