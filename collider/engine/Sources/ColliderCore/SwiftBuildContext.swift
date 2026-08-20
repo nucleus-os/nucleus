@@ -558,13 +558,30 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         return [subcommand] + contextArguments + arguments.dropFirst()
     }
 
+    /// The package path the command sees.
+    ///
+    /// A container observes the package where the declared placement roots put
+    /// it, not where the host keeps it, and this must agree with the mount
+    /// target naming the same tree. Host execution observes the host.
+    public var executionPackageRoot: String { executionPath(context.packageRoot) }
+
+    /// Where a host path appears to this invocation's execution environment.
+    private func executionPath(_ path: FilePath) -> String {
+        switch context.execution {
+        case .host:
+            path.string
+        case .oci:
+            context.identityPathMap.executionPath(path)
+        }
+    }
+
     private var contextArguments: [String] {
         var arguments = [
             "--build-system", context.buildSystem.rawValue,
             "--configuration", context.configuration.rawValue,
             "--jobs", String(context.maximumParallelism),
             "--scratch-path", executionScratchPath.string,
-            "--package-path", context.packageRoot.string,
+            "--package-path", executionPackageRoot,
         ]
         if let debugInformationFormat = context.debugInformationFormat {
             arguments += ["-debug-info-format", debugInformationFormat.rawValue]
@@ -581,7 +598,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             arguments += ["--swift-sdk", name, "--triple", targetTriple]
         }
         for toolset in context.toolsets {
-            arguments += ["--toolset", toolset.string]
+            // Read by the build inside its environment, so named there.
+            arguments += ["--toolset", executionPath(toolset)]
         }
         if context.staticSwiftStandardLibrary {
             arguments.append("--static-swift-stdlib")

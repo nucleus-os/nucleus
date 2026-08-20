@@ -809,12 +809,20 @@ private func fixtureReactNativeNodeModules(
             .hasSuffix(
                 "/x86_64-unknown-linux-gnu/"
                     + NucleusLinuxABI.sdkDirectoryName))
+    // The checkout is mounted where the declared placement roots put it, not
+    // where the host keeps it, so a build cannot record which checkout it read.
     #expect(
         armExecution.mounts.contains(
             OCIMount(
                 source: fixtureRepositoryRoot,
-                target: fixtureRepositoryRoot.string,
+                target: "/nucleus-workspace",
                 access: .readOnly)))
+    for execution in [armExecution, x86Execution] {
+        #expect(
+            execution.mounts.allSatisfy {
+                !$0.target.hasPrefix(fixtureRepositoryRoot.string)
+            })
+    }
     #expect(armExecution.mounts.allSatisfy { $0.isReadOnly })
     #expect(x86Execution.mounts.allSatisfy { $0.isReadOnly })
     #expect(

@@ -54,16 +54,22 @@ extension IdentityPathMap {
     /// Where a declared root appears inside an execution environment.
     ///
     /// One declaration of placement serves identity and execution alike: the
-    /// same root resolves to `${name}` in an identity and to `/nucleus/name`
+    /// same root resolves to `${name}` in an identity and to `/nucleus-name`
     /// in a container, so the two cannot disagree about which prefix is
     /// placement. A path under no declared root is not placement and is
     /// returned unchanged.
+    ///
+    /// The name is a single root-level component because a container image's
+    /// root filesystem is read only: the runtime binds onto a target it can
+    /// reach, and a nested target would require creating its parent there.
+    /// Every other mount this build system declares is root-level for the same
+    /// reason.
     public func executionPath(_ path: FilePath) -> String {
         for root in roots {
             let prefix = root.path.string
             guard path.string == prefix || path.string.hasPrefix(prefix + "/")
             else { continue }
-            return "/nucleus/\(root.name)" + path.string.dropFirst(prefix.count)
+            return "/nucleus-\(root.name)" + path.string.dropFirst(prefix.count)
         }
         return path.string
     }

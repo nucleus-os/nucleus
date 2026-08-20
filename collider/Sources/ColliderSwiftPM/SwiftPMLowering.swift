@@ -489,7 +489,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     execution: .oci(
                         try invocation.ociExecution(
                             arguments: arguments,
-                            workingDirectory: invocation.context.packageRoot,
+                            workingDirectory: FilePath(
+                                invocation.executionPackageRoot),
                             environment: environment)))
             }
         }
@@ -514,7 +515,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 execution: .oci(
                     try invocation.ociExecution(
                         arguments: ["build", "--show-bin-path"],
-                        workingDirectory: invocation.context.packageRoot,
+                        workingDirectory: FilePath(invocation.executionPackageRoot),
                         environment: environment,
                         output: .captured(limit: 64 * 1_024))))
         }

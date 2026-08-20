@@ -198,7 +198,7 @@ package struct WorkspaceContext: Sendable {
     /// resolves through, so output and identity cannot disagree about what
     /// counts as placement.
     package static func mappedPrefix(for root: IdentityPathRoot) -> String {
-        "/nucleus/\(root.name)"
+        "/nucleus-\(root.name)"
     }
 
     /// Swift and Clang spellings of that mapping, in the order each expects.

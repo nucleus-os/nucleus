@@ -880,9 +880,11 @@ package struct ComponentRegistry {
         let hostSwiftRuntimeLibraryDirectory = "/opt/swift/usr/lib/swift/linux"
         let hostSwiftCompatibilityLibraryDirectory = "/opt/swift-compat/arm64"
         let hostSwiftBinaryDirectory = "/opt/swift/usr/bin"
+        let placement = context.identityPathMap
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
-            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
+            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"),
+            placement: placement)
         let execution = SwiftPMExecution.oci(
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
@@ -892,25 +894,31 @@ package struct ComponentRegistry {
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
                 mounts: [
-                    OCIMount(source: root, target: root.string, access: .readOnly),
-                    OCIMount(source: nativeSDK, target: nativeSDK.string, access: .readOnly),
+                    OCIMount(
+                        source: root,
+                        target: placement.executionPath(root),
+                        access: .readOnly),
+                    OCIMount(
+                        source: nativeSDK,
+                        target: placement.executionPath(nativeSDK),
+                        access: .readOnly),
                     // The native SDK's include tree links into the materialized
                     // JavaScript workspace and the generated sources beside it,
-                    // so both have to be reachable at the same path inside the
-                    // container as the links record on the host.
+                    // and those links record the path the container sees, so
+                    // both trees are mounted where the declared roots put them.
                     OCIMount(
                         source: ReactNativeColliderRecipe.javaScriptWorkspace(
                             cacheRoot: context.cacheRoot),
-                        target: ReactNativeColliderRecipe.javaScriptWorkspace(
-                            cacheRoot: context.cacheRoot
-                        ).string,
+                        target: placement.executionPath(
+                            ReactNativeColliderRecipe.javaScriptWorkspace(
+                                cacheRoot: context.cacheRoot)),
                         access: .readOnly),
                     OCIMount(
                         source: ReactNativeColliderRecipe.codegenRoot(
                             cacheRoot: context.cacheRoot),
-                        target: ReactNativeColliderRecipe.codegenRoot(
-                            cacheRoot: context.cacheRoot
-                        ).string,
+                        target: placement.executionPath(
+                            ReactNativeColliderRecipe.codegenRoot(
+                                cacheRoot: context.cacheRoot)),
                         access: .readOnly),
                     OCIMount(
                         source: builder.swiftSDKRoot,
@@ -946,12 +954,12 @@ package struct ComponentRegistry {
                     "HOME": "/home/nucleus-build",
                     "NUCLEUS_NATIVE_SDK_ROOT": nativeSDK.string,
                     "NUCLEUS_GFXSTREAM_GUEST_LIBRARY":
-                        nativeSDK.appending(
-                            "android/gfxstream/lib/libvulkan_gfxstream.so"
-                        ).string,
+                        placement.executionPath(
+                            nativeSDK.appending(
+                                "android/gfxstream/lib/libvulkan_gfxstream.so")),
                     "NUCLEUS_TARGET_LIBRARY_PATH": [
                         guestTargetSDK + "/usr/lib/swift/linux",
-                        waylandSDK.appending("lib").string,
+                        placement.executionPath(waylandSDK.appending("lib")),
                         "/lib/\(target.gnuArchitecture)",
                         "/usr/lib/\(target.gnuArchitecture)",
                     ].joined(separator: ":"),
@@ -959,7 +967,7 @@ package struct ComponentRegistry {
                         guestTargetSDK + "/usr/lib/swift/linux",
                         hostSwiftRuntimeLibraryDirectory,
                         hostSwiftCompatibilityLibraryDirectory,
-                        waylandSDK.appending("lib").string,
+                        placement.executionPath(waylandSDK.appending("lib")),
                     ].joined(separator: ":"),
                     "SWIFTPM_CUSTOM_BIN_DIR": hostSwiftBinaryDirectory,
                     "PATH": "/swiftpm-overlay/usr/bin:"
@@ -979,13 +987,13 @@ package struct ComponentRegistry {
             configuration: configuration,
             sanitizer: sanitizer,
             cFlags: nativeCompiler.cFlags + [
-                "-I\(waylandSDK.appending("include").string)"
+                "-I\(placement.executionPath(waylandSDK.appending("include")))"
             ],
             cxxFlags: nativeCompiler.cxxFlags + [
-                "-I\(waylandSDK.appending("include").string)"
+                "-I\(placement.executionPath(waylandSDK.appending("include")))"
             ],
             linkerFlags: nativeCompiler.linkerFlags + [
-                "-L\(waylandSDK.appending("lib").string)",
+                "-L\(placement.executionPath(waylandSDK.appending("lib")))",
                 "-L\(targetRuntimeLibraryDirectory)",
             ] + additionalLinkerFlags,
             toolsets: [root.appending("swift-sdk/linux-builder-toolset.json")],
@@ -1065,18 +1073,23 @@ package struct ComponentRegistry {
         swiftExecutable: CommandSpec.Executable
     ) throws -> SwiftPMInvocation {
         let nativeSDK = context.nativeSDKRoot(named: "android-arm64")
+        let placement = context.identityPathMap
         let nativeCompiler = nativeSDKCompilerConfiguration(
             nativeSDK: nativeSDK,
-            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"))
+            gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"),
+            placement: placement)
         let swiftCxxLibraries = swiftSDKRoot.appending(
             "\(inputs.androidBundleID).artifactbundle/swift-android/"
                 + "swift-resources/usr/lib/swift-aarch64/android")
         return try context.swiftPMInvocation(
             configuration: .release,
             swiftFlags: ["-disable-cmo"],
-            cFlags: nativeCompiler.cFlags + ["-I\(swiftIncludeRoot.string)"],
-            cxxFlags: nativeCompiler.cxxFlags + ["-I\(swiftIncludeRoot.string)"],
-            linkerFlags: nativeCompiler.linkerFlags + ["-L\(swiftCxxLibraries.string)"],
+            cFlags: nativeCompiler.cFlags
+                + ["-I\(placement.executionPath(swiftIncludeRoot))"],
+            cxxFlags: nativeCompiler.cxxFlags
+                + ["-I\(placement.executionPath(swiftIncludeRoot))"],
+            linkerFlags: nativeCompiler.linkerFlags
+                + ["-L\(placement.executionPath(swiftCxxLibraries))"],
             staticSwiftStandardLibrary: true,
             target: .swiftSDK(
                 name: inputs.androidBundleID,
@@ -1085,9 +1098,12 @@ package struct ComponentRegistry {
             swiftExecutable: swiftExecutable)
     }
 
+    /// Search paths a container compilation receives, named where that
+    /// container sees them.
     private func nativeSDKCompilerConfiguration(
         nativeSDK: FilePath,
-        gfxstreamSDKRoot: FilePath
+        gfxstreamSDKRoot: FilePath,
+        placement: IdentityPathMap
     ) -> NativeSDKCompilerConfiguration {
         let root = context.layout.root
         let render = nativeSDK.appending("render")
@@ -1149,9 +1165,10 @@ package struct ComponentRegistry {
             reactCommon.appending("react/renderer/textlayoutmanager/platform/cxx"),
             reactCommon.appending("reactperflogger"),
         ]
+        let executionPath = placement.executionPath
         let icuIncludeFlags = [icu.appending("common"), icu.appending("i18n")]
-            .flatMap { ["-iquote", $0.string] }
-        let includeFlags = includeDirectories.map { "-I\($0.string)" }
+            .flatMap { ["-iquote", executionPath($0)] }
+        let includeFlags = includeDirectories.map { "-I\(executionPath($0))" }
         let libraryDirectories = [
             render.appending("lib/skia-graphite"),
             render.appending("lib/skia-graphite-android-arm64"),
@@ -1165,7 +1182,7 @@ package struct ComponentRegistry {
         return NativeSDKCompilerConfiguration(
             cFlags: icuIncludeFlags + includeFlags,
             cxxFlags: icuIncludeFlags + includeFlags,
-            linkerFlags: libraryDirectories.map { "-L\($0.string)" })
+            linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" })
     }
 
     private func swiftTargetSDKGenerationConfiguration(

@@ -118,7 +118,7 @@ public enum NativeBuilderColliderRecipe {
                         mounts: [
                             OCIMount(
                                 source: repositoryRoot,
-                                target: repositoryRoot.string,
+                                target: identityPathMap.executionPath(repositoryRoot),
                                 access: .readOnly)
                         ],
                         buildWorkspace: PersistentWorkspaceDeclaration(
@@ -182,7 +182,7 @@ public enum NativeBuilderColliderRecipe {
                         mounts: [
                             OCIMount(
                                 source: repositoryRoot,
-                                target: repositoryRoot.string,
+                                target: identityPathMap.executionPath(repositoryRoot),
                                 access: .readOnly)
                         ],
                         buildWorkspace: PersistentWorkspaceDeclaration(
@@ -278,6 +278,7 @@ public enum NativeBuilderColliderRecipe {
                     swiftBuildSource: swiftBuildSource,
                     inputs: overlayManifest,
                     swiftCompilerArchiveSHA256: swiftCompilerArchive.sha256,
+                    identityPathMap: identityPathMap,
                     environment: environment)))
 
         let configuration = NativeOCIBaseConfiguration(
@@ -359,6 +360,7 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
         swiftBuildSource: FilePath,
         inputs: SwiftPMOverlayInputManifest,
         swiftCompilerArchiveSHA256: String,
+        identityPathMap: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.outputRoot = outputRoot
@@ -371,20 +373,20 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
             artifactTarget: .linuxARM64,
             imageID: image.path,
             hostname: "nucleus-swiftpm-overlay-artifact",
-            workingDirectory: repositoryRoot.string,
+            workingDirectory: identityPathMap.executionPath(repositoryRoot),
             hostWorkingDirectory: repositoryRoot,
             mounts: [
                 OCIMount(
                     source: repositoryRoot,
-                    target: repositoryRoot.string,
+                    target: identityPathMap.executionPath(repositoryRoot),
                     access: .readOnly),
                 OCIMount(
                     source: products,
-                    target: products.string,
+                    target: identityPathMap.executionPath(products),
                     access: .readOnly),
                 OCIMount(
                     boundedExport: outputRoot,
-                    target: outputRoot.string),
+                    target: identityPathMap.executionPath(outputRoot)),
                 entrypoint.mount,
             ],
             userPolicy: .builder,
@@ -396,12 +398,12 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
                 "HOME": "/home/nucleus-build",
                 "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
                     + "/opt/swift-compat/arm64",
-                "NUCLEUS_SWIFTPM_OVERLAY_OUTPUT": outputRoot.string,
-                "NUCLEUS_SWIFTPM_OVERLAY_PRODUCTS": products.string,
+                "NUCLEUS_SWIFTPM_OVERLAY_OUTPUT": identityPathMap.executionPath(outputRoot),
+                "NUCLEUS_SWIFTPM_OVERLAY_PRODUCTS": identityPathMap.executionPath(products),
                 "NUCLEUS_SWIFTPM_REVISION": inputs.swiftPackageManagerRevision,
                 "NUCLEUS_SWIFTBUILD_REVISION": inputs.swiftBuildRevision,
-                "NUCLEUS_SWIFTPM_SOURCE": swiftPMSource.string,
-                "NUCLEUS_SWIFTBUILD_SOURCE": swiftBuildSource.string,
+                "NUCLEUS_SWIFTPM_SOURCE": identityPathMap.executionPath(swiftPMSource),
+                "NUCLEUS_SWIFTBUILD_SOURCE": identityPathMap.executionPath(swiftBuildSource),
                 "NUCLEUS_SWIFT_COMPILER_ARCHIVE_SHA256":
                     swiftCompilerArchiveSHA256,
                 "SOURCE_DATE_EPOCH": String(inputs.sourceDateEpoch),
