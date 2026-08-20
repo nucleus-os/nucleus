@@ -72,9 +72,13 @@ append_repository_state() {
   shift 2
   local path
   printf 'repository\0%s\0' "$label"
-  git -C "$repository" rev-parse HEAD
+  # The index records the effective committed or staged content of the
+  # requested compilation closure. Repository HEAD is provenance for the
+  # checkout as a whole; including it makes an unrelated documentation commit
+  # rebuild Collider even though no compiler input changed.
+  git -C "$repository" ls-files --stage -z -- "$@"
   git -C "$repository" diff \
-    --binary --no-ext-diff --ignore-submodules=all HEAD -- "$@"
+    --binary --no-ext-diff --ignore-submodules=all -- "$@"
   while IFS= read -r -d '' path; do
     printf 'untracked\0%s\0' "$path"
     git -C "$repository" hash-object --no-filters -- "$path"

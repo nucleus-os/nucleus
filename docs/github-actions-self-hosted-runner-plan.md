@@ -83,6 +83,13 @@ package/source-snapshot boundary that records it. The first run after that
 correction establishes the new identities; the next source-equivalent run is
 the two-ordering gate.
 
+The installed workspace launcher fingerprints Collider's actual compilation
+closure rather than the repository commit. Tracked and staged inputs contribute
+their scoped Git index modes and object identities, working-copy edits
+contribute their scoped binary diff, and untracked inputs contribute their
+content digest. A commit that changes no Collider compiler input therefore does
+not rebuild the host CLI before the task graph can measure reuse.
+
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
 durable runs, content-derived task identity, persistent build workspaces,
