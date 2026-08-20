@@ -22,6 +22,14 @@ import WaylandColliderRecipe
 @testable import ColliderWorkspaceCommands
 
 private let fixtureSwiftPackageRoot = FilePath("/workspace")
+/// The placement roots a fixture resolves through, matching the two the
+/// workspace declares.
+private func fixturePlacement(workspace: FilePath) -> IdentityPathMap {
+    IdentityPathMap(roots: [
+        IdentityPathRoot(name: "workspace", path: workspace),
+        IdentityPathRoot(name: "cache", path: FilePath("/cache")),
+    ])
+}
 // The materialized JavaScript workspace and codegen output live in the cache
 // rather than the checkout, so fixtures resolve them exactly as the recipe does.
 private let fixtureJavaScriptWorkspace =
@@ -1625,6 +1633,7 @@ private func artifactInput(
         root: root,
         generationRoot: FilePath("/cache/generation/wayland"),
         environment: ["PATH": "/usr/bin"],
+        placement: fixturePlacement(workspace: root.removingLastComponent()),
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
                 packageRoot: fixtureSwiftPackageRoot,
@@ -1729,6 +1738,7 @@ private func artifactInput(
         root: root,
         generationRoot: generationRoot,
         environment: ["PATH": "/usr/bin"],
+        placement: fixturePlacement(workspace: root.removingLastComponent()),
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
                 packageRoot: fixtureSwiftPackageRoot,

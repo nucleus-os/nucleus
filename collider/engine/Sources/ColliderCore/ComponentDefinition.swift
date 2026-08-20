@@ -216,6 +216,9 @@ public struct RecipeContext: Sendable {
     public let identityRoot: FilePath
     public let logRoot: FilePath
     public let environment: [String: String]
+    /// The placement roots this workspace resolves through, so a recipe names
+    /// container paths from the same declaration identity resolves through.
+    public let identityPathMap: IdentityPathMap
     public let buildContexts: [RecipeBuildContextID: SwiftPMInvocation]
     private let configurations: [ComponentID: any RecipeConfiguration]
 
@@ -227,6 +230,7 @@ public struct RecipeContext: Sendable {
         identityRoot: FilePath? = nil,
         logRoot: FilePath? = nil,
         environment: [String: String],
+        identityPathMap: IdentityPathMap = .empty,
         buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:],
         configurations: [ComponentID: any RecipeConfiguration] = [:]
     ) {
@@ -237,12 +241,18 @@ public struct RecipeContext: Sendable {
         self.identityRoot = identityRoot ?? cacheRoot.appending("identity")
         self.logRoot = logRoot ?? cacheRoot.appending("logs")
         self.environment = environment
+        self.identityPathMap = identityPathMap
         self.buildContexts = buildContexts
         self.configurations = configurations
     }
 
     public func componentRoot(_ descriptor: ComponentDescriptor) -> FilePath {
         repositoryRoot.appending(descriptor.directoryName)
+    }
+
+    /// Where a host path appears inside an execution environment.
+    public func executionPath(_ path: FilePath) -> String {
+        identityPathMap.executionPath(path)
     }
 
     public func swiftPM(

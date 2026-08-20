@@ -123,6 +123,7 @@ package struct ComponentRegistry {
             identityRoot: context.identityRoot,
             logRoot: context.logRoot,
             environment: recipeEnvironment,
+            identityPathMap: context.identityPathMap,
             buildContexts: buildContexts,
             configurations: configurations)
         let chromium = try ChromiumColliderRecipe.prepare(in: baseRecipeContext)
@@ -210,6 +211,7 @@ package struct ComponentRegistry {
             artifactRoot: context.artifactRoot,
             logRoot: context.logRoot,
             environment: recipeEnvironment,
+            identityPathMap: context.identityPathMap,
             buildContexts: buildContexts,
             configurations: configurations)
         let componentTypes: [any ColliderComponent.Type] = [

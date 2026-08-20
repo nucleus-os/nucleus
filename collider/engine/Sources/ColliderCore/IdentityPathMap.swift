@@ -51,6 +51,23 @@ public struct IdentityPathMap: Hashable, Sendable {
 }
 
 extension IdentityPathMap {
+    /// Where a declared root appears inside an execution environment.
+    ///
+    /// One declaration of placement serves identity and execution alike: the
+    /// same root resolves to `${name}` in an identity and to `/nucleus/name`
+    /// in a container, so the two cannot disagree about which prefix is
+    /// placement. A path under no declared root is not placement and is
+    /// returned unchanged.
+    public func executionPath(_ path: FilePath) -> String {
+        for root in roots {
+            let prefix = root.path.string
+            guard path.string == prefix || path.string.hasPrefix(prefix + "/")
+            else { continue }
+            return "/nucleus/\(root.name)" + path.string.dropFirst(prefix.count)
+        }
+        return path.string
+    }
+
     /// Whether a declared root appears literally in already-encoded bytes.
     ///
     /// Identity bytes computed elsewhere may have resolved through a different

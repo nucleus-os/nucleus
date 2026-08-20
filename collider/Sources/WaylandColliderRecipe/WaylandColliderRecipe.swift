@@ -71,6 +71,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             root: root,
             generationRoot: context.cacheRoot.appending("generation/wayland"),
             environment: context.environment,
+            placement: context.identityPathMap,
             swiftPM: context.swiftPM(.linux(.arm64)),
             builder: native.builder,
             scanner: scanner)
@@ -255,6 +256,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         root: FilePath,
         generationRoot: FilePath,
         environment: [String: String],
+        placement: IdentityPathMap,
         swiftPM: SwiftPMInvocation,
         builder: NativeOCIConfiguration,
         scanner: ExecutableReference
@@ -324,15 +326,21 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     ])
             ],
             locks: [.checkout("wayland")])
+        // wayland-scanner writes the input path into a comment at the head of
+        // every file it generates, so these are the paths the container sees.
+        let executionPath = placement.executionPath
         var scannerArguments: [String] = []
         for record in records {
             scannerArguments += [
-                "server-header", record.path.string,
-                generatedServer.appending("\(record.name)-server-protocol.h").string,
-                "client-header", record.path.string,
-                generatedClient.appending("\(record.name)-client-protocol.h").string,
-                "public-code", record.path.string,
-                generatedProtocols.appending("\(record.name)-protocol.c").string,
+                "server-header", executionPath(record.path),
+                executionPath(
+                    generatedServer.appending("\(record.name)-server-protocol.h")),
+                "client-header", executionPath(record.path),
+                executionPath(
+                    generatedClient.appending("\(record.name)-client-protocol.h")),
+                "public-code", executionPath(record.path),
+                executionPath(
+                    generatedProtocols.appending("\(record.name)-protocol.c")),
             ]
         }
         let manifests = [
@@ -379,14 +387,16 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
                                 swiftOCI: swiftOCI,
-                                command: [generator.path.string]
+                                placement: placement,
+                                command: [placement.executionPath(generator.path)]
                                     + serverArguments(
                                         protocolsRoot: protocolsRoot,
                                         protocolTypes: generatedProtocolTypes,
                                         serverDispatch: generatedServerDispatch,
                                         server: generatedServer,
                                         waylandXML: waylandXML,
-                                        xmlPaths: records.map(\.path)),
+                                        xmlPaths: records.map(\.path),
+                                        placement: placement),
                                 environment: environment),
                             sourceGenerationExecution(
                                 root: root,
@@ -396,6 +406,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
                                 swiftOCI: swiftOCI,
+                                placement: placement,
                                 command: [
                                     "sh", "-eu", "-c",
                                     "scanner=/native-wayland/bin/wayland-scanner; "
@@ -412,13 +423,15 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                     .removingLastComponent(),
                                 swiftSDKRoot: builder.swiftSDKRoot,
                                 swiftOCI: swiftOCI,
-                                command: [generator.path.string]
+                                placement: placement,
+                                command: [placement.executionPath(generator.path)]
                                     + clientArguments(
                                         protocolsRoot: protocolsRoot,
                                         clientDispatch: generatedClientDispatch,
                                         client: generatedClient,
                                         waylandXML: waylandXML,
-                                        xmlPaths: records.map(\.path)),
+                                        xmlPaths: records.map(\.path),
+                                        placement: placement),
                                 environment: environment),
                         ],
                         manifests: manifests))
@@ -607,6 +620,11 @@ private func waylandGeneratedDirectory(
     generationRoot.appending(name)
 }
 
+/// Every path this execution names is the path the container sees, which is
+/// where the declared placement roots put it rather than where the host keeps
+/// it. The command's own arguments are mapped by the caller for the same
+/// reason: a generated file recording an argument would otherwise record the
+/// checkout it was generated from.
 private func sourceGenerationExecution(
     root: FilePath,
     generatedDirectories: [FilePath],
@@ -614,6 +632,7 @@ private func sourceGenerationExecution(
     scannerSDK: FilePath,
     swiftSDKRoot: FilePath,
     swiftOCI: SwiftPMOCIExecution,
+    placement: IdentityPathMap,
     command: [String],
     environment: [String: String]
 ) -> OCIExecution {
@@ -622,13 +641,16 @@ private func sourceGenerationExecution(
         artifactTarget: swiftOCI.artifactTarget,
         imageID: swiftOCI.imageID,
         hostname: "wayland-source-generation",
-        workingDirectory: root.string,
+        workingDirectory: placement.executionPath(root),
         hostWorkingDirectory: root,
         mounts: [
-            OCIMount(source: root, target: root.string, access: .readOnly),
+            OCIMount(
+                source: root,
+                target: placement.executionPath(root),
+                access: .readOnly),
             OCIMount(
                 source: generatorScratch,
-                target: generatorScratch.string,
+                target: placement.executionPath(generatorScratch),
                 access: .readOnly),
             OCIMount(
                 source: scannerSDK,
@@ -640,7 +662,7 @@ private func sourceGenerationExecution(
                 access: .readOnly),
         ]
             + generatedDirectories.map {
-                OCIMount(boundedExport: $0, target: $0.string)
+                OCIMount(boundedExport: $0, target: placement.executionPath($0))
             },
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
@@ -659,18 +681,20 @@ private func serverArguments(
     serverDispatch: FilePath,
     server: FilePath,
     waylandXML: FilePath,
-    xmlPaths: [FilePath]
+    xmlPaths: [FilePath],
+    placement: IdentityPathMap
 ) -> [String] {
-    [
+    let path = placement.executionPath
+    return [
         "--mode", "server",
         "--module", "WaylandServerC",
-        "--search-dir", protocolsRoot.appending("protocols").string,
-        "--search-dir", protocolsRoot.appending("wayland-protocols").string,
-        "--types", protocolTypes.string,
-        "--dispatch", serverDispatch.string,
-        server.string,
-        waylandXML.string,
-    ] + xmlPaths.map(\.string)
+        "--search-dir", path(protocolsRoot.appending("protocols")),
+        "--search-dir", path(protocolsRoot.appending("wayland-protocols")),
+        "--types", path(protocolTypes),
+        "--dispatch", path(serverDispatch),
+        path(server),
+        path(waylandXML),
+    ] + xmlPaths.map(path)
 }
 
 private func clientArguments(
@@ -678,17 +702,19 @@ private func clientArguments(
     clientDispatch: FilePath,
     client: FilePath,
     waylandXML: FilePath,
-    xmlPaths: [FilePath]
+    xmlPaths: [FilePath],
+    placement: IdentityPathMap
 ) -> [String] {
-    [
+    let path = placement.executionPath
+    return [
         "--mode", "client",
         "--module", "WaylandClientC",
-        "--search-dir", protocolsRoot.appending("protocols").string,
-        "--search-dir", protocolsRoot.appending("wayland-protocols").string,
-        "--dispatch", clientDispatch.string,
-        client.string,
-        waylandXML.string,
-    ] + xmlPaths.map(\.string)
+        "--search-dir", path(protocolsRoot.appending("protocols")),
+        "--search-dir", path(protocolsRoot.appending("wayland-protocols")),
+        "--dispatch", path(clientDispatch),
+        path(client),
+        path(waylandXML),
+    ] + xmlPaths.map(path)
 }
 
 private struct WaylandNativeWorkspaces {
