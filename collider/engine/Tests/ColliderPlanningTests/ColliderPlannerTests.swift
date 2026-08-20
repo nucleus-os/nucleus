@@ -168,7 +168,7 @@ import Testing
                 .file(input),
                 .environment(
                     name: "FIXTURE_PATH",
-                    value: "release"),
+                    value: workspace.appending("toolchain/bin").string),
             ],
             action: try AnyColliderAction(
                 RelocatableIdentityAction(

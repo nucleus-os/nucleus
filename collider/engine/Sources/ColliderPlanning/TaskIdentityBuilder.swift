@@ -90,7 +90,7 @@ struct TaskIdentityBuilder {
                 inputEncoder.append(value)
             case .environment(let name, let value):
                 inputEncoder.append(name)
-                inputEncoder.appendOptional(value) { $0.append($1) }
+                inputEncoder.appendOptional(value) { $0.append(argument: $1) }
             case .swiftBuildContext(let context):
                 inputEncoder.append("swift-build-context")
                 inputEncoder.append(
