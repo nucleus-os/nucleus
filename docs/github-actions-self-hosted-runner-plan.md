@@ -626,12 +626,20 @@ records, using the same roots identity resolves through so that the two cannot
 disagree about what counts as placement. A representative object went from 139
 recorded checkout paths to 17.
 
-Those 17 are the remaining work for this gate, and they are one thing: the
-translation unit's own source path, which `-file-prefix-map` does not reach.
-Until they are gone, two checkouts still produce different bytes, so container
-mount targets keep repeating the host path as a string rather than resolving
-through the roots: canonicalizing that identity now would claim an
-interchangeability the artifacts do not yet have.
+What survives is one record of each translation unit's own path, and it
+survives because the build system passes source files absolutely: compiling the
+same file by a relative path records nothing, and by an absolute path records it
+once, which is exactly what a compiled object here contains. No mapping flag
+reaches it. A file carrying test declarations repeats it once more per
+declaration, because that macro expands the path into an ordinary string
+literal before the compiler could recognize it as a path.
+
+Two builds of one source are therefore functionally interchangeable but not
+byte-identical, and the difference is a provenance record naming a checkout that
+exists on the same host. Reuse across the two requires deciding that such a
+record is provenance rather than semantics. Container mount targets keep
+repeating the host path until that decision is stated, because canonicalizing
+that identity is what asserts the interchangeability.
 
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.
