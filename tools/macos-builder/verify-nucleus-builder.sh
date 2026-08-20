@@ -155,8 +155,8 @@ done
 [[ ! -L "$build_store" && -d "$build_store" ]] || fail "machine build store is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Mp%Lp' "$build_store") == "$builder_user:$build_state_group:2750" ]] \
   || fail "build store ownership or mode drifted"
-[[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/logs") == 2770 ]] \
-  || fail "build store log root is not group-writable with setgid"
+[[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/logs") == 2750 ]] \
+  || fail "build store log root is not group-readable with setgid"
 [[ $(/usr/bin/stat -f '%Mp%Lp' "$build_store/state/identity") == 0700 ]] \
   || fail "signing identity subtree is readable beyond the builder"
 /usr/bin/sudo -H -u "$builder_user" /bin/test -w "$build_store" \
@@ -167,8 +167,8 @@ done
   || fail "$developer_user can write the build store"
 /usr/bin/sudo -H -u "$developer_user" /bin/test ! -w "$build_store/state" \
   || fail "$developer_user can write build state"
-/usr/bin/sudo -H -u "$developer_user" /bin/test -w "$build_store/logs" \
-  || fail "$developer_user cannot record runs"
+/usr/bin/sudo -H -u "$developer_user" /bin/test ! -w "$build_store/logs" \
+  || fail "$developer_user can write run history"
 /usr/bin/sudo -H -u "$developer_user" /bin/test ! -r "$build_store/state/identity" \
   || fail "$developer_user can read builder signing material"
 

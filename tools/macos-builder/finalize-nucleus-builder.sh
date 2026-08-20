@@ -165,13 +165,25 @@ for store_directory in configuration state cache; do
     "$build_store/$store_directory"
   /bin/chmod 2750 "$build_store/$store_directory"
 done
-# Recording a run is journalling, not executing build code, and both accounts
-# journal: the developer's doctor, status, and dry-run invocations produce run
-# records exactly as the builder's executions do. The log root is therefore the
-# one subtree the reading group also writes.
-/usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2770 \
+# Only builder-domain commands create durable run records. Inspection and dry
+# planning stay in the developer account and read the store without writing it,
+# so logs follow the same owner-write/group-read contract as all other shared
+# state.
+/usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 2750 \
   "$build_store/logs"
-/bin/chmod 2770 "$build_store/logs"
+/usr/sbin/chown -R "$builder_user:$build_state_group" "$build_store/logs"
+/usr/bin/find "$build_store/logs" -type d -exec /bin/chmod 2750 {} +
+/usr/bin/find "$build_store/logs" -type f -exec /bin/chmod 0640 {} +
+
+# State retained before shared-store durable writes gained group read remains
+# valid and must not be rebuilt merely to change its access mode. Normalize the
+# bounded task-record namespace once; new records are born 0640.
+task_state_root="$build_store/state/build/state/tasks"
+if [[ -d "$task_state_root" ]]; then
+  /usr/sbin/chown -R "$builder_user:$build_state_group" "$task_state_root"
+  /usr/bin/find "$task_state_root" -type d -exec /bin/chmod 2750 {} +
+  /usr/bin/find "$task_state_root" -type f -exec /bin/chmod 0640 {} +
+fi
 # Signing material is the one subtree the reading group must not reach: the
 # identity that executes is the identity that signs.
 /usr/bin/install -d -o "$builder_user" -g "$build_state_group" -m 0700 \

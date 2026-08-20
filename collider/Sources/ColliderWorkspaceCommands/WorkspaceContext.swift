@@ -70,6 +70,17 @@ private let nucleusProductProvenanceEnvironmentNames: Set<String> = [
     "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN",
 ]
 
+/// Coordinates used to enter and observe one Collider invocation. These values
+/// decide how the CLI reaches a checkout or run record, not what any task
+/// builds, so allowing them into recipe environments would make equivalent CI
+/// and locally initiated builds claim different identities.
+private let nucleusInvocationEnvironmentNames: Set<String> = [
+    "NUCLEUS_REVALIDATE_SOURCE",
+    "NUCLEUS_RUN_DIR",
+    "NUCLEUS_RUN_LOG",
+    "NUCLEUS_WORKSPACE_ROOT",
+]
+
 package func nucleusLogRoot(workspaceRoot: FilePath) -> FilePath {
     #if os(macOS)
     return (try? MacOSHostStorageLayout.current().logsRoot)
@@ -242,7 +253,10 @@ package struct WorkspaceContext: Sendable {
 
     package var taskEnvironment: [String: String] {
         var environment = sanitizedEnvironment(self.environment)
-        for name in nucleusProductProvenanceEnvironmentNames {
+        for name
+            in nucleusProductProvenanceEnvironmentNames
+            .union(nucleusInvocationEnvironmentNames)
+        {
             environment.removeValue(forKey: name)
         }
         let pinned = hostToolBinaryDirectories.map(\.string)
@@ -251,8 +265,6 @@ package struct WorkspaceContext: Sendable {
                 .filter { !$0.isEmpty }
                 .joined(separator: ":")
         }
-        environment.removeValue(forKey: "NUCLEUS_RUN_DIR")
-        environment.removeValue(forKey: "NUCLEUS_RUN_LOG")
         environment["CCACHE_BASEDIR"] = root.string
         environment["CCACHE_COMPILERCHECK"] = "content"
         environment["CCACHE_DIR"] = cacheRoot.appending("host-ccache").string

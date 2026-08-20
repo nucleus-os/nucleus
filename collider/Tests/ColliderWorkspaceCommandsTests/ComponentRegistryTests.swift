@@ -1422,6 +1422,8 @@ private func artifactInput(
             "XDG_CACHE_HOME": "/cache",
             "NUCLEUS_RUN_DIR": "/runs/current",
             "NUCLEUS_RUN_LOG": "/runs/current/run.log",
+            "NUCLEUS_REVALIDATE_SOURCE": "1",
+            "NUCLEUS_WORKSPACE_ROOT": "/workspace",
             "NUCLEUS_PRODUCT_SOURCE_AUTHORITY": "protected-main",
             "NUCLEUS_PRODUCT_SOURCE_COMMIT": sourceCommit,
             "NUCLEUS_PRODUCT_SOURCE_REF": "refs/heads/main",
@@ -1439,6 +1441,8 @@ private func artifactInput(
             == FilePath("/cache/downloads"))
     #expect(context.taskEnvironment["NUCLEUS_RUN_DIR"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_RUN_LOG"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_REVALIDATE_SOURCE"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_WORKSPACE_ROOT"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_AUTHORITY"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_COMMIT"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_REF"] == nil)
@@ -1452,6 +1456,31 @@ private func artifactInput(
                 "NUCLEUS_PRODUCT_SOURCE_REF": "refs/heads/main",
                 "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN": "nucleus-builder",
             ])
+}
+
+@Test func invocationCoordinatesDoNotChangeTaskEnvironment() {
+    let baseline = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: [
+            "HOME": "/home/fixture",
+            "XDG_CACHE_HOME": "/cache",
+        ],
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
+    let launched = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: [
+            "HOME": "/home/fixture",
+            "XDG_CACHE_HOME": "/cache",
+            "NUCLEUS_REVALIDATE_SOURCE": "1",
+            "NUCLEUS_RUN_DIR": "/runs/current",
+            "NUCLEUS_RUN_LOG": "/runs/current/run.log",
+            "NUCLEUS_WORKSPACE_ROOT": "/different-checkout-spelling",
+        ],
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
+
+    #expect(launched.taskEnvironment == baseline.taskEnvironment)
 }
 
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {

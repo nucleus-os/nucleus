@@ -74,14 +74,27 @@ first successful run found 4 tasks current and executed 39, including the newly
 pinned SwiftPM overlay and its regression test. That run proves the Actions
 checkout can execute the complete bounded build through the shared
 Apple-container service and persistent store. A documentation-only follow-up
-then planned the same 4 tasks current and 39 dirty before it was cancelled. The
-physical task IDs were unchanged, but GitHub's changing product-source commit
-was still projected into ordinary recipe environments and therefore changed
-every task's input identity. Product provenance is now absent from compilation,
-dependency, SDK, image, and acquisition environments and enters only the Linux
-package/source-snapshot boundary that records it. The first run after that
-correction establishes the new identities; the next source-equivalent run is
-the two-ordering gate.
+exposed product-source provenance in every ordinary recipe identity and was
+cancelled after planning. After product provenance moved exclusively to Linux
+package and source-snapshot construction, one transition run established the
+corrected identities. The next documentation-only Actions run then planned 31
+of 34 lowered tasks current, executed only the three declared always-run source
+discovery tasks, invoked SwiftPM zero times, and completed its Collider graph in
+24.3 seconds. This proves clean-checkout CI-to-CI reuse.
+
+The first source-equivalent local follow-up exposed the remaining ordering
+defect before it could become accepted evidence: the privileged local launcher
+sets `NUCLEUS_REVALIDATE_SOURCE=1` to require a fresh source-boundary check, while
+the Actions runner does not. Collider was projecting that invocation coordinate
+into every recipe environment, so the local plan found only 6 tasks current and
+37 dirty. The run was interrupted during its first expensive image producer.
+Task environments now exclude source revalidation, workspace selection, and run
+log coordinates alongside product provenance. Those values control how one
+invocation enters and records Collider; they do not describe what a task builds.
+A regression test proves that changing every invocation coordinate leaves the
+complete task environment equal. One transition run establishes the narrowed
+identity; the following local and automated source-equivalent runs are the
+two-ordering gate.
 
 The installed workspace launcher fingerprints Collider's actual compilation
 closure rather than the repository commit. Tracked and staged inputs contribute
@@ -690,16 +703,23 @@ that previously failed at XPC lookup completed and published its output.
 That first run established execution but did not close the second-checkout
 experiment: it introduced immutable fork revisions and followed a deliberately
 superseded local diagnostic rather than a completed source-equivalent warm run.
-The documentation-only follow-up made the remaining defect explicit before
-expensive execution: 39 of 43 tasks reported changed input identities because
-product provenance was present in the general task environment. It was
-cancelled after planning. Product provenance now reaches only the package
-source snapshot and package assembly boundary; a commit identifier is delivery
-metadata, not a compilation input. After one run establishes those corrected
-identities, the next source-equivalent run must consume the state it left
-behind. Its executed-versus-cached task count is the placement gate. Tests,
-packaging, qualification, and delivery join the workflow only after that
+The subsequent automated sequence has now proved that product provenance and an
+unrelated repository commit no longer invalidate compilation state. The local
+follow-up then isolated invocation control state as the final whole-graph leak,
+and that state is now absent from task environments. After one run establishes
+the corrected identities, the next source-equivalent run must consume the state
+it left behind. Its executed-versus-cached task count is the placement gate.
+Tests, packaging, qualification, and delivery join the workflow only after that
 measurement passes.
+
+Read-only commands no longer create durable run records or reconcile abandoned
+builder runs. A dry task plan, ordinary cache status, doctor report, graph, log,
+or run inspection stays in the invoking account and only reads the shared
+store. Commands that enter the builder identity own durable history and its
+retention. This removes the former state in which an interactive dry run could
+create a developer-owned record and then fail while pruning builder-owned
+history; it also makes the plan's read-only interactive boundary true by
+construction rather than by permissive directory modes.
 
 The clean checkout resolves every URL-based forked SwiftPM dependency from its
 public immutable revision, which equals its gitlink commit. Checkout-local

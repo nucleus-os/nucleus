@@ -378,11 +378,11 @@ struct MacOSBuilderDoctor {
                 // Setgid keeps every object the builder creates in the group the
                 // interactive account reads, without that account writing any.
                 attributes[.posixPermissions] as? NSNumber == 0o2750,
-                // Journalling is not executing, so both accounts write the log
-                // root while build state stays writable by the builder alone.
+                // Only builder-domain commands journal. Interactive inspection
+                // reads the same history without writing the log root.
                 let logs = try? fileManager.attributesOfItem(
                     atPath: store.appending("logs").string),
-                logs[.posixPermissions] as? NSNumber == 0o2770,
+                logs[.posixPermissions] as? NSNumber == 0o2750,
                 // Signing material is the one subtree the reading group must not
                 // reach, because the identity that executes is the one that signs.
                 let identity = try? fileManager.attributesOfItem(

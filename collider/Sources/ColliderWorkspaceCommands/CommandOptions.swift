@@ -96,9 +96,11 @@ package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfigure
 
 extension ColliderWorkspaceCommand {
     package var presentationKind: CommandPresentationKind { .phase }
-    package var recordsRun: Bool { true }
     package var requiresExecutionAdmission: Bool { true }
     package var requiresBuilderIdentity: Bool { requiresExecutionAdmission }
+    /// Durable run history belongs to the builder-owned store. Commands that
+    /// stay in the invoking account are inspections and never write it.
+    package var recordsRun: Bool { requiresBuilderIdentity }
 
     package mutating func run() async throws {
         throw WorkspaceFailure.message(

@@ -68,7 +68,9 @@ public struct ColliderCommand: AsyncParsableCommand {
         }
         let registry = RunRegistry(
             root: nucleusRunRegistryRoot(workspaceRoot: workspace))
-        try await registry.reconcileAbandonedRuns()
+        if workspaceCommand.recordsRun {
+            try await registry.reconcileAbandonedRuns()
+        }
         let observations: AsyncStream<RunObservation>? =
             if workspaceCommand.recordsRun {
                 try await registry.observations()

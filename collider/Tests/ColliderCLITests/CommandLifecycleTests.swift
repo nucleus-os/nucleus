@@ -185,8 +185,14 @@ func inspectionCommandsDoNotCreateRunRecords() throws {
     }
     let cacheStatus = try ColliderCommand.parseAsRoot(["cache", "status"])
     let cacheStatusCommand = try #require(cacheStatus as? any ColliderWorkspaceCommand)
-    #expect(cacheStatusCommand.recordsRun)
+    #expect(!cacheStatusCommand.recordsRun)
     #expect(!cacheStatusCommand.requiresExecutionAdmission)
+    let measuredCacheStatus = try ColliderCommand.parseAsRoot(
+        ["cache", "status", "--measure-allocations"])
+    let measuredCacheStatusCommand = try #require(
+        measuredCacheStatus as? any ColliderWorkspaceCommand)
+    #expect(measuredCacheStatusCommand.recordsRun)
+    #expect(measuredCacheStatusCommand.requiresBuilderIdentity)
     let build = try ColliderCommand.parseAsRoot(["build", "core"])
     let buildCommand = try #require(build as? any ColliderWorkspaceCommand)
     #expect(buildCommand.recordsRun)
@@ -198,7 +204,7 @@ func inspectionCommandsDoNotCreateRunRecords() throws {
 }
 
 @Test
-func dryRunsDoNotAcquireHostExecutionAdmission() throws {
+func dryRunsDoNotAcquireAdmissionOrWriteRunHistory() throws {
     for arguments in [
         ["build", "core", "--dry-run"],
         ["clean", "core", "--dry-run"],
@@ -209,6 +215,7 @@ func dryRunsDoNotAcquireHostExecutionAdmission() throws {
         let parsed = try ColliderCommand.parseAsRoot(arguments)
         let command = try #require(parsed as? any ColliderWorkspaceCommand)
         #expect(!command.requiresExecutionAdmission)
+        #expect(!command.recordsRun)
     }
 }
 
