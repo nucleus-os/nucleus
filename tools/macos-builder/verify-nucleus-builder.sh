@@ -22,6 +22,8 @@ readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
+readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
@@ -184,8 +186,16 @@ done
   || fail "runner name drifted"
 [[ $(/usr/bin/plutil -extract poolName raw -o - "$runner_root/.runner") == "$runner_group" ]] \
   || fail "runner group drifted"
-/bin/launchctl print "system/$runner_service_label" >/dev/null \
-  || fail "runner LaunchDaemon is not loaded"
+[[ -f "$runner_plist" && ! -L "$runner_plist" ]] \
+  || fail "runner LaunchAgent descriptor is absent"
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_plist") == root:wheel:644 ]] \
+  || fail "runner LaunchAgent descriptor ownership or mode drifted"
+[[ ! -e "$legacy_runner_plist" && ! -L "$legacy_runner_plist" ]] \
+  || fail "legacy runner LaunchDaemon descriptor remains installed"
+/bin/launchctl print "user/$builder_uid/$runner_service_label" >/dev/null \
+  || fail "runner per-user LaunchAgent is not loaded"
+/bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
+  && fail "runner remains loaded in the system launchd domain"
 /bin/launchctl print "user/$builder_uid/$container_service_label" >/dev/null \
   || fail "builder Apple-container service is not loaded"
 

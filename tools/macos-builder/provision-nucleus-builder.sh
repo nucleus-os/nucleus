@@ -46,7 +46,8 @@ readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
-readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 
 for declared_path in "$runner_root" "$host_contract_root" "$runner_work_root"; do
   if [[ "$declared_path" != /* || "$declared_path" =~ [[:space:]] ]]; then
@@ -80,6 +81,7 @@ if [[ -e "$runner_root" || -L "$runner_root" ]]; then
       && [[ ! -e "$runner_root/.credentials" && ! -L "$runner_root/.credentials" ]] \
       && [[ ! -e "$host_contract_root" && ! -L "$host_contract_root" ]] \
       && [[ ! -e "$runner_plist" && ! -L "$runner_plist" ]] \
+      && [[ ! -e "$legacy_runner_plist" && ! -L "$legacy_runner_plist" ]] \
       && [[ ! -e /usr/local/bin/collider && ! -L /usr/local/bin/collider ]] \
       && [[ ! -e /usr/local/bin/nucleus-builder-run && ! -L /usr/local/bin/nucleus-builder-run ]]; then
     runner_staging_state=unregistered
@@ -202,7 +204,8 @@ done < <(/usr/bin/find -x "$checkout" -perm -o+w -print0)
 /usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$runner_root"
 /usr/bin/install -d -o "$builder_user" -g "$builder_group" -m 0755 "$runner_work_root"
 
-if [[ -e "$runner_plist" || -L "$runner_plist" ]]; then
+if [[ -e "$runner_plist" || -L "$runner_plist" \
+    || -e "$legacy_runner_plist" || -L "$legacy_runner_plist" ]]; then
   echo "error: runner service state already exists" >&2
   exit 73
 fi

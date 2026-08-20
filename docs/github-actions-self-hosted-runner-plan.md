@@ -25,6 +25,14 @@ caches, downloaded inputs, staged SDKs, and incremental build state. A pipeline
 does not start from a clean build unless declared cache invalidation or incident
 recovery requires it.
 
+The Actions listener and Apple-container service inhabit the same
+`user/nucleus-builder` launchd domain. Matching Unix UIDs are insufficient:
+Apple Container publishes its XPC API as a per-user Mach service, which a
+system-domain LaunchDaemon cannot resolve even when launchd assigns that daemon
+the builder UID. Both services are persistent LaunchAgents, while the runner
+installation and its registration credentials remain root-owned and immutable
+to jobs.
+
 The interactive `maddy` account owns the authoritative development checkout,
 personal credentials, and remote-development sessions but runs no GitHub
 Actions service. CI uses a separate clean checkout owned by `nucleus-builder`.
@@ -483,6 +491,10 @@ code.
 One Apple-container application root serves the host. `container system start`
 takes an explicit application root, so the builder's service owns the store's
 container root and the interactive account runs no container service at all.
+The Actions listener is bootstrapped into the same builder user domain as that
+service; a system-domain listener is invalid because launchd bootstrap
+namespaces, not Unix credentials alone, govern access to Apple Container's XPC
+endpoint.
 
 The storage substrate does not change. Case-sensitive Linux workloads stay
 inside sparse ext4 images on the default Data volume, reached as block devices.

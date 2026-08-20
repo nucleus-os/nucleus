@@ -19,8 +19,10 @@ contract_value() {
 readonly builder_user="$(contract_value builder.user)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly declared_runner_root="$(contract_value builder.runnerRoot)"
-readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
+readonly runner_service_domain="user/$builder_uid"
 
 if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
   echo "error: a job is executing on this runner; drain it before retiring" >&2
@@ -30,22 +32,29 @@ fi
 # The installed service records what is actually installed, which may predate
 # the machine roots the current contract declares.
 installed_machine_root=""
-if [[ -f "$runner_plist" && ! -L "$runner_plist" ]]; then
-  installed_service="$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$runner_plist")"
-  installed_machine_root="$(/usr/bin/dirname "$(/usr/bin/dirname "$installed_service")")"
-fi
+for installed_plist in "$runner_plist" "$legacy_runner_plist"; do
+  if [[ -f "$installed_plist" && ! -L "$installed_plist" ]]; then
+    installed_service="$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$installed_plist")"
+    installed_machine_root="$(/usr/bin/dirname "$(/usr/bin/dirname "$installed_service")")"
+    break
+  fi
+done
 
-if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
-  /bin/launchctl bootout "system/$runner_service_label" || true
+for service_domain in "$runner_service_domain" system; do
+  if ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1; then
+    continue
+  fi
+  /bin/launchctl bootout "$service_domain/$runner_service_label" || true
   for _ in {1..50}; do
-    /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 || break
+    /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1 || break
     /bin/sleep 0.2
   done
-  ! /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1 \
-    || { echo "error: runner LaunchDaemon is still loaded" >&2; exit 70; }
-fi
+  ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1 \
+    || { echo "error: runner service is still loaded in $service_domain" >&2; exit 70; }
+done
 /bin/rm -f \
   "$runner_plist" \
+  "$legacy_runner_plist" \
   /etc/sudoers.d/nucleus-builder \
   /usr/local/bin/collider \
   /usr/local/bin/nucleus-builder-run

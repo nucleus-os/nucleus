@@ -40,7 +40,9 @@ readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
 readonly build_store=/Library/Nucleus/Collider
-readonly runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly runner_plist="/Library/LaunchAgents/$runner_service_label.plist"
+readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly runner_service_domain="user/$builder_uid"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_agent_directory="$builder_home/Library/LaunchAgents"
 readonly builder_agent_plist="$builder_agent_directory/$container_service_label.plist"
@@ -209,7 +211,10 @@ temporary_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-plist.XXXXXX)"
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$runner_service_label</string>
-  <key>UserName</key><string>$builder_user</string>
+  <key>LimitLoadToSessionType</key><array>
+    <string>Aqua</string>
+    <string>Background</string>
+  </array>
   <key>WorkingDirectory</key><string>$runner_root</string>
   <key>ProgramArguments</key><array><string>$runner_root/runsvc.sh</string></array>
   <key>EnvironmentVariables</key><dict>
@@ -224,11 +229,21 @@ temporary_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-plist.XXXXXX)"
 </dict></plist>
 PLIST
 /usr/bin/plutil -lint "$temporary_plist" >/dev/null
-if [[ ( -e "$runner_plist" || -L "$runner_plist" ) ]] \
-    && { [[ -L "$runner_plist" ]] || ! /usr/bin/cmp -s "$temporary_plist" "$runner_plist"; }; then
-  echo "error: installed runner service contract differs" >&2
-  exit 73
+if [[ -e "$runner_plist" || -L "$runner_plist" ]]; then
+  [[ -f "$runner_plist" && ! -L "$runner_plist" ]] \
+    || { echo "error: runner LaunchAgent descriptor is not a regular file" >&2; exit 73; }
+  [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_plist") == root:wheel:644 ]] \
+    || { echo "error: runner LaunchAgent descriptor ownership or mode drifted" >&2; exit 73; }
+  if ! /usr/bin/cmp -s "$temporary_plist" "$runner_plist" \
+      && /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
+    if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+      echo "error: a job is executing on the runner being updated" >&2
+      exit 75
+    fi
+    /bin/launchctl bootout "$runner_service_domain/$runner_service_label"
+  fi
 fi
+/usr/bin/install -d -o root -g wheel -m 0755 /Library/LaunchAgents
 /usr/bin/install -o root -g wheel -m 0644 "$temporary_plist" "$runner_plist"
 for builder_service_directory_path in \
   "$builder_agent_directory" \
@@ -268,8 +283,20 @@ run_as_builder /usr/bin/git config --global --add safe.directory "$checkout/*"
   --add safe.directory "$build_store/*"
 
 run_as_builder "$script_directory/install-container-service.sh"
-if ! /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
-  /bin/launchctl bootstrap system "$runner_plist"
+# Apple Container registers its XPC API in the builder's per-user launchd
+# domain. The Actions listener must inhabit that same domain; a LaunchDaemon
+# running as the same UID is still in the system bootstrap namespace and cannot
+# resolve the per-user Mach service.
+if /bin/launchctl print "system/$runner_service_label" >/dev/null 2>&1; then
+  if /usr/bin/pgrep -u "$builder_uid" -f Runner.Worker >/dev/null 2>&1; then
+    echo "error: a job is executing on the legacy runner LaunchDaemon" >&2
+    exit 75
+  fi
+  /bin/launchctl bootout "system/$runner_service_label"
+fi
+/bin/rm -f "$legacy_runner_plist"
+if ! /bin/launchctl print "$runner_service_domain/$runner_service_label" >/dev/null 2>&1; then
+  /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
 fi
 
 "$script_directory/verify-nucleus-builder.sh"
