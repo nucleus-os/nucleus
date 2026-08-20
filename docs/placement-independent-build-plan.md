@@ -54,10 +54,17 @@ the checkout, so the CI checkout and the authoritative checkout name one
 identity for one revision. Every remaining host path in an identity is under
 the store, which both accounts share, so none of them divides this host's warm
 state; they divide only reproduction on a second machine. They are of three
-kinds: the interim prefix-mapping flags, which Phase 3 deletes; the host task
-environment, where a host path is what a host command needs; and one value the
-container prints back so the host learns where an export landed, which the
-container never resolves.
+kinds: the host task environment, where a host path is what a host command
+needs; one value the container prints back so the host learns where an export
+landed, which the container never resolves; and the interim prefix-mapping
+flags, which now apply to host compilation alone.
+
+Phase 3 begins here rather than waiting. A container is given the canonical
+location, so mapping its recorded paths maps a prefix that never appears, and
+the mapping flag carries the host's own directory into the identity because a
+root followed by `=` is not a path boundary to canonicalize. Removing it from
+container compilation took the graph from fifteen host paths in identities to
+nine. Host compilation keeps it until Phase 2.
 
 ## Phase 2: Bind macOS Execution Canonically
 

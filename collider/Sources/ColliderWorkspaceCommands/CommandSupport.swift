@@ -63,9 +63,16 @@ extension WorkspaceContext {
             case .host: SwiftBuildContext.defaultMaximumParallelism
             case .oci: SwiftBuildContext.concurrentOCIMaximumParallelism
             }
-        // Every compilation records where its sources were, so the mapping is
-        // applied to all of them rather than to a chosen few.
-        let prefixMaps = filePrefixMapFlags
+        // A compilation records where it read its sources, and a container is
+        // already given the canonical location, so only host execution needs
+        // the recorded paths mapped. Adding the mapping to a container build
+        // would map a prefix that never appears and would put the host's own
+        // directory into the identity through the flag itself.
+        let prefixMaps =
+            switch execution {
+            case .host: filePrefixMapFlags
+            case .oci: (swift: [String](), clang: [String]())
+            }
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
             buildSystem: buildSystem,
