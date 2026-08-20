@@ -55,7 +55,20 @@ package func nucleusOCIRuntimeConfiguration(
 package let nucleusSwiftPMEnvironmentProjection = EnvironmentProjection(
     names: ["LANG", "LC_ALL", "TZ", "TERM"],
     prefixes: ["NUCLEUS_", "SWIFTPM_", "CCACHE_"],
-    excludedNames: ["NUCLEUS_NATIVE_SDK_ROOT"])
+    excludedNames: [
+        "NUCLEUS_NATIVE_SDK_ROOT",
+        "NUCLEUS_PRODUCT_SOURCE_AUTHORITY",
+        "NUCLEUS_PRODUCT_SOURCE_COMMIT",
+        "NUCLEUS_PRODUCT_SOURCE_REF",
+        "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN",
+    ])
+
+private let nucleusProductProvenanceEnvironmentNames: Set<String> = [
+    "NUCLEUS_PRODUCT_SOURCE_AUTHORITY",
+    "NUCLEUS_PRODUCT_SOURCE_COMMIT",
+    "NUCLEUS_PRODUCT_SOURCE_REF",
+    "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN",
+]
 
 package func nucleusLogRoot(workspaceRoot: FilePath) -> FilePath {
     #if os(macOS)
@@ -229,6 +242,9 @@ package struct WorkspaceContext: Sendable {
 
     package var taskEnvironment: [String: String] {
         var environment = sanitizedEnvironment(self.environment)
+        for name in nucleusProductProvenanceEnvironmentNames {
+            environment.removeValue(forKey: name)
+        }
         let pinned = hostToolBinaryDirectories.map(\.string)
         if !pinned.isEmpty {
             environment["PATH"] = (pinned + [environment["PATH"] ?? ""])
@@ -246,6 +262,14 @@ package struct WorkspaceContext: Sendable {
         environment["BuildDescriptionInMemoryCacheSize"] = "64"
         environment["BuildDescriptionOnDiskCacheSize"] = "64"
         return environment
+    }
+
+    package func productProvenanceEnvironment(
+        from environment: [String: String]? = nil
+    ) -> [String: String] {
+        (environment ?? self.environment).filter {
+            nucleusProductProvenanceEnvironmentNames.contains($0.key)
+        }
     }
 }
 

@@ -1414,6 +1414,7 @@ private func artifactInput(
 }
 
 @Test func workspacePolicyOwnsCacheNamespaceAndRunEnvironment() {
+    let sourceCommit = String(repeating: "a", count: 40)
     let context = WorkspaceContext(
         root: FilePath("/workspace"),
         environment: [
@@ -1421,6 +1422,10 @@ private func artifactInput(
             "XDG_CACHE_HOME": "/cache",
             "NUCLEUS_RUN_DIR": "/runs/current",
             "NUCLEUS_RUN_LOG": "/runs/current/run.log",
+            "NUCLEUS_PRODUCT_SOURCE_AUTHORITY": "protected-main",
+            "NUCLEUS_PRODUCT_SOURCE_COMMIT": sourceCommit,
+            "NUCLEUS_PRODUCT_SOURCE_REF": "refs/heads/main",
+            "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN": "nucleus-builder",
         ],
         runtime: ColliderRuntime(),
         cacheRoot: FilePath("/cache"))
@@ -1434,7 +1439,19 @@ private func artifactInput(
             == FilePath("/cache/downloads"))
     #expect(context.taskEnvironment["NUCLEUS_RUN_DIR"] == nil)
     #expect(context.taskEnvironment["NUCLEUS_RUN_LOG"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_AUTHORITY"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_COMMIT"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_PRODUCT_SOURCE_REF"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN"] == nil)
     #expect(context.environment["NUCLEUS_RUN_DIR"] == "/runs/current")
+    #expect(
+        context.productProvenanceEnvironment()
+            == [
+                "NUCLEUS_PRODUCT_SOURCE_AUTHORITY": "protected-main",
+                "NUCLEUS_PRODUCT_SOURCE_COMMIT": sourceCommit,
+                "NUCLEUS_PRODUCT_SOURCE_REF": "refs/heads/main",
+                "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN": "nucleus-builder",
+            ])
 }
 
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {

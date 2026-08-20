@@ -73,10 +73,15 @@ checkout and completed all 43 catalog tasks for both Linux architectures. Its
 first successful run found 4 tasks current and executed 39, including the newly
 pinned SwiftPM overlay and its regression test. That run proves the Actions
 checkout can execute the complete bounded build through the shared
-Apple-container service and persistent store. The next source-equivalent run
-measures warm placement reuse; the first run changed dependency revisions and
-followed a superseded local diagnostic, so its 4/43 cache-hit result is not the
-two-ordering gate.
+Apple-container service and persistent store. A documentation-only follow-up
+then planned the same 4 tasks current and 39 dirty before it was cancelled. The
+physical task IDs were unchanged, but GitHub's changing product-source commit
+was still projected into ordinary recipe environments and therefore changed
+every task's input identity. Product provenance is now absent from compilation,
+dependency, SDK, image, and acquisition environments and enters only the Linux
+package/source-snapshot boundary that records it. The first run after that
+correction establishes the new identities; the next source-equivalent run is
+the two-ordering gate.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
@@ -678,10 +683,16 @@ that previously failed at XPC lookup completed and published its output.
 That first run established execution but did not close the second-checkout
 experiment: it introduced immutable fork revisions and followed a deliberately
 superseded local diagnostic rather than a completed source-equivalent warm run.
-The next source-equivalent run must consume the state it left behind. Its
-executed-versus-cached task count is the placement gate. Tests, packaging,
-qualification, and delivery join the workflow only after that measurement
-passes.
+The documentation-only follow-up made the remaining defect explicit before
+expensive execution: 39 of 43 tasks reported changed input identities because
+product provenance was present in the general task environment. It was
+cancelled after planning. Product provenance now reaches only the package
+source snapshot and package assembly boundary; a commit identifier is delivery
+metadata, not a compilation input. After one run establishes those corrected
+identities, the next source-equivalent run must consume the state it left
+behind. Its executed-versus-cached task count is the placement gate. Tests,
+packaging, qualification, and delivery join the workflow only after that
+measurement passes.
 
 The clean checkout resolves every URL-based forked SwiftPM dependency from its
 public immutable revision, which equals its gitlink commit. Checkout-local

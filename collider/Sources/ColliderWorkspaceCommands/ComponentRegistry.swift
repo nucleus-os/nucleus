@@ -38,7 +38,15 @@ package struct ComponentRegistry {
         let hostAugmentation =
             try explicitHostAugmentation
             ?? defaultHostCatalogAugmentation()
-        let recipeEnvironment = environmentOverride ?? context.taskEnvironment
+        var recipeEnvironment = environmentOverride ?? context.taskEnvironment
+        let productProvenanceEnvironment = context.productProvenanceEnvironment(
+            from: environmentOverride)
+        for name in productProvenanceEnvironment.keys {
+            recipeEnvironment.removeValue(forKey: name)
+        }
+        let productEnvironment = recipeEnvironment.merging(
+            productProvenanceEnvironment,
+            uniquingKeysWith: { _, provenance in provenance })
         let nativeBuilderCache = context.cacheRoot
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
@@ -203,7 +211,7 @@ package struct ComponentRegistry {
                 productStoreRoot: context.artifactRoot.appending(
                     "product-store"),
                 sessionPackage: context.layout.compositorSessionPackage,
-                environment: recipeEnvironment)
+                environment: productEnvironment)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
