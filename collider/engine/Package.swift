@@ -23,7 +23,7 @@ let package = Package(
             revision: "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"),
         .package(
             url: "https://github.com/nucleus-os/swift-subprocess.git",
-            revision: "4d4764f18f82c52e6cc83575f164f9558ec5ffe9"),
+            revision: "809c53762b881a045030acdbddd7399dd92a6175"),
         .package(path: "../../third-party/swift-crypto"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.6.4"),
     ],

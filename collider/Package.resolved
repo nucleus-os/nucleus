@@ -246,7 +246,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/nucleus-os/swift-subprocess.git",
       "state" : {
-        "revision" : "4d4764f18f82c52e6cc83575f164f9558ec5ffe9"
+        "revision" : "809c53762b881a045030acdbddd7399dd92a6175"
       }
     },
     {
