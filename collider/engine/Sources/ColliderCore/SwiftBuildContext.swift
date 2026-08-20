@@ -670,6 +670,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         environment["NUCLEUS_SWIFTPM_INPUT"] = "/swiftpm-input"
         environment["NUCLEUS_SWIFTPM_SCRATCH"] = executionScratchPath.string
         environment["NUCLEUS_SWIFTPM_PRODUCTS"] = "/swiftpm-products"
+        // Deliberately the host's own path: the container prints it back so
+        // the host learns where the export landed, and never resolves it.
         environment["NUCLEUS_SWIFTPM_HOST_PRODUCTS"] = productsDirectory.string
     }
 }

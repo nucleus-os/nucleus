@@ -49,6 +49,16 @@ the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
 moving either checkout.
 
+Status: the checkout half is complete. No task identity in the graph contains
+the checkout, so the CI checkout and the authoritative checkout name one
+identity for one revision. Every remaining host path in an identity is under
+the store, which both accounts share, so none of them divides this host's warm
+state; they divide only reproduction on a second machine. They are of three
+kinds: the interim prefix-mapping flags, which Phase 3 deletes; the host task
+environment, where a host path is what a host command needs; and one value the
+container prints back so the host learns where an export landed, which the
+container never resolves.
+
 ## Phase 2: Bind macOS Execution Canonically
 
 macOS host builds execute in a virtual machine with the workspace and store

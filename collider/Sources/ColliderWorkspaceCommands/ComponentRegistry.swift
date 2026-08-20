@@ -952,7 +952,7 @@ package struct ComponentRegistry {
                 containerEnvironment: [
                     "CCACHE_DIR": "/ccache",
                     "HOME": "/home/nucleus-build",
-                    "NUCLEUS_NATIVE_SDK_ROOT": nativeSDK.string,
+                    "NUCLEUS_NATIVE_SDK_ROOT": placement.executionPath(nativeSDK),
                     "NUCLEUS_GFXSTREAM_GUEST_LIBRARY":
                         placement.executionPath(
                             nativeSDK.appending(
