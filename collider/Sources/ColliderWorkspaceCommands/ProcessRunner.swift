@@ -11,7 +11,8 @@ extension WorkspaceContext {
     /// capture working through a dirty tree from one that has stalled.
     package func sourceCaptureReporter() -> SourceCaptureObserver {
         { [console] progress in
-            let checkout = progress.checkout.lastComponent?.string
+            let checkout =
+                progress.checkout.lastComponent?.string
                 ?? progress.checkout.string
             let total = progress.identifiedPaths + progress.inspectedPaths
             try? console.progress(

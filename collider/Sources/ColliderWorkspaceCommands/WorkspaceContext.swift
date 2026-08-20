@@ -268,6 +268,7 @@ package struct WorkspaceContext: Sendable {
         }
         environment.removeValue(forKey: "LANG")
         environment.removeValue(forKey: "SHELL")
+        environment.removeValue(forKey: "TERM")
         environment.removeValue(forKey: "TMPDIR")
         for name in Array(environment.keys) where name.hasPrefix("LC_") {
             environment.removeValue(forKey: name)

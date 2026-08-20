@@ -166,7 +166,7 @@ extension WorkspaceContext {
 
 extension WorkspaceContext {
     fileprivate func graphSwiftPath() throws -> FilePath {
-        let hostEnvironment = ProcessInfo.processInfo.environment
+        let hostEnvironment = taskEnvironment
         if let toolchain = hostEnvironment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
             let candidate = FilePath(toolchain).appending("bin/swift")
             if FileManager.default.isExecutableFile(atPath: candidate.string) {
@@ -185,20 +185,18 @@ extension WorkspaceContext {
     }
 
     fileprivate func swiftCompilerPath() throws -> FilePath {
+        let hostEnvironment = taskEnvironment
         if let value = environment["SWIFTC"], !value.isEmpty {
             return FilePath(
                 URL(fileURLWithPath: value).resolvingSymlinksInPath())
         }
-        if let toolchain = environment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
+        if let toolchain = hostEnvironment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
             return FilePath(
                 URL(fileURLWithPath: toolchain)
                     .appendingPathComponent("bin/swiftc")
                     .resolvingSymlinksInPath())
         }
-        let searchPath =
-            environment["PATH"]
-            ?? ProcessInfo.processInfo.environment["PATH"]
-            ?? ""
+        let searchPath = hostEnvironment["PATH"] ?? ""
         for directory in searchPath.split(separator: ":") {
             let candidate = URL(fileURLWithPath: String(directory))
                 .appendingPathComponent("swiftc")

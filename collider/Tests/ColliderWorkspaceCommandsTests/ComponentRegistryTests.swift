@@ -1508,6 +1508,7 @@ private func artifactInput(
             "LC_ALL": "C.UTF-8",
             "PATH": "/developer/bin:/usr/bin:/bin",
             "SHELL": "/bin/zsh",
+            "TERM": "xterm-256color",
             "TMPDIR": "/private/tmp/session",
         ],
         runtime: ColliderRuntime(),
