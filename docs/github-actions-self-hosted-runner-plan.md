@@ -636,10 +636,14 @@ literal before the compiler could recognize it as a path.
 
 Two builds of one source are therefore functionally interchangeable but not
 byte-identical, and the difference is a provenance record naming a checkout that
-exists on the same host. Reuse across the two requires deciding that such a
-record is provenance rather than semantics. Container mount targets keep
-repeating the host path until that decision is stated, because canonicalizing
-that identity is what asserts the interchangeability.
+exists on the same host. Both mechanisms are interim: rewriting a path out of an
+identity and mapping one out of debug information correct a leak that execution
+creates upstream, which is why they cannot reach that last record. The
+[placement-independent build plan](placement-independent-build-plan.md) removes
+the leak instead, by giving every build tool one canonical path and no host
+path, and deletes both corrections rather than maintaining them. Container mount
+targets keep repeating the host path until it does, because canonicalizing that
+identity is what asserts an interchangeability the artifacts do not yet have.
 
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.
