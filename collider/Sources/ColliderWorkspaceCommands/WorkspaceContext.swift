@@ -190,6 +190,29 @@ package struct WorkspaceContext: Sendable {
         ])
     }
 
+    /// Where a mapped root appears in compiled output.
+    ///
+    /// A recorded file path must not say which checkout produced an object, or
+    /// two builds of one source are not interchangeable however equal their
+    /// identities claim to be. The mapped roots are exactly the roots identity
+    /// resolves through, so output and identity cannot disagree about what
+    /// counts as placement.
+    package static func mappedPrefix(for root: IdentityPathRoot) -> String {
+        "/nucleus/\(root.name)"
+    }
+
+    /// Swift and Clang spellings of that mapping, in the order each expects.
+    package var filePrefixMapFlags: (swift: [String], clang: [String]) {
+        var swift: [String] = []
+        var clang: [String] = []
+        for root in identityPathMap.roots {
+            let mapping = "\(root.path.string)=\(Self.mappedPrefix(for: root))"
+            swift += ["-file-prefix-map", mapping]
+            clang.append("-ffile-prefix-map=\(mapping)")
+        }
+        return (swift, clang)
+    }
+
     package var stateRoot: FilePath { hostBuildRoot.appending("state") }
     package var taskStateRoot: FilePath { stateRoot.appending("tasks") }
     package var lockRoot: FilePath { stateRoot.appending("locks") }

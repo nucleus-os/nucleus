@@ -44,6 +44,16 @@ public struct IdentityEncoder: Sendable {
         append(.boolean, payload: [value ? 1 : 0])
     }
 
+    /// A command argument, which routinely carries a path inside a larger
+    /// string: `-I/path`, `--sysroot=/path`, `-ffile-prefix-map=/path=/token`.
+    /// Those paths are placement like any other and resolve through the
+    /// declared roots. Appending the argument as an opaque string instead keeps
+    /// the host's own directories in the identity, so the same compilation from
+    /// a second checkout hashes differently and reuses nothing.
+    public mutating func append(argument value: String) {
+        append(.string, payload: Array(identityPathMap.canonicalize(value).utf8))
+    }
+
     public mutating func append(path: FilePath) {
         append(.path, payload: Array(identityPathMap.canonicalize(path.string).utf8))
     }

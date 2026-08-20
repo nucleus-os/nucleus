@@ -619,12 +619,19 @@ other. SwiftPM task identities, host scratch directories, and container build
 workspaces resolve through the declared roots, and a symbolic link's target
 resolves as the path it is rather than as an opaque string.
 
-Two placements still reach identities and are the remaining work for this gate.
-Container mount targets repeat the host path as a string, so a task naming the
-checkout as a mount target still records which checkout it was. Compiler search
-flags carry absolute cache paths, which both accounts resolve identically
-because they share one store, so those do not divide this host's warm state but
-do keep an identity from being reproducible on another machine.
+Compiled output must not record where its sources were either, or two builds of
+one source are not interchangeable however equal their identities claim to be.
+Every Swift and Clang compilation maps the declared roots out of the paths it
+records, using the same roots identity resolves through so that the two cannot
+disagree about what counts as placement. A representative object went from 139
+recorded checkout paths to 17.
+
+Those 17 are the remaining work for this gate, and they are one thing: the
+translation unit's own source path, which `-file-prefix-map` does not reach.
+Until they are gone, two checkouts still produce different bytes, so container
+mount targets keep repeating the host path as a string rather than resolving
+through the roots: canonicalizing that identity now would claim an
+interchangeability the artifacts do not yet have.
 
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.

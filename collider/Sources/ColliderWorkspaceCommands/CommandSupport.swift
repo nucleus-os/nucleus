@@ -63,6 +63,9 @@ extension WorkspaceContext {
             case .host: SwiftBuildContext.defaultMaximumParallelism
             case .oci: SwiftBuildContext.concurrentOCIMaximumParallelism
             }
+        // Every compilation records where its sources were, so the mapping is
+        // applied to all of them rather than to a chosen few.
+        let prefixMaps = filePrefixMapFlags
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
             buildSystem: buildSystem,
@@ -72,9 +75,9 @@ extension WorkspaceContext {
             toolchainIdentity: resolvedToolchainIdentity,
             sanitizer: sanitizer,
             traits: traits,
-            swiftFlags: swiftFlags,
-            cFlags: cFlags,
-            cxxFlags: cxxFlags,
+            swiftFlags: swiftFlags + prefixMaps.swift,
+            cFlags: cFlags + prefixMaps.clang,
+            cxxFlags: cxxFlags + prefixMaps.clang,
             linkerFlags: linkerFlags,
             toolsets: toolsets,
             staticSwiftStandardLibrary: staticSwiftStandardLibrary,

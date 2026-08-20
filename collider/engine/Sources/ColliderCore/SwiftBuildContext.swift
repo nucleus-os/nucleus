@@ -744,7 +744,8 @@ private func append(
     _ values: [String],
     into encoder: inout IdentityEncoder
 ) {
-    encoder.appendSequence(values) { $0.append($1) }
+    // Compiler flags, not opaque strings: each one may carry a path.
+    encoder.appendSequence(values) { $0.append(argument: $1) }
 }
 
 private func append(
