@@ -48,21 +48,16 @@ else
   cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/collider"
   developer_root="${XDG_STATE_HOME:-$HOME/.local/state}/nucleus/collider"
 fi
-swiftpm_config_root="$application_support_root/swiftpm/configuration"
 swiftpm_security_root="$application_support_root/swiftpm/security"
 swiftpm_cache_root="$cache_root/swiftpm"
 scratch_root="$developer_root/build/collider-cli"
 bin="$scratch_root/release/collider"
 fingerprint_file="$application_support_root/launcher/collider-release-source.sha256"
 mkdir -p \
-  "$swiftpm_config_root" \
   "$swiftpm_security_root" \
   "$swiftpm_cache_root" \
   "$scratch_root" \
   "$(dirname "$fingerprint_file")"
-export NUCLEUS_SWIFTPM_CONFIG_ROOT="$swiftpm_config_root"
-"$root/tools/configure-swiftpm-mirrors.sh"
-
 hash_standard_input() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum | awk '{ print $1 }'
@@ -90,22 +85,18 @@ collider_source_fingerprint() {
   local source_repository
   local source_repositories=(
     third-party/container
-    third-party/containerization
-    third-party/swift-argument-parser
-    third-party/swift-crypto
-    third-party/swift-log
-    third-party/swift-subprocess
-    third-party/swift-system
+    third-party/swift-java
   )
   local root_paths=(
     collider/Package.swift
     collider/Package.resolved
+    collider/.swiftpm/configuration/mirrors.json
     collider/Sources
     collider/engine/Package.swift
     collider/engine/Package.resolved
+    collider/engine/.swiftpm/configuration/mirrors.json
     collider/engine/Sources
     tools/collider-launcher.sh
-    tools/configure-swiftpm-mirrors.sh
     tools/host-env.sh
     tools/host-platform-env.sh
   )
@@ -132,7 +123,6 @@ if [[ ! -x "$bin" || "$fingerprint" != "$recorded_fingerprint" ]]; then
   swift build \
     --package-path "$pkg" \
     --cache-path "$swiftpm_cache_root" \
-    --config-path "$swiftpm_config_root" \
     --security-path "$swiftpm_security_root" \
     --scratch-path "$scratch_root" \
     --only-use-versions-from-resolved-file \

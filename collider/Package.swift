@@ -5,7 +5,7 @@ var packageDependencies: [Package.Dependency] = [
     .package(path: "engine"),
     .package(name: "Nucleus", path: ".."),
     .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.1.5"),
-    .package(path: "../third-party/swift-argument-parser"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
 ]
 let nucleusSessionDependencies: [Target.Dependency] = [
     .product(

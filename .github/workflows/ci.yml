@@ -89,10 +89,9 @@ jobs:
         with:
           # Full history and tags are structurally required; shallowing this
           # is a known trap. Provenance capture itself reads only the
-          # checked-out tree, but Collider resolves the SwiftPM graph. Local
-          # mirrors redirect root-owned dependency URLs to gitlink-pinned
-          # repositories, where immutable revision requirements need the
-          # complete pinned object rather than a mutable branch ref.
+          # checked-out tree, while Collider resolves forked SwiftPM sources
+          # from immutable public revisions. Submodule repositories are source
+          # and provenance inputs, not Git remotes for package resolution.
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.admission.outputs.revision }}

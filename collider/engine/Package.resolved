@@ -1,5 +1,5 @@
 {
-  "originHash" : "99b987599c368f2d074fafa3a05c8df13eb7499836202d35133db7a68fb47585",
+  "originHash" : "dadc2d93bfe25e5dcb5c53067ca4dfb99bbc968e168bf51751a9c3e607b53e55",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "9544287b9416c0bc71e58b9f3aead8dd14b16103",
         "version" : "1.36.0"
+      }
+    },
+    {
+      "identity" : "containerization",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/containerization.git",
+      "state" : {
+        "revision" : "5796abeaea5c25da3a0f32b6edee9219c7754c5b",
+        "version" : "0.40.2"
       }
     },
     {
@@ -116,6 +125,15 @@
       "state" : {
         "revision" : "4ea16b4dfa4b023cecae5ae0368402c4d846d613",
         "version" : "2.0.0"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "version" : "3.15.1"
       }
     },
     {
@@ -255,7 +273,7 @@
     {
       "identity" : "swift-system",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/nucleus-os/swift-system.git",
+      "location" : "https://github.com/apple/swift-system.git",
       "state" : {
         "revision" : "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"
       }

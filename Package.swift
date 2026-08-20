@@ -62,7 +62,7 @@ let dependencies: [Package.Dependency] = [
     .package(
         url: "https://github.com/swift-server/async-http-client.git",
         revision: "f95c908967e98c68c5ce3fd61a7974e7e869e303"),
-    .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
     .package(name: "swift-java", path: "third-party/swift-java"),
     .package(
         url: "https://github.com/apple/swift-nio.git",

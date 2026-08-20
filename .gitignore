@@ -34,6 +34,12 @@ Desktop.ini
 !/.swiftpm/configuration/
 /.swiftpm/configuration/*
 !/.swiftpm/configuration/mirrors.json
+!/collider/.swiftpm/
+!/collider/.swiftpm/configuration/
+!/collider/.swiftpm/configuration/mirrors.json
+!/collider/engine/.swiftpm/
+!/collider/engine/.swiftpm/configuration/
+!/collider/engine/.swiftpm/configuration/mirrors.json
 /collider/.nucleus/
 /collider/.sourcekit-lsp/
 
