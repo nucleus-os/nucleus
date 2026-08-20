@@ -28,35 +28,32 @@ reuse.
 
 1. Complete Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
-   move automated `main` and locally initiated clean, branch, dirty, debug, and
-   release builds onto one machine-owned Collider build store outside every
-   account home, and enforce source, account, credential, network, and recovery
-   boundaries. Its protected main-only workflow boundary, trusted builder
-   identity, and machine-wide execution lease are established, and
-   protected-main verification runs green on the M2 Ultra.
-2. Complete the
+   run the first bounded `collider build all` lane from the clean CI checkout,
+   prove that it reuses the authoritative checkout's warm state, close the
+   remaining cross-account and build-store gates, and enforce the source,
+   account, credential, network, and recovery boundaries.
+2. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
-   that no build tool receives a host path: container and macOS execution bind
-   the workspace and store at canonical paths, the interim identity and debug
-   mappings are removed, and one revision built from two checkouts produces
-   identical bytes. The complete verification graph requires that property of
-   every invocation source, and artifact delivery verifies a cohort by
-   reproducing it.
-3. Complete Phases 5 and 6 of the
+   that no delivered-product build tool receives a host path, remove the
+   product-side interim corrections, and record the CI cache-hit gate as its
+   second-checkout proof. Its macOS host-tool VM phase remains deferred until
+   host execution produces a delivered artifact.
+3. Complete Phases 6 and 7 of the
+   [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
+   by expanding the proven build lane into the complete verification graph.
+   The graph lands with the remaining Linux-runtime packaging mounts and proves
+   them through an actual `collider package linux-runtime` execution.
+4. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-4. Complete Phases 6 and 7 of the
+5. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-5. Complete the remaining qualification plans in the order listed below. Their
+6. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
-6. Complete Phases 6 and 7 of the
-   [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-   to bind the complete verification graph to immutable artifacts and cut over
-   main-only verification and delivery inputs.
 7. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
@@ -83,7 +80,7 @@ reuse.
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
 
-Step 5 executes these qualification plans after their corresponding
+Step 6 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)

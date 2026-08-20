@@ -648,6 +648,14 @@ identity is what asserts an interchangeability the artifacts do not yet have.
 This phase carries the Phase 3 gate items that require an executed build,
 because no build has yet executed against the machine store.
 
+The first automated build lane is deliberately bounded to the ordinary
+`collider build all` catalog entrypoint. Its first watched run is also the
+second-checkout experiment in the placement-independent build plan: the CI
+checkout must consume the state warmed from the authoritative checkout rather
+than compiling it again. The executed-versus-cached task count is the gate.
+Tests, packaging, qualification, and delivery join the workflow only after that
+measurement passes.
+
 Verify the store's ownership, mode, and group access from both accounts before
 any state enters it, and verify the builder reads every migrated volume and
 artifact root before the interactive copies are released. The store is

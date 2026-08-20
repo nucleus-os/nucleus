@@ -103,3 +103,5 @@ jobs:
           submodules: recursive
       - name: Verify protected main provenance
         run: collider check protected-main-source
+      - name: Build the catalog
+        run: collider build all

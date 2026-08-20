@@ -2,27 +2,27 @@
 
 Status: active
 
-Execution position: this plan precedes the complete verification graph in the
-root documentation inventory. That graph requires every invocation source to
-produce one task identity and one artifact for the same effective source, which
-is a property of how builds execute rather than a correction applied to
-identities afterward.
+Execution position: the protected-main CI build is this plan's second-checkout
+gate. The launcher admits only the authoritative checkout locally, and planning
+another checkout requires host network resolution, so placement independence
+and the first bounded CI build are one operation. The complete verification
+graph expands only after that run demonstrates warm-state reuse.
 
 ## Invariant
 
-No build tool receives a host path. The workspace is `/nucleus/workspace` and
-the shared build store is `/nucleus/cache` in every execution environment, and
-where the host keeps those trees is Collider's private bookkeeping. A compiled
-object, a task identity, a persistent workspace name, and a cache entry are
-therefore identical whichever checkout produced them, on whichever machine,
-because none of them ever saw a location to record.
+No tool that produces a delivered artifact receives a host path. The workspace
+is `/nucleus/workspace` and the shared build store is `/nucleus/cache` in every
+product execution environment, and where the host keeps those trees is
+Collider's private bookkeeping. A product object, task identity, persistent
+workspace name, and cache entry are therefore identical whichever checkout
+produced them, because none of them ever saw a location to record.
 
 Placement independence is established by execution, not repaired afterward.
 Rewriting a host path out of an identity, and mapping one out of debug
 information, are corrections for a leak the execution model creates upstream;
 they are incomplete by construction, because a build system that passes an
 absolute source path records it once in a place no mapping flag reaches. Both
-mechanisms are interim and are removed by this plan rather than maintained.
+mechanisms are removed from product execution rather than maintained there.
 
 The canonical names bind for the duration of one admitted run. The machine-wide
 execution lease already admits one run at a time, so the CI checkout and the
@@ -68,11 +68,20 @@ nine. Host compilation keeps it until Phase 2.
 
 ## Phase 2: Bind macOS Execution Canonically
 
+Status: deferred
+
 macOS host builds execute in a virtual machine with the workspace and store
 mounted at the same canonical paths. Host execution is currently the one
 environment that observes real locations, and it is where the residual
 provenance record originates: a compilation records its own source file when
 that file is named absolutely, and no mapping flag reaches that record.
+
+Host execution produces Collider and other build tools, not delivered product
+artifacts. A virtual machine is therefore not justified merely to remove a
+provenance record from tooling. Revisit this phase when macOS host execution
+first produces an artifact that enters delivery; until then its prefix mapping
+and path-bearing provenance remain outside the product reproducibility
+contract.
 
 A symbolic link is not the mechanism. Any tool resolving it observes the
 physical path, and Collider itself resolves paths deliberately in its own
@@ -87,9 +96,11 @@ same toolchain.
 
 ## Phase 3: Remove the Interim Corrections
 
-Delete the file-prefix mapping applied to Swift and Clang invocations, and the
-argument and path canonicalization applied while encoding identities. Both
-exist to remove a leak that no longer occurs.
+Delete the file-prefix mapping applied to container Swift and Clang invocations,
+and the argument and path canonicalization applied while encoding product task
+identities. Both exist to remove a leak that canonical product execution no
+longer creates. Host-tool compilation retains its mapping while Phase 2 is
+deferred.
 
 `IdentityPathMap` remains, inverted: encoding asserts that no declared root
 appears in an identity and fails when one does, rather than rewriting it. A
@@ -97,32 +108,34 @@ host path reaching an identity is then a defect that stops a build, not a
 string quietly corrected in one of the several places that must remember to
 correct it.
 
-Gate: identity encoding rejects a host path rather than canonicalizing it; no
-compiler invocation carries a prefix mapping; and every task identity is
-unchanged by relocating the checkout or the store.
+Gate: product identity encoding rejects a host path rather than canonicalizing
+it; no product compiler invocation carries a prefix mapping; and every product
+task identity is unchanged by relocating the checkout or the store.
 
 ## Phase 4: Prove Reproducibility Across Checkouts and Machines
 
-Two checkouts of one revision at different locations produce byte-identical
-products, identical task identities, and identical artifact coordinates, and
-each reuses the other's warm state completely. The same holds for one revision
-built on a second machine carrying the same pinned toolchain.
+The protected-main CI checkout and the authoritative checkout produce identical
+product task identities and artifact coordinates for one effective source, and
+each reuses the other's warm state. CI is the real second checkout: the local
+launcher cannot admit another location, and planning that location locally
+would require network resolution.
 
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
-This phase needs a real second checkout and cannot be reached earlier. Planning
-a second location resolves its package graph, which reaches the network and is
-therefore not something a test performs; and the launcher admits one canonical
-checkout, so a second one cannot be built locally at all. Until then the
-invariant is held by two narrower guards: one identity resolves two locations
-to the same bytes, and no container mount names the checkout.
+The first bounded workflow lane invokes the ordinary `collider build all`
+catalog entrypoint and nothing broader. Its first watched run is the experiment:
+the clean checkout's executed-versus-cached task count measures whether the
+developer-warmed store is placement-independent. A broad rebuild is a failed
+gate, not a baseline to accept. The workflow expands to tests, packages,
+qualification, and delivery only after this lane reuses the warm state.
 
-Gate: an automated build followed by a local build of one revision, and the
-reverse ordering, execute no compilation the other already performed and
-produce identical bytes; and a second machine reproduces the same product
-digests from the same source and toolchain.
+Gate: an automated build followed by a local build of one effective source, and
+the reverse ordering, execute no compilation the other already performed; the
+product store resolves the same artifact coordinates and bytes from both
+checkouts; and a second machine reproduces the same product digests from the
+same source and toolchain.
 
 ## Phase 5: Consume Reproducibility in Delivery
 
@@ -139,9 +152,9 @@ signing or publication.
 
 - Do not make the canonical path a symbolic link, a search path, or a
   convention that tools are asked to honor. It is a mount.
-- Do not retain prefix mapping or identity canonicalization as a safety net
-  once execution is canonical. Two mechanisms for one invariant is how the two
-  drift apart.
+- Do not retain prefix mapping or identity canonicalization as a product-build
+  safety net once product execution is canonical. The deferred macOS host-tool
+  boundary retains only the correction its noncanonical execution still needs.
 - Do not admit concurrent runs while canonical names bind per run.
 - Do not relocate the authoritative checkout, the build store, or any
   persistent workspace to achieve this. Where the host keeps a tree stops
