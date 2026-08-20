@@ -67,11 +67,16 @@ runner group, builder account, and registered runner are provisioned, and
 protected-main verification runs green on the M2 Ultra for both a `main` push
 and an exact-revision manual dispatch.
 
-That builder account holds no materialized dependency graph. Verification
-currently establishes provenance rather than building products, so the retained
-cache, staged SDKs, images, and persistent workspaces still live in the
-interactive account. Phase 4 moves them, and the Phase 3 gate items that
-require an executed build wait on that move.
+The builder account now owns the materialized dependency graph in the machine
+store. The bounded `collider build all` lane has run from the clean Actions
+checkout and completed all 43 catalog tasks for both Linux architectures. Its
+first successful run found 4 tasks current and executed 39, including the newly
+pinned SwiftPM overlay and its regression test. That run proves the Actions
+checkout can execute the complete bounded build through the shared
+Apple-container service and persistent store. The next source-equivalent run
+measures warm placement reuse; the first run changed dependency revisions and
+followed a superseded local diagnostic, so its 4/43 cache-hit result is not the
+two-ordering gate.
 
 Collider already represents runner, execution, and artifact platforms
 independently. It owns typed Apple-container lifecycle, offline OCI execution,
@@ -657,16 +662,26 @@ path, and deletes both corrections rather than maintaining them. Container mount
 targets keep repeating the host path until it does, because canonicalizing that
 identity is what asserts an interchangeability the artifacts do not yet have.
 
-This phase carries the Phase 3 gate items that require an executed build,
-because no build has yet executed against the machine store.
+This phase carries the remaining Phase 3 gate items that require controlled
+executed-build comparisons. Automated execution against the machine store is
+now established; dirty-tree observation, mutation supersession, and the two
+local/automated orderings remain to be measured explicitly.
 
 The first automated build lane is deliberately bounded to the ordinary
-`collider build all` catalog entrypoint. Its first watched run is also the
-second-checkout experiment in the placement-independent build plan: the CI
-checkout must consume the state warmed from the authoritative checkout rather
-than compiling it again. The executed-versus-cached task count is the gate.
-Tests, packaging, qualification, and delivery join the workflow only after that
-measurement passes.
+`collider build all` catalog entrypoint. Its first watched successful run built
+both Linux architectures from the clean checkout: 43 tasks reached terminal
+success, with 4 current and 39 executed, and the GitHub job completed in
+32m53s. The runner and Apple-container service shared the builder user launchd
+domain throughout sustained concurrent container work; the native-builder task
+that previously failed at XPC lookup completed and published its output.
+
+That first run established execution but did not close the second-checkout
+experiment: it introduced immutable fork revisions and followed a deliberately
+superseded local diagnostic rather than a completed source-equivalent warm run.
+The next source-equivalent run must consume the state it left behind. Its
+executed-versus-cached task count is the placement gate. Tests, packaging,
+qualification, and delivery join the workflow only after that measurement
+passes.
 
 The clean checkout resolves every URL-based forked SwiftPM dependency from its
 public immutable revision, which equals its gitlink commit. Checkout-local
