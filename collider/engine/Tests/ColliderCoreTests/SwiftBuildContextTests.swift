@@ -437,6 +437,11 @@ private let fixturePackageRoot = FilePath("/workspace")
             configuration: .debug,
             target: .host(identity: "aarch64-linux"),
             toolchainIdentity: "swiftc@fixture",
+            swiftFlags: [
+                "-file-prefix-map",
+                "\(checkout.string)=/nucleus-workspace",
+            ],
+            cFlags: ["-ffile-prefix-map=\(checkout.string)=/nucleus-workspace"],
             toolsets: [checkout.appending("toolsets/linux.json")],
             identityPathMap: IdentityPathMap(roots: [
                 IdentityPathRoot(name: "workspace", path: checkout),

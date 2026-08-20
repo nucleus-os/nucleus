@@ -166,6 +166,9 @@ import Testing
         let task = builder.build(
             inputs: [
                 .file(input),
+                .string(
+                    name: "FIXTURE_LINK_TARGET",
+                    value: workspace.appending("Sources/include").string),
                 .environment(
                     name: "FIXTURE_PATH",
                     value: workspace.appending("toolchain/bin").string),

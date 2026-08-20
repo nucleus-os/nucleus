@@ -87,10 +87,12 @@ struct TaskIdentityBuilder {
                 inputEncoder.append(bytes: bytes)
             case .string(let name, let value):
                 inputEncoder.append(name)
-                inputEncoder.append(value)
+                inputEncoder.append(canonicalizingPathsIn: value)
             case .environment(let name, let value):
                 inputEncoder.append(name)
-                inputEncoder.appendOptional(value) { $0.append(argument: $1) }
+                inputEncoder.appendOptional(value) {
+                    $0.append(canonicalizingPathsIn: $1)
+                }
             case .swiftBuildContext(let context):
                 inputEncoder.append("swift-build-context")
                 inputEncoder.append(
@@ -145,6 +147,9 @@ struct TaskIdentityBuilder {
             into: &encoder,
             services: services,
             resolutions: &resolutions)
+        guard !services.identityPathMap.containsDeclaredRoot(inEncoded: encoder.bytes) else {
+            throw TaskIdentityFailure.uncanonicalizedPlacement(task.id)
+        }
         return services.digestBytes(encoder.bytes)
     }
 
@@ -232,7 +237,18 @@ struct TaskIdentityBuilder {
         }
         encoder.appendSequence(artifactEnvironment(action.environment)) { entry, pair in
             entry.append(pair.key)
-            entry.append(argument: pair.value)
+            entry.append(canonicalizingPathsIn: pair.value)
+        }
+    }
+}
+
+private enum TaskIdentityFailure: Error, CustomStringConvertible {
+    case uncanonicalizedPlacement(TaskID)
+
+    var description: String {
+        switch self {
+        case .uncanonicalizedPlacement(let task):
+            "task identity contains an uncanonicalized placement path: \(task.rawValue)"
         }
     }
 }

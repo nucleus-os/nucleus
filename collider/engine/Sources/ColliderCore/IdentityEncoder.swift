@@ -51,6 +51,16 @@ public struct IdentityEncoder: Sendable {
     /// the host's own directories in the identity, so the same compilation from
     /// a second checkout hashes differently and reuses nothing.
     public mutating func append(argument value: String) {
+        append(canonicalizingPathsIn: value)
+    }
+
+    /// A string whose semantic value may contain a declared placement root.
+    ///
+    /// This is broader than a command argument: artifact-input strings also
+    /// carry symlink targets and other path-valued configuration. Replacing
+    /// only declared roots preserves every other byte while making those
+    /// values independent of where the workspace and cache happen to live.
+    public mutating func append(canonicalizingPathsIn value: String) {
         append(.string, payload: Array(identityPathMap.canonicalize(value).utf8))
     }
 

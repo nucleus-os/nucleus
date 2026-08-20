@@ -124,6 +124,7 @@ private func replacingPathRoot(
         let suffixIsBoundary =
             range.upperBound == value.endIndex
             || value[range.upperBound] == "/"
+            || value[range.upperBound] == "="
         guard suffixIsBoundary else {
             result += value[cursor..<range.upperBound]
             cursor = range.upperBound
