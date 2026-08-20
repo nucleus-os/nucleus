@@ -36,17 +36,19 @@ not a global LaunchAgents directory that macOS independently loads into login
 and background sessions. Finalization drains the system, GUI, and user-domain
 legacy instances, then bootstraps exactly one agent from the builder identity
 into `user/502`; selecting that namespace alone does not drop a root caller's
-Unix credentials. It refuses the migration while an exact runner worker is
-active. Verification resolves the live PID from launchd, requires UID 502 and
-exactly one installed `runsvc.sh`, and rejects remaining system or GUI jobs.
+Unix credentials. A healthy builder-domain agent is preserved across repeated
+finalization so its live GitHub broker session is not discarded. Finalization
+refuses migration while an exact runner worker is active. Verification resolves
+the live PID from launchd, requires UID 502 and exactly one installed
+`runsvc.sh`, and rejects remaining system, root, developer, or GUI jobs.
 
-Finalization also reconciles any retained Actions checkout left by the retired
-system-domain service. The work root and each ephemeral repository beneath it
-are builder-owned; a checkout whose root still has the legacy owner is corrected
-recursively once, including its submodules. Git therefore validates CI-owned
-source by ordinary ownership rather than a broad safe-directory exception. The
-workflow asserts both the executing user and checkout owner immediately after
-checkout, before any repository-controlled executable runs.
+Finalization also reconciles the complete bounded Actions work root left by a
+retired service: checkouts, action caches, tool state, and bookkeeping are all
+builder-owned. The traversal does not follow job-created symbolic links. Git
+therefore validates CI-owned source by ordinary ownership rather than a broad
+safe-directory exception. The workflow asserts both the executing user and
+checkout owner immediately after checkout, before any repository-controlled
+executable runs.
 
 The interactive `maddy` account owns the authoritative development checkout,
 personal credentials, and remote-development sessions but runs no GitHub
@@ -107,9 +109,9 @@ Task environments now exclude source revalidation, workspace selection, and run
 log coordinates alongside product provenance. Those values control how one
 invocation enters and records Collider; they do not describe what a task builds.
 A regression test proves that changing every invocation coordinate leaves the
-complete task environment equal. One transition run establishes the narrowed
-identity; the following local and automated source-equivalent runs are the
-two-ordering gate.
+complete task environment equal. The transition run completed all 54 selected
+execution tasks under the narrowed identities. The following local and
+automated source-equivalent runs are the two-ordering gate.
 
 The installed workspace launcher fingerprints Collider's actual compilation
 closure rather than the repository commit or Git representation. Tracked and
@@ -719,23 +721,27 @@ that previously failed at XPC lookup completed and published its output.
 That first run established execution but did not close the second-checkout
 experiment: it introduced immutable fork revisions and followed a deliberately
 superseded local diagnostic rather than a completed source-equivalent warm run.
-The subsequent automated sequence has now proved that product provenance and an
+The subsequent automated sequence proved that product provenance and an
 unrelated repository commit no longer invalidate compilation state. The local
 follow-up then isolated invocation control state as the final whole-graph leak,
-and that state is now absent from task environments. After one run establishes
-the corrected identities, the next source-equivalent run must consume the state
-it left behind. Its executed-versus-cached task count is the placement gate.
-Tests, packaging, qualification, and delivery join the workflow only after that
-measurement passes.
+and that state is now absent from task environments. The clean-checkout
+transition completed all 54 selected execution tasks under the corrected
+identities. The next source-equivalent local run must consume that state, and a
+following automated run must consume the local state. Their
+executed-versus-cached task counts are the placement gate. Tests, packaging,
+qualification, and delivery join the workflow only after that measurement
+passes.
 
-Read-only commands no longer create durable run records or reconcile abandoned
-builder runs. A dry task plan, ordinary cache status, doctor report, graph, log,
-or run inspection stays in the invoking account and only reads the shared
-store. Commands that enter the builder identity own durable history and its
-retention. This removes the former state in which an interactive dry run could
-create a developer-owned record and then fail while pruning builder-owned
-history; it also makes the plan's read-only interactive boundary true by
-construction rather than by permissive directory modes.
+Read-only commands no longer create durable run records, reconcile abandoned
+builder runs, create task-state directories, or persist planning digest indexes.
+A dry task plan, ordinary cache status, doctor report, graph, log, or run
+inspection stays in the invoking account and only reads the shared store. A
+regression test executes a digesting dry plan against a non-writable state root.
+Commands that enter the builder identity own durable history and its retention.
+This removes the former state in which an interactive dry run could create a
+developer-owned record or mutate builder-owned planning state; it also makes the
+plan's read-only interactive boundary true by construction rather than by
+permissive directory modes.
 
 The clean checkout resolves every URL-based forked SwiftPM dependency from its
 public immutable revision, which equals its gitlink commit. Checkout-local

@@ -82,9 +82,11 @@ public struct ColliderEngine: Sendable {
         options: TaskExecutionOptions,
         planning: (TaskPlanningServices) throws -> ExecutionPlan
     ) async throws -> TaskExecutionReport {
-        try FileManager.default.createDirectory(
-            atPath: stateRoot.string,
-            withIntermediateDirectories: true)
+        if !options.dryRun {
+            try FileManager.default.createDirectory(
+                atPath: stateRoot.string,
+                withIntermediateDirectories: true)
+        }
         let durationStore = TaskDurationEstimateStore(
             root: stateRoot.appending("duration-estimates"))
         let planningResult = try await
@@ -126,7 +128,9 @@ public struct ColliderEngine: Sendable {
                         services(validatingOCIImages: imageValidator))
                 }
                 let hashingDuration = planningInputs.hashingDurationNanoseconds
-                try planningInputs.persistDigestIndex()
+                if !options.dryRun {
+                    try planningInputs.persistDigestIndex()
+                }
                 return (
                     plan,
                     hashingDuration,

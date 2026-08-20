@@ -311,8 +311,9 @@ run_as_builder "$script_directory/install-container-service.sh"
 # resolve the per-user Mach service.
 # A global LaunchAgent is loaded independently into login and background
 # sessions, while an explicit bootstrap adds another instance. Keep the runner
-# descriptor in the root-owned host-contract directory instead, drain every
-# legacy domain, and create exactly one service from the builder identity.
+# descriptor in the root-owned host-contract directory instead and drain every
+# legacy domain. Preserve an already-correct builder service: restarting it
+# leaves a broker session behind temporarily and delays otherwise idle CI.
 if runner_worker_is_active; then
   echo "error: a job is executing on the runner being rehomed" >&2
   exit 75
@@ -322,27 +323,44 @@ for runner_domain in \
   system \
   user/0 \
   gui/0 \
-  "$runner_service_domain" \
   "gui/$builder_uid" \
   "user/$developer_uid" \
   "gui/$developer_uid"
 do
   /bin/launchctl bootout "$runner_domain/$runner_service_label" >/dev/null 2>&1 || true
 done
-runner_service_pids=()
+
+current_runner_service_pid="$(
+  /bin/launchctl print "$runner_service_domain/$runner_service_label" 2>/dev/null \
+    | /usr/bin/awk '$1 == "pid" && $2 == "=" { print $3; exit }'
+)"
+current_runner_service_is_healthy=false
+if [[ -n "$current_runner_service_pid" \
+    && $(/bin/ps -p "$current_runner_service_pid" -o uid= | /usr/bin/xargs) == "$builder_uid" ]]; then
+  current_runner_service_is_healthy=true
+else
+  /bin/launchctl bootout \
+    "$runner_service_domain/$runner_service_label" >/dev/null 2>&1 || true
+  current_runner_service_pid=""
+fi
+
+stale_runner_service_pids=()
 while IFS= read -r runner_service_pid; do
-  [[ -n "$runner_service_pid" ]] && runner_service_pids+=("$runner_service_pid")
+  [[ -n "$runner_service_pid" ]] || continue
+  if [[ "$runner_service_pid" != "$current_runner_service_pid" ]]; then
+    stale_runner_service_pids+=("$runner_service_pid")
+  fi
 done < <(/usr/bin/pgrep -f "^/bin/bash $runner_root/runsvc[.]sh$" || true)
 remaining_runner_services=0
-if [[ ${#runner_service_pids[@]} -gt 0 ]]; then
+if [[ ${#stale_runner_service_pids[@]} -gt 0 ]]; then
   # A booted-out KeepAlive job may finish between the snapshot and signal.
   # Cleanup is complete in that case, so signal each still-live PID separately.
-  for runner_service_pid in "${runner_service_pids[@]}"; do
+  for runner_service_pid in "${stale_runner_service_pids[@]}"; do
     /bin/kill -TERM "$runner_service_pid" >/dev/null 2>&1 || true
   done
   for attempt in {1..10}; do
     remaining_runner_services=0
-    for runner_service_pid in "${runner_service_pids[@]}"; do
+    for runner_service_pid in "${stale_runner_service_pids[@]}"; do
       if /bin/kill -0 "$runner_service_pid" >/dev/null 2>&1; then
         remaining_runner_services=$((remaining_runner_services + 1))
       fi
@@ -353,7 +371,9 @@ if [[ ${#runner_service_pids[@]} -gt 0 ]]; then
 fi
 [[ $remaining_runner_services -eq 0 ]] \
   || { echo "error: stale runner service did not terminate" >&2; exit 75; }
-run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
+if [[ "$current_runner_service_is_healthy" == false ]]; then
+  run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
+fi
 
 "$script_directory/verify-nucleus-builder.sh"
 echo "finalized trusted builder identity and pinned runner $runner_version"

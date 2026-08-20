@@ -633,6 +633,38 @@ private struct FailAfterWriteAction: ColliderAction {
     #expect(first.plan.map(\.identity) == second.plan.map(\.identity))
 }
 
+@Test func dryRunPlanningDoesNotWriteItsStateRoot() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-read-only-dry-run-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let input = directory.appendingPathComponent("input")
+    try Data("fixture\n".utf8).write(to: input)
+    let stateRoot = directory.appendingPathComponent("state")
+    try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o500], ofItemAtPath: stateRoot.path)
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.read-only-dry-run"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.file(FilePath(input.path))])
+
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(stateRoot.path),
+        options: TaskExecutionOptions(dryRun: true))
+
+    #expect(report.plan.map(\.task) == [task.id])
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: stateRoot.appendingPathComponent("artifact-digests.json").path))
+}
+
 @Test func completedExecutionFeedsTheNextStableWorkloadEstimate() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-duration-history-\(UUID().uuidString)")
