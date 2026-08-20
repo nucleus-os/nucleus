@@ -37,7 +37,9 @@ Finalization also reconciles any retained Actions checkout left by the retired
 system-domain service. The work root and each ephemeral repository beneath it
 are builder-owned; a checkout whose root still has the legacy owner is corrected
 recursively once, including its submodules. Git therefore validates CI-owned
-source by ordinary ownership rather than a broad safe-directory exception.
+source by ordinary ownership rather than a broad safe-directory exception. The
+workflow asserts both the executing user and checkout owner immediately after
+checkout, before any repository-controlled executable runs.
 
 The interactive `maddy` account owns the authoritative development checkout,
 personal credentials, and remote-development sessions but runs no GitHub

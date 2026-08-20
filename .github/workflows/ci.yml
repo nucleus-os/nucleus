@@ -96,6 +96,16 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.admission.outputs.revision }}
           submodules: recursive
+      - name: Verify runner and checkout ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'runner-user=%s runner-uid=%s\n' "$(id -un)" "$(id -u)"
+          printf 'checkout-owner=%s checkout-uid=%s\n' \
+            "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" \
+            "$(stat -f '%u' "${GITHUB_WORKSPACE}")"
+          test "$(id -un)" = nucleus-builder
+          test "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" = nucleus-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
       - name: Build the catalog
