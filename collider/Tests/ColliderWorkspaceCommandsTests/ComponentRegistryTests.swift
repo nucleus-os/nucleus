@@ -1413,6 +1413,17 @@ private func artifactInput(
             == "include_file_ctime,include_file_mtime,locale")
 }
 
+@Test func workspaceEnvironmentSynthesizesEffectiveAccountIdentity() {
+    let context = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: ["HOME": "/home/fixture"],
+        runtime: ColliderRuntime(),
+        cacheRoot: FilePath("/cache"))
+
+    #expect(context.taskEnvironment["USER"] == NSUserName())
+    #expect(context.taskEnvironment["LOGNAME"] == NSUserName())
+}
+
 @Test func workspacePolicyOwnsCacheNamespaceAndRunEnvironment() {
     let sourceCommit = String(repeating: "a", count: 40)
     let context = WorkspaceContext(

@@ -151,6 +151,13 @@ package struct WorkspaceContext: Sendable {
     ) {
         self.root = root
         var normalizedEnvironment = environment
+        let effectiveUser = NSUserName()
+        if normalizedEnvironment["USER"]?.isEmpty != false {
+            normalizedEnvironment["USER"] = effectiveUser
+        }
+        if normalizedEnvironment["LOGNAME"]?.isEmpty != false {
+            normalizedEnvironment["LOGNAME"] = effectiveUser
+        }
         let cacheLayout = nucleusCacheLayout(environment: normalizedEnvironment)
         let resolvedCacheRoot = cacheRoot ?? cacheLayout.root
         #if os(macOS)
