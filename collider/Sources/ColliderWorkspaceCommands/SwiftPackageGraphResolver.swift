@@ -60,21 +60,43 @@ package final class SwiftPackageGraphResolver: Sendable {
     }
 
     private struct Cache: Codable {
+        /// The scratch these locations were resolved against. Dependency
+        /// checkout paths point into it, so a cache resolved against a
+        /// differently named scratch describes packages that are no longer
+        /// where it says they are.
+        let resolution: String
         let identities: [GraphIdentity]
         let locations: [PackageLocation]
         let packages: [Description]
     }
 
     private let cacheRoot: FilePath
+    private let identityPathMap: IdentityPathMap
     private let environment: [String: String]
     private let memory = Mutex<[FilePath: SwiftPackageSourceGraph]>([:])
 
     package init(
         cacheRoot: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        identityPathMap: IdentityPathMap = .empty
     ) {
         self.cacheRoot = cacheRoot
         self.environment = environment
+        self.identityPathMap = identityPathMap
+    }
+
+    /// The name one package's resolution state is filed under.
+    ///
+    /// A package is named by where it is, which is placement, so the raw path
+    /// gives one package two names across two checkouts. SwiftPM then resolves
+    /// each into its own scratch, and the dependency checkouts it materializes
+    /// there are build inputs, so identical source planned differently.
+    /// Resolving the name through the declared roots gives one package one
+    /// scratch, which both checkouts share.
+    package func resolutionKey(_ packageRoot: FilePath) -> String {
+        ArtifactDigest.sha256(
+            Array(identityPathMap.canonicalize(packageRoot.string).utf8)
+        ).hexadecimal
     }
 
     package func graph(
@@ -98,11 +120,15 @@ package final class SwiftPackageGraphResolver: Sendable {
     ) throws -> SwiftPackageSourceGraph {
         if let graph = memory[packageRoot] { return graph }
 
+        // Filed under this workspace's own name, not the canonical one: the
+        // cache records absolute paths, so a second checkout reading it would
+        // find descriptions for a root it does not have.
         let cacheFile = cacheRoot.appending(
             ArtifactHasher.digest(bytes: Array(packageRoot.string.utf8)).hexadecimal
                 + ".json")
         if let data = try? Data(contentsOf: URL(fileURLWithPath: cacheFile.string)),
             let cache = try? JSONDecoder().decode(Cache.self, from: data),
+            cache.resolution == resolutionKey(packageRoot),
             try identitiesMatch(cache.identities, packageRoot: packageRoot)
         {
             let graph = try sourceGraph(
@@ -143,6 +169,7 @@ package final class SwiftPackageGraphResolver: Sendable {
             withIntermediateDirectories: true)
         var cacheData = try JSONEncoder.sorted.encode(
             Cache(
+                resolution: resolutionKey(packageRoot),
                 identities: identities,
                 locations: locations,
                 packages: descriptions))
@@ -243,8 +270,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         // cache. One directory per package: SwiftPM treats a scratch path as
         // belonging to a single workspace.
         let scratch = cacheRoot.appending(
-            "package-graph/scratch/"
-                + ArtifactDigest.sha256(Array(packageRoot.string.utf8)).hexadecimal)
+            "package-graph/scratch/" + resolutionKey(packageRoot))
         process.arguments =
             [
                 "package", "--package-path", packageRoot.string,

@@ -2730,3 +2730,27 @@ private func artifactInput(
             return action.kind == "android-runtime.publish-aosp-product"
         }())
 }
+
+@Test func swiftPackageResolutionIsFiledUnderOnePlacementIndependentName() {
+    func key(workspace: FilePath, cache: FilePath) -> String {
+        SwiftPackageGraphResolver(
+            cacheRoot: cache.appending("swift-package-graphs"),
+            environment: [:],
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: workspace),
+                IdentityPathRoot(name: "cache", path: cache),
+            ])
+        ).resolutionKey(workspace.appending("collider/engine"))
+    }
+
+    // SwiftPM materializes dependency checkouts inside the scratch this names,
+    // and those checkouts are build inputs. Two names give one package two
+    // scratches, so identical source plans differently from a second checkout.
+    #expect(
+        key(
+            workspace: FilePath("/Library/Nucleus/checkout"),
+            cache: FilePath("/Library/Nucleus/Collider/cache"))
+            == key(
+                workspace: FilePath("/Users/builder/actions/_work/nucleus/nucleus"),
+                cache: FilePath("/Library/Nucleus/Collider/cache")))
+}

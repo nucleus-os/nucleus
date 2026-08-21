@@ -204,7 +204,11 @@ package struct WorkspaceContext: Sendable {
             ociConfiguration ?? nucleusOCIRuntimeConfiguration(workspaceRoot: root)
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
-            environment: normalizedEnvironment)
+            environment: normalizedEnvironment,
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: root),
+                IdentityPathRoot(name: "cache", path: resolvedCacheRoot),
+            ]))
     }
 
     func repository(_ name: String) -> FilePath { root.appending(name) }
