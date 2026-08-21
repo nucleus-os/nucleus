@@ -176,14 +176,25 @@ sibling of the location it would otherwise have replaced, and the retained
 result stays intact to compare against. `--verify-reproduction` does that and
 fails when the two disagree.
 
-Against that, the arm64 product reproduces bit for bit and the x86_64 product
-does not. Twelve of its seventy files differ while the rest are identical, and
-each differing object diverges in one sixteen-byte value with four eight-byte
-references to it; every file is the same size, the embedded paths are the same
-canonical container paths, and the arm64 build is a clean control. So this is
-something the compiler embeds that varies between two builds of one source
-rather than anything about placement, and no amount of placement work reaches
-it.
+Against that, a product built twice from one materialization is bit-identical on
+both targets, and a product built twice from two independent materializations of
+the same pinned revisions is bit-identical on arm64. That second comparison is
+the second machine's condition reached without one, because what distinguishes a
+second machine here is that it fetches its own copies.
+
+Reaching it took making a materialization mean one thing. Compilation records the
+timestamps of the source it reads and derives a module hash from them, so
+refetching one revision changed a product while every identity still agreed.
+Materialization now gives every checked-out file one fixed time, on the ground
+that a pinned dependency is identified by its revision and not by when it was
+fetched.
+
+What remains is smaller and only on the cross-compiled target: six first-party
+x86_64 modules differ across two materializations, each in sixteen bytes of
+module hash and the debug-info references to it, with every other byte and the
+whole arm64 build identical. Something a fresh materialization produces still
+reaches that hash and it is not timestamps, which are now fixed and verified so
+on disk.
 
 That result is the reason the byte clause exists. The two checkouts agree on
 every identity in the catalog and still do not agree on the bytes for one
