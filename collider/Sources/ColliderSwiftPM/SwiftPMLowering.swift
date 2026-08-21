@@ -536,6 +536,13 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
     }
 
+    /// The task name a SwiftPM invocation gets.
+    ///
+    /// A name resolves through the declared placement roots for the same
+    /// reason an identity does. A lockfile is named absolutely here, so a
+    /// name built from the raw string gives one invocation two names across
+    /// two checkouts, and a second checkout then finds no recorded state to
+    /// compare against rather than finding state that disagrees.
     private func physicalTaskID(
         role: String,
         context: SwiftBuildContext,
@@ -543,7 +550,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         prebuildTargets: [String],
         arguments: [String] = []
     ) -> TaskID {
-        var encoder = IdentityEncoder()
+        var encoder = IdentityEncoder(identityPathMap: context.identityPathMap)
         encoder.append(bytes: context.identityBytes)
         for product in products {
             encoder.append(product)
@@ -552,7 +559,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             encoder.append(target)
         }
         for argument in arguments {
-            encoder.append(argument)
+            encoder.append(argument: argument)
         }
         return TaskID(
             rawValue: "swift.package.\(role).\(ArtifactDigest.sha256(encoder.bytes))")

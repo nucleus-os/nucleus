@@ -846,3 +846,71 @@ private func executeWithSwiftPM(
         #expect(commands.contains { $0.contains(invocation.scratchPath.string) })
     }
 }
+
+@Test func dependencyTaskNameSurvivesRelocatingTheCheckoutAndCache() throws {
+    func loweredDependencyTaskID(
+        workspace: FilePath,
+        cache: FilePath
+    ) throws -> TaskID {
+        let packageRoot = workspace.appending("package")
+        let placement = IdentityPathMap(roots: [
+            IdentityPathRoot(name: "workspace", path: workspace),
+            IdentityPathRoot(name: "cache", path: cache),
+        ])
+        var imageBuilder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.image"),
+            component: ComponentID(rawValue: "fixture"))
+        let image: ArtifactReference = try imageBuilder.output(
+            "image-id",
+            path: cache.appending("image-id"),
+            validation: .regularFile)
+        let invocation = SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot,
+                configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "fixture-toolchain",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: image,
+                        hostname: "fixture",
+                        hostWorkingDirectory: packageRoot,
+                        mounts: [],
+                        hostDependencyCache: cache.appending("swiftpm"),
+                        containerEnvironment: [:])),
+                identityPathMap: placement),
+            scratchPath: cache.appending("scratch"),
+            dependencyLock: packageRoot.appending("Package.resolved"))
+        let owner = TaskBuilder(
+            id: TaskID(rawValue: "fixture.product"),
+            component: ComponentID(rawValue: "fixture")
+        ).build(
+            swiftProducts: [
+                invocation.product(
+                    package: "fixture",
+                    product: "FixtureProduct",
+                    packageRoot: packageRoot,
+                    environment: [:])
+            ])
+        let lowered = try SwiftPMLowering().lower([
+            AssessedTaskDeclaration(task: imageBuilder.build(), isClean: false),
+            AssessedTaskDeclaration(task: owner, isClean: false),
+        ])
+        return try #require(
+            lowered.first {
+                $0.task.action?.requirements.executionPlatform == .macOSARM64Native
+            }
+        ).task.id
+    }
+
+    let authoritative = try loweredDependencyTaskID(
+        workspace: FilePath("/Library/Nucleus/checkout"),
+        cache: FilePath("/Library/Nucleus/store/cache"))
+    let automated = try loweredDependencyTaskID(
+        workspace: FilePath("/Users/builder/actions/_work/nucleus/nucleus"),
+        cache: FilePath("/Library/Nucleus/store/cache"))
+
+    #expect(authoritative == automated)
+}
