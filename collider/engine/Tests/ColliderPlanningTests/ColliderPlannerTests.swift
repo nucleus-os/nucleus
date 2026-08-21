@@ -205,6 +205,52 @@ import Testing
     #expect(first == second)
 }
 
+@Test func taskIdentityIgnoresTheAccountThatPlansTheBuild() throws {
+    let workspace = FilePath("/nucleus/checkout")
+    let cache = FilePath("/nucleus/cache")
+
+    func plannedIdentity(account: String) throws -> ArtifactDigest {
+        let input = workspace.appending("Sources/input.txt")
+        let output = cache.appending("generated/result.json")
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.account-independent"),
+            component: ComponentID(rawValue: "fixture"))
+        let _: ArtifactReference = try builder.output(
+            "result",
+            path: output,
+            validation: .json)
+        let task = builder.build(
+            inputs: [.file(input)],
+            action: try AnyColliderAction(
+                RelocatableIdentityAction(
+                    input: input,
+                    output: output,
+                    environment: [
+                        "FIXTURE_MODE": "release",
+                        "HOME": "/Users/\(account)",
+                        "LOGNAME": account,
+                        "USER": account,
+                    ])))
+        let services = deterministicHashingServices(
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: workspace),
+                IdentityPathRoot(name: "cache", path: cache),
+            ]))
+        let plan = try ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first).identity
+    }
+
+    let developer = try plannedIdentity(account: "maddy")
+    let builder = try plannedIdentity(account: "nucleus-builder")
+
+    #expect(developer == builder)
+}
+
 @Test func taskIdentityMatchesBeforeAndAfterCommittingTheEffectiveSourceTree() throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-task-source-commit-independent-\(UUID().uuidString)")

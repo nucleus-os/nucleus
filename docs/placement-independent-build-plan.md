@@ -125,6 +125,27 @@ task identity is unchanged by relocating the checkout or the store.
 
 ## Phase 4: Prove Reproducibility Across Checkouts and Machines
 
+Status: active
+
+The first protected-main catalog build succeeded on a clean CI checkout and
+reused twenty-seven of forty-three tasks from the developer-warmed store,
+including every native task: Skia, gfxstream, Hermes, the React Native C++ and
+support libraries, all three native SDKs, and both architectures of each. The
+thirteen that rebuilt were exclusively SwiftPM consumers, and comparing the two
+plans isolated the cause exactly: `swift.package.build` and `swift.package.test`
+names already matched byte for byte across the checkouts, while
+`swift.package.dependencies` did not, because it is the one role whose name
+takes an argument and that argument is the lockfile's absolute path. Encoding it
+through the declared roots equalizes the remaining names. The invoking account
+was a second discriminator of the same kind, reaching identity through `HOME`,
+`USER`, and `LOGNAME`; those name who started a build rather than what it
+produces, and they now join `PATH` and `TERM` outside identity, which is what
+lets a developer's dry run predict a builder run at all.
+
+Identity agreement is not yet this phase's gate. Comparing produced bytes across
+the two checkouts remains outstanding, as does the reverse ordering, in which a
+local build consumes what an automated one produced.
+
 The protected-main CI checkout and the authoritative checkout produce identical
 product task identities and artifact coordinates for one effective source, and
 each reuses the other's warm state. CI is the real second checkout: the local

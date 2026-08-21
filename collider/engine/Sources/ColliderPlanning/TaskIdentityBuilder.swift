@@ -328,10 +328,19 @@ private struct TaskIdentityResolutions {
     }
 }
 
+/// The environment an action's identity records.
+///
+/// A variable naming the session or the account that started the build is not
+/// an input to what the build produces, and hashing one means the same source
+/// reuses nothing across two accounts on one machine or two machines running
+/// one revision. `HOME`, `USER`, and `LOGNAME` are that, exactly as `PATH` and
+/// `TERM` already are: supplied to execution, absent from identity. A build
+/// whose output genuinely varies with one of them is a defect the byte
+/// comparison across checkouts catches, not something to encode here.
 private func artifactEnvironment(
     _ environment: [String: String]
 ) -> [(key: String, value: String)] {
-    let volatile = Set(["TERM", "PATH"])
+    let volatile = Set(["TERM", "PATH", "HOME", "USER", "LOGNAME"])
     return
         environment
         .filter { !volatile.contains($0.key) }
