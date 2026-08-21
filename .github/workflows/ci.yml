@@ -110,3 +110,5 @@ jobs:
         run: collider check protected-main-source
       - name: Build the catalog
         run: collider build all
+      - name: Test the catalog
+        run: collider test all

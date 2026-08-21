@@ -819,21 +819,26 @@ the declared recovery gate completes.
 
 ## Phase 6: Define One Complete Verification Graph
 
-Before this phase adds a lane, one defect it exists to catch is already known.
-The Linux test lane does not compile in a container: the staged render SDK links
-`include/skia` and `include/skia-text` into the checkout by the host's absolute
-path, and a container mounts the checkout at its canonical location, so both
-links resolve on the host and dangle where they are read. Only a test target
-compiles through those headers, and protected main has never run tests, so a
-build-only graph reports green over a lane that cannot build.
+Status: the test lane runs on protected main.
 
-Naming the links canonically is not the fix on its own, because a symlink output
-is validated by resolving it, and a canonical target does not resolve on the
-host that stages it. The two candidates are to stage real headers rather than
-link to the checkout, which is what this SDK's contract already says it holds,
-or to reach those headers through the canonicalized include flags that working
-container builds already use and let the links stay a host convenience. Which
-one is right depends on whether anything reads the SDK from the host.
+Adding it found what a build-only graph had been hiding. Neither staged native
+SDK could be read where it is used: the render SDK and the React Native SDK
+between them named this host's absolute paths across eighteen links, for headers
+consumed only inside containers, where the checkout is mounted at its canonical
+location. Every link resolved where it was written and dangled where it was
+read, and the only targets compiling through those headers are tests, so nothing
+ever reported it.
+
+Naming links canonically was not the whole fix, because a symlink output was
+validated by resolving it, which rejects a correct link at the host that stages
+it. A symlink whose target belongs to its consumer is now its own output
+contract, asserting that the output is a link without following it.
+
+This is the same defect class as the placement leaks in the identity work and it
+survived all of them, because a link's target is a payload byte rather than an
+identity input. The lanes this phase has yet to add stage considerably more
+content than these two SDKs, and none of it has been read inside a container by
+anything automated.
 
 
 Define the required verification graph once as a sequence of existing Collider
