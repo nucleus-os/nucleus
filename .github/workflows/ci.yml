@@ -108,7 +108,16 @@ jobs:
           test "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" = nucleus-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
-      - name: Explain the overlay identity components
-        run: collider build all --dry-run --explain-identity native.swiftpm-overlay
+      - name: Fingerprint the pinned SwiftPM source checkout
+        shell: bash
+        working-directory: swift-sdk/source/swift-package-manager
+        run: |
+          set -euo pipefail
+          printf 'head=%s\n' "$(git rev-parse HEAD)"
+          printf 'dot-git=%s\n' "$(test -d .git && echo directory || echo file)"
+          printf 'dirty-entries=%s\n' "$(git status --porcelain | wc -l | tr -d ' ')"
+          printf 'listing=%s\n' \
+            "$(git ls-files --cached --others --exclude-standard -z | sort -z | shasum -a 256 | awk '{print $1}')"
+          printf 'index=%s\n' "$(git ls-files --stage | shasum -a 256 | awk '{print $1}')"
       - name: Build the catalog
         run: collider build all
