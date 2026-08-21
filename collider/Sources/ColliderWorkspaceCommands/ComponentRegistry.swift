@@ -1276,11 +1276,6 @@ package struct ComponentRegistry {
                 sysroot: root.appending("sysroot"))
         }
         let generation = paths.artifactRoot.appending("generations/\(artifactID)")
-        let home =
-            environment["HOME"].flatMap {
-                $0.isEmpty ? nil : FilePath($0)
-            }
-            ?? FilePath(FileManager.default.homeDirectoryForCurrentUser.path)
         return SwiftTargetSDKGenerationConfiguration(
             inputs: inputs,
             inputsFile: inputsFile,
@@ -1304,7 +1299,7 @@ package struct ComponentRegistry {
             validationFixture: fixture,
             validator: validator,
             swiftExecutable: swiftExecutable,
-            sdkDiscoveryRoot: home.appending(".swiftpm/swift-sdks"),
+            sdkDiscoveryRoot: paths.artifactRoot.appending("discovery"),
             displacedRoot: paths.artifactRoot.appending("displaced/\(artifactID)"),
             environment: swiftTargetSDKTaskEnvironment(
                 environment,
