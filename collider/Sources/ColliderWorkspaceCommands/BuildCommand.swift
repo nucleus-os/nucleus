@@ -17,12 +17,18 @@ struct Build: TaskControlledCommand {
         }
         var verifying = context
         verifying.producesIntoVerificationScratch = true
-        try await ComponentRegistry(context: verifying).build(
-            selection: component, controls: taskOptions.controls)
-        let comparison = try compareVerificationProductions(under: [
+        let scratchRoots = [
             verifying.hostBuildRoot.appending("swiftpm"),
             verifying.cacheRoot.appending("swiftpm"),
-        ])
+        ]
+        // A production kept from an earlier divergence has already been
+        // reported, and it answers for an identity this run may no longer
+        // build. Judging it again would report an old disagreement as this
+        // run's.
+        try discardVerificationProductions(under: scratchRoots)
+        try await ComponentRegistry(context: verifying).build(
+            selection: component, controls: taskOptions.controls)
+        let comparison = try compareVerificationProductions(under: scratchRoots)
         try context.console.report(
             comparison,
             text: reproductionReport(comparison),
@@ -33,10 +39,7 @@ struct Build: TaskControlledCommand {
             throw WorkspaceFailure.message(
                 "a second production of this source did not reproduce it")
         }
-        try discardVerificationProductions(under: [
-            verifying.hostBuildRoot.appending("swiftpm"),
-            verifying.cacheRoot.appending("swiftpm"),
-        ])
+        try discardVerificationProductions(under: scratchRoots)
     }
 }
 
