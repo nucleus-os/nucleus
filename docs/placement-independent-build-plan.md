@@ -167,9 +167,21 @@ build root, which is not a declared placement root, so their prefix is still
 this machine's. Declaring it also declares a container mount target, so anything
 beneath it that crosses into a container needs a matching mount.
 
-Identity agreement is not this phase's gate. Comparing produced bytes across the
-two checkouts remains outstanding, as does the reverse ordering, in which a
-local build consumes what an automated one produced.
+Identity agreement is not this phase's gate, and the byte comparison it needs
+cannot be performed. Nothing forces an artifact to be produced a second time:
+rebuild invalidates task state while the package manager inside the task stays
+incremental, component cleaning removes container workspaces and publication
+state but not the host working set that holds the build, and cache reclamation
+returns freed blocks without discarding one. The working set is declared
+reusable and replaced in place, so a build never has an opportunity to disagree
+with itself.
+
+That capability is Phase 5's, which verifies an artifact by rebuilding it rather
+than by trusting the run that produced it. This phase's byte clause depends on
+it, so the phases are ordered backwards: the mechanism has to exist before
+either can be gated on bytes. The reverse ordering, in which a local build
+consumes what an automated one produced, remains outstanding and needs no new
+mechanism.
 
 The protected-main CI checkout and the authoritative checkout produce identical
 product task identities and artifact coordinates for one effective source, and
