@@ -18,7 +18,8 @@ import SystemPackage
 /// while their labels disagreed.
 package func nucleusPersistentWorkspaceOwner(
     workspaceRoot: FilePath,
-    buildStore: FilePath?
+    buildStore: FilePath?,
+    verifying: Bool = false
 ) -> String {
     let domain =
         buildStore
@@ -27,11 +28,18 @@ package func nucleusPersistentWorkspaceOwner(
                 .standardizedFileURL
                 .resolvingSymlinksInPath()
                 .path)
-    return ArtifactHasher.digest(bytes: Array(domain.string.utf8)).hexadecimal
+    // A verifying production owns its own workspaces. Sharing them would let
+    // the second production build on what the first left behind, which reports
+    // reuse as reproduction and destroys the intermediates the first would be
+    // compared against. Ownership is placement and never reaches an identity,
+    // so the two productions still answer for the same one.
+    let domainName = verifying ? domain.string + verificationScratchSuffix : domain.string
+    return ArtifactHasher.digest(bytes: Array(domainName.utf8)).hexadecimal
 }
 
 package func nucleusOCIRuntimeConfiguration(
-    workspaceRoot: FilePath
+    workspaceRoot: FilePath,
+    verifying: Bool = false
 ) -> OCIRuntimeConfiguration {
     #if os(macOS)
     let buildStore =
@@ -42,7 +50,8 @@ package func nucleusOCIRuntimeConfiguration(
     #endif
     let owner = nucleusPersistentWorkspaceOwner(
         workspaceRoot: workspaceRoot,
-        buildStore: buildStore)
+        buildStore: buildStore,
+        verifying: verifying)
     return OCIRuntimeConfiguration(
         isolatedNetwork: "nucleus-build-internal",
         guestHome: "/home/nucleus-build",
@@ -133,7 +142,15 @@ package struct WorkspaceContext: Sendable {
     package let runtime: ColliderRuntime
     package let console: CommandConsole
     package let hostPhases: HostPhaseRecorder
-    package let ociConfiguration: OCIRuntimeConfiguration
+    private let requestedOCIConfiguration: OCIRuntimeConfiguration?
+    /// Follows `producesIntoVerificationScratch`, because which workspaces a
+    /// production owns is decided by whether it is verifying.
+    package var ociConfiguration: OCIRuntimeConfiguration {
+        requestedOCIConfiguration
+            ?? nucleusOCIRuntimeConfiguration(
+                workspaceRoot: root,
+                verifying: producesIntoVerificationScratch)
+    }
     let swiftPackageGraphs: SwiftPackageGraphResolver
 
     package init(
@@ -200,8 +217,7 @@ package struct WorkspaceContext: Sendable {
         self.runtime = runtime
         self.console = console
         self.hostPhases = hostPhases
-        self.ociConfiguration =
-            ociConfiguration ?? nucleusOCIRuntimeConfiguration(workspaceRoot: root)
+        requestedOCIConfiguration = ociConfiguration
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
             environment: normalizedEnvironment,
