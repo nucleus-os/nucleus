@@ -207,8 +207,18 @@ struct RepositoryCache {
 
     private var storageDeclarations: [StorageDeclaration] { catalog.storage }
 
+    /// Removes a component's explicitly cleanable storage, or one declaration
+    /// of it.
+    ///
+    /// Naming one declaration is how an artifact is produced a second time. A
+    /// working set is replaced in place, so a build reuses it and never has an
+    /// opportunity to disagree with itself; discarding exactly the working set
+    /// makes the next build produce independently, which is what comparing
+    /// bytes requires. Selecting one also keeps a component whose other
+    /// declarations are unreachable from blocking that.
     func clean(
         component selection: String,
+        storage storageSelection: String? = nil,
         dryRun: Bool
     ) async throws {
         try validateStorageDeclarations()
@@ -221,12 +231,21 @@ struct RepositoryCache {
             throw WorkspaceFailure.message("unknown component '\(selection)'")
         }
         let declarations = component.storage
-            .filter { $0.retentionPolicy.allowsExplicitClean }
+            .filter {
+                $0.retentionPolicy.allowsExplicitClean
+                    && (storageSelection == nil || $0.id == storageSelection)
+            }
             .sorted { $0.id < $1.id }
         let workspaceUsage = try persistentWorkspaceUsage()
         let workspaceDeclarations = component.persistentWorkspaces.filter {
             $0.retentionPolicy.allowsExplicitClean
                 && workspaceUsage[$0.identity]?.consumers == Set([component.descriptor.id])
+                && (storageSelection == nil || $0.identity.key == storageSelection)
+        }
+        if let storageSelection, declarations.isEmpty, workspaceDeclarations.isEmpty {
+            throw WorkspaceFailure.message(
+                "component '\(component.descriptor.canonicalName)' declares no "
+                    + "explicitly cleanable storage '\(storageSelection)'")
         }
         guard !declarations.isEmpty || !workspaceDeclarations.isEmpty else {
             throw WorkspaceFailure.message(

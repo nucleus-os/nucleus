@@ -168,13 +168,19 @@ this machine's. Declaring it also declares a container mount target, so anything
 beneath it that crosses into a container needs a matching mount.
 
 Identity agreement is not this phase's gate, and the byte comparison it needs
-cannot be performed. Nothing forces an artifact to be produced a second time:
-rebuild invalidates task state while the package manager inside the task stays
-incremental, component cleaning removes container workspaces and publication
-state but not the host working set that holds the build, and cache reclamation
-returns freed blocks without discarding one. The working set is declared
-reusable and replaced in place, so a build never has an opportunity to disagree
-with itself.
+cannot be performed. Nothing forces an artifact to be produced a second time.
+Rebuild invalidates task state while the package manager inside the task stays
+incremental, and the host working set that holds its build survives both that
+and a component clean, so the next build reuses it and never has an opportunity
+to disagree with itself.
+
+Discarding that working set is refused, and the refusal is the defect: it is
+declared with a runtime as its producer rather than a task, so no workflow lock
+resolves for it, and cleaning will not remove storage it cannot serialize
+against whatever is producing it. Storage produced by a runtime is therefore
+permanently unreachable, which is also why the component holding it cannot be
+cleaned as a whole. Naming one declaration is now possible and reaches it; the
+lock is what remains.
 
 That capability is Phase 5's, which verifies an artifact by rebuilding it rather
 than by trusting the run that produced it. This phase's byte clause depends on

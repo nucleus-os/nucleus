@@ -308,11 +308,12 @@ Arguments and options:
 
 Remove a component's graph-declared rebuildable storage.
 
-Usage: `collider clean <component> [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
+Usage: `collider clean <component> [--storage <storage>] [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
 
 Arguments and options:
 
 - `<component>` — Canonical component name or alias.
+- `--storage` `<storage>` — Remove only this declaration, by its declared storage identifier.
 - `--dry-run` — Print exact resolved removals without applying them.
 - `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
 - `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`

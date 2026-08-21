@@ -7,6 +7,11 @@ struct Clean: ColliderWorkspaceCommand {
     @Argument(help: "Canonical component name or alias.")
     var component: String
 
+    @Option(
+        name: .customLong("storage"),
+        help: "Remove only this declaration, by its declared storage identifier.")
+    var storage: String?
+
     @Flag(help: "Print exact resolved removals without applying them.")
     var dryRun = false
 
@@ -18,6 +23,7 @@ struct Clean: ColliderWorkspaceCommand {
         let catalog = try ComponentRegistry(context: context).componentCatalog()
         try await RepositoryCache(context: context, catalog: catalog).clean(
             component: component,
+            storage: storage,
             dryRun: dryRun)
     }
 }
