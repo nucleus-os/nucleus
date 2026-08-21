@@ -116,8 +116,11 @@ jobs:
           printf 'head=%s\n' "$(git rev-parse HEAD)"
           printf 'dot-git=%s\n' "$(test -d .git && echo directory || echo file)"
           printf 'dirty-entries=%s\n' "$(git status --porcelain | wc -l | tr -d ' ')"
+          printf 'toplevel=%s\n' "$(git rev-parse --show-toplevel)"
+          printf 'git-dir=%s\n' "$(git rev-parse --absolute-git-dir)"
+          printf 'count=%s\n' "$(git ls-files --cached --others --exclude-standard | wc -l | tr -d ' ')"
           printf 'listing=%s\n' \
-            "$(git ls-files --cached --others --exclude-standard -z | sort -z | shasum -a 256 | awk '{print $1}')"
+            "$(git ls-files --cached --others --exclude-standard -z | LC_ALL=C sort -z | shasum -a 256 | awk '{print $1}')"
           printf 'index=%s\n' "$(git ls-files --stage | shasum -a 256 | awk '{print $1}')"
       - name: Build the catalog
         run: collider build all
