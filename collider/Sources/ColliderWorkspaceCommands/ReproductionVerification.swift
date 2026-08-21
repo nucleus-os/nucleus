@@ -34,30 +34,24 @@ package func compareVerificationProductions(
     files: FileManager = .default
 ) throws -> ReproductionComparison {
     var products: [ReproductionComparison.Product] = []
-    // A scratch is two levels beneath its root: one directory per sanitizer,
-    // then one per identity. Walking exactly that keeps the search off the
-    // build trees themselves, which are large.
+    // Scratch roots nest by target and by sanitizer, and how deeply is the
+    // layout's business rather than this comparison's, so the search is
+    // bounded by depth instead of assuming a shape.
     for root in scratchRoots {
-        let variants = (try? files.contentsOfDirectory(atPath: root.string)) ?? []
-        for variant in variants.sorted() {
-            let variantRoot = root.appending(variant)
-            let scratches = (try? files.contentsOfDirectory(atPath: variantRoot.string)) ?? []
-            for scratch in scratches.sorted()
-            where scratch.hasSuffix(verificationScratchSuffix) {
-                let verificationProducts = variantRoot.appending(scratch)
-                    .appending(".collider/products")
-                let retainedProducts =
-                    variantRoot
-                    .appending(String(scratch.dropLast(verificationScratchSuffix.count)))
-                    .appending(".collider/products")
-                guard files.fileExists(atPath: verificationProducts.string) else { continue }
-                products.append(
-                    try compare(
-                        verification: verificationProducts,
-                        retained: retainedProducts,
-                        scratch: "\(variant)/\(scratch)",
-                        files: files))
-            }
+        for scratch in verificationScratches(under: root, depth: 4, files: files) {
+            let name = scratch.lastComponent?.string ?? ""
+            let retained = scratch.removingLastComponent()
+                .appending(String(name.dropLast(verificationScratchSuffix.count)))
+            let verificationProducts = scratch.appending(".collider/products")
+            guard files.fileExists(atPath: verificationProducts.string) else { continue }
+            products.append(
+                try compare(
+                    verification: verificationProducts,
+                    retained: retained.appending(".collider/products"),
+                    scratch: scratch.removingLastComponent().lastComponent.map {
+                        "\($0)/\(name)"
+                    } ?? name,
+                    files: files))
         }
     }
     return ReproductionComparison(products: products.sorted { $0.scratch < $1.scratch })
@@ -95,4 +89,28 @@ private func compare(
         matched: matched,
         differing: differing.sorted(),
         missing: missing.sorted())
+}
+
+private func verificationScratches(
+    under root: FilePath,
+    depth: Int,
+    files: FileManager
+) -> [FilePath] {
+    guard depth > 0,
+        let entries = try? files.contentsOfDirectory(atPath: root.string)
+    else { return [] }
+    var found: [FilePath] = []
+    for entry in entries.sorted() {
+        let path = root.appending(entry)
+        guard
+            (try? files.attributesOfItem(atPath: path.string))?[.type]
+                as? FileAttributeType == .typeDirectory
+        else { continue }
+        if entry.hasSuffix(verificationScratchSuffix) {
+            found.append(path)
+        } else {
+            found += verificationScratches(under: path, depth: depth - 1, files: files)
+        }
+    }
+    return found
 }

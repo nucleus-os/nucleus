@@ -167,6 +167,40 @@ build root, which is not a declared placement root, so their prefix is still
 this machine's. Declaring it also declares a container mount target, so anything
 beneath it that crosses into a container needs a matching mount.
 
+Identity agreement is not this phase's gate. The byte comparison is now
+possible and it does not pass.
+
+Producing twice needs no deletion. Where a package manager builds is not part of
+what it builds, so a verifying invocation produces the same identity into a
+sibling of the location it would otherwise have replaced, and the retained
+result stays intact to compare against. `--verify-reproduction` does that and
+fails when the two disagree.
+
+Against that, the arm64 product reproduces bit for bit and the x86_64 product
+does not. Twelve of its seventy files differ while the rest are identical, and
+each differing object diverges in one sixteen-byte value with four eight-byte
+references to it; every file is the same size, the embedded paths are the same
+canonical container paths, and the arm64 build is a clean control. So this is
+something the compiler embeds that varies between two builds of one source
+rather than anything about placement, and no amount of placement work reaches
+it.
+
+That result is the reason the byte clause exists. The two checkouts agree on
+every identity in the catalog and still do not agree on the bytes for one
+target, which is exactly the failure equal identities cannot detect.
+
+Discarding a working set remains impossible and is no longer in the way. It is
+declared with a runtime as its producer rather than a task, so no workflow lock
+resolves for it, and cleaning will not remove storage it cannot serialize
+against whatever is producing it. Storage produced by a runtime is therefore
+unreachable, which is also why the component holding it cannot be cleaned as a
+whole. That is cleanup correctness now rather than a blocker.
+
+Remaining for a second machine: dependency checkouts are named beneath the host
+build root, which is not a declared placement root, so their prefix is still
+this machine's. Declaring it also declares a container mount target, so anything
+beneath it that crosses into a container needs a matching mount.
+
 Identity agreement is not this phase's gate, and the byte comparison it needs
 cannot be performed. Nothing forces an artifact to be produced a second time.
 Rebuild invalidates task state while the package manager inside the task stays
