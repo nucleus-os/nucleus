@@ -249,7 +249,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             == scratch.appending(".collider/products/Fixture"))
     let expectedSourceInputs: [ArtifactInput] = [
         .file(fixturePackageRoot.appending("Package.swift")),
-        .tree(fixturePackageRoot),
+        .sourceCheckout(fixturePackageRoot),
     ]
     #expect(
         invocation.product(
@@ -420,7 +420,7 @@ private let fixturePackageRoot = FilePath("/workspace")
         packageRoot: fixturePackageRoot,
         environment: [:])
     #expect(product.inputs.contains(.file(fixturePackageRoot.appending("Package.swift"))))
-    #expect(product.inputs.contains(.tree(fixturePackageRoot)))
+    #expect(product.inputs.contains(.sourceCheckout(fixturePackageRoot)))
 }
 
 /// Two checkouts of identical source at different absolute locations compile

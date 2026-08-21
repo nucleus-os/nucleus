@@ -83,13 +83,22 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             packages: packages.sorted { $0.root.string < $1.root.string })
     }
 
-    /// Explicit fallback for isolated fixtures that do not materialize a
-    /// manifest graph. Production workspace invocations use a resolved graph.
+    /// The whole package, for an invocation with no resolved manifest graph.
+    /// The pinned SwiftPM overlay builds this way, because resolving a graph
+    /// needs the SwiftPM that build produces.
+    ///
+    /// The package is named as a source checkout rather than as a directory
+    /// tree. A tree digest is every byte under the root, which for a package
+    /// inside a working copy includes the repository database and whatever
+    /// build residue Git is ignoring, so the same commit hashes differently
+    /// depending on how its checkout was materialized. Git already identifies
+    /// exactly the source, and it is the same identity the working-copy
+    /// contract uses everywhere else.
     public static func packageWide(_ packageRoot: FilePath) -> Self {
         Self(
             storage: .packageWide([
                 .file(packageRoot.appending("Package.swift")),
-                .tree(packageRoot),
+                .sourceCheckout(packageRoot),
             ]))
     }
 

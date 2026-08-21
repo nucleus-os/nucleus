@@ -536,6 +536,69 @@ import Testing
     #expect(try sourceCheckoutDigest(repository) == clean)
 }
 
+@Test func sourceCheckoutDigestIgnoresHowTheTreeWasMaterialized() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("collider-materialization-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let origin = root.appendingPathComponent("origin")
+    try initializeGitRepository(origin)
+    try Data("let value = 1\n".utf8)
+        .write(to: origin.appendingPathComponent("Value.swift"))
+    let scripts = origin.appendingPathComponent("Scripts")
+    try FileManager.default.createDirectory(
+        at: scripts,
+        withIntermediateDirectories: true)
+    let script = scripts.appendingPathComponent("run.sh")
+    try Data("#!/bin/sh\nexit 0\n".utf8).write(to: script)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: script.path)
+    try FileManager.default.createSymbolicLink(
+        atPath: origin.appendingPathComponent("link").path,
+        withDestinationPath: "Value.swift")
+    try commitAll(origin)
+
+    // The same commit reached two ways: a clone that owns its own `.git`
+    // directory, and a submodule whose `.git` is a file pointing into the
+    // superproject. The content is identical, so the identity must be too.
+    let standalone = root.appendingPathComponent("standalone")
+    try runGit(
+        at: root,
+        arguments: ["clone", "--quiet", origin.path, standalone.path])
+    let superproject = root.appendingPathComponent("superproject")
+    try initializeGitRepository(superproject)
+    try runGit(
+        at: superproject,
+        arguments: [
+            "-c", "protocol.file.allow=always", "submodule", "add", "--quiet",
+            origin.path, "child",
+        ])
+    try commitAll(superproject)
+    let submodule = superproject.appendingPathComponent("child")
+
+    func gitEntryType(_ tree: URL) throws -> FileAttributeType {
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: tree.appendingPathComponent(".git").path)
+        return attributes[.type] as? FileAttributeType ?? .typeUnknown
+    }
+    #expect(try gitEntryType(standalone) == .typeDirectory)
+    #expect(try gitEntryType(submodule) == .typeRegular)
+
+    #expect(try sourceCheckoutDigest(standalone) == sourceCheckoutDigest(submodule))
+
+    // The repository database is not source. A tree digest counts it, which is
+    // what made one commit hash two ways; a source checkout must not.
+    let before = try sourceCheckoutDigest(standalone)
+    try Data("residue\n".utf8).write(
+        to: standalone.appendingPathComponent(".git/collider-fixture-residue"))
+    #expect(try sourceCheckoutDigest(standalone) == before)
+    #expect(try treeDigest(standalone) != before)
+}
+
+private func treeDigest(_ url: URL) throws -> ArtifactDigest {
+    try PlanningArtifactDigestCache().digest(tree: FilePath(url.path))
+}
+
 private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
     try PlanningArtifactDigestCache().digest(
         sourceCheckout: FilePath(url.path))

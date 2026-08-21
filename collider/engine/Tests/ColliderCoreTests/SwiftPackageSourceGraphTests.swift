@@ -154,3 +154,18 @@ private func fixtureGraph(
                 ]),
         ])
 }
+
+@Test
+func packageWideSourceIsIdentifiedByGitRatherThanByDirectoryContent() {
+    let root = FilePath("/workspace/swift-sdk/source/swift-package-manager")
+    let graph = SwiftPackageSourceGraph.packageWide(root)
+
+    let inputs = Set(graph.inputs(forProduct: "swift-package-manager"))
+
+    // A directory tree counts the repository database and ignored build
+    // residue, so the same commit would hash differently depending on how its
+    // checkout was materialized.
+    #expect(inputs.contains(.sourceCheckout(root)))
+    #expect(!inputs.contains(.tree(root)))
+    #expect(graph.sourcePaths(forProduct: "swift-package-manager").contains(root))
+}

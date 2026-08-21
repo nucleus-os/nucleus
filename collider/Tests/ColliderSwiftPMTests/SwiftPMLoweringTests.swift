@@ -397,6 +397,7 @@ private func executeWithSwiftPM(
         at: tools, withIntermediateDirectories: true)
     try Data("// swift-tools-version: 6.4\n".utf8).write(
         to: package.appendingPathComponent("Package.swift"))
+    try commitFixtureCheckout(package)
     let swift = tools.appendingPathComponent("swift")
     let script = """
         #!/bin/sh
@@ -525,6 +526,7 @@ private func executeWithSwiftPM(
         at: tools, withIntermediateDirectories: true)
     try Data("// swift-tools-version: 6.4\n".utf8).write(
         to: package.appendingPathComponent("Package.swift"))
+    try commitFixtureCheckout(package)
 
     let arguments = directory.appendingPathComponent("arguments")
     let swift = tools.appendingPathComponent("swift")
@@ -913,4 +915,30 @@ private func executeWithSwiftPM(
         cache: FilePath("/Library/Nucleus/store/cache"))
 
     #expect(authoritative == automated)
+}
+
+/// A package Collider builds always lives in a working copy, and its source
+/// identity comes from Git rather than from a directory walk. A fixture that
+/// executes a real lowering has to be a checkout for the same reason.
+private func commitFixtureCheckout(_ package: URL) throws {
+    func git(_ arguments: [String]) throws {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = package
+        process.arguments = arguments
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        _ = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+    try git(["init", "--quiet"])
+    try git(["config", "user.name", "Collider Tests"])
+    try git(["config", "user.email", "collider@example.invalid"])
+    try git(["add", "--all"])
+    try git(["commit", "--quiet", "--message", "fixture"])
 }
