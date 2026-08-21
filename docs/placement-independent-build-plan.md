@@ -176,26 +176,31 @@ sibling of the location it would otherwise have replaced, and the retained
 result stays intact to compare against. `--verify-reproduction` does that and
 fails when the two disagree.
 
-Against that, the product does not reproduce, and the measurement only became
-trustworthy once the two productions stopped sharing anything. A verifying
-production first took its own scratch, which changed where products were copied
-while both builds still compiled inside one workspace; the second built on what
-the first left behind and reported reuse as reproduction. Ownership of a
-workspace is placement and never reaches an identity, so a verifying production
-now owns its own and both still answer for the same identity.
+Against that, both Linux products reproduce. Two productions of one identity
+that share nothing they derive locally, each with its own scratch, its own build
+workspace, and its own materialization of the pinned dependencies, are identical
+in every file.
 
-Independently produced, fifty-four of seventy files match. Every difference is a
-small embedded field rather than compiled code: seven bytes in a module's source
-info, and sixteen bytes of module hash with its debug-info references in the
-modules that import a Clang module. The shape is the same one dependency
-timestamps had before materialization was made to give every checked-out file
-one fixed time, which removed that difference and left these.
+Reaching it took making the comparison honest first and then removing two
+timestamps. A verifying production originally took only its own scratch, which
+changed where products were copied while both builds still compiled in one
+workspace, so the second built on what the first left behind and reported reuse
+as reproduction. Ownership of a workspace is placement and never reaches an
+identity, so a verifying production now owns its own.
 
-Two corrections belong with this. Earlier results reporting a target reproducing
-in full were measured across productions sharing a workspace, so what they
-showed was partly reuse. And the residual is not particular to the
-cross-compiled target, as it first appeared to be; that target was only where
-the shared state leaked through first.
+Measured that way, products carried the times their sources happened to be
+written or fetched. Dependency materialization now gives every checked-out file
+one fixed time, because a pinned dependency is identified by its revision rather
+than by when it was fetched. First-party source times could not be answered the
+same way, because they belong to a working tree that a build has no business
+rewriting; instead products no longer record them. Source info exists for
+reaching source from a debugger or an editor, which the host builds serve, and a
+product compiled in a container is not read that way. Its absence is why a
+product is now fifty-four files rather than seventy.
+
+What this does not establish is a second machine. Both productions share this
+host's toolchain, kernel, and container runtime, and only what a build derives
+locally has been made to differ.
 
 That result is the reason the byte clause exists. The two checkouts agree on
 every identity in the catalog and still do not agree on the bytes for one
