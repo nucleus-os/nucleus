@@ -62,6 +62,11 @@ package struct TaskControlOptions: ParsableArguments {
         help: "Plan as the identity that executes builds, without executing.")
     package var asBuilder = false
 
+    @Flag(
+        name: .customLong("verify-reproduction"),
+        help: "Produce beside the retained result and report whether it reproduces.")
+    package var verifyReproduction = false
+
     package init() {}
 
     package mutating func validate() throws {
@@ -73,6 +78,9 @@ package struct TaskControlOptions: ParsableArguments {
         }
         guard !asBuilder || dryRun else {
             throw ValidationError("--as-builder requires --dry-run")
+        }
+        guard !verifyReproduction || !dryRun else {
+            throw ValidationError("--verify-reproduction produces, so it cannot be a dry run")
         }
     }
 

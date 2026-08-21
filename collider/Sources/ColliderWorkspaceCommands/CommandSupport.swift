@@ -93,9 +93,10 @@ extension WorkspaceContext {
             identityPathMap: identityPathMap)
         let invocation = SwiftPMInvocation(
             context: context,
-            scratchPath: layout.swiftScratch(
-                for: context,
-                under: scratchRoot ?? hostBuildRoot.appending("swiftpm")),
+            scratchPath: verificationScratch(
+                layout.swiftScratch(
+                    for: context,
+                    under: scratchRoot ?? hostBuildRoot.appending("swiftpm"))),
             swiftExecutable: swiftExecutable,
             dependencyLock: {
                 let lock = packageRoot.appending("Package.resolved")
@@ -165,6 +166,15 @@ extension WorkspaceContext {
 }
 
 extension WorkspaceContext {
+    /// The sibling this invocation produces into when verifying, which shares
+    /// the retained location's name so the pair is obvious on disk.
+    fileprivate func verificationScratch(_ scratch: FilePath) -> FilePath {
+        guard producesIntoVerificationScratch, let name = scratch.lastComponent
+        else { return scratch }
+        return scratch.removingLastComponent()
+            .appending(name.string + verificationScratchSuffix)
+    }
+
     fileprivate func graphSwiftPath() throws -> FilePath {
         let hostEnvironment = taskEnvironment
         if let toolchain = hostEnvironment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {

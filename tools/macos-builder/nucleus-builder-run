@@ -49,9 +49,16 @@ expect_value() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --rebuild|--dry-run|--as-builder|--verbose|--quiet|--measure-allocations)
+    --rebuild|--dry-run|--as-builder|--verify-reproduction|--verbose|--quiet|--measure-allocations)
       options+=("$1")
       shift
+      ;;
+    --storage)
+      expect_value "$@"
+      [[ "$2" =~ ^[0-9A-Za-z._-]{1,128}$ ]] \
+        || { echo "error: --storage is not a storage identifier" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
       ;;
     --explain-identity)
       expect_value "$@"

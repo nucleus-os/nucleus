@@ -31,6 +31,8 @@ enum BuilderElevation {
         "--dry-run": false,
         "--as-builder": false,
         "--explain-identity": true,
+        "--verify-reproduction": false,
+        "--storage": true,
         "--verbose": false,
         "--quiet": false,
         "--measure-allocations": false,

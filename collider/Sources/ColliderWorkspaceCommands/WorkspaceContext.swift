@@ -218,6 +218,15 @@ package struct WorkspaceContext: Sendable {
     /// and container workspaces all use this one definition, because a
     /// disagreement between them would place the same build in two locations
     /// while claiming they were the same.
+    /// Produce into a location beside the retained one instead of into it.
+    ///
+    /// A build reuses one working set per identity, so it never has an
+    /// opportunity to disagree with itself and its bytes cannot be checked
+    /// against anything. Where a package manager builds is not part of what it
+    /// builds, so directing the same identity at a second location produces it
+    /// independently and leaves the retained result to compare against.
+    package var producesIntoVerificationScratch = false
+
     package var identityPathMap: IdentityPathMap {
         IdentityPathMap(roots: [
             IdentityPathRoot(name: "workspace", path: root),
