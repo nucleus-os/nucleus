@@ -49,9 +49,16 @@ expect_value() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --rebuild|--dry-run|--verbose|--quiet|--measure-allocations)
+    --rebuild|--dry-run|--as-builder|--verbose|--quiet|--measure-allocations)
       options+=("$1")
       shift
+      ;;
+    --explain-identity)
+      expect_value "$@"
+      [[ "$2" =~ ^[0-9A-Za-z:._-]{1,128}$ ]] \
+        || { echo "error: --explain-identity is not a task identifier" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
       ;;
     --format|--progress-format)
       expect_value "$@"

@@ -29,6 +29,8 @@ enum BuilderElevation {
     private static let admittedOptions: [String: Bool] = [
         "--rebuild": false,
         "--dry-run": false,
+        "--as-builder": false,
+        "--explain-identity": true,
         "--verbose": false,
         "--quiet": false,
         "--measure-allocations": false,

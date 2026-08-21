@@ -57,6 +57,11 @@ package struct TaskControlOptions: ParsableArguments {
         help: "Print the identity components of tasks whose name contains this text.")
     package var explainIdentity: String?
 
+    @Flag(
+        name: .customLong("as-builder"),
+        help: "Plan as the identity that executes builds, without executing.")
+    package var asBuilder = false
+
     package init() {}
 
     package mutating func validate() throws {
@@ -65,6 +70,9 @@ package struct TaskControlOptions: ParsableArguments {
         }
         guard explainIdentity == nil || dryRun else {
             throw ValidationError("--explain-identity requires --dry-run")
+        }
+        guard !asBuilder || dryRun else {
+            throw ValidationError("--as-builder requires --dry-run")
         }
     }
 
@@ -134,6 +142,20 @@ extension TaskControlledCommand {
     package var requestedRunID: RunID? { taskOptions.runID?.value }
     package var outputOptions: CommandOutputOptions { taskOptions.outputOptions }
     package var requiresExecutionAdmission: Bool { !taskOptions.dryRun }
+
+    /// A plan is a property of the identity that would execute it, and only
+    /// that identity can be asked what it computes. Two accounts planning one
+    /// revision differently is otherwise visible only by pushing and reading
+    /// an automated run, which is a slow way to compare two answers from one
+    /// machine. Planning writes nothing, so this crosses for the answer alone
+    /// and takes no admission.
+    package var requiresBuilderIdentity: Bool {
+        requiresExecutionAdmission || taskOptions.asBuilder
+    }
+
+    /// Durable run history belongs to runs that execute. Crossing to read a
+    /// plan must not leave one behind.
+    package var recordsRun: Bool { requiresExecutionAdmission }
 }
 
 package func requestedRunID(for command: any ParsableCommand) -> RunID? {

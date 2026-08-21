@@ -220,6 +220,32 @@ func dryRunsDoNotAcquireAdmissionOrWriteRunHistory() throws {
 }
 
 @Test
+func plannedIdentityCanBeReadAsTheBuilderWithoutExecuting() throws {
+    let parsed = try ColliderCommand.parseAsRoot([
+        "build", "all", "--dry-run", "--as-builder",
+        "--explain-identity", "core.native-sdk.linux-arm64",
+    ])
+    let command = try #require(parsed as? any ColliderWorkspaceCommand)
+
+    // Crossing for the answer alone: the builder computes the plan, nothing
+    // executes, no admission is taken, and no run history is written.
+    #expect(command.requiresBuilderIdentity)
+    #expect(!command.requiresExecutionAdmission)
+    #expect(!command.recordsRun)
+
+    let ordinary = try ColliderCommand.parseAsRoot(["build", "all", "--dry-run"])
+    let ordinaryCommand = try #require(ordinary as? any ColliderWorkspaceCommand)
+    #expect(!ordinaryCommand.requiresBuilderIdentity)
+}
+
+@Test
+func readingAPlanAsTheBuilderRequiresADryRun() {
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["build", "all", "--as-builder"])
+    }
+}
+
+@Test
 func mutatingCommandsAcquireHostExecutionAdmission() throws {
     for arguments in [
         ["build", "core"],
