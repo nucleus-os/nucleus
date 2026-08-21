@@ -73,6 +73,17 @@ extension WorkspaceContext {
             case .host: filePrefixMapFlags
             case .oci: (swift: [String](), clang: [String]())
             }
+        // Source info records each source file's modification time, so a
+        // product built from one revision carries when its sources happened to
+        // be written or fetched and no second machine reproduces it. It exists
+        // for navigating to source in a debugger or an editor, which is what
+        // the host builds serve; a product built in a container is not read
+        // that way.
+        let productFlags =
+            switch execution {
+            case .host: [String]()
+            case .oci: ["-avoid-emit-module-source-info"]
+            }
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
             buildSystem: buildSystem,
@@ -82,7 +93,7 @@ extension WorkspaceContext {
             toolchainIdentity: resolvedToolchainIdentity,
             sanitizer: sanitizer,
             traits: traits,
-            swiftFlags: swiftFlags + prefixMaps.swift,
+            swiftFlags: swiftFlags + prefixMaps.swift + productFlags,
             cFlags: cFlags + prefixMaps.clang,
             cxxFlags: cxxFlags + prefixMaps.clang,
             linkerFlags: linkerFlags,
