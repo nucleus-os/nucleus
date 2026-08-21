@@ -25,6 +25,12 @@ public struct TaskOutputValidator: Sendable {
             switch path.validation {
             case .exists:
                 _ = try path.path.stat(followTargetSymlink: false)
+            case .symlink:
+                let metadata = try path.path.stat(followTargetSymlink: false)
+                guard metadata.type == .symbolicLink else {
+                    throw PersistenceFailure.invalidPath(
+                        "task produced an invalid output at \(path.path)")
+                }
             case .symlinkTarget:
                 let metadata = try path.path.stat(followTargetSymlink: false)
                 guard metadata.type == .symbolicLink else {

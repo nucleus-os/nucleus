@@ -106,6 +106,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 builder: native.builder)
             let sdk = try publishLinuxRenderSDK(
                 root: root,
+                executionPath: context.executionPath,
                 sdkRoot: sdkRoot,
                 target: target,
                 skia: skia.buildDirectory)
@@ -130,6 +131,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             builder: native.builder)
         let androidNativeSDK = try publishAndroidRenderSDK(
             root: root,
+            executionPath: context.executionPath,
             sdkRoot: androidSDKRoot,
             skia: androidSkia.buildDirectory)
         let androidSwiftPM = try context.swiftPM(
@@ -567,13 +569,14 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func publishAndroidRenderSDK(
         root: FilePath,
+        executionPath: (FilePath) -> String,
         sdkRoot: FilePath,
         skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
-        let links: [(String, FilePath)] = [
-            ("include/skia", root.appending("third-party/skia")),
-            ("include/skia-text", root.appending("render-cxx/skia")),
+        let links: [(String, String)] = [
+            ("include/skia", executionPath(root.appending("third-party/skia"))),
+            ("include/skia-text", executionPath(root.appending("render-cxx/skia"))),
         ]
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidNativeSDK,
@@ -584,14 +587,12 @@ public enum CoreColliderRecipe: ColliderComponent {
             let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
-                validation: .symlinkTarget)
+                validation: .symlink)
             outputs.append(output)
         }
         let task = builder.build(
             inputs: links.map {
-                .string(
-                    name: $0.0,
-                    value: $0.1.string)
+                .string(name: $0.0, value: $0.1)
             },
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
@@ -604,14 +605,15 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func publishLinuxRenderSDK(
         root: FilePath,
+        executionPath: (FilePath) -> String,
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
         skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
-        let links: [(String, FilePath)] = [
-            ("include/skia", root.appending("third-party/skia")),
-            ("include/skia-text", root.appending("render-cxx/skia")),
+        let links: [(String, String)] = [
+            ("include/skia", executionPath(root.appending("third-party/skia"))),
+            ("include/skia-text", executionPath(root.appending("render-cxx/skia"))),
         ]
         var builder = TaskBuilder(
             id: CoreTaskIDs.nativeSDK(target),
@@ -622,12 +624,12 @@ public enum CoreColliderRecipe: ColliderComponent {
             let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
-                validation: .symlinkTarget)
+                validation: .symlink)
             outputs.append(output)
         }
         let task = builder.build(
             inputs: links.map {
-                .string(name: $0.0, value: $0.1.string)
+                .string(name: $0.0, value: $0.1)
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
             action:
@@ -796,7 +798,7 @@ private struct DownloadSkiaGNAction: ColliderAction {
 private struct PublishRenderSDKAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let sdk: FilePath
-        let links: [(name: String, target: FilePath)]
+        let links: [(name: String, target: String)]
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.sdk == rhs.sdk
@@ -817,7 +819,7 @@ private struct PublishRenderSDKAction: ColliderAction {
             encoder.append(path: sdk)
             encoder.appendSequence(links) { linkEncoder, link in
                 linkEncoder.append(link.name)
-                linkEncoder.append(path: link.target)
+                linkEncoder.append(canonicalizingPathsIn: link.target)
             }
         }
     }
@@ -825,7 +827,11 @@ private struct PublishRenderSDKAction: ColliderAction {
     static let kind: ActionKind = "core.publish-render-sdk"
 
     let sdk: FilePath
-    let links: [(name: String, target: FilePath)]
+    /// Targets name what the consumer sees. This SDK's include directories are
+    /// read only inside containers, where the checkout is mounted at its
+    /// canonical location, so a link naming this host's path resolves where it
+    /// is written and dangles where it is used.
+    let links: [(name: String, target: String)]
 
     var identity: Identity { Identity(sdk: sdk, links: links) }
 
@@ -840,7 +846,7 @@ private struct PublishRenderSDKAction: ColliderAction {
         for link in links {
             try context.files.replaceSymlink(
                 at: sdk.appending(link.name),
-                target: link.target.string)
+                target: link.target)
         }
     }
 }

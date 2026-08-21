@@ -20,6 +20,11 @@ public enum ArtifactInput: Hashable, Sendable {
 
 public enum PathValidation: String, Hashable, Codable, Sendable {
     case exists
+    /// A symbolic link whose target is meaningful to whoever reads it rather
+    /// than to whoever staged it. A staged SDK read inside a container names
+    /// the container's paths, which do not resolve on the host that wrote
+    /// them, so resolving here would reject a correct link.
+    case symlink
     case symlinkTarget
     case regularFile
     case executableFile
