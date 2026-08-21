@@ -127,10 +127,11 @@ task identity is unchanged by relocating the checkout or the store.
 
 Status: active
 
-Protected-main CI plans thirty-one of the catalog clean against the
-developer-warmed store, and a developer dry run plans the same revision with no
-identity mismatch at all. Four discriminators were found and removed, each one
-a name for something other than the source:
+Protected-main CI plans the whole catalog clean against the developer-warmed
+store and executes only the three tasks declared to run every time. A developer
+dry run plans the same revision identically, with no identity mismatch and no
+failed validation. Six discriminators were found and removed, each one a name
+for something other than the source:
 
 - the SwiftPM dependency task's own name, which takes the lockfile's absolute
   path as an argument and encoded it through an empty placement map;
@@ -142,12 +143,17 @@ a name for something other than the source:
   one commit hashed differently depending on how its checkout was materialized;
 - the Swift SDK discovery links, written into the invoking account's home and
   consumed by the tasks that publish the active generation, which put a home
-  directory in the identity of every product built against that SDK.
+  directory in the identity of every product built against that SDK;
+- acquired inputs landing in the store readable only by their owner, so the
+  account that inspects reported intact files as failed validations;
+- the SwiftPM resolution scratch, named by the digest of a package root's
+  absolute path, which resolved one revision into two scratches and gave every
+  dependency checkout a different path while describing identical source.
 
-The last two are the same mistake in different clothes: an identity that names
-how a tree arrived rather than what it contains. Neither was reachable by the
-placement invariant, because neither a repository database nor a home directory
-is a declared root.
+Several of these are one mistake in different clothes: an identity that names
+how a tree arrived rather than what it contains. A repository database, a home
+directory, and a resolution scratch are all placement, and none was reachable by
+the placement invariant, because none is a declared root.
 
 Two inspections made this tractable and belong to the contract now.
 `--explain-identity` reads an identity's components back out of the encoder's
@@ -156,10 +162,10 @@ own framing, so two plans that disagree report where rather than only that.
 recording no run, because a plan is a property of that identity and no other
 account can be asked what it computes.
 
-Remaining: the two Linux product builds and the two SwiftPM invocations lowered
-from them still plan differently across checkouts. They reach source through the
-resolved manifest graph, which declares source checkouts and manifests and never
-a directory tree, so their cause is not the one just removed.
+Remaining for a second machine: dependency checkouts are named beneath the host
+build root, which is not a declared placement root, so their prefix is still
+this machine's. Declaring it also declares a container mount target, so anything
+beneath it that crosses into a container needs a matching mount.
 
 Identity agreement is not this phase's gate. Comparing produced bytes across the
 two checkouts remains outstanding, as does the reverse ordering, in which a
