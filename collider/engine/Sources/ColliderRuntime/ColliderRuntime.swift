@@ -492,6 +492,26 @@ public actor ColliderRuntime {
                     atPath: source.string,
                     toPath: destination.string)
             },
+            normalizeTimestamps: { root, seconds in
+                let stamp = Date(timeIntervalSince1970: TimeInterval(seconds))
+                guard let walker = FileManager.default.enumerator(atPath: root.string)
+                else { return }
+                var paths: [String] = [root.string]
+                while let entry = walker.nextObject() as? String {
+                    paths.append(root.appending(entry).string)
+                }
+                // Deepest first, so setting a directory's own time is not
+                // undone by writing something inside it afterwards.
+                for path in paths.sorted(by: { $0.count > $1.count }) {
+                    guard
+                        (try? FileManager.default.attributesOfItem(atPath: path))?[.type]
+                            as? FileAttributeType != .typeSymbolicLink
+                    else { continue }
+                    try? FileManager.default.setAttributes(
+                        [.modificationDate: stamp],
+                        ofItemAtPath: path)
+                }
+            },
             listDirectory: { root in
                 let names = try FileManager.default.contentsOfDirectory(
                     atPath: root.string)

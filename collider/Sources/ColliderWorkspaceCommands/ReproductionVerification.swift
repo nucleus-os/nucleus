@@ -114,3 +114,18 @@ private func verificationScratches(
     }
     return found
 }
+
+/// Removes every verification production beneath these roots.
+///
+/// A reproduced result has served its purpose the moment it agrees, and
+/// keeping it would double what one identity occupies for nothing.
+package func discardVerificationProductions(
+    under scratchRoots: [FilePath],
+    files: FileManager = .default
+) throws {
+    for root in scratchRoots {
+        for scratch in verificationScratches(under: root, depth: 4, files: files) {
+            try files.removeItem(atPath: scratch.string)
+        }
+    }
+}

@@ -882,6 +882,7 @@ public struct ActionFileSystem: Sendable {
     private let removeBody: @Sendable (FilePath) throws -> Void
     private let moveBody: @Sendable (FilePath, FilePath) throws -> Void
     private let listDirectoryBody: @Sendable (FilePath) throws -> [Entry]
+    private let normalizeTimestampsBody: @Sendable (FilePath, Int64) throws -> Void
     private let listRecursivelyBody: @Sendable (FilePath) throws -> [Entry]
     private let digestFileBody: @Sendable (FilePath) throws -> ArtifactDigest
     private let digestTreeBody: @Sendable (FilePath, Set<String>) throws -> ArtifactDigest
@@ -917,6 +918,9 @@ public struct ActionFileSystem: Sendable {
         },
         move: @escaping @Sendable (FilePath, FilePath) throws -> Void = {
             _, _ in throw ActionFileSystemFailure.unavailable("move")
+        },
+        normalizeTimestamps: @escaping @Sendable (FilePath, Int64) throws -> Void = {
+            _, _ in throw ActionFileSystemFailure.unavailable("normalizeTimestamps")
         },
         listDirectory: @escaping @Sendable (FilePath) throws -> [Entry] = {
             _ in throw ActionFileSystemFailure.unavailable("listDirectory")
@@ -956,6 +960,7 @@ public struct ActionFileSystem: Sendable {
         readSymbolicLinkBody = readSymbolicLink
         removeBody = remove
         moveBody = move
+        normalizeTimestampsBody = normalizeTimestamps
         listDirectoryBody = listDirectory
         listRecursivelyBody = listRecursively
         digestFileBody = digestFile
@@ -1043,6 +1048,22 @@ public struct ActionFileSystem: Sendable {
 
     public func move(from source: FilePath, to destination: FilePath) throws {
         try named("move", [source, destination]) { try moveBody(source, destination) }
+    }
+
+    /// Gives every file beneath a root one modification time.
+    ///
+    /// Acquired content is identified by what it contains, never by when it
+    /// was written, and a materialization records the moment it happened to
+    /// run. Anything that carries that moment into a compiled product makes
+    /// the product depend on when its inputs were fetched, which no second
+    /// machine can reproduce.
+    public func normalizeTimestamps(
+        under root: FilePath,
+        toSecondsSinceEpoch seconds: Int64
+    ) throws {
+        try named("normalize-timestamps", [root]) {
+            try normalizeTimestampsBody(root, seconds)
+        }
     }
 
     /// The entries directly inside a directory, without descending and without
@@ -1150,6 +1171,10 @@ public struct ActionFileSystem: Sendable {
                 try require(.write, source)
                 try require(.write, destination)
                 try moveBody(source, destination)
+            },
+            normalizeTimestamps: { root, seconds in
+                try require(.write, root)
+                try normalizeTimestampsBody(root, seconds)
             },
             listDirectory: { root in
                 try require(.read, root)

@@ -802,6 +802,7 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
     let lock: FilePath
     let dependencyConfigurationFiles: [FilePath]
     let marker: FilePath
+    let checkouts: FilePath
 
     init(
         command: CommandSpec,
@@ -817,6 +818,7 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         self.lock = lock
         self.dependencyConfigurationFiles = dependencyConfigurationFiles
         self.marker = marker
+        checkouts = scratchPath.appending("checkouts")
         identity = Identity(
             command: command,
             dependencyCache: dependencyCache,
@@ -844,6 +846,14 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
         guard result.succeeded else {
             throw result.executionFailure(reason: "Swift package command failed")
         }
+        // A pinned dependency is identified by its revision, so when this
+        // materialization happened to run is not part of it. Compilation
+        // records source timestamps, and carrying the moment of a fetch into a
+        // product makes the product unreproducible on any machine that fetched
+        // at a different moment.
+        try context.files.normalizeTimestamps(
+            under: checkouts,
+            toSecondsSinceEpoch: pinnedDependencyTimestamp)
         try context.files.createDirectory(marker.removingLastComponent())
         var encoder = IdentityEncoder()
         encoder.append(try context.files.digest(file: packageManifest).description)
@@ -878,3 +888,10 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
         }
     }
 }
+
+/// The one modification time every materialized dependency carries.
+///
+/// The value is arbitrary and its stability is the point: it has to be the
+/// same on every machine and in every checkout, so it cannot be derived from
+/// anything local. This is the first second of 2026 in UTC.
+private let pinnedDependencyTimestamp: Int64 = 1_767_225_600

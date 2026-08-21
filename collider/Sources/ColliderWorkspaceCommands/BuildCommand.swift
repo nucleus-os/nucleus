@@ -28,9 +28,15 @@ struct Build: TaskControlledCommand {
             text: reproductionReport(comparison),
             humanDestination: .standardError)
         guard comparison.reproduced else {
+            // Kept on divergence: the two productions are the evidence, and
+            // discarding one leaves nothing to compare.
             throw WorkspaceFailure.message(
                 "a second production of this source did not reproduce it")
         }
+        try discardVerificationProductions(under: [
+            verifying.hostBuildRoot.appending("swiftpm"),
+            verifying.cacheRoot.appending("swiftpm"),
+        ])
     }
 }
 
