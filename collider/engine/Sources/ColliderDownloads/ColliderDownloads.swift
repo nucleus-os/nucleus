@@ -464,7 +464,7 @@ private final class DownloadLock {
             path,
             .readWrite,
             options: [.create],
-            permissions: .ownerReadWrite)
+            permissions: storeFilePermissions)
         guard collider_lock_exclusive(descriptor.rawValue, 1) == 0 else {
             let failure = Errno(rawValue: errno)
             try? descriptor.close()
@@ -645,7 +645,7 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
             transfer,
             .writeOnly,
             options: [.create, .truncate],
-            permissions: .ownerReadWrite)
+            permissions: storeFilePermissions)
         states.withLock { $0[task.taskIdentifier] = state }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -920,11 +920,19 @@ private func appendFile(_ source: FilePath, to destination: FilePath) throws {
         destination,
         .writeOnly,
         options: [.create, .append],
-        permissions: .ownerReadWrite)
+        permissions: storeFilePermissions)
     defer { try? output.close() }
     try copyBytes(from: input, to: output)
     guard collider_sync_file(output.rawValue) == 0 else { throw Errno(rawValue: errno) }
 }
+
+/// The mode every file this component leaves in the build store carries.
+///
+/// One identity writes the store and a group reads it. A file landed at
+/// owner-only is intact and still unreadable to the account that inspects the
+/// store, which reports it as a failed output validation against a file that
+/// is perfectly good.
+private let storeFilePermissions: FilePermissions = [.ownerReadWrite, .groupRead]
 
 private func copyFile(_ source: FilePath, to destination: FilePath) throws {
     let input = try FileDescriptor.open(source, .readOnly)
@@ -933,7 +941,7 @@ private func copyFile(_ source: FilePath, to destination: FilePath) throws {
         destination,
         .writeOnly,
         options: [.create, .truncate],
-        permissions: .ownerReadWrite)
+        permissions: storeFilePermissions)
     defer { try? output.close() }
     try copyBytes(from: input, to: output)
     guard collider_sync_file(output.rawValue) == 0 else { throw Errno(rawValue: errno) }
@@ -975,7 +983,7 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
         temporary,
         .writeOnly,
         options: [.create, .truncate],
-        permissions: .ownerReadWrite)
+        permissions: storeFilePermissions)
     do {
         try descriptor.writeAll(data)
         guard collider_sync_file(descriptor.rawValue) == 0 else {

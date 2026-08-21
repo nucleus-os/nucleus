@@ -119,6 +119,27 @@ struct DownloadPolicyTests {
         #expect(try Data(contentsOf: fixture.candidate) == body)
     }
 
+    @Test func acquiredInputCarriesTheStoreReadMode() async throws {
+        let body = Data("verified download".utf8)
+        let fixture = try fixture(
+            response: StubHTTPResponse(
+                status: 200,
+                headers: headers(for: body),
+                body: body))
+        defer { fixture.remove() }
+
+        try await fixture.download()
+
+        // One identity writes the store and a group reads it. An input that
+        // lands owner-only is intact but unreadable to the account that
+        // inspects, which reports it as a failed output validation.
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: fixture.candidate.path)
+        let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+        #expect(permissions.uint16Value & 0o040 != 0)
+        #expect(permissions.uint16Value & 0o007 == 0)
+    }
+
     @Test func rejectsHTTPStatusBeforeBodyMetadata() async throws {
         try await expectFailure(
             StubHTTPResponse(status: 503, headers: [:], body: Data()),
