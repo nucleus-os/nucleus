@@ -127,23 +127,42 @@ task identity is unchanged by relocating the checkout or the store.
 
 Status: active
 
-The first protected-main catalog build succeeded on a clean CI checkout and
-reused twenty-seven of forty-three tasks from the developer-warmed store,
-including every native task: Skia, gfxstream, Hermes, the React Native C++ and
-support libraries, all three native SDKs, and both architectures of each. The
-thirteen that rebuilt were exclusively SwiftPM consumers, and comparing the two
-plans isolated the cause exactly: `swift.package.build` and `swift.package.test`
-names already matched byte for byte across the checkouts, while
-`swift.package.dependencies` did not, because it is the one role whose name
-takes an argument and that argument is the lockfile's absolute path. Encoding it
-through the declared roots equalizes the remaining names. The invoking account
-was a second discriminator of the same kind, reaching identity through `HOME`,
-`USER`, and `LOGNAME`; those name who started a build rather than what it
-produces, and they now join `PATH` and `TERM` outside identity, which is what
-lets a developer's dry run predict a builder run at all.
+Protected-main CI plans thirty-one of the catalog clean against the
+developer-warmed store, and a developer dry run plans the same revision with no
+identity mismatch at all. Four discriminators were found and removed, each one
+a name for something other than the source:
 
-Identity agreement is not yet this phase's gate. Comparing produced bytes across
-the two checkouts remains outstanding, as does the reverse ordering, in which a
+- the SwiftPM dependency task's own name, which takes the lockfile's absolute
+  path as an argument and encoded it through an empty placement map;
+- the invoking account, reaching identity through `HOME`, `USER`, and
+  `LOGNAME`, which name who started a build rather than what it produces and
+  now join `PATH` and `TERM` outside identity;
+- a package-wide invocation naming its root as a directory tree, so the digest
+  counted the repository database and everything Git ignores beneath it, and
+  one commit hashed differently depending on how its checkout was materialized;
+- the Swift SDK discovery links, written into the invoking account's home and
+  consumed by the tasks that publish the active generation, which put a home
+  directory in the identity of every product built against that SDK.
+
+The last two are the same mistake in different clothes: an identity that names
+how a tree arrived rather than what it contains. Neither was reachable by the
+placement invariant, because neither a repository database nor a home directory
+is a declared root.
+
+Two inspections made this tractable and belong to the contract now.
+`--explain-identity` reads an identity's components back out of the encoder's
+own framing, so two plans that disagree report where rather than only that.
+`--as-builder` plans as the identity that would execute, taking no admission and
+recording no run, because a plan is a property of that identity and no other
+account can be asked what it computes.
+
+Remaining: the two Linux product builds and the two SwiftPM invocations lowered
+from them still plan differently across checkouts. They reach source through the
+resolved manifest graph, which declares source checkouts and manifests and never
+a directory tree, so their cause is not the one just removed.
+
+Identity agreement is not this phase's gate. Comparing produced bytes across the
+two checkouts remains outstanding, as does the reverse ordering, in which a
 local build consumes what an automated one produced.
 
 The protected-main CI checkout and the authoritative checkout produce identical
