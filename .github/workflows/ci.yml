@@ -108,5 +108,7 @@ jobs:
           test "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" = nucleus-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
+      - name: Explain the Linux product build identity
+        run: collider build all --dry-run --explain-identity linux.arm64.build
       - name: Build the catalog
         run: collider build all
