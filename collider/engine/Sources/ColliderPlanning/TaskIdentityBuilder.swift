@@ -150,6 +150,7 @@ struct TaskIdentityBuilder {
         guard !services.identityPathMap.containsDeclaredRoot(inEncoded: encoder.bytes) else {
             throw TaskIdentityFailure.uncanonicalizedPlacement(task.id)
         }
+        services.observeIdentity?(task.id, encoder.bytes)
         return services.digestBytes(encoder.bytes)
     }
 

@@ -52,11 +52,19 @@ package struct TaskControlOptions: ParsableArguments {
     @Option(name: .customLong("run-id"), help: "Resume an interrupted run.")
     package var runID: RunIDArgument?
 
+    @Option(
+        name: .customLong("explain-identity"),
+        help: "Print the identity components of tasks whose name contains this text.")
+    package var explainIdentity: String?
+
     package init() {}
 
     package mutating func validate() throws {
         guard !quiet || !verbose else {
             throw ValidationError("--quiet and --verbose are mutually exclusive")
+        }
+        guard explainIdentity == nil || dryRun else {
+            throw ValidationError("--explain-identity requires --dry-run")
         }
     }
 
@@ -66,7 +74,8 @@ package struct TaskControlOptions: ParsableArguments {
             rebuild: rebuild,
             verbose: verbose,
             quiet: quiet,
-            format: outputOptions.format)
+            format: outputOptions.format,
+            explainIdentity: explainIdentity)
     }
 }
 

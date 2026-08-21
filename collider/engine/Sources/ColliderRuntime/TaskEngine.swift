@@ -10,6 +10,10 @@ public struct TaskExecutionOptions: Sendable {
     public var quiet: Bool
     public var machineReadable: Bool
     public var laneLimits: TaskLaneLimits
+    /// Receives each task's encoded identity components as planning computes
+    /// them, for an inspection that needs to read an identity rather than
+    /// compare two digests. It observes only.
+    public var identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
 
     public init(
         dryRun: Bool = false,
@@ -17,7 +21,8 @@ public struct TaskExecutionOptions: Sendable {
         verbose: Bool = false,
         quiet: Bool = false,
         machineReadable: Bool = false,
-        laneLimits: TaskLaneLimits = TaskLaneLimits()
+        laneLimits: TaskLaneLimits = TaskLaneLimits(),
+        identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil
     ) {
         self.dryRun = dryRun
         self.rebuildSelected = rebuildSelected
@@ -25,6 +30,7 @@ public struct TaskExecutionOptions: Sendable {
         self.quiet = quiet
         self.machineReadable = machineReadable
         self.laneLimits = laneLimits
+        self.identityObserver = identityObserver
     }
 }
 

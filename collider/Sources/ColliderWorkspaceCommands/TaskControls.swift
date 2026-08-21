@@ -16,19 +16,23 @@ package struct TaskControls: Sendable {
     var verbose = false
     var quiet = false
     var format: ConsoleOutputFormat = .text
+    let identityExplanations: IdentityExplanationCollector
 
     package init(
         dryRun: Bool = false,
         rebuild: Bool = false,
         verbose: Bool = false,
         quiet: Bool = false,
-        format: ConsoleOutputFormat = .text
+        format: ConsoleOutputFormat = .text,
+        explainIdentity: String? = nil
     ) {
         self.dryRun = dryRun
         self.rebuild = rebuild
         self.verbose = verbose
         self.quiet = quiet
         self.format = format
+        identityExplanations = IdentityExplanationCollector(
+            selection: explainIdentity)
     }
 
     var executionOptions: TaskExecutionOptions {
@@ -37,7 +41,8 @@ package struct TaskControls: Sendable {
             rebuildSelected: rebuild,
             verbose: verbose,
             quiet: quiet,
-            machineReadable: format == .json)
+            machineReadable: format == .json,
+            identityObserver: identityExplanations.observer)
     }
 
     func renderDryRun(_ report: TaskExecutionReport, console: CommandConsole) throws {
@@ -60,6 +65,7 @@ package struct TaskControls: Sendable {
                     + executionCoordinateSummary(entry.coordinates)
                     + "  \(entry.explanation)")
         }
+        lines += identityExplanations.report()
         if quiet && format == .text { return }
         try console.report(
             report,

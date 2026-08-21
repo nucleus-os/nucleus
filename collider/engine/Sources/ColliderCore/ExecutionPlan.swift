@@ -195,6 +195,11 @@ public struct TaskPlanningServices {
     public let taskState: (TaskID) -> PlanningTaskState
     public let durationEstimate: (TaskDurationWorkload) -> UInt64?
     public let validateOutputs: (TaskDeclaration) throws -> Void
+    /// Receives each task's encoded identity components as planning computes
+    /// them. Identity is a digest, so two plans that disagree otherwise report
+    /// only that they disagree; this is how an inspection reads back what went
+    /// into one. It observes and must not influence what is encoded.
+    public let observeIdentity: ((TaskID, [UInt8]) -> Void)?
 
     public init(
         runnerPlatform: RunnerPlatform = .current,
@@ -209,10 +214,12 @@ public struct TaskPlanningServices {
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
         durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
-        validateOutputs: @escaping (TaskDeclaration) throws -> Void
+        validateOutputs: @escaping (TaskDeclaration) throws -> Void,
+        observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil
     ) {
         self.runnerPlatform = runnerPlatform
         self.identityPathMap = identityPathMap
+        self.observeIdentity = observeIdentity
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree

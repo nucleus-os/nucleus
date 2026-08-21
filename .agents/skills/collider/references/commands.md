@@ -54,7 +54,7 @@ Arguments and options:
 
 ## `collider bootstrap`
 
-Usage: `collider bootstrap [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider bootstrap [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
@@ -67,13 +67,14 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `<component>` — all, runtime, browser, or a component name.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider build`
 
-Usage: `collider build [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider build [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
@@ -86,13 +87,14 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `<component>` — all, runtime, swift-sdk, android, browser, or a component name.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider test`
 
-Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [<component>] [--version] [--help]`
+Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [<component>] [--version] [--help]`
 
 Arguments and options:
 
@@ -105,13 +107,14 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `<component>` — all, runtime, collider, android, browser, loader, gpu-headless, gpu-drm, or a component name.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
 ## `collider check`
 
-Usage: `collider check [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
+Usage: `collider check [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] <target> [--version] [--help]`
 
 Arguments and options:
 
@@ -124,6 +127,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `<target>` — values: `sanitizers`, `address-sanitizer`, `undefined-behavior-sanitizer`, `thread-sanitizer`, `android-source-lock`, `protected-main-source`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
@@ -132,7 +136,7 @@ Arguments and options:
 
 Regenerate a component's generated sources into the build store.
 
-Usage: `collider generate [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] <target> [--version] [--help]`
+Usage: `collider generate [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] <target> [--version] [--help]`
 
 Arguments and options:
 
@@ -145,6 +149,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `<target>` — Generator target: android-runtime, vulkan, or wayland.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
@@ -184,7 +189,7 @@ Subcommands:
 
 Assemble the complete Linux runtime package cohort.
 
-Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--android-arm64 <android-arm64>] [--android-x86-64 <android-x86-64>] [--version] [--help]`
+Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--android-arm64 <android-arm64>] [--android-x86-64 <android-x86-64>] [--version] [--help]`
 
 Arguments and options:
 
@@ -197,6 +202,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `--android-arm64` `<android-arm64>`
 - `--android-x86-64` `<android-x86-64>`
 - `--version` — Show the version.
@@ -274,7 +280,7 @@ Arguments and options:
 
 ## `collider benchmark`
 
-Usage: `collider benchmark [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--version] [--help]`
+Usage: `collider benchmark [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--version] [--help]`
 
 Arguments and options:
 
@@ -287,6 +293,7 @@ Arguments and options:
 - `--verbose` — Print each leaf command before executing it.
 - `--quiet` — Keep task output in the durable run log without streaming it.
 - `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
