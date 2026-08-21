@@ -116,10 +116,18 @@ public struct ColliderEngine: Sendable {
                         validateOutputs: { task in
                             try outputValidator.validate(task)
                             try imageValidator?.validate(task)
-                        })
+                        },
+                        observeIdentity: options.identityObserver)
                 }
                 var plan = try planning(services())
+                // A dry run reports what planning decided. Confirming that a
+                // clean image output is still present in the image store means
+                // asking the container service, which only the builder account
+                // runs, so an inspection from the interactive account would
+                // fail for want of a service it is deliberately without. The
+                // account that executes revalidates before it executes.
                 if runtime.hasOCIRuntimeBackend,
+                    !options.dryRun,
                     plan.containsCleanOCIImageOutput
                 {
                     let imageValidator = OCIImageOutputValidator(
