@@ -2575,6 +2575,7 @@ private func artifactInput(
         builder: builder)
     let nativeArtifacts = try ReactNativeColliderRecipe.publishNativeSDK(
         root: root,
+        executionPath: { $0.string },
         nodeModules: fixtureJavaScriptWorkspace,
         codegen: fixtureCodegenRoot,
         sdkRoot: sdkRoot,

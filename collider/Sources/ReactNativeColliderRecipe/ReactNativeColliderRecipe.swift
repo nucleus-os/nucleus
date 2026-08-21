@@ -131,6 +131,7 @@ public enum ReactNativeColliderRecipe {
                 builder: native.builder)
             let sdk = try publishNativeSDK(
                 root: root,
+                executionPath: context.executionPath,
                 nodeModules: javaScriptWorkspace(cacheRoot: context.cacheRoot)
                     .appending("node_modules"),
                 codegen: codegenRoot(cacheRoot: context.cacheRoot),
@@ -876,6 +877,7 @@ public enum ReactNativeColliderRecipe {
 
     package static func publishNativeSDK(
         root: FilePath,
+        executionPath: (FilePath) -> String,
         nodeModules: FilePath,
         codegen: FilePath,
         sdkRoot: FilePath,
@@ -888,7 +890,7 @@ public enum ReactNativeColliderRecipe {
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("rn")
         let boostHeaders = sdk.appending("include/boost")
-        let links: [(String, FilePath)] = [
+        let hostLinks: [(String, FilePath)] = [
             ("include/hermes", root.appending("third-party/hermes")),
             ("include/folly", root.appending("third-party/folly")),
             ("include/glog", root.appending("third-party/glog")),
@@ -942,6 +944,10 @@ public enum ReactNativeColliderRecipe {
                     "swift/Sources/NucleusReactRuntime/cxx")
             ),
         ]
+        // Read only inside containers, where the checkout and the cache are
+        // mounted at their canonical locations, so a link naming this host's
+        // paths resolves where it is written and dangles where it is used.
+        let links = hostLinks.map { ($0.0, executionPath($0.1)) }
         var builder = TaskBuilder(
             id: TaskID(rawValue: "rn.native-sdk.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
@@ -962,7 +968,7 @@ public enum ReactNativeColliderRecipe {
             let output: ArtifactReference = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
-                validation: .symlinkTarget)
+                validation: .symlink)
             outputs.append(output)
         }
         for output in nativeLibraries {
@@ -971,9 +977,7 @@ public enum ReactNativeColliderRecipe {
         outputs.append(hermes.compiler)
         let task = builder.build(
             inputs: links.map {
-                .string(
-                    name: $0.0,
-                    value: $0.1.string)
+                .string(name: $0.0, value: $0.1)
             },
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))
@@ -1025,9 +1029,10 @@ private struct DownloadBoostAction: ColliderAction {
 private struct PublishReactNativeSDKAction: ColliderAction {
     struct SDKLink: Hashable, Sendable {
         let name: String
-        let target: FilePath
+        /// Names what the consumer sees, not where this host keeps it.
+        let target: String
 
-        init(_ link: (name: String, target: FilePath)) {
+        init(_ link: (name: String, target: String)) {
             name = link.name
             target = link.target
         }
@@ -1045,7 +1050,7 @@ private struct PublishReactNativeSDKAction: ColliderAction {
             encoder.append(path: boostHeaders)
             encoder.appendSequence(links) { linkEncoder, link in
                 linkEncoder.append(link.name)
-                linkEncoder.append(path: link.target)
+                linkEncoder.append(canonicalizingPathsIn: link.target)
             }
             // Bumped when what this action does with identical inputs changes,
             // so a published tree that predates the change is republished
@@ -1061,7 +1066,7 @@ private struct PublishReactNativeSDKAction: ColliderAction {
     let sdk: FilePath
     let boostSource: FilePath
     let boostHeaders: FilePath
-    let links: [(name: String, target: FilePath)]
+    let links: [(name: String, target: String)]
 
     var identity: Identity {
         Identity(
@@ -1088,7 +1093,7 @@ private struct PublishReactNativeSDKAction: ColliderAction {
         for link in links {
             try context.files.replaceSymlink(
                 at: sdk.appending(link.name),
-                target: link.target.string)
+                target: link.target)
         }
         try pruneUndeclaredLinks(in: context)
     }
