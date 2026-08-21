@@ -189,12 +189,23 @@ Materialization now gives every checked-out file one fixed time, on the ground
 that a pinned dependency is identified by its revision and not by when it was
 fetched.
 
-What remains is smaller and only on the cross-compiled target: six first-party
-x86_64 modules differ across two materializations, each in sixteen bytes of
-module hash and the debug-info references to it, with every other byte and the
-whole arm64 build identical. Something a fresh materialization produces still
-reaches that hash and it is not timestamps, which are now fixed and verified so
-on disk.
+What remains is smaller and precisely bounded. Across two materializations, six
+first-party x86_64 modules differ, each in sixteen bytes of module hash and the
+debug-info references to it, and nothing else in the build differs at all.
+
+They are exactly the Swift modules that import a Clang module. Every pure Swift
+module is identical, every C object is identical, and the same modules built for
+arm64 are identical across the same pair of materializations. The precompiled
+Clang modules are found at identical paths under an identical module-cache
+segment, so the module is being located the same way and still contributing a
+different hash: the difference is in what a precompiled Clang module contains,
+on the cross-compiled target only.
+
+Reading that difference needs the precompiled modules from both productions, and
+they do not survive one. A verifying invocation produces into its own scratch
+but shares the build workspace that holds them, so the second production
+replaces what the first would be compared against. Retaining both is what the
+next step needs.
 
 That result is the reason the byte clause exists. The two checkouts agree on
 every identity in the catalog and still do not agree on the bytes for one
