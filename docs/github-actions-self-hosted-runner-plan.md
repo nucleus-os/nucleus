@@ -819,6 +819,23 @@ the declared recovery gate completes.
 
 ## Phase 6: Define One Complete Verification Graph
 
+Before this phase adds a lane, one defect it exists to catch is already known.
+The Linux test lane does not compile in a container: the staged render SDK links
+`include/skia` and `include/skia-text` into the checkout by the host's absolute
+path, and a container mounts the checkout at its canonical location, so both
+links resolve on the host and dangle where they are read. Only a test target
+compiles through those headers, and protected main has never run tests, so a
+build-only graph reports green over a lane that cannot build.
+
+Naming the links canonically is not the fix on its own, because a symlink output
+is validated by resolving it, and a canonical target does not resolve on the
+host that stages it. The two candidates are to stage real headers rather than
+link to the checkout, which is what this SDK's contract already says it holds,
+or to reach those headers through the canonicalized include flags that working
+container builds already use and let the links stay a host convenience. Which
+one is right depends on whether anything reads the SDK from the host.
+
+
 Define the required verification graph once as a sequence of existing Collider
 commands. Automated `main`, GitHub manual, and a local request for the complete
 CI-equivalent graph execute that exact sequence. Ordinary local build and test
