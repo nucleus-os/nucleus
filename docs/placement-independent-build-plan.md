@@ -176,36 +176,26 @@ sibling of the location it would otherwise have replaced, and the retained
 result stays intact to compare against. `--verify-reproduction` does that and
 fails when the two disagree.
 
-Against that, a product built twice from one materialization is bit-identical on
-both targets, and a product built twice from two independent materializations of
-the same pinned revisions is bit-identical on arm64. That second comparison is
-the second machine's condition reached without one, because what distinguishes a
-second machine here is that it fetches its own copies.
+Against that, the product does not reproduce, and the measurement only became
+trustworthy once the two productions stopped sharing anything. A verifying
+production first took its own scratch, which changed where products were copied
+while both builds still compiled inside one workspace; the second built on what
+the first left behind and reported reuse as reproduction. Ownership of a
+workspace is placement and never reaches an identity, so a verifying production
+now owns its own and both still answer for the same identity.
 
-Reaching it took making a materialization mean one thing. Compilation records the
-timestamps of the source it reads and derives a module hash from them, so
-refetching one revision changed a product while every identity still agreed.
-Materialization now gives every checked-out file one fixed time, on the ground
-that a pinned dependency is identified by its revision and not by when it was
-fetched.
+Independently produced, fifty-four of seventy files match. Every difference is a
+small embedded field rather than compiled code: seven bytes in a module's source
+info, and sixteen bytes of module hash with its debug-info references in the
+modules that import a Clang module. The shape is the same one dependency
+timestamps had before materialization was made to give every checked-out file
+one fixed time, which removed that difference and left these.
 
-What remains is smaller and precisely bounded. Across two materializations, six
-first-party x86_64 modules differ, each in sixteen bytes of module hash and the
-debug-info references to it, and nothing else in the build differs at all.
-
-They are exactly the Swift modules that import a Clang module. Every pure Swift
-module is identical, every C object is identical, and the same modules built for
-arm64 are identical across the same pair of materializations. The precompiled
-Clang modules are found at identical paths under an identical module-cache
-segment, so the module is being located the same way and still contributing a
-different hash: the difference is in what a precompiled Clang module contains,
-on the cross-compiled target only.
-
-Reading that difference needs the precompiled modules from both productions, and
-they do not survive one. A verifying invocation produces into its own scratch
-but shares the build workspace that holds them, so the second production
-replaces what the first would be compared against. Retaining both is what the
-next step needs.
+Two corrections belong with this. Earlier results reporting a target reproducing
+in full were measured across productions sharing a workspace, so what they
+showed was partly reuse. And the residual is not particular to the
+cross-compiled target, as it first appeared to be; that target was only where
+the shared state leaked through first.
 
 That result is the reason the byte clause exists. The two checkouts agree on
 every identity in the catalog and still do not agree on the bytes for one
