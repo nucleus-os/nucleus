@@ -82,10 +82,17 @@ extension IdentityPathMap {
     /// and shares nothing with it, which is the whole cost these roots exist to
     /// remove.
     public func containsDeclaredRoot(inEncoded bytes: [UInt8]) -> Bool {
-        guard !roots.isEmpty else { return false }
+        !declaredRoots(inEncoded: bytes).isEmpty
+    }
+
+    /// Every declared root that leaked. Naming them is what makes the failure
+    /// actionable, and naming all of them at once keeps a caller from fixing
+    /// one root per rebuild when a single site leaked several.
+    public func declaredRoots(inEncoded bytes: [UInt8]) -> [IdentityPathRoot] {
+        guard !roots.isEmpty else { return [] }
         // Identity payloads are mostly digests, so the scan looks for the roots
         // rather than decoding the bytes as text.
-        return roots.contains { root in
+        return roots.filter { root in
             bytes.containsSubsequence(Array(root.path.string.utf8))
         }
     }

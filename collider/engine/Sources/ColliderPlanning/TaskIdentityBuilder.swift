@@ -147,10 +147,25 @@ struct TaskIdentityBuilder {
             into: &encoder,
             services: services,
             resolutions: &resolutions)
-        guard !services.identityPathMap.containsDeclaredRoot(inEncoded: encoder.bytes) else {
-            throw TaskIdentityFailure.uncanonicalizedPlacement(task.id)
-        }
+        // Observed before validation: an identity is most worth reading when
+        // it is the one being rejected.
         services.observeIdentity?(task.id, encoder.bytes)
+        let leaked = services.identityPathMap.declaredRoots(inEncoded: encoder.bytes)
+        if !leaked.isEmpty {
+            let decoded = IdentityTrace.decode(encoder.bytes)
+            throw TaskIdentityFailure.uncanonicalizedPlacement(
+                task.id,
+                roots: leaked.map { root in
+                    (
+                        root,
+                        decoded.map {
+                            IdentityTrace.componentsContaining(
+                                root.path.string,
+                                in: $0)
+                        } ?? []
+                    )
+                })
+        }
         return services.digestBytes(encoder.bytes)
     }
 
@@ -243,13 +258,55 @@ struct TaskIdentityBuilder {
     }
 }
 
+/// Names the input a planning digest failed on.
+///
+/// The underlying file errors report a reason and no path, which leaves a
+/// missing prerequisite indistinguishable from any other unreadable file.
+private func hashing<Result>(
+    _ kind: String,
+    _ path: FilePath,
+    _ body: () throws -> Result
+) throws -> Result {
+    do {
+        return try body()
+    } catch let failure as PlanningInputFailure {
+        throw failure
+    } catch {
+        throw PlanningInputFailure(kind: kind, path: path, underlying: error)
+    }
+}
+
+private struct PlanningInputFailure: Error, CustomStringConvertible {
+    let kind: String
+    let path: FilePath
+    let underlying: any Error
+
+    var description: String {
+        "cannot hash \(kind) input \(path.string): \(underlying)"
+    }
+}
+
 private enum TaskIdentityFailure: Error, CustomStringConvertible {
-    case uncanonicalizedPlacement(TaskID)
+    case uncanonicalizedPlacement(
+        TaskID,
+        roots: [(IdentityPathRoot, [String])])
 
     var description: String {
         switch self {
-        case .uncanonicalizedPlacement(let task):
-            "task identity contains an uncanonicalized placement path: \(task.rawValue)"
+        case .uncanonicalizedPlacement(let task, let roots):
+            var message =
+                "task identity contains an uncanonicalized placement path: "
+                + task.rawValue
+            for (root, components) in roots {
+                message += "\n  \(root.name) root \(root.path.string)"
+                for component in components.prefix(8) {
+                    message += "\n    \(component)"
+                }
+                if components.count > 8 {
+                    message += "\n    … and \(components.count - 8) more"
+                }
+            }
+            return message
         }
     }
 }
@@ -276,7 +333,7 @@ private struct TaskIdentityResolutions {
         services: TaskPlanningServices
     ) throws -> ArtifactDigest {
         if let digest = fileDigests[path] { return digest }
-        let digest = try services.digestFile(path)
+        let digest = try hashing("file", path) { try services.digestFile(path) }
         fileDigests[path] = digest
         return digest
     }
@@ -286,7 +343,7 @@ private struct TaskIdentityResolutions {
         services: TaskPlanningServices
     ) throws -> ArtifactDigest {
         if let digest = treeDigests[path] { return digest }
-        let digest = try services.digestTree(path)
+        let digest = try hashing("tree", path) { try services.digestTree(path) }
         treeDigests[path] = digest
         return digest
     }
@@ -296,7 +353,9 @@ private struct TaskIdentityResolutions {
         services: TaskPlanningServices
     ) throws -> ArtifactDigest {
         if let digest = sourceCheckoutDigests[path] { return digest }
-        let digest = try services.digestSourceCheckout(path)
+        let digest = try hashing("source checkout", path) {
+            try services.digestSourceCheckout(path)
+        }
         sourceCheckoutDigests[path] = digest
         return digest
     }

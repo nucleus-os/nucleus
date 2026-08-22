@@ -50,3 +50,35 @@ import Testing
     #expect(IdentityTrace.decode([]) == nil)
     #expect(IdentityTrace.decode([99, 0, 0, 0, 0, 0, 0, 0, 0]) == nil)
 }
+
+@Test func leakedPlacementIsReportedByRootAndOffendingComponent() throws {
+    let cache = IdentityPathRoot(name: "cache", path: FilePath("/machine/cache"))
+    let workspace = IdentityPathRoot(
+        name: "workspace",
+        path: FilePath("/machine/checkout"))
+    let map = IdentityPathMap(roots: [cache, workspace])
+    var encoder = IdentityEncoder(identityPathMap: map)
+    // A container target and a working directory, which are plain strings
+    // because they name the container rather than this host.
+    encoder.append("/machine/cache/products")
+    encoder.appendRecord { $0.append("/machine/checkout") }
+    encoder.appendSequence(["/machine/cache/products/tool", "unrelated"]) {
+        $0.append($1)
+    }
+    // Canonicalized appends carry no root and must not be reported.
+    encoder.append(path: FilePath("/machine/cache/scratch"))
+
+    let leaked = map.declaredRoots(inEncoded: encoder.bytes)
+    #expect(Set(leaked.map(\.name)) == ["cache", "workspace"])
+
+    let nodes = try #require(IdentityTrace.decode(encoder.bytes))
+    #expect(
+        IdentityTrace.componentsContaining(cache.path.string, in: nodes) == [
+            "/machine/cache/products", "/machine/cache/products/tool",
+        ])
+    #expect(
+        IdentityTrace.componentsContaining(workspace.path.string, in: nodes) == [
+            "/machine/checkout"
+        ])
+    #expect(IdentityTrace.componentsContaining("unrelated", in: nodes) == ["unrelated"])
+}

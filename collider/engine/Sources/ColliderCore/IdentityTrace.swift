@@ -81,6 +81,41 @@ public enum IdentityTrace {
         return lines
     }
 
+    /// The textual components whose value contains `needle`, in encounter
+    /// order and without duplicates.
+    ///
+    /// A rejected identity is a byte string containing something it should not.
+    /// Rendering the whole encoding leaves a person searching thousands of
+    /// lines for it, so the offending components are extracted directly.
+    public static func componentsContaining(
+        _ needle: String,
+        in nodes: [Node]
+    ) -> [String] {
+        var found: [String] = []
+        var seen: Set<String> = []
+        func visit(_ nodes: [Node]) {
+            for node in nodes {
+                switch node {
+                case .string(let value), .path(let value), .enumeration(let value):
+                    guard value.contains(needle), seen.insert(value).inserted else {
+                        continue
+                    }
+                    found.append(value)
+                case .nested(let children), .record(let children):
+                    visit(children)
+                case .optional(let children):
+                    if let children { visit(children) }
+                case .sequence(let elements):
+                    for element in elements { visit(element) }
+                case .bytes, .integer, .boolean:
+                    continue
+                }
+            }
+        }
+        visit(nodes)
+        return found
+    }
+
     private static func quoted(_ value: String) -> String {
         "\"\(value)\""
     }
