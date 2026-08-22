@@ -275,6 +275,15 @@ package final class SwiftPackageGraphResolver: Sendable {
             [
                 "package", "--package-path", packageRoot.string,
                 "--scratch-path", scratch.string,
+                // The pinned closure is authoritative and lives in a checkout
+                // the resolving identity may only read. Left to solve versions
+                // itself, SwiftPM rewrites the resolved file whenever a
+                // manifest changes, which fails there and leaves no identity
+                // able to resolve at all: the builder cannot write the
+                // checkout, and the account that owns the checkout cannot
+                // write this cache. A genuine dependency change is an explicit
+                // update to the pin, not a side effect of describing a graph.
+                "--only-use-versions-from-resolved-file",
             ]
             + arguments
         process.currentDirectoryURL = URL(fileURLWithPath: packageRoot.string)
