@@ -26,6 +26,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     }
     let build = AOSPProductBuild(
         deviceSource: path("device"),
+        sourceInputs: path("source-inputs"),
         sourceProvenance: path("source-provenance.json"),
         artifactRoot: path("build"),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),

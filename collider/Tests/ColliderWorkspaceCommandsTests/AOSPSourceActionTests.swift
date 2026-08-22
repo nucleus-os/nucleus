@@ -402,6 +402,7 @@ import Testing
             CompileAOSPProductAction(
                 build: AOSPProductBuild(
                     deviceSource: root.appending("product"),
+                    sourceInputs: root.appending("product"),
                     sourceProvenance: root.appending("source-provenance.json"),
                     artifactRoot: root.appending("build"),
                     sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
@@ -460,6 +461,7 @@ import Testing
     let product = "nucleus_x86_64"
     let build = AOSPProductBuild(
         deviceSource: FilePath(deviceSource.path),
+        sourceInputs: FilePath(deviceSource.path),
         sourceProvenance: FilePath(provenance.path),
         artifactRoot: FilePath(artifactRoot.path),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
@@ -552,6 +554,7 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
         deviceSource: FilePath(fixture.root.path),
+        sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
@@ -689,6 +692,7 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
         deviceSource: FilePath(fixture.root.path),
+        sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
@@ -771,6 +775,7 @@ import Testing
         to: stagedImages.appendingPathComponent("system.img"))
     let build = AOSPProductBuild(
         deviceSource: FilePath(fixture.root.path),
+        sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
