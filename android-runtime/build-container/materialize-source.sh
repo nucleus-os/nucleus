@@ -56,9 +56,15 @@ materialize_repo_metadata() {
     case "$name" in
       # The object store is referenced, never copied.
       project-objects) continue ;;
-      # Per-project git directories hold refs, indexes, and worktree links that
-      # this volume owns and Repo updates in place as it checks revisions out.
-      projects) continue ;;
+      # Per-project git directories hold refs, indexes, and worktree links this
+      # volume owns and Repo updates in place as it checks revisions out. They
+      # are seeded once and then left alone; refreshing them would discard the
+      # checkout state they describe.
+      projects)
+        if [[ -e /src/.repo/projects ]]; then
+          continue
+        fi
+        ;;
     esac
     # Everything else describes which revisions to check out, and the host
     # rewrites it whenever the lock moves. Seeding it once would pin this
