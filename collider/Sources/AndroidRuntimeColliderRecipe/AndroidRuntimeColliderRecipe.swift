@@ -1321,11 +1321,14 @@ private struct AOSPSourceLock: Decodable {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
                 "Nucleus source revisions must select the Android 17 branch")
         }
+        // Read-only acquisition over HTTPS. Every Nucleus project is public,
+        // and the identity that acquires them holds no credentials, so an
+        // authenticated transport would require provisioning one for nothing.
         guard
             source.manifestURL
-                == "ssh://git@github.com/nucleus-os/platform_manifest.git",
+                == "https://github.com/nucleus-os/platform_manifest.git",
             source.superprojectURL
-                == "ssh://git@github.com/nucleus-os/platform_superproject.git",
+                == "https://github.com/nucleus-os/platform_superproject.git",
             repo.launcherURL
                 == "https://storage.googleapis.com/git-repo-downloads/repo",
             repo.repositoryURL

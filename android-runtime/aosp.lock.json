@@ -6,11 +6,11 @@
     "superprojectCommit": "28f0bbddc24d56c8ec5a8df5342ac7a292184039"
   },
   "source": {
-    "manifestURL": "ssh://git@github.com/nucleus-os/platform_manifest.git",
+    "manifestURL": "https://github.com/nucleus-os/platform_manifest.git",
     "manifestRevision": "refs/heads/nucleus-android-17.0.0_r1",
-    "manifestCommit": "5c00e58dca7ce613f045d2fe0c7dc37a38ab2010",
-    "defaultManifestSHA256": "b925ba6ba4d3026f6fe9a1d59316eccf700a3b058107912fc7b196281e01f44a",
-    "superprojectURL": "ssh://git@github.com/nucleus-os/platform_superproject.git",
+    "manifestCommit": "e3824ad852522f6e8605258927ad653a7c59ba4a",
+    "defaultManifestSHA256": "0d0f5e38c3b7bd37cd86b9e35d5c56c84aff4dcb1848625d522b0d68e583ceb9",
+    "superprojectURL": "https://github.com/nucleus-os/platform_superproject.git",
     "superprojectRevision": "refs/heads/nucleus-android-17.0.0_r1",
     "superprojectCommit": "b2a67154ca2826cd119421251dd0f40c1fe2fed8"
   },
