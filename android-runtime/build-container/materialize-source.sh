@@ -51,6 +51,8 @@ if [[ ! -f "$repo" \
   exit 64
 fi
 
+mkdir -p /src/out
+
 if [[ -d /src/.repo \
     && -f "$resolved_manifest" \
     && -f "$source_provenance" ]] \
@@ -98,7 +100,7 @@ else
   fi
   python3 "$repo" forall --ignore-missing --jobs="$AOSP_SYNC_JOBS" -c \
     'test ! -e .git || test -z "$(git status --porcelain=v1 --untracked-files=normal)"'
-  mkdir -p /src/.nucleus
+  mkdir -p /src/.nucleus /src/out
   install -m 0644 "$expected_manifest" "$resolved_manifest"
   install -m 0644 "$expected_provenance" "$source_provenance"
 fi

@@ -100,7 +100,7 @@ struct ValidateAOSPProductAction: ColliderAction {
                     access: .readOnly),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/out",
+                    target: "/src/out",
                     access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
@@ -135,7 +135,7 @@ private struct AOSPProductValidationWorkflow {
             sourceOverlays: build.sourceOverlays,
             files: context.files)
         let staged = build.artifactRoot.appending("staged")
-        let hostTools = FilePath("/out/host/linux-x86/bin")
+        let hostTools = FilePath("/src/out/host/linux-x86/bin")
         let targetFiles = staged.appending("\(build.product)-target_files.zip")
         let imageArchive = staged.appending("\(build.product)-images.zip")
         let imagesRoot = staged.appending("images")
@@ -311,8 +311,8 @@ private struct AOSPProductValidationWorkflow {
                 ],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 executableRequirements: aospX86ExecutableRequirements([
-                    "/out/host/linux-x86/bin/apksigner",
-                    "/out/host/linux-x86/bin/avbtool",
+                    "/src/out/host/linux-x86/bin/apksigner",
+                    "/src/out/host/linux-x86/bin/avbtool",
                     "/src/prebuilts/jdk/jdk21/linux-x86/bin/java",
                 ]),
                 command: [executablePath]
@@ -327,7 +327,7 @@ private struct AOSPProductValidationWorkflow {
         environment["TARGET_PRODUCT"] = build.product
         environment["TARGET_BUILD_VARIANT"] = build.variant
         environment["TARGET_RELEASE"] = build.release
-        environment["OUT_DIR"] = "/out"
+        environment["OUT_DIR"] = "out"
         environment["DIST_DIR"] = "/export/dist"
         environment["BUILD_NUMBER"] = build.buildNumber
         environment["BUILD_DATETIME"] = String(build.buildTimestamp)
@@ -337,7 +337,7 @@ private struct AOSPProductValidationWorkflow {
         environment["LANG"] = "C.UTF-8"
         environment["LC_ALL"] = "C.UTF-8"
         environment["PATH"] =
-            "/out/host/linux-x86/bin:"
+            "/src/out/host/linux-x86/bin:"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         return environment
     }

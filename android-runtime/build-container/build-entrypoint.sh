@@ -7,8 +7,8 @@ if [[ "${1:-}" == "source" ]]; then
 fi
 
 if [[ ! -d /src/.repo \
-    || ! -d /out \
-    || ! -w /out \
+    || ! -d /src/out \
+    || ! -w /src/out \
     || ! -d /ccache \
     || ! -w /ccache ]]; then
   echo "error: AOSP compilation requires source plus writable output and compiler-cache workspaces" >&2

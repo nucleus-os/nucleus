@@ -115,7 +115,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     var outputMount: OCIPersistentWorkspaceMount {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
-            target: "/out",
+            target: "/src/out",
             access: .readWrite)
     }
 
@@ -129,7 +129,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     var readOnlyOutputMount: OCIPersistentWorkspaceMount {
         OCIPersistentWorkspaceMount(
             workspace: outputWorkspace,
-            target: "/out",
+            target: "/src/out",
             access: .readOnly)
     }
 

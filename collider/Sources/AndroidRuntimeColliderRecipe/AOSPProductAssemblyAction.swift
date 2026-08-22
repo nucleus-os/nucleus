@@ -55,7 +55,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                     access: .readOnly),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/out",
+                    target: "/src/out",
                     access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
@@ -84,10 +84,10 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 readOnlyMounts: [],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 executableRequirements: aospX86ExecutableRequirements([
-                    "/out/host/linux-x86/bin/img_from_target_files"
+                    "/src/out/host/linux-x86/bin/img_from_target_files"
                 ]),
                 command: [
-                    "/out/host/linux-x86/bin/img_from_target_files",
+                    "/src/out/host/linux-x86/bin/img_from_target_files",
                     "/staged/\(signedTarget.lastComponent?.string ?? "")",
                     "/staged/\(imageArchiveCandidate.lastComponent?.string ?? "")",
                 ]))
@@ -131,10 +131,10 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                     readOnlyMounts: [],
                     persistentWorkspaceMounts: [build.readOnlyOutputMount],
                     executableRequirements: aospX86ExecutableRequirements([
-                        "/out/host/linux-x86/bin/simg2img"
+                        "/src/out/host/linux-x86/bin/simg2img"
                     ]),
                     command: [
-                        "/out/host/linux-x86/bin/simg2img",
+                        "/src/out/host/linux-x86/bin/simg2img",
                         "/images/\(name)",
                         "/images/\(name).raw",
                     ]))
@@ -256,7 +256,7 @@ func aospProductContainerToolEnvironment() -> [String: String] {
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "PATH": "\(javaHome)/bin:"
-            + "/out/host/linux-x86/bin:"
+            + "/src/out/host/linux-x86/bin:"
             + "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "REPO_TRACE": "0",
         "SOONG_BOOTSTRAP_PREBUILT_TAG": "linux-x86",

@@ -68,7 +68,7 @@ struct CompileAOSPProductAction: ColliderAction {
                     access: .readOnly),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/out",
+                    target: "/src/out",
                     access: .readWrite),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.compilerCacheWorkspace,
@@ -153,7 +153,7 @@ private struct AOSPProductCompileWorkflow {
                 ],
                 executableRequirements: aospX86ExecutableRequirements([
                     "/src/prebuilts/jdk/jdk21/linux-x86/bin/java",
-                    "/out/soong/.bootstrap/bin/soong_build",
+                    "/src/out/soong/.bootstrap/bin/soong_build",
                 ]),
                 command: [
                     "/src/build/soong/soong_ui.bash",
@@ -177,7 +177,7 @@ private struct AOSPProductCompileWorkflow {
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
                     "/bin/cp", "--preserve=timestamps",
-                    "/out/target/product/\(build.product)/obj/PACKAGING/target_files_intermediates/\(build.product)-target_files.zip",
+                    "/src/out/target/product/\(build.product)/obj/PACKAGING/target_files_intermediates/\(build.product)-target_files.zip",
                     "/export/\(build.product)-target_files.zip",
                 ],
                 output: .combined(limit: 4 * 1_024 * 1_024)))
@@ -195,7 +195,7 @@ private struct AOSPProductCompileWorkflow {
                 "TARGET_PRODUCT": build.product,
                 "TARGET_BUILD_VARIANT": build.variant,
                 "TARGET_RELEASE": build.release,
-                "OUT_DIR": "/out",
+                "OUT_DIR": "out",
                 "DIST_DIR": "/export/dist",
                 "BUILD_NUMBER": build.buildNumber,
                 "BUILD_DATETIME": String(build.buildTimestamp),

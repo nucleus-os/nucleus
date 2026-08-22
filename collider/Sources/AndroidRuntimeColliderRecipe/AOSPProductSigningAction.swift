@@ -63,7 +63,7 @@ struct SignAOSPProductAction: ColliderAction {
                     access: .readOnly),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
-                    target: "/out",
+                    target: "/src/out",
                     access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
@@ -128,10 +128,10 @@ struct SignAOSPProductAction: ColliderAction {
                 ],
                 persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 executableRequirements: aospX86ExecutableRequirements([
-                    "/out/host/linux-x86/bin/sign_target_files_apks"
+                    "/src/out/host/linux-x86/bin/sign_target_files_apks"
                 ]),
                 command: [
-                    "/out/host/linux-x86/bin/sign_target_files_apks"
+                    "/src/out/host/linux-x86/bin/sign_target_files_apks"
                 ] + arguments))
         guard try context.files.metadata(for: candidate)?.type == .regular else {
             throw AOSPProductSigningFailure.missingOutput(candidate)
