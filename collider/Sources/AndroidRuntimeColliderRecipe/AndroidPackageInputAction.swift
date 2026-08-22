@@ -202,7 +202,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     let appArmorPolicy: FilePath
     let seccompPolicy: FilePath
     let architecture: PlatformArchitecture
-    let environment: [String: String]
+    package let environment: [String: String]
 
     package var identity: Identity {
         Identity(
