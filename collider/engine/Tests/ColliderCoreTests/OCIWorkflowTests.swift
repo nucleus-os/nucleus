@@ -158,6 +158,70 @@ import Testing
     }
 }
 
+/// A read-only tree laid inside a read-only workspace is how the Android
+/// device tree reaches the AOSP source it belongs to. Nothing writes the
+/// workspace through the region the tree hides, so the arrangement is safe,
+/// and rejecting it left that build unable to run at all.
+@Test func ociExecutionAcceptsAReadOnlyMountInsideAReadOnlyWorkspace() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-readonly-workspace-overlay-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let imageID = root.appendingPathComponent("image-id")
+    try Data(("sha256:" + String(repeating: "b", count: 64) + "\n").utf8)
+        .write(to: imageID)
+    let workspace = PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "fixture-source",
+            artifactTarget: .linuxARM64,
+            role: "source"),
+        capacityBytes: 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: PersistentWorkspaceJournal(
+            mode: .writeback,
+            sizeBytes: 64 * 1_024))
+
+    var reported: String?
+    do {
+        try await ColliderRuntime().runOCI(
+            OCIExecution(
+                executionPlatform: .linuxARM64OCI,
+                artifactTarget: .linuxARM64,
+                imageID: FilePath(imageID.path),
+                hostname: "fixture-builder",
+                workingDirectory: "/src",
+                hostWorkingDirectory: FilePath(root.path),
+                mounts: [
+                    OCIMount(
+                        source: FilePath(root.path),
+                        target: "/src/device/nucleus",
+                        access: .readOnly)
+                ],
+                persistentWorkspaceMounts: [
+                    OCIPersistentWorkspaceMount(
+                        workspace: workspace,
+                        target: "/src",
+                        access: .readOnly)
+                ],
+                userPolicy: .builder,
+                capabilityPolicy: .dropAll,
+                privilegePolicy: .prohibitAcquisition,
+                processFilesystemPolicy: .standard,
+                resourceLimits: .build,
+                containerEnvironment: [:],
+                command: ["fixture"],
+                environment: [:],
+                output: .logged),
+            stage: TaskID(rawValue: "fixture.readonly-overlay"))
+    } catch {
+        reported = "\(error)"
+    }
+    // No container backend is injected here, so the execution cannot complete.
+    // What must not happen is rejection before it is ever attempted.
+    #expect(reported?.contains("overlapping OCI mount") != true)
+}
+
 @Test func ociExecutionRejectsHostAndPersistentWorkspaceMountOverlap() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-persistent-workspace-overlap-\(UUID().uuidString)",

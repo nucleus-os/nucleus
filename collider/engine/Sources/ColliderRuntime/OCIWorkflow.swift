@@ -123,12 +123,22 @@ extension ColliderRuntime {
         }
         for mount in execution.persistentWorkspaceMounts {
             let target = try normalizedMountTarget(mount.target)
+            let isReadOnly = mount.access == .readOnly
             guard
                 !bindTargets.contains(where: {
                     guard $0.path.overlaps(target) else { return false }
-                    return !$0.isReadOnly
-                        || $0.path == target
-                        || !target.string.hasPrefix($0.path.string + "/")
+                    if $0.path == target { return true }
+                    // The inner mount hides part of the outer one, which is
+                    // safe only when nothing writes the outer through the
+                    // region now hidden. Either may be the inner: a writable
+                    // output workspace sits inside the read-only AOSP source,
+                    // and the read-only device tree sits inside that same
+                    // source. Requiring the workspace to be the inner one
+                    // rejected the second arrangement outright.
+                    if target.string.hasPrefix($0.path.string + "/") {
+                        return !$0.isReadOnly
+                    }
+                    return !isReadOnly
                 }),
                 !persistentTargets.contains(where: { $0.overlaps(target) })
             else {
