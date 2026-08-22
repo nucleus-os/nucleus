@@ -11,7 +11,11 @@ func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        retentionPolicy: .protected)
+        // Build output, not authoritative state. It is expensive to rebuild
+        // and so is never reclaimed on its own, but a structural change the
+        // tool's own incremental state cannot follow leaves no way forward
+        // when it cannot be named and removed.
+        retentionPolicy: .explicitClean)
 }
 
 func aospCompilerCacheWorkspace(
