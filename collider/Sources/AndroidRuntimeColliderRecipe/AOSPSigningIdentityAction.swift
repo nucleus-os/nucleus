@@ -179,13 +179,18 @@ struct AOSPSigningIdentityWorkflow {
                 "\(item.alias)-certificate-public.der")
             let privateDER = validation.appending(
                 "\(item.alias)-private-public.der")
-            try await run(
-                [
-                    "x509", "-in", certificate.string,
-                    "-pubkey", "-noout", "-out", certificatePEM.string,
-                ],
-                in: destination,
-                environment: environment)
+            // `-noout` and `-out` disagree between implementations: OpenSSL
+            // writes the extracted key to the file, LibreSSL writes it to
+            // standard output and creates nothing, and both exit zero. The
+            // next step then reads a file that is not there. Capturing the
+            // output and writing it here works under either.
+            try context.files.write(
+                Array(
+                    try await capture(
+                        ["x509", "-in", certificate.string, "-pubkey", "-noout"],
+                        in: destination,
+                        environment: environment).utf8),
+                to: certificatePEM)
             try await run(
                 [
                     "pkey", "-pubin", "-in", certificatePEM.string,
@@ -213,6 +218,15 @@ struct AOSPSigningIdentityWorkflow {
         in directory: FilePath,
         environment: [String: String]
     ) async throws {
+        _ = try await capture(arguments, in: directory, environment: environment)
+    }
+
+    @discardableResult
+    func capture(
+        _ arguments: [String],
+        in directory: FilePath,
+        environment: [String: String]
+    ) async throws -> String {
         let result = try await context.commands.execute(
             CommandSpec(
                 executable: .named("openssl"),
@@ -228,6 +242,7 @@ struct AOSPSigningIdentityWorkflow {
                     ? "AOSP signing identity command failed"
                     : "AOSP signing identity command failed: \(detail)")
         }
+        return result.standardOutput
     }
 }
 
