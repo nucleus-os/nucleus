@@ -99,7 +99,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(
         flags.management.volumes
             == [
-                "aosp-source-volume:/src:ro", "aosp-output-volume:/out",
+                "aosp-source-volume:/src:ro", "aosp-output-volume:/src/out",
                 "aosp-ccache-volume:/ccache",
             ])
     #expect(

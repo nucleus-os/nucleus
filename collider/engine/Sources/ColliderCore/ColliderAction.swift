@@ -695,7 +695,7 @@ public struct AnyColliderAction: Hashable, Sendable {
             }
         }
         var workspaces: [PersistentWorkspaceIdentity: PersistentWorkspaceDeclaration] = [:]
-        var mountTargets: [FilePath] = []
+        var mountTargets: [(path: FilePath, isReadOnly: Bool)] = []
         for effect in requirements.persistentWorkspaceEffects {
             let identity = effect.workspace.identity
             guard isValidPersistentWorkspaceField(identity.key) else {
@@ -746,12 +746,25 @@ public struct AnyColliderAction: Hashable, Sendable {
                 throw ActionDeclarationFailure.invalidPersistentWorkspaceMountTarget(
                     effect.target)
             }
-            if let overlapping = mountTargets.first(where: { $0.overlaps(target) }) {
+            let isReadOnly = effect.access == .readOnly
+            // One workspace may nest inside another when nothing writes the
+            // outer one through the region the inner one hides: the AOSP
+            // output workspace sits inside the read-only source it is built
+            // from. Equal targets are always a conflict.
+            let overlapping = mountTargets.first { existing in
+                guard existing.path.overlaps(target) else { return false }
+                if existing.path == target { return true }
+                if target.string.hasPrefix(existing.path.string + "/") {
+                    return !existing.isReadOnly
+                }
+                return !isReadOnly
+            }
+            if let overlapping {
                 throw ActionDeclarationFailure.overlappingPersistentWorkspaceMountTargets(
-                    overlapping.string,
+                    overlapping.path.string,
                     target.string)
             }
-            mountTargets.append(target)
+            mountTargets.append((target, isReadOnly))
         }
     }
 

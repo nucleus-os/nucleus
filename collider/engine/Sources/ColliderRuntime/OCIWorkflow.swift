@@ -86,7 +86,7 @@ extension ColliderRuntime {
 
         let reservedTargets = [FilePath("/tmp"), FilePath(ociConfiguration.guestHome)]
         var bindTargets: [(path: FilePath, isReadOnly: Bool)] = []
-        var persistentTargets: [FilePath] = []
+        var persistentTargets: [(path: FilePath, isReadOnly: Bool)] = []
         func normalizedMountTarget(_ rawTarget: String) throws -> FilePath {
             let target = FilePath(rawTarget).lexicallyNormalized()
             guard rawTarget.hasPrefix("/"), rawTarget != "/",
@@ -140,12 +140,19 @@ extension ColliderRuntime {
                     }
                     return !isReadOnly
                 }),
-                !persistentTargets.contains(where: { $0.overlaps(target) })
+                !persistentTargets.contains(where: { existing in
+                    guard existing.path.overlaps(target) else { return false }
+                    if existing.path == target { return true }
+                    if target.string.hasPrefix(existing.path.string + "/") {
+                        return !existing.isReadOnly
+                    }
+                    return !isReadOnly
+                })
             else {
                 throw RuntimeFailure.invalidOutput(
                     "invalid, duplicate, or overlapping OCI mount: \(mount.target)")
             }
-            persistentTargets.append(target)
+            persistentTargets.append((target, isReadOnly))
         }
 
         let output =
