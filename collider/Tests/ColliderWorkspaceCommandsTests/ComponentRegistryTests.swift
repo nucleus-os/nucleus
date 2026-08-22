@@ -267,7 +267,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     #expect(storageOwners["swift-target-sdk-generations"] == "swift-sdk")
     #expect(storageOwners["core-skia-inputs"] == "core")
     #expect(storageOwners["rn-boost-inputs"] == "rn")
-    #expect(storageOwners["android-aosp-build"] == "android-runtime")
+    #expect(storageOwners["android-aosp-build-x86_64"] == "android-runtime")
     #expect(storageOwners["linux-arm64-runtime-generations"] == "linux")
     #expect(storageOwners["linux-x86_64-runtime-generations"] == "linux")
     #expect(storageOwners["linux-arm64-native-package-generations"] == "linux")
@@ -2661,7 +2661,7 @@ private func artifactInput(
         Set(tasks.map(\.id)).isSuperset(of: [
             AndroidRuntimeTaskIDs.aospSourceLock,
             AndroidRuntimeTaskIDs.aospSource,
-            AndroidRuntimeTaskIDs.aospImage,
+            AndroidRuntimeTaskIDs.aospImage(.x86_64),
         ]))
     let sourceLock = try #require(
         tasks.first { $0.id == AndroidRuntimeTaskIDs.aospSourceLock })
@@ -2687,11 +2687,11 @@ private func artifactInput(
     #expect(!pipelineIDs.contains("android-runtime.aosp-builder-image"))
     #expect(
         pipelineIDs.suffix(5) == [
-            "android-runtime.aosp-compile",
-            "android-runtime.aosp-sign",
-            "android-runtime.aosp-assemble-images",
-            "android-runtime.aosp-validate",
-            "android-runtime.aosp-image",
+            "android-runtime.aosp-compile.x86_64",
+            "android-runtime.aosp-sign.x86_64",
+            "android-runtime.aosp-assemble-images.x86_64",
+            "android-runtime.aosp-validate.x86_64",
+            "android-runtime.aosp-image.x86_64",
         ])
     let productTasks = Array(tasks.suffix(5))
     let operations = productTasks.map(\.action)
@@ -2707,10 +2707,10 @@ private func artifactInput(
     let publicationPaths = publication.outputs.map(\.path)
     #expect(
         publicationPaths.contains(
-            FilePath("/artifacts/aosp/current")))
+            FilePath("/artifacts/aosp/x86_64/current")))
     #expect(
         publicationPaths.contains {
-            $0.string.contains("/artifacts/aosp/generations/")
+            $0.string.contains("/artifacts/aosp/x86_64/generations/")
                 && $0.string.hasSuffix("/images/system.img")
         })
     #expect(

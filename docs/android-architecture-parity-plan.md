@@ -97,32 +97,53 @@ bridge application calling a framework entry point that was never added. Each
 was invisible for the same reason: the lane that would have reported it was
 itself broken.
 
-## Phase 2: Add the arm64 Product
+## Phase 2: Build Every Product the Lock Declares
 
-`device/nucleus/nucleus_arm64` declares the four architecture settings for
-arm64 and inherits the shared tree. `AndroidProducts.mk` in each product
-directory names its own product. The product lock becomes one entry per
-architecture, and `AOSPProductLock.validate()` admits each product for its own
-architecture and no other.
+The image pipeline names one product throughout: the lock holds a single
+identity, and the generation, build root, staged archives, task identifiers,
+output workspace, compiler-cache workspace, storage declarations, and
+active-generation link are all derived from it. A second product cannot be added
+to a pipeline shaped like that, so the shape changes before the product does.
+
+The product lock becomes one entry per architecture, and
+`AOSPProductLock.validate()` admits each entry for its own architecture and no
+other. `aospProductImageTasks` produces one task graph per locked entry, each
+with its own generation, active-generation link, workspaces, storage, and task
+identifiers, and each recording provenance naming its own product. Source
+materialization stays shared: one Repo-managed checkout serves every product.
+
+This phase changes structure, not content. With one entry still declared, it
+builds exactly what it built before.
+
+Gate: the `nucleus_x86_64` product builds, signs, assembles, and validates from a
+lock that now expresses a set, publishing the same generation identity and raw
+image set as the phase before it.
+
+Status: complete. Gate evidence: run `2026-08-22T20-52-09.625Z-17569` compiled,
+signed, assembled, and validated through the per-product pipeline and published
+`1781652681-nucleus-android17-r1-cp2a-nucleus_x86_64-user-37-202604` with its
+complete raw image set, unchanged from the phase before.
+
+The output and compiler-cache workspaces stay shared. AOSP already separates
+products inside one output tree, and a product-specific ninja file beside shared
+host tooling is what makes a second product cheap rather than a second full
+build.
+
+## Phase 3: Add the arm64 Product
+
+`device/nucleus/nucleus_arm64` declares the four architecture settings for arm64
+and inherits the shared tree, and `AndroidProducts.mk` in each product directory
+names its own product. The lock gains its entry, which the pipeline already
+knows how to build.
 
 The native HALs and the gfxstream guest compile for arm64 under Soong. This is
-the phase where a genuine architecture dependency in the guest surfaces, and any
-that does is fixed in the shared tree rather than forked per product.
+where a genuine architecture dependency in the guest surfaces, and any that does
+is fixed in the shared tree rather than forked per product.
 
 Gate: `nucleus_arm64` compiles, assembles its complete raw image set, signs with
 the AVB identity the graph generates, and passes product validation with arm64
-provenance.
-
-## Phase 3: Build Both Products in the Graph
-
-`aospProductImageTasks` becomes one task graph per architecture. Each product
-has its own generation, active-generation link, output workspace, compiler cache
-workspace, and storage declarations, and records provenance naming its own
-product. Source materialization remains shared: one Repo-managed AOSP checkout
-serves both products.
-
-Gate: both generations exist simultaneously, each records its own product and
-architecture, and building one does not invalidate the other.
+provenance. Both generations exist simultaneously, and building one does not
+invalidate the other.
 
 ## Phase 4: Produce Both Package Inputs From the Graph
 

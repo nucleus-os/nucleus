@@ -14,7 +14,29 @@ package enum AndroidRuntimeTaskIDs {
     package static let aospSource = TaskID(rawValue: "android-runtime.aosp-source")
     package static let aospSourceInputs = TaskID(
         rawValue: "android-runtime.aosp-source-inputs")
-    package static let aospImage = TaskID(rawValue: "android-runtime.aosp-image")
+    /// One pipeline per locked product, named for the architecture it targets.
+    package static func aospImage(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "android-runtime.aosp-image.\(architecture.rawValue)")
+    }
+
+    package static func aospCompile(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "android-runtime.aosp-compile.\(architecture.rawValue)")
+    }
+
+    package static func aospSign(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "android-runtime.aosp-sign.\(architecture.rawValue)")
+    }
+
+    package static func aospAssembleImages(
+        _ architecture: PlatformArchitecture
+    ) -> TaskID {
+        TaskID(
+            rawValue: "android-runtime.aosp-assemble-images.\(architecture.rawValue)")
+    }
+
+    package static func aospValidate(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "android-runtime.aosp-validate.\(architecture.rawValue)")
+    }
     package static let apexManifestGenerate = TaskID(
         rawValue: "android-runtime.apex-manifest.generate")
     package static let apexManifestVerify = TaskID(
@@ -35,7 +57,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     package struct Artifacts: Sendable {
         package let gfxstream: [NativeLinuxTarget: GfxstreamArtifacts]
-        package let activeAOSPGeneration: ArtifactReference
     }
 
     package struct PreparedComponent: Sendable {
@@ -109,7 +130,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     package struct AOSPImageArtifacts: Sendable {
         package let tasks: [TaskDeclaration]
-        package let activeGeneration: ArtifactReference
+        /// One active generation per locked product.
+        package let activeGenerations: [PlatformArchitecture: ArtifactReference]
+
+        package var architectures: [PlatformArchitecture] {
+            activeGenerations.keys.sorted { $0.rawValue < $1.rawValue }
+        }
     }
 
     public static func makeComponent(
@@ -183,17 +209,25 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 roots: [AndroidRuntimeTaskIDs.aospSource]),
             ComponentEntrypoint(
                 id: ComponentEntrypointID(rawValue: "aosp.image"),
-                roots: [AndroidRuntimeTaskIDs.aospImage]),
+                roots: Set(
+                    aosp.architectures.map { AndroidRuntimeTaskIDs.aospImage($0) })),
         ]
         var platformStorage: [StorageDeclaration] = []
         if let configuration = try context.configurationIfPresent(
             AndroidPackageInputConfiguration.self,
             for: descriptor.id)
         {
+            guard
+                let generation = aosp.activeGenerations[configuration.architecture]
+            else {
+                throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
+                    "no product is locked for "
+                        + configuration.architecture.rawValue)
+            }
             let package = try packageInputTask(
                 configuration: configuration,
                 repositoryRoot: context.repositoryRoot,
-                managedAOSPGeneration: aosp.activeGeneration)
+                managedAOSPGeneration: generation)
             tasks.append(package)
             entrypoints.append(
                 ComponentEntrypoint(
@@ -218,14 +252,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     retentionPolicy: .protected),
             ]
         }
-        let aospProductProducers = Set(
-            [
-                "android-runtime.aosp-compile",
-                "android-runtime.aosp-sign",
-                "android-runtime.aosp-assemble-images",
-                "android-runtime.aosp-validate",
-                AndroidRuntimeTaskIDs.aospImage.rawValue,
-            ].map { StorageProducer.task(TaskID(rawValue: $0)) })
         var storage = [
             // What generation produces. The committed copy beside the sources
             // is authored state no task declares itself the producer of.
@@ -278,7 +304,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             StorageDeclaration(
                 id: "android-aosp-artifact-root",
                 owner: descriptor.id,
-                producers: [.task(AndroidRuntimeTaskIDs.aospImage)],
+                producers: Set(
+                    aosp.architectures.map {
+                        StorageProducer.task(AndroidRuntimeTaskIDs.aospImage($0))
+                    }),
                 storageClass: .published,
                 root: aospBuildRoot,
                 safetyRoot: aospBuildRoot.removingLastComponent(),
@@ -291,18 +320,32 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 root: aospBuildRoot.appending("source-state"),
                 safetyRoot: aospBuildRoot,
                 retentionPolicy: .singleWorkingSet),
-            StorageDeclaration(
-                id: "android-aosp-build",
-                owner: descriptor.id,
-                producers: aospProductProducers,
-                storageClass: .generation,
-                root: aospBuildRoot.appending("generations"),
-                safetyRoot: aospBuildRoot,
-                retentionPolicy: .keepActiveAndRollback(count: rollbackGenerationCount),
-                activeGenerationLink: aospBuildRoot.appending("current"),
-                generationNaming: .aospProduct,
-                interruptedCandidateNaming: nil),
         ]
+        // Generations separate per product: each has its own active link, and
+        // publishing one must not retire another architecture's.
+        for architecture in aosp.architectures {
+            let productRoot = aospBuildRoot.appending(architecture.rawValue)
+            storage.append(
+                StorageDeclaration(
+                    id: "android-aosp-build-\(architecture.rawValue)",
+                    owner: descriptor.id,
+                    producers: Set(
+                        [
+                            AndroidRuntimeTaskIDs.aospCompile(architecture),
+                            AndroidRuntimeTaskIDs.aospSign(architecture),
+                            AndroidRuntimeTaskIDs.aospAssembleImages(architecture),
+                            AndroidRuntimeTaskIDs.aospValidate(architecture),
+                            AndroidRuntimeTaskIDs.aospImage(architecture),
+                        ].map { StorageProducer.task($0) }),
+                    storageClass: .generation,
+                    root: productRoot.appending("generations"),
+                    safetyRoot: productRoot,
+                    retentionPolicy: .keepActiveAndRollback(
+                        count: rollbackGenerationCount),
+                    activeGenerationLink: productRoot.appending("current"),
+                    generationNaming: .aospProduct,
+                    interruptedCandidateNaming: nil))
+        }
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
             let sdkRoot = native.nativeSDK(for: target)
@@ -327,9 +370,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             generatedSources: protobuf.mappings)
         return PreparedComponent(
             component: component,
-            artifacts: Artifacts(
-                gfxstream: gfxstreamArtifacts,
-                activeAOSPGeneration: aosp.activeGeneration))
+            artifacts: Artifacts(gfxstream: gfxstreamArtifacts))
     }
 
     private static func aospProductSourceOverlays(
@@ -513,7 +554,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             artifactTool: artifactTool)
         return AOSPImageArtifacts(
             tasks: source.tasks + [signing.task] + product.tasks,
-            activeGeneration: product.activeGeneration)
+            activeGenerations: product.activeGenerations)
     }
 
     private static func aospRepoLauncher(
@@ -733,6 +774,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private struct PublishedAOSPArtifacts {
         let tasks: [TaskDeclaration]
+        let activeGenerations: [PlatformArchitecture: ArtifactReference]
+    }
+
+    private struct ProductPipeline {
+        let tasks: [TaskDeclaration]
         let activeGeneration: ArtifactReference
     }
 
@@ -753,43 +799,81 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             AOSPProductLock.self,
             from: Data(contentsOf: URL(fileURLWithPath: lockPath.string)))
         try lock.validate()
+        var tasks: [TaskDeclaration] = []
+        var activeGenerations: [PlatformArchitecture: ArtifactReference] = [:]
+        for entry in lock.products {
+            let published = try aospProductPipeline(
+                entry: entry,
+                root: root,
+                identityRoot: identityRoot,
+                sourceWorkspace: sourceWorkspace,
+                sourceInputs: sourceInputs,
+                aospBuildRoot: aospBuildRoot,
+                environment: environment,
+                sourceProvenance: sourceProvenance,
+                signing: signing,
+                buildTool: buildTool,
+                artifactTool: artifactTool)
+            tasks += published.tasks
+            activeGenerations[entry.architecture] = published.activeGeneration
+        }
+        return PublishedAOSPArtifacts(
+            tasks: tasks,
+            activeGenerations: activeGenerations)
+    }
+
+    /// One product's pipeline, from compilation through publication.
+    private static func aospProductPipeline(
+        entry: AOSPProductEntry,
+        root: FilePath,
+        identityRoot: FilePath,
+        sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceInputs: FilePath,
+        aospBuildRoot: FilePath,
+        environment: [String: String],
+        sourceProvenance: ArtifactReference,
+        signing: SigningArtifacts,
+        buildTool: OCIMountedEntrypoint,
+        artifactTool: OCIMountedEntrypoint
+    ) throws -> ProductPipeline {
         let signingIdentity = identityRoot.appending(
             "android-runtime/aosp-signing/local-development")
         let productIdentity = Array(
             [
-                lock.product,
-                lock.release,
-                lock.variant,
-                lock.buildNumber,
-                String(lock.buildTimestamp),
-                String(lock.platformSDK),
-                String(lock.vendorAPILevel),
+                entry.product,
+                entry.release,
+                entry.variant,
+                entry.buildNumber,
+                String(entry.buildTimestamp),
+                String(entry.platformSDK),
+                String(entry.vendorAPILevel),
             ].joined(separator: "\0").utf8)
         let generationID = [
-            String(lock.buildTimestamp),
-            lock.buildNumber,
-            lock.release,
-            lock.product,
-            lock.variant,
-            String(lock.platformSDK),
-            String(lock.vendorAPILevel),
+            String(entry.buildTimestamp),
+            entry.buildNumber,
+            entry.release,
+            entry.product,
+            entry.variant,
+            String(entry.platformSDK),
+            String(entry.vendorAPILevel),
         ].joined(separator: "-")
+        let productRoot = aospBuildRoot.appending(entry.architecture.rawValue)
         let buildRoot =
-            aospBuildRoot
+            productRoot
             .appending("generations")
             .appending(generationID)
-        let active = aospBuildRoot.appending("current")
+        let active = productRoot.appending("current")
         let signed = buildRoot.appending("signed")
         let images = buildRoot.appending("images")
         let unsigned = buildRoot.appending(
-            "unsigned/\(lock.product)-target_files.zip")
+            "unsigned/\(entry.product)-target_files.zip")
         let unsignedDigest = buildRoot.appending(
-            "unsigned/\(lock.product)-target_files.zip.sha256")
+            "unsigned/\(entry.product)-target_files.zip.sha256")
         let staged = buildRoot.appending("staged")
         let stagedTargetFiles = staged.appending(
-            "\(lock.product)-target_files.zip")
+            "\(entry.product)-target_files.zip")
         let stagedImageArchive = staged.appending(
-            "\(lock.product)-images.zip")
+            "\(entry.product)-images.zip")
         let stagedImages = staged.appending("images")
         let stagedProvenance = staged.appending(
             "image-provenance.json")
@@ -799,25 +883,25 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             sourceProvenance: sourceProvenance.path,
             artifactRoot: buildRoot,
             sourceWorkspace: sourceWorkspace,
-            outputWorkspace: aospOutputWorkspace(apiLevel: lock.platformSDK),
+            outputWorkspace: aospOutputWorkspace(apiLevel: entry.platformSDK),
             compilerCacheWorkspace: aospCompilerCacheWorkspace(
-                apiLevel: lock.platformSDK),
+                apiLevel: entry.platformSDK),
             buildEntrypoint: buildTool,
             artifactEntrypoint: artifactTool,
             signingIdentity: signingIdentity,
-            product: lock.product,
-            release: lock.release,
-            variant: lock.variant,
-            buildNumber: lock.buildNumber,
-            buildTimestamp: lock.buildTimestamp,
-            buildJobs: lock.buildJobs,
-            expectedPlatformSDK: lock.platformSDK,
-            expectedVendorAPILevel: lock.vendorAPILevel,
+            product: entry.product,
+            release: entry.release,
+            variant: entry.variant,
+            buildNumber: entry.buildNumber,
+            buildTimestamp: entry.buildTimestamp,
+            buildJobs: entry.buildJobs,
+            expectedPlatformSDK: entry.platformSDK,
+            expectedVendorAPILevel: entry.vendorAPILevel,
             environment: environment,
             sourceOverlays: aospProductSourceOverlays(root: root))
         let requiredImages = aospRequiredProductImages
         var compileBuilder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.aosp-compile"),
+            id: AndroidRuntimeTaskIDs.aospCompile(entry.architecture),
             component: component)
         compileBuilder.consume(sourceProvenance)
         compileBuilder.consume(buildTool.image)
@@ -856,7 +940,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             task: compileTask,
             unsignedTargetFiles: unsignedReference)
         var signBuilder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.aosp-sign"),
+            id: AndroidRuntimeTaskIDs.aospSign(entry.architecture),
             component: component)
         signBuilder.consume(signing.identity)
         signBuilder.consume(signing.directory)
@@ -884,7 +968,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     SignAOSPProductAction(build: build))
         )
         var assembleBuilder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
+            id: AndroidRuntimeTaskIDs.aospAssembleImages(entry.architecture),
             component: component)
         assembleBuilder.consume(stagedTargetFilesReference)
         assembleBuilder.consume(artifactTool.image)
@@ -921,7 +1005,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             imageArchive: stagedArchiveReference,
             images: stagedImageReferences)
         var validateBuilder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.aosp-validate"),
+            id: AndroidRuntimeTaskIDs.aospValidate(entry.architecture),
             component: component)
         validateBuilder.consume(sourceProvenance)
         validateBuilder.consume(signing.identity)
@@ -958,7 +1042,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     ValidateAOSPProductAction(build: build))
         )
         var publishBuilder = TaskBuilder(
-            id: AndroidRuntimeTaskIDs.aospImage,
+            id: AndroidRuntimeTaskIDs.aospImage(entry.architecture),
             component: component)
         publishBuilder.consume(stagedProvenanceReference)
         publishBuilder.consume(assemble.targetFiles)
@@ -972,11 +1056,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             validation: .json)
         let _: ArtifactReference = try publishBuilder.output(
             "target-files",
-            path: signed.appending("\(lock.product)-target_files.zip"),
+            path: signed.appending("\(entry.product)-target_files.zip"),
             validation: .regularFile)
         let _: ArtifactReference = try publishBuilder.output(
             "image-archive",
-            path: signed.appending("\(lock.product)-images.zip"),
+            path: signed.appending("\(entry.product)-images.zip"),
             validation: .regularFile)
         let activeGeneration: ArtifactReference = try publishBuilder.output(
             "active-generation",
@@ -995,7 +1079,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     PublishAOSPProductAction(build: build))
         )
-        return PublishedAOSPArtifacts(
+        return ProductPipeline(
             tasks: [compile.task, sign, assemble.task, validate, publish],
             activeGeneration: activeGeneration)
     }
@@ -1424,7 +1508,8 @@ private struct AOSPSourceLock: Decodable {
     }
 }
 
-private struct AOSPProductLock: Decodable {
+private struct AOSPProductEntry: Decodable {
+    let architecture: PlatformArchitecture
     let product: String
     let release: String
     let variant: String
@@ -1434,8 +1519,11 @@ private struct AOSPProductLock: Decodable {
     let vendorAPILevel: UInt32
     let buildJobs: UInt32
 
+    /// One product per architecture, named for the architecture it targets.
+    /// The guest is one device tree, so everything except the product name and
+    /// the architecture is identical across entries.
     func validate() throws {
-        guard product == "nucleus_x86_64",
+        guard product == "nucleus_\(architecture.rawValue)",
             release == "cp2a",
             variant == "user",
             buildNumber == "nucleus-android17-r1",
@@ -1447,6 +1535,29 @@ private struct AOSPProductLock: Decodable {
             throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
                 "product identity does not match the Android 17 "
                     + "Nucleus build contract")
+        }
+    }
+}
+
+private struct AOSPProductLock: Decodable {
+    let products: [AOSPProductEntry]
+
+    /// One platform serves every product: the guest is one device tree, and
+    /// validation rejects an entry that disagrees.
+    var platformSDK: UInt32 { products.first?.platformSDK ?? 0 }
+
+    func validate() throws {
+        guard !products.isEmpty else {
+            throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
+                "the product lock declares no product")
+        }
+        let architectures = products.map(\.architecture)
+        guard Set(architectures).count == architectures.count else {
+            throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
+                "one architecture declares more than one product")
+        }
+        for entry in products {
+            try entry.validate()
         }
     }
 }
