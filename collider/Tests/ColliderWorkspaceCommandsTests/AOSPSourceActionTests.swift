@@ -401,6 +401,7 @@ import Testing
         try AnyColliderAction(
             CompileAOSPProductAction(
                 build: AOSPProductBuild(
+                    architecture: .x86_64,
                     deviceSource: root.appending("product"),
                     sourceInputs: root.appending("product"),
                     sourceProvenance: root.appending("source-provenance.json"),
@@ -460,6 +461,7 @@ import Testing
     try Data("fixture-image".utf8).write(to: imageID)
     let product = "nucleus_x86_64"
     let build = AOSPProductBuild(
+        architecture: .x86_64,
         deviceSource: FilePath(deviceSource.path),
         sourceInputs: FilePath(deviceSource.path),
         sourceProvenance: FilePath(provenance.path),
@@ -553,6 +555,7 @@ import Testing
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
+        architecture: .x86_64,
         deviceSource: FilePath(fixture.root.path),
         sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
@@ -691,6 +694,7 @@ import Testing
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
+        architecture: .x86_64,
         deviceSource: FilePath(fixture.root.path),
         sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
@@ -774,6 +778,7 @@ import Testing
     try Data("system-image".utf8).write(
         to: stagedImages.appendingPathComponent("system.img"))
     let build = AOSPProductBuild(
+        architecture: .x86_64,
         deviceSource: FilePath(fixture.root.path),
         sourceInputs: FilePath(fixture.root.path),
         sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),

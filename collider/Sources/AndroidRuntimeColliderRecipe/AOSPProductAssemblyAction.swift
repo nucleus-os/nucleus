@@ -59,8 +59,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                     access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: .androidX86_64(
-                apiLevel: build.expectedPlatformSDK))
+            artifactTarget: build.artifactTarget)
     }
 
     var environment: [String: String] { build.environment }
@@ -215,7 +214,7 @@ func aospProductOCIExecution(
         phase == .build ? build.buildEntrypoint : build.artifactEntrypoint
     return OCIExecution(
         executionPlatform: .linuxARM64OCI,
-        artifactTarget: .androidX86_64(apiLevel: build.expectedPlatformSDK),
+        artifactTarget: build.artifactTarget,
         imageID: entrypoint.image.path,
         hostname: "android-build",
         workingDirectory: workingDirectory,

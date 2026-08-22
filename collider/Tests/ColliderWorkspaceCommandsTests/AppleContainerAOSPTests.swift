@@ -25,6 +25,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         FilePath(root.appendingPathComponent(name).path)
     }
     let build = AOSPProductBuild(
+        architecture: .x86_64,
         deviceSource: path("device"),
         sourceInputs: path("source-inputs"),
         sourceProvenance: path("source-provenance.json"),

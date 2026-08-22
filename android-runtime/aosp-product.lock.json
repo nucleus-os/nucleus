@@ -1,6 +1,17 @@
 {
   "products": [
     {
+      "architecture": "arm64",
+      "product": "nucleus_arm64",
+      "release": "cp2a",
+      "variant": "user",
+      "buildNumber": "nucleus-android17-r1",
+      "buildTimestamp": 1781652681,
+      "platformSDK": 37,
+      "vendorAPILevel": 202604,
+      "buildJobs": 24
+    },
+    {
       "architecture": "x86_64",
       "product": "nucleus_x86_64",
       "release": "cp2a",

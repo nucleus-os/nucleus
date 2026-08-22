@@ -257,7 +257,7 @@ struct MaterializeAOSPSourceAction: ColliderAction {
                     access: .readWrite)
             ],
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: materialization.sourceWorkspace.identity.artifactTarget)
+            artifactTarget: .linuxARM64)
     }
 
     var environment: [String: String] { materialization.environment }
@@ -266,7 +266,9 @@ struct MaterializeAOSPSourceAction: ColliderAction {
         try context.files.createDirectory(export)
         let execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: materialization.sourceWorkspace.identity.artifactTarget,
+            // Materialization checks source out; it produces no artifact for a
+            // target, so it names the platform it runs on.
+            artifactTarget: .linuxARM64,
             imageID: materialization.entrypoint.image.path,
             hostname: "aosp-source",
             workingDirectory: "/src",

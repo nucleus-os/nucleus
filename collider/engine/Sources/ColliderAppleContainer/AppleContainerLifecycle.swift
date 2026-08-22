@@ -305,7 +305,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         let target = "/collider-workspace"
         let execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: workspace.identity.artifactTarget,
+            artifactTarget: workspace.identity.artifactTarget ?? .linuxARM64,
             imageID: FilePath("/collider/workspace-reclaim"),
             hostname: "collider-workspace-reclaim",
             workingDirectory: "/",
@@ -355,7 +355,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         let target = "/collider-workspace"
         let execution = OCIExecution(
             executionPlatform: request.execution.executionPlatform,
-            artifactTarget: mount.workspace.identity.artifactTarget,
+            artifactTarget: mount.workspace.identity.artifactTarget ?? .linuxARM64,
             imageID: request.execution.imageID,
             hostname: "collider-workspace-init",
             workingDirectory: "/",

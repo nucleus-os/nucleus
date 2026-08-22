@@ -104,8 +104,7 @@ struct ValidateAOSPProductAction: ColliderAction {
                     access: .readOnly),
             ],
             executionPlatform: .linuxARM64OCI,
-            artifactTarget: .androidX86_64(
-                apiLevel: build.expectedPlatformSDK))
+            artifactTarget: build.artifactTarget)
     }
 
     var environment: [String: String] { build.environment }

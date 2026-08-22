@@ -253,7 +253,10 @@ struct ApplePersistentWorkspaceManager: Sendable {
             role: role)
     }
 
-    private func targetName(_ target: ArtifactTarget) -> String {
+    /// A workspace holding no target's state is named for that, so it cannot
+    /// collide with one that does.
+    private func targetName(_ target: ArtifactTarget?) -> String {
+        guard let target else { return "any" }
         var fields = [
             target.operatingSystem.rawValue,
             target.architecture.rawValue,
@@ -265,8 +268,9 @@ struct ApplePersistentWorkspaceManager: Sendable {
         }.reduce(into: "") { $0.append($1) }
     }
 
-    private func encodedTarget(_ target: ArtifactTarget) -> String {
-        [
+    private func encodedTarget(_ target: ArtifactTarget?) -> String {
+        guard let target else { return "" }
+        return [
             target.operatingSystem.rawValue,
             target.architecture.rawValue,
             target.abi ?? "",

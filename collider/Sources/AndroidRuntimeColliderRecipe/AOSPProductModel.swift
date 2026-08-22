@@ -8,8 +8,8 @@ let aospSourceInputsTarget = "/inputs/source-inputs"
 func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
-            key: "aosp-output",
-            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            key: "aosp-output-api\(apiLevel)",
+            artifactTarget: nil,
             role: "build"),
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
@@ -26,8 +26,8 @@ func aospCompilerCacheWorkspace(
 ) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
-            key: "aosp-ccache",
-            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            key: "aosp-ccache-api\(apiLevel)",
+            artifactTarget: nil,
             role: "compiler-cache"),
         capacityBytes: 50 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
@@ -38,8 +38,8 @@ func aospCompilerCacheWorkspace(
 func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
-            key: "aosp-source",
-            artifactTarget: .androidX86_64(apiLevel: apiLevel),
+            key: "aosp-source-api\(apiLevel)",
+            artifactTarget: nil,
             role: "source"),
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
@@ -57,6 +57,7 @@ struct AOSPProductSourceOverlay: Hashable, Sendable {
 }
 
 struct AOSPProductBuild: Hashable, Sendable {
+    let architecture: PlatformArchitecture
     let deviceSource: FilePath
     /// The host-hydrated Repo cache. The materialized source references its
     /// object store rather than copying it, so every execution that mounts the
@@ -82,6 +83,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     let sourceOverlays: [AOSPProductSourceOverlay]
 
     init(
+        architecture: PlatformArchitecture,
         deviceSource: FilePath,
         sourceInputs: FilePath,
         sourceProvenance: FilePath,
@@ -103,6 +105,7 @@ struct AOSPProductBuild: Hashable, Sendable {
         environment: [String: String],
         sourceOverlays: [AOSPProductSourceOverlay] = []
     ) {
+        self.architecture = architecture
         self.deviceSource = deviceSource
         self.sourceInputs = sourceInputs
         self.sourceProvenance = sourceProvenance
@@ -160,6 +163,14 @@ struct AOSPProductBuild: Hashable, Sendable {
             workspace: compilerCacheWorkspace,
             target: "/ccache",
             access: .readWrite)
+    }
+
+    /// What this product's images run on.
+    var artifactTarget: ArtifactTarget {
+        switch architecture {
+        case .arm64: .androidARM64(apiLevel: expectedPlatformSDK)
+        case .x86_64: .androidX86_64(apiLevel: expectedPlatformSDK)
+        }
     }
 
     var assembledDeviceSource: FilePath {

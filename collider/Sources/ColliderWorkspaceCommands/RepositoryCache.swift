@@ -1231,9 +1231,13 @@ struct RepositoryCache {
                     "persistent-workspace:\(workspace.identity.key): \(workspace.state)\(warning), "
                         + "\(formatted(workspace.allocatedBytes)) allocated / "
                         + "\(formatted(workspace.capacityBytes)) logical")
+                let target = workspace.identity.artifactTarget
                 lines.append(
-                    "  \(workspace.identity.artifactTarget.operatingSystem.rawValue)/"
-                        + "\(workspace.identity.artifactTarget.architecture.rawValue) · "
+                    "  "
+                        + (target.map {
+                            "\($0.operatingSystem.rawValue)/\($0.architecture.rawValue)"
+                        } ?? "any target")
+                        + " · "
                         + workspace.identity.role
                         + (workspace.retentionPolicy.map { " · \($0.name)" } ?? ""))
                 lines.append("  \(workspace.name)")
@@ -1350,7 +1354,9 @@ struct RepositoryCache {
 }
 
 private func workspaceLabel(_ identity: PersistentWorkspaceIdentity) -> String {
-    let target = identity.artifactTarget
+    guard let target = identity.artifactTarget else {
+        return "\(identity.key):any:\(identity.role)"
+    }
     let abi = target.abi.map { "-\($0)" } ?? ""
     let api = target.androidAPILevel.map { "-api\($0)" } ?? ""
     return

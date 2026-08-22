@@ -219,12 +219,17 @@ public struct OCIMountedEntrypoint: Hashable, Sendable {
 
 public struct PersistentWorkspaceIdentity: Codable, Hashable, Sendable {
     public let key: String
-    public let artifactTarget: ArtifactTarget
+    /// The target whose state this workspace holds, or nil when it holds none.
+    ///
+    /// Source a build reads and host tooling it produces belong to no single
+    /// artifact target, and one checkout serving several products is the point
+    /// of materializing it once.
+    public let artifactTarget: ArtifactTarget?
     public let role: String
 
     public init(
         key: String,
-        artifactTarget: ArtifactTarget,
+        artifactTarget: ArtifactTarget?,
         role: String
     ) {
         self.key = key
@@ -235,10 +240,10 @@ public struct PersistentWorkspaceIdentity: Codable, Hashable, Sendable {
     package var schedulingKey: String {
         let fields = [
             key,
-            artifactTarget.operatingSystem.rawValue,
-            artifactTarget.architecture.rawValue,
-            artifactTarget.abi ?? "",
-            artifactTarget.androidAPILevel.map(String.init) ?? "",
+            artifactTarget?.operatingSystem.rawValue ?? "",
+            artifactTarget?.architecture.rawValue ?? "",
+            artifactTarget?.abi ?? "",
+            artifactTarget?.androidAPILevel.map(String.init) ?? "",
             role,
         ]
         return fields.map { "\($0.utf8.count):\($0)" }.joined(separator: ":")

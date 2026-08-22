@@ -808,11 +808,11 @@ private func append(
     into encoder: inout IdentityEncoder
 ) {
     encoder.append(workspace.identity.key)
-    encoder.appendEnum(workspace.identity.artifactTarget.operatingSystem)
-    encoder.appendEnum(workspace.identity.artifactTarget.architecture)
-    encoder.appendOptional(workspace.identity.artifactTarget.abi) { $0.append($1) }
-    encoder.appendOptional(workspace.identity.artifactTarget.androidAPILevel) {
-        $0.append(UInt64($1))
+    encoder.appendOptional(workspace.identity.artifactTarget) { target, value in
+        target.appendEnum(value.operatingSystem)
+        target.appendEnum(value.architecture)
+        target.appendOptional(value.abi) { $0.append($1) }
+        target.appendOptional(value.androidAPILevel) { $0.append(UInt64($1)) }
     }
     encoder.append(workspace.identity.role)
     encoder.append(workspace.capacityBytes)

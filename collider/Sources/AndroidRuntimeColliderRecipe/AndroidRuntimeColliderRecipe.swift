@@ -878,6 +878,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let stagedProvenance = staged.appending(
             "image-provenance.json")
         let build = AOSPProductBuild(
+            architecture: entry.architecture,
             deviceSource: root.appending("aosp/device/nucleus"),
             sourceInputs: sourceInputs,
             sourceProvenance: sourceProvenance.path,
@@ -918,7 +919,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .sourceCheckout(root.appending("aosp/device/nucleus")),
+                .sourceCheckout(root.appending("aosp/device/nucleus/common")),
+                .sourceCheckout(
+                    root.appending("aosp/device/nucleus/\(entry.product)")),
                 .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),
@@ -1025,7 +1028,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .sourceCheckout(root.appending("aosp/device/nucleus")),
+                .sourceCheckout(root.appending("aosp/device/nucleus/common")),
+                .sourceCheckout(
+                    root.appending("aosp/device/nucleus/\(entry.product)")),
                 .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),

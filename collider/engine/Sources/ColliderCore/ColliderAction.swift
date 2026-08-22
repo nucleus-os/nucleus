@@ -286,13 +286,14 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         }
         encoder.appendSequence(execution.persistentWorkspaceMounts) { workspace, mount in
             workspace.append(mount.workspace.identity.key)
-            workspace.appendEnum(mount.workspace.identity.artifactTarget.operatingSystem)
-            workspace.appendEnum(mount.workspace.identity.artifactTarget.architecture)
-            workspace.appendOptional(mount.workspace.identity.artifactTarget.abi) {
-                $0.append($1)
-            }
-            workspace.appendOptional(mount.workspace.identity.artifactTarget.androidAPILevel) {
-                $0.append(UInt64($1))
+            workspace.appendOptional(mount.workspace.identity.artifactTarget) {
+                target, value in
+                target.appendEnum(value.operatingSystem)
+                target.appendEnum(value.architecture)
+                target.appendOptional(value.abi) { $0.append($1) }
+                target.appendOptional(value.androidAPILevel) {
+                    $0.append(UInt64($1))
+                }
             }
             workspace.append(mount.workspace.identity.role)
             workspace.append(mount.target)
@@ -724,7 +725,12 @@ public struct AnyColliderAction: Hashable, Sendable {
             default:
                 throw ActionDeclarationFailure.invalidPersistentWorkspaceRetention(identity)
             }
-            guard identity.artifactTarget == requirements.artifactTarget else {
+            // A workspace holding no target's state may be mounted by any
+            // action; one that does must match.
+            guard
+                identity.artifactTarget == nil
+                    || identity.artifactTarget == requirements.artifactTarget
+            else {
                 throw ActionDeclarationFailure.persistentWorkspaceTargetMismatch(
                     workspace: identity,
                     artifactTarget: requirements.artifactTarget)
