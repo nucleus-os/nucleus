@@ -106,6 +106,8 @@ jobs:
             "$(stat -f '%u' "${GITHUB_WORKSPACE}")"
           test "$(id -un)" = nucleus-builder
           test "$(stat -f '%Su' "${GITHUB_WORKSPACE}")" = nucleus-builder
+      - name: Verify the builder host contract
+        run: collider doctor ci-macos-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
       - name: Build the catalog

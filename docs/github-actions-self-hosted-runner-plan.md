@@ -819,7 +819,8 @@ the declared recovery gate completes.
 
 ## Phase 6: Define One Complete Verification Graph
 
-Status: the test lane runs on protected main.
+Status: the host-contract, provenance, build, and test lanes run on protected
+main.
 
 Adding it found what a build-only graph had been hiding. Neither staged native
 SDK could be read where it is used: the render SDK and the React Native SDK
