@@ -887,17 +887,19 @@ describing a graph.
 
 What remains is not plumbing. AOSP is pinned to one product, `nucleus_x86_64`,
 and the materialization verifies that the generation's provenance matches the
-architecture it packages for. The native package cohort declares
-`nucleus-android` as an architecture-specific member for both architectures, so
-the arm64 cohort names a package no AOSP product in this repository can
-produce. Either the repository gains an arm64 Android product, or
-`nucleus-android` becomes x86_64-only and the cohort contract changes with it.
+architecture it packages for, so the arm64 cohort names an exact
+`nucleus-android` member no product in this repository can produce. Both
+architectures are supported equally, so the repository gains an arm64 product
+rather than narrowing the cohort. The
+[Android architecture parity plan](android-architecture-parity-plan.md) owns
+that work and produces both package inputs from the build graph, and this
+phase's packaging lane consumes them.
 
-That answer decides how the input is selected, so selection is not wired yet.
-The materialization can run in the builder image; nothing in the macOS catalog
-declares it, and the packaging lane still reads the input as a supplied tree
-with no producing task. Wiring one architecture while the other is supplied by
-path would build a conditional that the arm64 answer immediately discards.
+Selection is therefore wired there rather than here. The materialization runs in
+the builder image, nothing in the catalog declares it yet, and the packaging
+lane still reads the input as a supplied tree with no producing task. Wiring one
+architecture while the other is supplied by path would build a conditional that
+the arm64 product immediately discards.
 
 Define the required verification graph once as a sequence of existing Collider
 commands. Automated `main`, GitHub manual, and a local request for the complete

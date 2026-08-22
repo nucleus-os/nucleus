@@ -38,41 +38,46 @@ reuse.
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-3. Complete Phases 6 and 7 of the
+3. Complete Phases 1 through 5 of the
+   [Android architecture parity plan](android-architecture-parity-plan.md) so
+   both supported architectures have an AOSP product and every native package
+   cohort member is produced by the build graph. The arm64 cohort otherwise
+   declares an exact `nucleus-android` member the repository cannot produce.
+4. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
    The graph lands with the remaining Linux-runtime packaging mounts and proves
    them through an actual `collider package linux-runtime` execution.
-4. Complete Phases 5 and 6 of the
+5. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-5. Complete Phases 6 and 7 of the
+6. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-6. Complete the remaining qualification plans in the order listed below. Their
+7. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
-7. Complete Phase 7 of the
+8. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
    and R2 authorities.
-8. Complete Phase 8 of the
+9. Complete Phase 8 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    against the native package, repository, and qualification pipeline.
-9. Complete Phase 8 of the
+10. Complete Phase 8 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish and qualify native update lifecycles.
-10. Complete Phase 9 of the
+11. Complete Phase 9 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
    product-artifact contract.
-11. Complete Phases 2 through 6 of
+12. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-12. Complete Phases 3 through 10 of the
+13. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
@@ -80,7 +85,7 @@ reuse.
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
 
-Step 6 executes these qualification plans after their corresponding
+Step 7 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
