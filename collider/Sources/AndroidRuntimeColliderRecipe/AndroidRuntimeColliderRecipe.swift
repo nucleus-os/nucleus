@@ -183,7 +183,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 roots: [AndroidRuntimeTaskIDs.aospImage]),
         ]
         var platformStorage: [StorageDeclaration] = []
-        #if os(Linux)
         if let configuration = try context.configurationIfPresent(
             AndroidPackageInputConfiguration.self,
             for: descriptor.id)
@@ -216,7 +215,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     retentionPolicy: .protected),
             ]
         }
-        #endif
         let aospProductProducers = Set(
             [
                 "android-runtime.aosp-compile",

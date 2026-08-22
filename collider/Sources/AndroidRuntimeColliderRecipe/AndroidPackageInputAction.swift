@@ -3,6 +3,16 @@ import SystemPackage
 
 public struct AndroidPackageInputConfiguration: RecipeConfiguration {
     public let swiftPM: SwiftPMInvocation
+    /// Builds the tool that materializes the input inside the builder image.
+    /// Absent only where the materialization runs natively, on a Linux host
+    /// operating its own installed runtime.
+    public let assemblerSwiftPM: SwiftPMInvocation?
+    /// The architecture the packaged Android payload is for.
+    ///
+    /// Not the architecture running the materialization: an arm64 builder
+    /// packages whichever AOSP product the generation actually holds, and the
+    /// provenance check below is what confirms the two agree.
+    public let architecture: PlatformArchitecture
     public let runtimeRoot: FilePath?
     public let runtimeScratch: FilePath
     public let aospGeneration: FilePath
@@ -11,10 +21,13 @@ public struct AndroidPackageInputConfiguration: RecipeConfiguration {
     public let output: FilePath
     public let appArmorPolicy: FilePath
     public let seccompPolicy: FilePath
+    public let placement: IdentityPathMap
     public let environment: [String: String]
 
     public init(
         swiftPM: SwiftPMInvocation,
+        assemblerSwiftPM: SwiftPMInvocation? = nil,
+        architecture: PlatformArchitecture,
         runtimeRoot: FilePath?,
         runtimeScratch: FilePath,
         aospGeneration: FilePath,
@@ -23,9 +36,12 @@ public struct AndroidPackageInputConfiguration: RecipeConfiguration {
         output: FilePath,
         appArmorPolicy: FilePath,
         seccompPolicy: FilePath,
+        placement: IdentityPathMap = .empty,
         environment: [String: String]
     ) {
         self.swiftPM = swiftPM
+        self.assemblerSwiftPM = assemblerSwiftPM
+        self.architecture = architecture
         self.runtimeRoot = runtimeRoot
         self.runtimeScratch = runtimeScratch
         self.aospGeneration = aospGeneration
@@ -34,14 +50,10 @@ public struct AndroidPackageInputConfiguration: RecipeConfiguration {
         self.output = output
         self.appArmorPolicy = appArmorPolicy
         self.seccompPolicy = seccompPolicy
+        self.placement = placement
         self.environment = environment
     }
 }
-
-#if os(Linux)
-import Foundation
-import NucleusAndroidRuntimeCore
-import ShellColliderRecipe
 
 extension AndroidRuntimeColliderRecipe {
     static func packageInputTask(
@@ -55,7 +67,7 @@ extension AndroidRuntimeColliderRecipe {
             "nucleus-android-gfxstream-broker",
             "nucleus-android-display-host",
         ]
-        let products =
+        var products =
             configuration.runtimeRoot == nil
             ? productNames.map { product in
                 configuration.swiftPM.product(
@@ -82,6 +94,21 @@ extension AndroidRuntimeColliderRecipe {
         } else {
             inputs.append(configuration.swiftPM.identityInput)
         }
+        if let assemblerSwiftPM = configuration.assemblerSwiftPM {
+            let tool = "nucleus-android-package-input"
+            products.append(
+                assemblerSwiftPM.product(
+                    package: "collider-cli",
+                    product: tool,
+                    packageRoot: assemblerSwiftPM.context.packageRoot,
+                    environment: configuration.environment,
+                    expectedOutputs: [
+                        PathPostcondition(
+                            path: assemblerSwiftPM.executable(tool),
+                            validation: .executableFile)
+                    ]))
+            inputs.append(assemblerSwiftPM.identityInput)
+        }
         var builder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.package-input"),
             component: descriptor.id)
@@ -100,14 +127,47 @@ extension AndroidRuntimeColliderRecipe {
                     configuration.output.removingLastComponent().appending(
                         ".android-package-input.lock"))
             ],
-            action:
-                try AnyColliderAction(
-                    MaterializeAndroidPackageInputAction(configuration: configuration)))
+            action: try packageInputAction(configuration))
+    }
+
+    /// A Linux host operating its own installed runtime materializes the input
+    /// directly. Every other host runs the same materialization inside the
+    /// builder image, because a native action is admitted only on a runner
+    /// whose operating system matches it.
+    private static func packageInputAction(
+        _ configuration: AndroidPackageInputConfiguration
+    ) throws -> AnyColliderAction {
+        if let assemblerSwiftPM = configuration.assemblerSwiftPM {
+            return try AnyColliderAction(
+                PublishAndroidPackageInputAction(
+                    runtimeSwiftPM: configuration.swiftPM,
+                    assemblerSwiftPM: assemblerSwiftPM,
+                    architecture: configuration.architecture,
+                    aospGeneration: configuration.aospGeneration,
+                    aospSigningKey: configuration.aospSigningKey,
+                    runtimeScratch: configuration.runtimeScratch,
+                    output: configuration.output,
+                    appArmorPolicy: configuration.appArmorPolicy,
+                    seccompPolicy: configuration.seccompPolicy,
+                    placement: configuration.placement,
+                    environment: configuration.environment))
+        }
+        #if os(Linux)
+        return try AnyColliderAction(
+            MaterializeAndroidPackageInputAction(configuration: configuration))
+        #else
+        throw AndroidPackageInputExecutionFailure.requiresOCI
+        #endif
     }
 }
 
-struct MaterializeAndroidPackageInputAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
+#if os(Linux)
+import Foundation
+import NucleusAndroidRuntimeCore
+import ShellColliderRecipe
+
+package struct MaterializeAndroidPackageInputAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
         let runtimeProducts: FilePath
         let runtimeRoot: FilePath?
         let runtimeScratch: FilePath
@@ -116,8 +176,9 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
         let output: FilePath
         let appArmorPolicy: FilePath
         let seccompPolicy: FilePath
+        let architecture: PlatformArchitecture
 
-        func encode(into encoder: inout IdentityEncoder) {
+        package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: runtimeProducts)
             encoder.append(runtimeRoot?.string ?? "")
             encoder.append(path: runtimeScratch)
@@ -126,10 +187,11 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
             encoder.append(path: output)
             encoder.append(path: appArmorPolicy)
             encoder.append(path: seccompPolicy)
+            encoder.appendEnum(architecture)
         }
     }
 
-    static let kind: ActionKind = "android-runtime.package-input"
+    package static let kind: ActionKind = "android-runtime.package-input"
 
     let runtimeProducts: FilePath
     let runtimeRoot: FilePath?
@@ -139,9 +201,10 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
     let output: FilePath
     let appArmorPolicy: FilePath
     let seccompPolicy: FilePath
+    let architecture: PlatformArchitecture
     let environment: [String: String]
 
-    var identity: Identity {
+    package var identity: Identity {
         Identity(
             runtimeProducts: runtimeProducts,
             runtimeRoot: runtimeRoot,
@@ -150,10 +213,11 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
             aospSigningKey: aospSigningKey,
             output: output,
             appArmorPolicy: appArmorPolicy,
-            seccompPolicy: seccompPolicy)
+            seccompPolicy: seccompPolicy,
+            architecture: architecture)
     }
 
-    var requirements: ActionRequirements {
+    package var requirements: ActionRequirements {
         var effects = [
             ActionEffect(.read, scope: .input(runtimeProducts)),
             ActionEffect(.read, scope: .input(aospGeneration)),
@@ -193,18 +257,47 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
     }
 
     init(configuration: AndroidPackageInputConfiguration) {
-        runtimeProducts = configuration.swiftPM.productsDirectory
-        runtimeRoot = configuration.runtimeRoot
-        runtimeScratch = configuration.runtimeScratch
-        aospGeneration = configuration.aospGeneration
-        aospSigningKey = configuration.aospSigningKey
-        output = configuration.output
-        appArmorPolicy = configuration.appArmorPolicy
-        seccompPolicy = configuration.seccompPolicy
-        environment = configuration.environment
+        self.init(
+            runtimeProducts: configuration.swiftPM.productsDirectory,
+            runtimeRoot: configuration.runtimeRoot,
+            runtimeScratch: configuration.runtimeScratch,
+            aospGeneration: configuration.aospGeneration,
+            aospSigningKey: configuration.aospSigningKey,
+            architecture: configuration.architecture,
+            output: configuration.output,
+            appArmorPolicy: configuration.appArmorPolicy,
+            seccompPolicy: configuration.seccompPolicy,
+            environment: configuration.environment)
     }
 
-    func execute(in context: ActionContext) async throws {
+    /// The fields the materialization actually reads, for the tool that
+    /// re-enters it inside a container with paths named as the container sees
+    /// them rather than as a recipe configured them.
+    package init(
+        runtimeProducts: FilePath,
+        runtimeRoot: FilePath?,
+        runtimeScratch: FilePath,
+        aospGeneration: FilePath,
+        aospSigningKey: FilePath,
+        architecture: PlatformArchitecture,
+        output: FilePath,
+        appArmorPolicy: FilePath,
+        seccompPolicy: FilePath,
+        environment: [String: String]
+    ) {
+        self.runtimeProducts = runtimeProducts
+        self.runtimeRoot = runtimeRoot
+        self.runtimeScratch = runtimeScratch
+        self.aospGeneration = aospGeneration
+        self.aospSigningKey = aospSigningKey
+        self.architecture = architecture
+        self.output = output
+        self.appArmorPolicy = appArmorPolicy
+        self.seccompPolicy = seccompPolicy
+        self.environment = environment
+    }
+
+    package func execute(in context: ActionContext) async throws {
         guard
             try context.files.metadataWithoutFollowingSymlinks(for: output) == nil
         else {
@@ -218,7 +311,7 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
         try context.files.createDirectory(candidate)
         defer { try? context.files.remove(candidate) }
 
-        let buildArchitecture = currentArchitecture
+        let buildArchitecture = architecture
 
         let generatedRuntime = runtimeRoot == nil
         let resolvedRuntime = runtimeRoot ?? runtimeScratch.appending("runtime")
@@ -230,8 +323,7 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
                 prefix: resolvedRuntime,
                 environment: environment,
                 productSet: .androidPackage,
-                targetArchitecture:
-                    buildArchitecture == .arm64 ? .arm64 : .x86_64,
+                targetArchitecture: buildArchitecture,
                 context: context)
         }
 
@@ -345,7 +437,7 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
         let manifest = try AndroidPackageManifest(
             release: provenance.release,
             buildNumber: provenance.buildNumber,
-            architecture: buildArchitecture,
+            architecture: packageArchitecture(buildArchitecture),
             payload: payload)
         let manifestPath = candidate.appending("package-manifest.json")
         let encoder = JSONEncoder()
@@ -356,14 +448,13 @@ struct MaterializeAndroidPackageInputAction: ColliderAction {
         try context.files.move(from: candidate, to: output)
     }
 
-    private var currentArchitecture: AndroidPackageArchitecture {
-        #if arch(arm64)
-        .arm64
-        #elseif arch(x86_64)
-        .x86_64
-        #else
-        #error("Nucleus supports Android packages only on arm64 and x86_64")
-        #endif
+    private func packageArchitecture(
+        _ architecture: PlatformArchitecture
+    ) -> AndroidPackageArchitecture {
+        switch architecture {
+        case .arm64: .arm64
+        case .x86_64: .x86_64
+        }
     }
 
     private func requireDirectory(

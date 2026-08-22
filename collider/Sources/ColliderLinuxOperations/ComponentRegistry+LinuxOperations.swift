@@ -29,6 +29,11 @@ extension ComponentRegistry {
     ) async throws {
         let configuration = AndroidPackageInputConfiguration(
             swiftPM: try context.swiftPMInvocation(configuration: .release),
+            // A Linux host materializes natively, so it packages for the
+            // architecture it is. A containerized materialization is told
+            // which architecture it packages for, because the builder image
+            // is arm64 whatever the AOSP product holds.
+            architecture: RunnerPlatform.current.architecture,
             runtimeRoot: runtimeRoot,
             runtimeScratch: context.workRoot.appending(
                 "android-package-input-runtime"),

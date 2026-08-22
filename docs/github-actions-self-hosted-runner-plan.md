@@ -866,10 +866,38 @@ the roots that leaked and the components carrying them, and planning names the
 input a digest failed on, because the previous failures reported neither and a
 lane is otherwise bisected by hand.
 
-Running the packaging lane, as opposed to planning it, still requires an Android
-package input. It is produced by a Linux host operation from an AOSP generation
-and a signing key, so the macOS builder cannot make one, and how that input
-reaches protected `main` is undecided.
+Running the packaging lane, as opposed to planning it, requires an Android
+package input. Its materialization was the one Android step nothing had
+containerized: it declared native Linux execution, and the planner admits a
+native action only on a runner whose operating system matches, so the macOS
+builder could not schedule it at all. Nothing else about it was host-specific.
+It now reaches the builder image the way the runtime publisher does, through a
+small Linux tool that re-enters the same action inside a container, and it is
+told which architecture it packages for rather than reading the architecture of
+whatever runs it.
+
+That change is what exposed a deadlock in the read-only checkout boundary. The
+host graph resolver solved dependency versions itself, so any manifest change
+made SwiftPM rewrite `Package.resolved` — which the builder may not do, in a
+checkout it may only read, while the account that owns the checkout may not
+write the builder-owned resolution cache. Neither identity could resolve. The
+resolver now uses the pinned closure, which is authoritative; changing a
+dependency is an explicit update to the pin rather than a side effect of
+describing a graph.
+
+What remains is not plumbing. AOSP is pinned to one product, `nucleus_x86_64`,
+and the materialization verifies that the generation's provenance matches the
+architecture it packages for. The native package cohort declares
+`nucleus-android` as an architecture-specific member for both architectures, so
+the arm64 cohort names a package no AOSP product in this repository can
+produce. Either the repository gains an arm64 Android product, or
+`nucleus-android` becomes x86_64-only and the cohort contract changes with it.
+
+That answer decides how the input is selected, so selection is not wired yet.
+The materialization can run in the builder image; nothing in the macOS catalog
+declares it, and the packaging lane still reads the input as a supplied tree
+with no producing task. Wiring one architecture while the other is supplied by
+path would build a conditional that the arm64 answer immediately discards.
 
 Define the required verification graph once as a sequence of existing Collider
 commands. Automated `main`, GitHub manual, and a local request for the complete
