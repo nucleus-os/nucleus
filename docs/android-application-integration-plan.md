@@ -44,21 +44,34 @@ launching remain fully functional when no Android application provider connects.
 
 ## Implementation Status
 
-Status as of 2026-08-11:
+Status as of 2026-08-22.
+
+The Android half of Phases 5 through 11 lives in one platform bridge
+application. That application last compiled into a signed image on 2026-08-09,
+so every status this table recorded afterwards described code no build had ever
+accepted. Two defects survived there: the bridge called an `InputManager`
+touchscreen entry point the framework fork never added beside the mouse and
+keyboard it did add, and a display-scoped input probe outlived the
+presentation-scoped device set that replaced it. Both are fixed; neither had
+been observable, because the image lane that would have reported them stopped
+building on the same day.
+
+The desktop half of those phases compiles and its bridge-protocol suite passes
+in the ordinary test lane. What follows distinguishes the two.
 
 | Phase | Status | Remaining gate |
 | --- | --- | --- |
 | 1. Production Android runtime | Implemented; agent-runnable build, image, and test gates pass | Validate owner-death cleanup and abandoned-runtime reconciliation in the next standard interactive session |
 | 2. Platform-signed Android bridge | Implemented; the bridge connects after unlock and publishes two real launcher activities | Validate the new native-input handshake in the next standard interactive session |
 | 3. Shell application model | Implemented; provider-neutral catalog, launch routing, dynamic provider lifecycle, namespaced identity, desktop provider, and unified icon resolution pass the Linux shell lane | Attach the Android broker as the second provider in Phase 4 |
-| 4. Android application publication | Complete; provider IPC, lifecycle-scoped `LauncherApps` publication, package deltas, and content-addressed icons pass the Linux shell lane, and the full signed AOSP image graph passes | Confirm publication in the next standard interactive Android session |
-| 5. Window-first presentations | The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout. The host owns presentation identity, metadata, configuration, and teardown independently per window behind a broker-facing control boundary. The framework adapter owns one native surface controller and logical display device per presentation identity with independent teardown. | Pass the two-live-presentation gate through the Phase 6 launch path. |
-| 6. Android activity launch and tracking | Implementation complete; launch success waits for an observed task/display binding, exact task reuse activates the existing host presentation, and task removal, host close, bridge disconnect, and rollback converge on one presentation teardown path | Pass the two-live-application, relaunch, force-stop, crash, package-removal, host-close, and runtime-shutdown gates in a standard interactive Android session |
-| 7. Input and focus | Implementation complete; every presentation owns display-associated native mouse, keyboard, and touchscreen devices, and focus/lifetime/generation handling is presentation-scoped | Pass the two-window pointer, scrolling, multitouch, keyboard, focus-loss, and IME gate in a standard interactive Android session |
-| 8. Density, resize, and activation | Implementation complete; fractional output scale, geometry, frame acceptance, input mapping, and Android configuration use one coalesced presentation generation, and activation remains shell-authorized | Pass the mixed-density resize and activation gate in a standard interactive Android session |
-| 9. Clipboard | Implementation complete; automated verification is running | Pass the live native/Android clipboard gate |
-| 10. Notifications | Implementation complete; automated verification is running | Pass the live notification publication, replacement, action, dismissal, and activation gate |
-| 11. Lifecycle integration and bring-up removal | Implementation complete; automated verification is running | Pass the clean-boot, shutdown, and non-Android composition gates |
+| 4. Android application publication | Complete against the Linux shell lane; the signed AOSP image graph last passed on 2026-08-09 | Confirm publication in the next standard interactive Android session |
+| 5. Window-first presentations | Desktop side complete, Android side unbuilt. The desktop path uses the framework-owned primary host display, generation-tagged zero-copy frames, exact-size host commits, nonblocking explicit synchronization, and single-flight live relayout. The host owns presentation identity, metadata, configuration, and teardown independently per window behind a broker-facing control boundary. The framework adapter owns one native surface controller and logical display device per presentation identity with independent teardown. | Build the Android bridge into a signed image, then pass the two-live-presentation gate through the Phase 6 launch path. |
+| 6. Android activity launch and tracking | Desktop side complete, Android side unbuilt; launch success waits for an observed task/display binding, exact task reuse activates the existing host presentation, and task removal, host close, bridge disconnect, and rollback converge on one presentation teardown path | Build the Android bridge into a signed image, then pass the two-live-application, relaunch, force-stop, crash, package-removal, host-close, and runtime-shutdown gates in a standard interactive Android session |
+| 7. Input and focus | Desktop side complete, Android side unbuilt; every presentation owns display-associated native mouse, keyboard, and touchscreen devices, and focus/lifetime/generation handling is presentation-scoped | Build the Android bridge into a signed image, then pass the two-window pointer, scrolling, multitouch, keyboard, focus-loss, and IME gate in a standard interactive Android session |
+| 8. Density, resize, and activation | Desktop side complete, Android side unbuilt; fractional output scale, geometry, frame acceptance, input mapping, and Android configuration use one coalesced presentation generation, and activation remains shell-authorized | Build the Android bridge into a signed image, then pass the mixed-density resize and activation gate in a standard interactive Android session |
+| 9. Clipboard | Desktop side complete, Android side unbuilt; automated verification is running | Build the Android bridge into a signed image, then pass the live native/Android clipboard gate |
+| 10. Notifications | Desktop side complete, Android side unbuilt; automated verification is running | Build the Android bridge into a signed image, then pass the live notification publication, replacement, action, dismissal, and activation gate |
+| 11. Lifecycle integration and bring-up removal | Desktop side complete, Android side unbuilt; automated verification is running | Build the Android bridge into a signed image, then pass the clean-boot, shutdown, and non-Android composition gates |
 
 Phase 1 now includes:
 
@@ -533,7 +546,7 @@ confirmation does not keep the implementation phase open.
 
 ## Phase 5: Make Presentations Window-First
 
-Status: implementation complete; the live gate remains. The display host owns
+Status: the desktop side is complete; the Android side has not been built since 2026-08-09, and the live gate remains. The display host owns
 a monotonic presentation registry with the desktop fixed at identity zero and
 application identities never reused. A same-UID `SOCK_SEQPACKET` control
 boundary creates and closes application toplevels with independent app ID,
@@ -593,7 +606,7 @@ Verification gate:
 
 ## Phase 6: Launch and Track Android Activities
 
-Status: implementation complete; the live gate remains. The launch transaction runs
+Status: the desktop side is complete; the Android side has not been built since 2026-08-09, and the live gate remains. The launch transaction runs
 from the shell through the provider boundary, broker, display host, Android bridge,
 and DisplayManager. It validates the launch against the bridge's current-user
 launcher catalog, assigns one opaque presentation identity across the host and
@@ -649,7 +662,7 @@ Verification gate:
 
 ## Phase 7: Route Input and Focus
 
-Status: implementation complete; the live gate remains. The display host consumes
+Status: the desktop side is complete; the Android side has not been built since 2026-08-09, and the live gate remains. The display host consumes
 pointer, keyboard, and touch events from `wl_seat`, maps coordinate-bearing events
 through the exact committed presentation configuration, and sends presentation
 identity plus configuration generation over the bounded bridge protocol. The
@@ -663,7 +676,11 @@ generation and clears active gestures; no later input event is required to trigg
 that cancellation.
 Application display devices retain the authenticated runtime caller as their Android
 owner, so InputManager's display-association ownership check remains intact instead
-of granting a global bypass. The Nucleus product enables Android per-display focus. Android's own
+of granting a global bypass. All three device types are created through
+`InputManager`, which admits a display association only from the display's owner.
+`VirtualDeviceManager` cannot express this: it requires the display to belong to a
+virtual device, and waives the association check outright for a caller holding
+`INJECT_EVENTS`. The Nucleus product enables Android per-display focus. Android's own
 InputMethodManager and InputConnection remain authoritative for composition inside
 the focused presentation; the host never synthesizes Unicode key events or proxies
 Android text state through Wayland text-input.
@@ -711,7 +728,7 @@ Verification gate:
 
 ## Phase 8: Complete Density, Resize, and Activation Semantics
 
-Status: implementation complete; the live gate remains. Each presentation owns one
+Status: the desktop side is complete; the Android side has not been built since 2026-08-09, and the live gate remains. Each presentation owns one
 fractional-scale object. Its preferred scale is converted to Android density and
 coalesced with Wayland size changes through the same configuration pipeline. The
 pipeline retains the newest complete size-and-density configuration while one
@@ -755,7 +772,7 @@ Verification gate:
 
 ## Phase 9: Bridge the Clipboard
 
-Status: implementation complete; automated verification and the live gate remain.
+Status: the desktop side is complete and automatically verified; the Android side has not been built since 2026-08-09, and the live gate remains.
 The platform bridge observes Android `ClipboardManager` state and exchanges bounded
 plain-text updates with the broker. The broker republishes that state over a
 provider-neutral session service channel. The shell consumes that channel from its
@@ -781,7 +798,7 @@ Verification gate:
 
 ## Phase 10: Bridge Notifications
 
-Status: implementation complete; automated verification and the live gate remain. The
+Status: the desktop side is complete and automatically verified; the Android side has not been built since 2026-08-09, and the live gate remains. The
 platform listener publishes one bounded replayable notification snapshot, the broker
 normalizes provider identity and routes only actions present in that snapshot, and the
 shell owns native presentation and user authorization. Activity-producing pending
@@ -813,7 +830,7 @@ Verification gate:
 
 ## Phase 11: Integrate Lifecycle and Remove Bring-Up Paths
 
-Status: implementation complete; automated verification and the live gate remain. The
+Status: the desktop side is complete and automatically verified; the Android side has not been built since 2026-08-09, and the live gate remains. The
 session capability is the only Android runtime owner. Reconciliation recognizes only
 the current `nucleus-android-runtime-*` lifecycle, while container commands, display
 creation, launch tracking, clipboard, and notifications remain inside their owning

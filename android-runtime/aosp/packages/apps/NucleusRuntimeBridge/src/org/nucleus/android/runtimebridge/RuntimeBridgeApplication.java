@@ -1,5 +1,6 @@
 package org.nucleus.android.runtimebridge;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
 import android.app.ActivityTaskManager;
@@ -506,6 +507,22 @@ public final class RuntimeBridgeApplication extends Application {
         }
     }
 
+    private void requireInputCapability() {
+        if (getSystemService(InputManager.class) == null) {
+            throw new IllegalStateException("Android input service is unavailable");
+        }
+        if (checkSelfPermission(Manifest.permission.INJECT_EVENTS)
+                != PackageManager.PERMISSION_GRANTED) {
+            throw new IllegalStateException(
+                    "Android bridge cannot create virtual input devices");
+        }
+        if (checkSelfPermission(Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY)
+                != PackageManager.PERMISSION_GRANTED) {
+            throw new IllegalStateException(
+                    "Android bridge cannot associate input devices with a display");
+        }
+    }
+
     private void closeInputDevices() {
         for (PresentationInputDevices devices
                 : new ArrayList<>(inputDevicesByPresentation.values())) {
@@ -530,7 +547,7 @@ public final class RuntimeBridgeApplication extends Application {
         String generation = hello.getString("generation");
         boolean inputAvailable = true;
         try {
-            prepareInputDisplay(0);
+            requireInputCapability();
             sendInputState(output, generation, true, null);
         } catch (RuntimeException error) {
             String description = describeFailure(error);
