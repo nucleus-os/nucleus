@@ -78,6 +78,25 @@ Gate: the `nucleus_x86_64` product builds, signs, assembles, and validates, and
 its image provenance declares the same product, release, build number, and
 complete raw image set as before the move.
 
+Status: complete. Gate evidence: run `2026-08-22T19-55-45.075Z-79403` compiled,
+signed, assembled, and validated the product through the separated tree, and the
+generation it published,
+`1781652681-nucleus-android17-r1-cp2a-nucleus_x86_64-user-37-202604`, carries the
+same identity and the same raw image set as the generation preceding the move.
+
+Reaching that gate exposed how long the lane had been unbuildable. Nothing had
+compiled it since 2026-08-09, and eleven independent defects stood between the
+tree and an image: two openssl implementations in one signing chain, an
+acquisition path the credential-less build identity could not use, a provenance
+status renamed on one side only, two container mount rules that forbade the
+nesting this build requires, two workspaces classified as authoritative when
+they held only rebuildable state, a Siso configuration repository that must sit
+inside the tree, an object store seeded once and unable to see later objects,
+Repo metadata pinned to the manifest a volume was first written with, and a
+bridge application calling a framework entry point that was never added. Each
+was invisible for the same reason: the lane that would have reported it was
+itself broken.
+
 ## Phase 2: Add the arm64 Product
 
 `device/nucleus/nucleus_arm64` declares the four architecture settings for
