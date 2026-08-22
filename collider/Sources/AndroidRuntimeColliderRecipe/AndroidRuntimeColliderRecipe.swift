@@ -144,6 +144,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             artifactRoot: aospBuildRoot,
             buildTool: aospContainers.build,
             artifactTool: aospContainers.artifact,
+            assemblerSwiftPM: try context.swiftPM(.linuxAssembler),
+            placement: context.identityPathMap,
             environment: context.environment)
         let gfxstreamContainer = gfxstreamContainerArtifacts(
             root: root,
@@ -475,6 +477,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         artifactRoot: FilePath,
         buildTool: OCIMountedEntrypoint,
         artifactTool: OCIMountedEntrypoint,
+        assemblerSwiftPM: SwiftPMInvocation,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws -> AOSPImageArtifacts {
         let productLock = try JSONDecoder().decode(
@@ -493,6 +497,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             environment: environment)
         let signing = try aospSigningIdentity(
             identityRoot: identityRoot,
+            assemblerSwiftPM: assemblerSwiftPM,
+            placement: placement,
             environment: environment)
         let product = try aospProductImageTasks(
             root: root,
@@ -669,6 +675,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospSigningIdentity(
         identityRoot: FilePath,
+        assemblerSwiftPM: SwiftPMInvocation,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws -> SigningArtifacts {
         // Each account generates and owns its own local-development identity in
@@ -687,21 +695,36 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             "directory",
             path: signingIdentity,
             validation: .nonEmptyDirectory)
+        let tool = "nucleus-android-assembler"
         let task = builder.build(
+            swiftProducts: [
+                assemblerSwiftPM.product(
+                    package: "collider-cli",
+                    product: tool,
+                    packageRoot: assemblerSwiftPM.context.packageRoot,
+                    environment: environment,
+                    expectedOutputs: [
+                        PathPostcondition(
+                            path: assemblerSwiftPM.executable(tool),
+                            validation: .executableFile)
+                    ])
+            ],
             inputs: [
                 .string(
                     name: "subject",
                     value: aospSigningSubject),
-                .tool(.named("openssl")),
+                assemblerSwiftPM.identityInput,
             ],
             locks: [.checkout("android-runtime-aosp-signing")],
             action:
                 try AnyColliderAction(
-                    PrepareAOSPSigningIdentityAction(
+                    PublishAOSPSigningIdentityAction(
                         preparation: AOSPSigningIdentityPreparation(
                             destination: signingIdentity,
                             subject: aospSigningSubject,
-                            environment: environment))))
+                            environment: environment),
+                        assemblerSwiftPM: assemblerSwiftPM,
+                        placement: placement)))
         return SigningArtifacts(
             task: task,
             identity: identity,

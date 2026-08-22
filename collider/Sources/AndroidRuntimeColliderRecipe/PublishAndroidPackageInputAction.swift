@@ -96,7 +96,7 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
             "/opt/swift/usr/lib/swift/linux",
         ].compactMap { $0 }.joined(separator: ":")
 
-        let tool = assemblerSwiftPM.executable("nucleus-android-package-input")
+        let tool = assemblerSwiftPM.executable("nucleus-android-assembler")
         execution = OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: ArtifactTarget(
@@ -116,6 +116,7 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 containerPath(tool),
+                "package-input",
                 containerPath(runtimeSwiftPM.productsDirectory),
                 containerPath(aospGeneration),
                 containerPath(aospSigningKey),

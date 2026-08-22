@@ -2632,6 +2632,23 @@ private func artifactInput(
         artifactRoot: FilePath("/artifacts/aosp"),
         buildTool: buildTool,
         artifactTool: artifactTool,
+        assemblerSwiftPM: SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: fixtureSwiftPackageRoot,
+                configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "swiftc@fixture",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: buildImage,
+                        hostname: "assembler-fixture",
+                        hostWorkingDirectory: fixtureSwiftPackageRoot,
+                        mounts: [],
+                        hostDependencyCache: FilePath("/cache/swiftpm")))),
+            scratchPath: FilePath("/cache/swiftpm-tools/assembler")),
+        placement: fixturePlacement(workspace: FilePath(workspace.path)),
         environment: [
             "NUCLEUS_BUILD_ROOT": "/build-root",
             "PATH": "/usr/bin",

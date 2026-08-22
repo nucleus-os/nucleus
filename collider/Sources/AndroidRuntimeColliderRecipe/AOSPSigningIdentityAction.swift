@@ -2,34 +2,49 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
-struct AOSPSigningIdentityPreparation: Hashable, Sendable {
-    let destination: FilePath
-    let subject: String
-    let environment: [String: String]
+package struct AOSPSigningIdentityPreparation: Hashable, Sendable {
+    package let destination: FilePath
+    package let subject: String
+    package let environment: [String: String]
+
+    package init(
+        destination: FilePath,
+        subject: String,
+        environment: [String: String]
+    ) {
+        self.destination = destination
+        self.subject = subject
+        self.environment = environment
+    }
 }
 
-struct PrepareAOSPSigningIdentityAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
+package struct PrepareAOSPSigningIdentityAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
         let destination: FilePath
         let subject: String
 
-        func encode(into encoder: inout IdentityEncoder) {
+        package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: destination)
             encoder.append(subject)
         }
     }
 
-    static let kind: ActionKind = "android-runtime.prepare-aosp-signing-identity"
+    package static let kind: ActionKind =
+        "android-runtime.prepare-aosp-signing-identity"
 
-    let preparation: AOSPSigningIdentityPreparation
+    package let preparation: AOSPSigningIdentityPreparation
 
-    var identity: Identity {
+    package init(preparation: AOSPSigningIdentityPreparation) {
+        self.preparation = preparation
+    }
+
+    package var identity: Identity {
         Identity(
             destination: preparation.destination,
             subject: preparation.subject)
     }
 
-    var requirements: ActionRequirements {
+    package var requirements: ActionRequirements {
         ActionRequirements(
             tools: [
                 ActionToolRequirement(
@@ -42,12 +57,18 @@ struct PrepareAOSPSigningIdentityAction: ColliderAction {
                     .readWrite,
                     scope: .output(preparation.destination.removingLastComponent()))
             ],
-            executionPlatform: .macOSARM64Native)
+            // Generated where every other step in the signing chain runs.
+            // On the host this resolved a tool named openssl from PATH, which
+            // is LibreSSL on macOS and a different implementation again in
+            // the container that consumes the key, so one chain depended on
+            // two openssls that disagree.
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64)
     }
 
-    var environment: [String: String] { preparation.environment }
+    package var environment: [String: String] { preparation.environment }
 
-    func execute(in context: ActionContext) async throws {
+    package func execute(in context: ActionContext) async throws {
         let workflow = AOSPSigningIdentityWorkflow(context: context)
         if try context.files.metadata(for: preparation.destination) != nil {
             let identity = try await workflow.validate(preparation)
@@ -189,7 +210,8 @@ struct AOSPSigningIdentityWorkflow {
                     try await capture(
                         ["x509", "-in", certificate.string, "-pubkey", "-noout"],
                         in: destination,
-                        environment: environment).utf8),
+                        environment: environment
+                    ).utf8),
                 to: certificatePEM)
             try await run(
                 [

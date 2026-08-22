@@ -191,6 +191,9 @@ public struct RecipeBuildContextID: RawRepresentable, Hashable, Codable, Sendabl
 
     public static let hostDebug = Self(rawValue: "host.debug")
     public static let hostRelease = Self(rawValue: "host.release")
+    /// Builds the Linux tools that assemble and publish products inside the
+    /// builder image, for recipes that run one of them.
+    public static let linuxAssembler = Self(rawValue: "linux.assembler")
 
     public static func linux(
         _ architecture: PlatformArchitecture,

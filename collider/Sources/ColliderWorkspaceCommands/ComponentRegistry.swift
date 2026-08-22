@@ -91,6 +91,7 @@ package struct ComponentRegistry {
         }
         let runtimeAssembler = try linuxAssemblerSwiftPMInvocation(
             builder: nativeConfiguration)
+        buildContexts[.linuxAssembler] = runtimeAssembler
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
                 try linuxSwiftPMInvocation(

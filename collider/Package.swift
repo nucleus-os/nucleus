@@ -35,8 +35,8 @@ let package = Package(
             name: "nucleus-linux-package-qualifier",
             targets: ["NucleusLinuxPackageQualifier"]),
         .executable(
-            name: "nucleus-android-package-input",
-            targets: ["NucleusAndroidPackageInput"]),
+            name: "nucleus-android-assembler",
+            targets: ["NucleusAndroidAssembler"]),
     ],
     dependencies: packageDependencies,
     targets: [
@@ -59,7 +59,7 @@ let package = Package(
                 "ShellColliderRecipe",
             ]),
         .executableTarget(
-            name: "NucleusAndroidPackageInput",
+            name: "NucleusAndroidAssembler",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),

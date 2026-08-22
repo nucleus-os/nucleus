@@ -95,7 +95,7 @@ extension AndroidRuntimeColliderRecipe {
             inputs.append(configuration.swiftPM.identityInput)
         }
         if let assemblerSwiftPM = configuration.assemblerSwiftPM {
-            let tool = "nucleus-android-package-input"
+            let tool = "nucleus-android-assembler"
             products.append(
                 assemblerSwiftPM.product(
                     package: "collider-cli",
