@@ -30,6 +30,7 @@ package struct PackageLinuxControlPayloadsAction: ColliderAction {
         browser: ChromiumColliderRecipe.PackageInput,
         assemblerSwiftPM: SwiftPMInvocation,
         payloadRoot: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.payloadRoot = payloadRoot
@@ -40,25 +41,27 @@ package struct PackageLinuxControlPayloadsAction: ColliderAction {
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
         }
+        // Every path this execution names is the path the container sees.
+        let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter { $0.source != repositoryRoot }
         for mount in [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
-                target: assemblerSwiftPM.productsDirectory.string,
+                target: containerPath(assemblerSwiftPM.productsDirectory),
                 access: .readOnly),
             OCIMount(
                 source: runtimeArtifactRoot,
-                target: runtimeArtifactRoot.string,
+                target: containerPath(runtimeArtifactRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.distributionRoot,
-                target: browser.publication.distributionRoot.string,
+                target: containerPath(browser.publication.distributionRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.packageInputRoot,
-                target: browser.publication.packageInputRoot.string,
+                target: containerPath(browser.publication.packageInputRoot),
                 access: .readOnly),
         ] {
             try appendMount(mount, to: &mounts)
@@ -66,7 +69,7 @@ package struct PackageLinuxControlPayloadsAction: ColliderAction {
         for package in LinuxNativePackageName.controlOnly {
             let output = payloadRoot.appending(package.rawValue)
             try appendMount(
-                OCIMount(boundedExport: output, target: output.string),
+                OCIMount(boundedExport: output, target: containerPath(output)),
                 to: &mounts)
         }
         var containerEnvironment = assemblerOCI.containerEnvironment
@@ -86,7 +89,7 @@ package struct PackageLinuxControlPayloadsAction: ColliderAction {
                 abi: "glibc"),
             imageID: assemblerOCI.imageID,
             hostname: "nucleus-control-payloads-\(architecture.rawValue)",
-            workingDirectory: firstOutput.string,
+            workingDirectory: containerPath(firstOutput),
             hostWorkingDirectory: firstOutput,
             mounts: mounts,
             userPolicy: .builder,
@@ -100,14 +103,14 @@ package struct PackageLinuxControlPayloadsAction: ColliderAction {
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 "fakeroot",
-                assembler.string,
+                containerPath(assembler),
                 "control-payloads",
-                runtimeArtifactRoot.string,
-                browser.publication.distributionRoot.string,
-                browser.publication.packageInputRoot.string,
-                payloadRoot.string,
+                containerPath(runtimeArtifactRoot),
+                containerPath(browser.publication.distributionRoot),
+                containerPath(browser.publication.packageInputRoot),
+                containerPath(payloadRoot),
                 architecture.rawValue,
-                stageObservationReport.string,
+                containerPath(stageObservationReport),
             ],
             environment: environment,
             output: .logged)

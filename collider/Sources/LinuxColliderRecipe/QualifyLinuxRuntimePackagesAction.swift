@@ -30,6 +30,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         productStoreReceipt: FilePath,
         assemblerSwiftPM: SwiftPMInvocation,
         qualificationRoot: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.architecture = architecture
@@ -40,6 +41,8 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
         }
+        // Every path this execution names is the path the container sees.
+        let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter {
@@ -48,37 +51,37 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         try appendQualificationMount(
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
-                target: assemblerSwiftPM.productsDirectory.string,
+                target: containerPath(assemblerSwiftPM.productsDirectory),
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
             OCIMount(
                 source: packagePublicationRoot,
-                target: packagePublicationRoot.string,
+                target: containerPath(packagePublicationRoot),
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
             OCIMount(
                 source: productStoreRoot,
-                target: productStoreRoot.string,
+                target: containerPath(productStoreRoot),
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
             OCIMount(
                 source: productStoreReceipt.removingLastComponent(),
-                target: productStoreReceipt.removingLastComponent().string,
+                target: containerPath(productStoreReceipt.removingLastComponent()),
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
             OCIMount(
                 source: nativeBuilderIdentityMountRoot(assemblerOCI.imageID),
-                target: nativeBuilderIdentityMountRoot(assemblerOCI.imageID).string,
+                target: containerPath(nativeBuilderIdentityMountRoot(assemblerOCI.imageID)),
                 access: .readOnly),
             to: &mounts)
         try appendQualificationMount(
             OCIMount(
                 boundedExport: qualificationRoot,
-                target: qualificationRoot.string),
+                target: containerPath(qualificationRoot)),
             to: &mounts)
 
         var containerEnvironment = assemblerOCI.containerEnvironment
@@ -105,7 +108,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
                     hostname:
                         "nucleus-package-qualification-\(architecture.rawValue)-"
                         + family.rawValue,
-                    workingDirectory: qualificationRoot.string,
+                    workingDirectory: containerPath(qualificationRoot),
                     hostWorkingDirectory: qualificationRoot,
                     mounts: mounts,
                     userPolicy: OCIUserPolicy(userID: 0, groupID: 0),
@@ -118,13 +121,13 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
                         processCount: 4_096),
                     containerEnvironment: containerEnvironment,
                     command: assemblerOCI.commandPrefix + [
-                        qualifier.string,
+                        containerPath(qualifier),
                         family.rawValue,
                         architecture.rawValue,
-                        packagePublicationRoot.string,
-                        qualificationRoot.string,
-                        assembler.string,
-                        assemblerOCI.imageID.string,
+                        containerPath(packagePublicationRoot),
+                        containerPath(qualificationRoot),
+                        containerPath(assembler),
+                        containerPath(assemblerOCI.imageID),
                     ],
                     environment: environment,
                     output: .logged)

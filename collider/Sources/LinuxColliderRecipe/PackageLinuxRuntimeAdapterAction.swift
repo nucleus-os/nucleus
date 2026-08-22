@@ -53,6 +53,7 @@ package struct PackageLinuxRuntimeAdapterAction: ColliderAction {
         payloadPublicationRoot: FilePath,
         assemblerSwiftPM: SwiftPMInvocation,
         outputRoot: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.payloadPublicationRoot = payloadPublicationRoot
@@ -64,27 +65,29 @@ package struct PackageLinuxRuntimeAdapterAction: ColliderAction {
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
         }
+        // Every path this execution names is the path the container sees.
+        let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter { $0.source != repositoryRoot }
         for mount in [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
-                target: assemblerSwiftPM.productsDirectory.string,
+                target: containerPath(assemblerSwiftPM.productsDirectory),
                 access: .readOnly),
             OCIMount(
                 source: runtimeArtifactRoot,
-                target: runtimeArtifactRoot.string,
+                target: containerPath(runtimeArtifactRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.distributionRoot,
-                target: browser.publication.distributionRoot.string,
+                target: containerPath(browser.publication.distributionRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.packageInputRoot,
-                target: browser.publication.packageInputRoot.string,
+                target: containerPath(browser.publication.packageInputRoot),
                 access: .readOnly),
-            OCIMount(boundedExport: outputRoot, target: outputRoot.string),
+            OCIMount(boundedExport: outputRoot, target: containerPath(outputRoot)),
         ] {
             try appendMount(mount, to: &mounts)
         }
@@ -107,7 +110,7 @@ package struct PackageLinuxRuntimeAdapterAction: ColliderAction {
             hostname:
                 "na-\(architecture.rawValue)-\(family.rawValue.prefix(1))-"
                 + package.rawValue,
-            workingDirectory: outputRoot.string,
+            workingDirectory: containerPath(outputRoot),
             hostWorkingDirectory: outputRoot,
             mounts: mounts,
             userPolicy: .builder,
@@ -121,18 +124,18 @@ package struct PackageLinuxRuntimeAdapterAction: ColliderAction {
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 "fakeroot",
-                assembler.string,
+                containerPath(assembler),
                 "adapter",
-                runtimeArtifactRoot.string,
-                browser.publication.distributionRoot.string,
-                browser.publication.packageInputRoot.string,
-                payloadView.string,
-                outputRoot.string,
+                containerPath(runtimeArtifactRoot),
+                containerPath(browser.publication.distributionRoot),
+                containerPath(browser.publication.packageInputRoot),
+                containerPath(payloadView),
+                containerPath(outputRoot),
                 architecture.rawValue,
                 family.rawValue,
                 package.rawValue,
-                assembler.string,
-                stageObservationReport.string,
+                containerPath(assembler),
+                containerPath(stageObservationReport),
             ],
             environment: environment,
             output: .logged)

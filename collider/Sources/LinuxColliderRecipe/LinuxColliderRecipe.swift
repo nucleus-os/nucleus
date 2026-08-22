@@ -157,6 +157,8 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
     package let packageSourceSnapshotRoot: FilePath
     package let productStoreRoot: FilePath
     package let sessionPackage: FilePath
+    /// Where declared placement roots put every path these executions name.
+    package let placement: IdentityPathMap
     package let environment: [String: String]
 
     package init(
@@ -168,6 +170,7 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
         packageSourceSnapshotRoot: FilePath,
         productStoreRoot: FilePath,
         sessionPackage: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) {
         self.lanes = lanes
@@ -185,6 +188,7 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
         self.packageSourceSnapshotRoot = packageSourceSnapshotRoot
         self.productStoreRoot = productStoreRoot
         self.sessionPackage = sessionPackage
+        self.placement = placement
         self.environment = environment
     }
 }
@@ -720,6 +724,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     packageManifestsRoot: packageManifests,
                     rollbackGenerationCount: rollbackGenerationCount,
                     sessionPackage: configuration.sessionPackage,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedRuntimeArtifact(
             task: task,
@@ -793,6 +798,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     outputRoot: lane.packageRoot,
                     producingTask: LinuxTaskIDs.packageCohort(architecture),
                     producerRunner: .current,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedNativePackages(task: task, publication: publication)
     }
@@ -847,6 +853,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         package == .androidPackage ? androidPackageInput : nil,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: outputRoot,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedNativePackagePayload(
             package: package,
@@ -906,6 +913,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     browser: browser,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     payloadRoot: payloadRoot,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedControlPayloads(
             task: task,
@@ -971,6 +979,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     payloadPublicationRoot: payloadRoot,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: outputRoot,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedNativePackageAdapter(
             family: family,
@@ -1043,6 +1052,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     payloadRoot: lane.packageWorkRoot.appending("payloads"),
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: adapterRoot,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedControlAdapters(
             task: task,
@@ -1135,6 +1145,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     productStoreReceipt: productPublication.receipt.path,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     qualificationRoot: lane.qualificationRoot,
+                    placement: configuration.placement,
                     environment: configuration.environment)))
         return PreparedPackageQualification(task: task, report: report)
     }

@@ -28,6 +28,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         packageManifestsRoot: FilePath,
         rollbackGenerationCount: UInt32,
         sessionPackage: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.artifactRoot = artifactRoot
@@ -38,10 +39,15 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
             throw PublishLinuxRuntimeArtifactFailure.incompatibleBuildContexts
         }
 
+        // Every path this execution names is the path the container sees.
+        // These inputs live under declared placement roots, so naming them by
+        // their host locations would make one artifact's identity depend on
+        // where this checkout and cache happen to sit.
+        let containerPath = placement.executionPath
         var mounts = runtimeOCI.mounts
         let runtimeProducts = OCIMount(
             source: runtimeSwiftPM.productsDirectory,
-            target: runtimeSwiftPM.productsDirectory.string,
+            target: containerPath(runtimeSwiftPM.productsDirectory),
             access: .readOnly)
         guard !mounts.contains(where: { $0.target == runtimeProducts.target }) else {
             throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
@@ -50,7 +56,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         mounts.append(runtimeProducts)
         let assemblerProducts = OCIMount(
             source: assemblerSwiftPM.productsDirectory,
-            target: assemblerSwiftPM.productsDirectory.string,
+            target: containerPath(assemblerSwiftPM.productsDirectory),
             access: .readOnly)
         guard !mounts.contains(where: { $0.target == assemblerProducts.target }) else {
             throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
@@ -59,7 +65,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         mounts.append(assemblerProducts)
         let artifactMount = OCIMount(
             boundedExport: artifactRoot,
-            target: artifactRoot.string)
+            target: containerPath(artifactRoot))
         guard !mounts.contains(where: { $0.target == artifactMount.target }) else {
             throw PublishLinuxRuntimeArtifactFailure.conflictingMount(
                 artifactMount.target)
@@ -81,7 +87,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 abi: "glibc"),
             imageID: runtimeOCI.imageID,
             hostname: "nucleus-runtime-artifact-\(architecture.rawValue)",
-            workingDirectory: runtimeSwiftPM.context.packageRoot.string,
+            workingDirectory: containerPath(runtimeSwiftPM.context.packageRoot),
             hostWorkingDirectory: runtimeSwiftPM.context.packageRoot,
             mounts: mounts,
             userPolicy: .builder,
@@ -91,13 +97,14 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
             resourceLimits: .build,
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
-                assemblerSwiftPM.executable("nucleus-linux-runtime-publisher").string,
-                runtimeSwiftPM.productsDirectory.string,
-                artifactRoot.appending("current").string,
-                generationsRoot.string,
-                packageManifestsRoot.string,
+                containerPath(
+                    assemblerSwiftPM.executable("nucleus-linux-runtime-publisher")),
+                containerPath(runtimeSwiftPM.productsDirectory),
+                containerPath(artifactRoot.appending("current")),
+                containerPath(generationsRoot),
+                containerPath(packageManifestsRoot),
                 String(rollbackGenerationCount),
-                sessionPackage.string,
+                containerPath(sessionPackage),
                 "release",
                 architecture.rawValue,
             ],

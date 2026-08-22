@@ -2,6 +2,7 @@ import AndroidRuntimeColliderRecipe
 import ColliderCore
 import ColliderPlanning
 import ColliderRuntime
+import ColliderSwiftPM
 import ColliderTesting
 import CompositorColliderRecipe
 import CoreColliderRecipe
@@ -2730,6 +2731,56 @@ private func artifactInput(
             }
             return action.kind == "android-runtime.publish-aosp-product"
         }())
+}
+
+/// Planning every declared task is what proves placement stayed out of
+/// identity. A lane nobody has planned since the placement roots existed can
+/// name this host's paths in its container targets, working directories, and
+/// command arguments and stay green, because only the lanes someone runs are
+/// ever encoded. The packaging and qualification lanes reached exactly that
+/// state.
+@Test func everyDeclaredTaskIdentityIsPlacementIndependent() throws {
+    let context = WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: [:],
+        runtime: ColliderRuntime())
+    let catalog = try ComponentRegistry(context: context)
+        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+    let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
+    let services = TaskPlanningServices(
+        identityPathMap: context.identityPathMap,
+        digestBytes: { ArtifactDigest.sha256(Data($0)) },
+        digestFile: { _ in digest },
+        digestTree: { _ in digest },
+        digestSourceCheckout: { _ in digest },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+        },
+        taskState: { _ in .missing },
+        validateOutputs: { _ in })
+
+    // Identity encoding rejects a declared root it finds, so planning is the
+    // assertion. Each publicly reachable request is planned on its own, the
+    // way an invocation selects one, because Swift product lowering groups
+    // requirements by build context and selecting every lane at once mixes
+    // contexts no single invocation combines.
+    let planner = ColliderPlanner()
+    let requests = try catalog.publicEntrypoints.map {
+        (request: $0, roots: Set(try planner.selectedTasks(in: catalog, requests: [$0])))
+    }.sorted { $0.roots.count > $1.roots.count }
+    // Most spellings select tasks a broader spelling already selects, and a
+    // request whose roots are covered adds no task, because a plan is the
+    // dependency closure of its roots.
+    var covered: Set<TaskID> = []
+    for entry in requests where !entry.roots.isSubset(of: covered) {
+        _ = try planner.plan(
+            catalog: catalog,
+            requests: [entry.request],
+            rebuildSelected: false,
+            lowerings: [SwiftPMLowering()],
+            services: services)
+        covered.formUnion(entry.roots)
+    }
 }
 
 @Test func swiftPackageResolutionIsFiledUnderOnePlacementIndependentName() {

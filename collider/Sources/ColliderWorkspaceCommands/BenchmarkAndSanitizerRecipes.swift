@@ -103,6 +103,7 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                                     "--output", output.string, "--iterations", "3",
                                 ],
                                 workingDirectory: context.repositoryRoot,
+                                placement: context.identityPathMap,
                                 environment: environment))))
         }
         return try ComponentDefinition(
@@ -302,6 +303,7 @@ enum SanitizerColliderRecipe: ColliderComponent {
                                 executable: executable,
                                 arguments: [],
                                 workingDirectory: context.repositoryRoot,
+                                placement: context.identityPathMap,
                                 environment: environment))))
         }
     }

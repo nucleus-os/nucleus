@@ -211,6 +211,7 @@ package struct ComponentRegistry {
                 productStoreRoot: context.artifactRoot.appending(
                     "product-store"),
                 sessionPackage: context.layout.compositorSessionPackage,
+                placement: context.identityPathMap,
                 environment: productEnvironment)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
@@ -1032,7 +1033,10 @@ package struct ComponentRegistry {
                 hostname: "nucleus-linux-assembler",
                 hostWorkingDirectory: packageRoot,
                 mounts: [
-                    OCIMount(source: root, target: root.string, access: .readOnly),
+                    OCIMount(
+                        source: root,
+                        target: context.identityPathMap.executionPath(root),
+                        access: .readOnly),
                     OCIMount(
                         source: builder.swiftPMOverlay.path,
                         target: "/swiftpm-overlay",

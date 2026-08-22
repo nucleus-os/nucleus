@@ -837,9 +837,7 @@ contract, asserting that the output is a link without following it.
 
 This is the same defect class as the placement leaks in the identity work and it
 survived all of them, because a link's target is a payload byte rather than an
-identity input. The lanes this phase has yet to add stage considerably more
-content than these two SDKs, and none of it has been read inside a container by
-anything automated.
+identity input.
 
 A run record now states the authority that produced it, and retention windows
 the two authorities separately. Verification evidence was previously reclaimable
@@ -851,6 +849,27 @@ verification run covered, and the workflow's closing step names the records this
 revision produced, because the durable evidence is the builder-owned record
 rather than the GitHub job log.
 
+The packaging and qualification lanes could not be planned at all. Every
+container path they named was this host's own: mount targets, working
+directories, and command arguments alike, across the runtime artifact, six
+package payloads, nine adapters, the control payloads and adapters, the cohort,
+and lifecycle qualification. The benchmark and thread-sanitizer lanes named
+their built executable by its host path through one shared execution helper,
+which also named it somewhere the container does not mount it. Both classes
+existed because identity is encoded only for the lanes someone runs, and no
+automated run had ever selected these.
+
+Planning every publicly reachable request is now a test. It is the only thing
+that observes a lane nobody invokes, and it found the benchmark and sanitizer
+leaks immediately after the packaging ones were fixed. Identity encoding names
+the roots that leaked and the components carrying them, and planning names the
+input a digest failed on, because the previous failures reported neither and a
+lane is otherwise bisected by hand.
+
+Running the packaging lane, as opposed to planning it, still requires an Android
+package input. It is produced by a Linux host operation from an AOSP generation
+and a signing key, so the macOS builder cannot make one, and how that input
+reaches protected `main` is undecided.
 
 Define the required verification graph once as a sequence of existing Collider
 commands. Automated `main`, GitHub manual, and a local request for the complete

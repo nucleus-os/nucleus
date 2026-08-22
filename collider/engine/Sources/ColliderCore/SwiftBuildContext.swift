@@ -492,10 +492,19 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         )
     }
 
+    /// Runs one built product inside the builder image.
+    ///
+    /// The executable and working directory are named as the container sees
+    /// them: products are exported at one fixed mount rather than at their
+    /// host path, and the checkout is where the declared placement roots put
+    /// it. Naming either by its host location would both misname a real path
+    /// and make the execution's identity depend on this machine's layout. The
+    /// caller maps its own arguments for the same reason.
     public func ociExecutableExecution(
         executable: FilePath,
         arguments: [String],
         workingDirectory: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws -> OCIExecution {
         guard case .oci(let configuration) = context.execution else {
@@ -505,14 +514,35 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             executable: executable,
             arguments: arguments,
             workingDirectory: workingDirectory,
+            placement: placement,
             environment: environment,
             configuration: configuration)
+    }
+
+    /// Where the container reaches one built product.
+    ///
+    /// A build that exports its products to the fixed mount reaches them only
+    /// there. Without one, nothing mounts the products directory and the
+    /// declared roots are the only placement the execution has.
+    private func executionExecutablePath(
+        _ executable: FilePath,
+        placement: IdentityPathMap,
+        configuration: SwiftPMOCIExecution
+    ) -> String {
+        let products = productsDirectory.string
+        guard configuration.buildWorkspace != nil,
+            executable.string.hasPrefix(products + "/")
+        else {
+            return placement.executionPath(executable)
+        }
+        return "/swiftpm-products" + executable.string.dropFirst(products.count)
     }
 
     private func ociExecutableExecution(
         executable: FilePath,
         arguments: [String],
         workingDirectory: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String],
         configuration: SwiftPMOCIExecution
     ) -> OCIExecution {
@@ -529,7 +559,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             artifactTarget: configuration.artifactTarget,
             imageID: configuration.imageID,
             hostname: configuration.hostname,
-            workingDirectory: workingDirectory.string,
+            workingDirectory: placement.executionPath(workingDirectory),
             hostWorkingDirectory: configuration.hostWorkingDirectory,
             mounts: ociMounts(configuration),
             persistentWorkspaceMounts: ociPersistentWorkspaceMounts(configuration),
@@ -541,7 +571,12 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
             command: configuration.commandPrefix + processorAffinityArguments
-                + [executable.string] + arguments,
+                + [
+                    executionExecutablePath(
+                        executable,
+                        placement: placement,
+                        configuration: configuration)
+                ] + arguments,
             environment: environment,
             output: .logged)
     }

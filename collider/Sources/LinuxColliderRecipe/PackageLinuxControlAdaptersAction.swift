@@ -32,6 +32,7 @@ package struct PackageLinuxControlAdaptersAction: ColliderAction {
         payloadRoot: FilePath,
         assemblerSwiftPM: SwiftPMInvocation,
         outputRoot: FilePath,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.payloadRoot = payloadRoot
@@ -44,29 +45,31 @@ package struct PackageLinuxControlAdaptersAction: ColliderAction {
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
         }
+        // Every path this execution names is the path the container sees.
+        let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter { $0.source != repositoryRoot }
         for mount in [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
-                target: assemblerSwiftPM.productsDirectory.string,
+                target: containerPath(assemblerSwiftPM.productsDirectory),
                 access: .readOnly),
             OCIMount(
                 source: runtimeArtifactRoot,
-                target: runtimeArtifactRoot.string,
+                target: containerPath(runtimeArtifactRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.distributionRoot,
-                target: browser.publication.distributionRoot.string,
+                target: containerPath(browser.publication.distributionRoot),
                 access: .readOnly),
             OCIMount(
                 source: browser.publication.packageInputRoot,
-                target: browser.publication.packageInputRoot.string,
+                target: containerPath(browser.publication.packageInputRoot),
                 access: .readOnly),
             OCIMount(
                 source: payloadRoot,
-                target: payloadRoot.string,
+                target: containerPath(payloadRoot),
                 access: .readOnly),
         ] {
             try appendMount(mount, to: &mounts)
@@ -76,7 +79,7 @@ package struct PackageLinuxControlAdaptersAction: ColliderAction {
                 let output = outputRoot.appending(
                     "\(family.rawValue)/\(package.rawValue)")
                 try appendMount(
-                    OCIMount(boundedExport: output, target: output.string),
+                    OCIMount(boundedExport: output, target: containerPath(output)),
                     to: &mounts)
             }
         }
@@ -97,7 +100,7 @@ package struct PackageLinuxControlAdaptersAction: ColliderAction {
                 abi: "glibc"),
             imageID: assemblerOCI.imageID,
             hostname: "nucleus-control-adapters-\(architecture.rawValue)",
-            workingDirectory: firstOutput.string,
+            workingDirectory: containerPath(firstOutput),
             hostWorkingDirectory: firstOutput,
             mounts: mounts,
             userPolicy: .builder,
@@ -111,15 +114,15 @@ package struct PackageLinuxControlAdaptersAction: ColliderAction {
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 "fakeroot",
-                assembler.string,
+                containerPath(assembler),
                 "control-adapters",
-                runtimeArtifactRoot.string,
-                browser.publication.distributionRoot.string,
-                browser.publication.packageInputRoot.string,
-                outputRoot.string,
+                containerPath(runtimeArtifactRoot),
+                containerPath(browser.publication.distributionRoot),
+                containerPath(browser.publication.packageInputRoot),
+                containerPath(outputRoot),
                 architecture.rawValue,
-                assembler.string,
-                stageObservationReport.string,
+                containerPath(assembler),
+                containerPath(stageObservationReport),
             ],
             environment: environment,
             output: .logged)

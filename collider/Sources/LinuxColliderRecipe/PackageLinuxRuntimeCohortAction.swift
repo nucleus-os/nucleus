@@ -35,6 +35,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
         outputRoot: FilePath,
         producingTask: TaskID,
         producerRunner: RunnerPlatform,
+        placement: IdentityPathMap,
         environment: [String: String]
     ) throws {
         self.outputRoot = outputRoot
@@ -44,6 +45,8 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution else {
             throw LinuxNativePackageExecutionFailure.requiresOCI
         }
+        // Every path this execution names is the path the container sees.
+        let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter {
@@ -53,47 +56,47 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
         try appendMount(
             OCIMount(
                 source: sourceSnapshotRoot,
-                target: sourceSnapshotRoot.string,
+                target: containerPath(sourceSnapshotRoot),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
-                target: assemblerSwiftPM.productsDirectory.string,
+                target: containerPath(assemblerSwiftPM.productsDirectory),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: runtimeArtifactRoot,
-                target: runtimeArtifactRoot.string,
+                target: containerPath(runtimeArtifactRoot),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: browser.publication.distributionRoot,
-                target: browser.publication.distributionRoot.string,
+                target: containerPath(browser.publication.distributionRoot),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: browser.publication.packageInputRoot,
-                target: browser.publication.packageInputRoot.string,
+                target: containerPath(browser.publication.packageInputRoot),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: adapterRoot,
-                target: adapterRoot.string,
+                target: containerPath(adapterRoot),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
             OCIMount(
                 source: nativeBuilderIdentityMountRoot(assemblerOCI.imageID),
-                target: nativeBuilderIdentityMountRoot(assemblerOCI.imageID).string,
+                target: containerPath(nativeBuilderIdentityMountRoot(assemblerOCI.imageID)),
                 access: .readOnly),
             to: &mounts)
         try appendMount(
-            OCIMount(boundedExport: outputRoot, target: outputRoot.string),
+            OCIMount(boundedExport: outputRoot, target: containerPath(outputRoot)),
             to: &mounts)
         var containerEnvironment = assemblerOCI.containerEnvironment
         containerEnvironment["PATH"] =
@@ -113,7 +116,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
                 abi: "glibc"),
             imageID: assemblerOCI.imageID,
             hostname: "nucleus-package-\(architecture.rawValue)",
-            workingDirectory: outputRoot.string,
+            workingDirectory: containerPath(outputRoot),
             hostWorkingDirectory: outputRoot,
             mounts: mounts,
             userPolicy: .builder,
@@ -124,21 +127,21 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 "fakeroot",
-                assembler.string,
+                containerPath(assembler),
                 "packages",
-                sourceSnapshot.string,
-                runtimeArtifactRoot.string,
-                browser.publication.distributionRoot.string,
-                browser.publication.packageInputRoot.string,
-                adapterRoot.string,
-                outputRoot.string,
+                containerPath(sourceSnapshot),
+                containerPath(runtimeArtifactRoot),
+                containerPath(browser.publication.distributionRoot),
+                containerPath(browser.publication.packageInputRoot),
+                containerPath(adapterRoot),
+                containerPath(outputRoot),
                 architecture.rawValue,
-                assembler.string,
+                containerPath(assembler),
                 producerRunner.operatingSystem.rawValue,
                 producerRunner.architecture.rawValue,
-                assemblerOCI.imageID.string,
+                containerPath(assemblerOCI.imageID),
                 producingTask.rawValue,
-                stageObservationReport.string,
+                containerPath(stageObservationReport),
             ],
             environment: environment,
             output: .logged)
