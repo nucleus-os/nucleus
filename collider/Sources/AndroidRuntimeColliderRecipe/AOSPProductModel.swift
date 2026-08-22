@@ -46,7 +46,7 @@ struct AOSPProductSourceOverlay: Hashable, Sendable {
 }
 
 struct AOSPProductBuild: Hashable, Sendable {
-    let productSource: FilePath
+    let deviceSource: FilePath
     let sourceProvenance: FilePath
     let artifactRoot: FilePath
     let sourceWorkspace: PersistentWorkspaceDeclaration
@@ -67,7 +67,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     let sourceOverlays: [AOSPProductSourceOverlay]
 
     init(
-        productSource: FilePath,
+        deviceSource: FilePath,
         sourceProvenance: FilePath,
         artifactRoot: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
@@ -87,7 +87,7 @@ struct AOSPProductBuild: Hashable, Sendable {
         environment: [String: String],
         sourceOverlays: [AOSPProductSourceOverlay] = []
     ) {
-        self.productSource = productSource
+        self.deviceSource = deviceSource
         self.sourceProvenance = sourceProvenance
         self.artifactRoot = artifactRoot
         self.sourceWorkspace = sourceWorkspace
@@ -136,17 +136,17 @@ struct AOSPProductBuild: Hashable, Sendable {
             access: .readWrite)
     }
 
-    var assembledProductSource: FilePath {
+    var assembledDeviceSource: FilePath {
         artifactRoot.appending("product-input")
     }
 }
 
 func aospProductDefinitionDigest(
-    productSource: FilePath,
+    deviceSource: FilePath,
     sourceOverlays: [AOSPProductSourceOverlay],
     files: ActionFileSystem
 ) throws -> ArtifactDigest {
-    var bytes = try files.digest(tree: productSource).bytes
+    var bytes = try files.digest(tree: deviceSource).bytes
     for overlay in sourceOverlays.sorted(by: {
         $0.relativeDestination < $1.relativeDestination
     }) {

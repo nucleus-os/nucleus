@@ -145,25 +145,25 @@ let targets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC"),
     .target(
         name: "NucleusAndroidComposerProtocolC",
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/composer-protocol"),
+        path: "android-runtime/aosp/device/nucleus/common/native/composer-protocol"),
     .target(
         name: "NucleusAndroidPresentationProtocolC",
         path:
-            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/presentation-protocol"),
+            "android-runtime/aosp/device/nucleus/common/native/presentation-protocol"),
     .target(
         name: "NucleusAndroidDisplayControlProtocolC",
         path:
-            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/display-control-protocol"),
+            "android-runtime/aosp/device/nucleus/common/native/display-control-protocol"),
     .target(
         name: "NucleusAndroidSharedRingC",
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/shared-ring"),
+        path: "android-runtime/aosp/device/nucleus/common/native/shared-ring"),
     .target(
         name: "NucleusAndroidGfxstreamWorkerProtocolC",
         path: "android-runtime/Sources/NucleusAndroidGfxstreamWorkerProtocolC"),
     .target(
         name: "NucleusAndroidGfxstreamGuestTransportCxx",
         dependencies: ["NucleusIPCTransport", "NucleusIPCTransportC", "NucleusAndroidSharedRingC"],
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/gfxstream-guest"),
+        path: "android-runtime/aosp/device/nucleus/common/native/gfxstream-guest"),
     .target(
         name: "NucleusAndroidGfxstreamAdaptersCxx",
         dependencies: ["NucleusAndroidGfxstreamGuestTransportCxx", "NucleusAndroidSharedRingC"],

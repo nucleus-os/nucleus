@@ -336,12 +336,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             AOSPProductSourceOverlay(
                 source: root.removingLastComponent().appending(
                     "ipc/transport/Sources/NucleusIPCTransportC"),
-                relativeDestination: "native/ipc-transport"),
+                relativeDestination: "common/native/ipc-transport"),
             AOSPProductSourceOverlay(
                 source: root.appending(
                     "aosp/packages/apps/NucleusRuntimeBridge"),
                 relativeDestination:
-                    "packages/apps/NucleusRuntimeBridge"),
+                    "common/packages/apps/NucleusRuntimeBridge"),
         ]
     }
 
@@ -767,8 +767,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let stagedProvenance = staged.appending(
             "image-provenance.json")
         let build = AOSPProductBuild(
-            productSource: root.appending(
-                "aosp/device/nucleus/nucleus_x86_64"),
+            deviceSource: root.appending("aosp/device/nucleus"),
             sourceProvenance: sourceProvenance.path,
             artifactRoot: buildRoot,
             sourceWorkspace: sourceWorkspace,
@@ -807,9 +806,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .sourceCheckout(
-                    root.appending(
-                        "aosp/device/nucleus/nucleus_x86_64")),
+                .sourceCheckout(root.appending("aosp/device/nucleus")),
                 .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),
@@ -916,9 +913,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .sourceCheckout(
-                    root.appending(
-                        "aosp/device/nucleus/nucleus_x86_64")),
+                .sourceCheckout(root.appending("aosp/device/nucleus")),
                 .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),

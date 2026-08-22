@@ -395,7 +395,7 @@ import Testing
         try AnyColliderAction(
             CompileAOSPProductAction(
                 build: AOSPProductBuild(
-                    productSource: root.appending("product"),
+                    deviceSource: root.appending("product"),
                     sourceProvenance: root.appending("source-provenance.json"),
                     artifactRoot: root.appending("build"),
                     sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
@@ -436,24 +436,24 @@ import Testing
 @Test func aospCompileDelegatesIncrementalCleanupToSoong() async throws {
     let fixture = try AOSPWorkflowFixture(name: "product-compile")
     defer { fixture.remove() }
-    let productSource = fixture.root.appendingPathComponent("product")
+    let deviceSource = fixture.root.appendingPathComponent("product")
     let source = fixture.root.appendingPathComponent("source")
     let artifactRoot = fixture.root.appendingPathComponent("build")
     try FileManager.default.createDirectory(
-        at: productSource,
+        at: deviceSource,
         withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
         at: source,
         withIntermediateDirectories: true)
     try Data("product".utf8).write(
-        to: productSource.appendingPathComponent("AndroidProducts.mk"))
+        to: deviceSource.appendingPathComponent("AndroidProducts.mk"))
     let provenance = fixture.root.appendingPathComponent("source.json")
     try Data(#"{"status":"materialized"}"#.utf8).write(to: provenance)
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let product = "nucleus_x86_64"
     let build = AOSPProductBuild(
-        productSource: FilePath(productSource.path),
+        deviceSource: FilePath(deviceSource.path),
         sourceProvenance: FilePath(provenance.path),
         artifactRoot: FilePath(artifactRoot.path),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
@@ -545,7 +545,7 @@ import Testing
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
-        productSource: FilePath(fixture.root.path),
+        deviceSource: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
@@ -682,7 +682,7 @@ import Testing
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let build = AOSPProductBuild(
-        productSource: FilePath(fixture.root.path),
+        deviceSource: FilePath(fixture.root.path),
         sourceProvenance: FilePath(
             fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
@@ -764,7 +764,7 @@ import Testing
     try Data("system-image".utf8).write(
         to: stagedImages.appendingPathComponent("system.img"))
     let build = AOSPProductBuild(
-        productSource: FilePath(fixture.root.path),
+        deviceSource: FilePath(fixture.root.path),
         sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),
         artifactRoot: FilePath(buildRoot.path),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),

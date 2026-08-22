@@ -25,7 +25,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         FilePath(root.appendingPathComponent(name).path)
     }
     let build = AOSPProductBuild(
-        productSource: path("product"),
+        deviceSource: path("device"),
         sourceProvenance: path("source-provenance.json"),
         artifactRoot: path("build"),
         sourceWorkspace: aospSourceWorkspace(apiLevel: 37),
@@ -49,7 +49,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     let execution = aospProductOCIExecution(
         build: build,
         writableMounts: [(path("output"), "/output")],
-        readOnlyMounts: aospProductSourceMounts(build: build),
+        readOnlyMounts: aospDeviceSourceMounts(build: build),
         persistentWorkspaceMounts: [build.outputMount, build.compilerCacheMount],
         executableRequirements: aospX86ExecutableRequirements([
             "/out/host/linux-x86/bin/fixture"
@@ -91,7 +91,7 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     #expect(flags.management.tmpFs.contains("/home/nucleus-build"))
     #expect(
         flags.management.mounts.contains(
-            "type=bind,source=\(build.assembledProductSource.string),target=/src/device/nucleus/nucleus_x86_64,readonly"
+            "type=bind,source=\(build.assembledDeviceSource.string),target=/src/device/nucleus,readonly"
         ))
     #expect(
         flags.management.mounts.contains(

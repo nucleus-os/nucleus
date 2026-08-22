@@ -17,10 +17,10 @@
 $(call inherit-product, hardware/interfaces/audio/aidl/default/audio_effects.mk)
 
 PRODUCT_SOONG_NAMESPACES += \
-    device/nucleus/nucleus_x86_64
+    device/nucleus/common
 
 DEVICE_PACKAGE_OVERLAYS += \
-    device/nucleus/nucleus_x86_64/overlay
+    device/nucleus/common/overlay
 
 PRODUCT_PACKAGES += \
     android.hardware.graphics.composer3-service.nucleus \
@@ -36,8 +36,8 @@ PRODUCT_PACKAGES += \
 
 PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.software.app_widgets.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.app_widgets.xml \
-    device/nucleus/nucleus_x86_64/init.nucleus.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.nucleus.rc \
-    device/nucleus/nucleus_x86_64/permissions/nucleus-container.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/nucleus-container.xml
+    device/nucleus/common/init.nucleus.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.nucleus.rc \
+    device/nucleus/common/permissions/nucleus-container.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/nucleus-container.xml
 
 PRODUCT_VENDOR_PROPERTIES += \
     ro.control_privapp_permissions=enforce

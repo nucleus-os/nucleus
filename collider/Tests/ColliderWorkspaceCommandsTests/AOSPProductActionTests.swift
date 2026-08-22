@@ -187,12 +187,12 @@ private func runAOSPValidationFixturePython(
     ]
     let files = ColliderRuntime().actionFileSystem()
     let initial = try aospProductDefinitionDigest(
-        productSource: FilePath(product.path),
+        deviceSource: FilePath(product.path),
         sourceOverlays: overlays,
         files: files)
     #expect(
         try aospProductDefinitionDigest(
-            productSource: FilePath(product.path),
+            deviceSource: FilePath(product.path),
             sourceOverlays: Array(overlays.reversed()),
             files: files) == initial)
 
@@ -200,12 +200,12 @@ private func runAOSPValidationFixturePython(
         to: firstOverlay.appendingPathComponent("transport.c"))
     #expect(
         try aospProductDefinitionDigest(
-            productSource: FilePath(product.path),
+            deviceSource: FilePath(product.path),
             sourceOverlays: overlays,
             files: files) != initial)
     #expect(
         try aospProductDefinitionDigest(
-            productSource: FilePath(product.path),
+            deviceSource: FilePath(product.path),
             sourceOverlays: [],
             files: files) != initial)
 }

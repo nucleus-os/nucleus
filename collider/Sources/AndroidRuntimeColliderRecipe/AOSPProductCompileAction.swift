@@ -8,7 +8,7 @@ struct CompileAOSPProductAction: ColliderAction {
 
         func encode(into encoder: inout IdentityEncoder) {
             for path in [
-                build.productSource,
+                build.deviceSource,
                 build.sourceProvenance,
                 build.artifactRoot,
             ] {
@@ -49,7 +49,7 @@ struct CompileAOSPProductAction: ColliderAction {
 
     var requirements: ActionRequirements {
         var effects = [
-            ActionEffect(.read, scope: .input(build.productSource)),
+            ActionEffect(.read, scope: .input(build.deviceSource)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
             ActionEffect(.read, scope: .input(build.buildEntrypoint.image.path)),
             ActionEffect(.read, scope: .input(build.buildEntrypoint.executable)),
@@ -146,7 +146,7 @@ private struct AOSPProductCompileWorkflow {
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(build.artifactRoot, "/export")],
-                readOnlyMounts: aospProductSourceMounts(build: build),
+                readOnlyMounts: aospDeviceSourceMounts(build: build),
                 persistentWorkspaceMounts: [
                     build.outputMount,
                     build.compilerCacheMount,
@@ -217,7 +217,7 @@ private struct AOSPProductCompileWorkflow {
         let candidate = build.artifactRoot.appending(".product-input-candidate")
         try context.files.remove(candidate)
         defer { try? context.files.remove(candidate) }
-        try context.files.copyTree(from: build.productSource, to: candidate)
+        try context.files.copyTree(from: build.deviceSource, to: candidate)
         for overlay in build.sourceOverlays {
             guard !overlay.relativeDestination.isEmpty,
                 !overlay.relativeDestination.hasPrefix("/"),
@@ -231,8 +231,8 @@ private struct AOSPProductCompileWorkflow {
             try context.files.createDirectory(destination.removingLastComponent())
             try context.files.copyTree(from: overlay.source, to: destination)
         }
-        try context.files.remove(build.assembledProductSource)
-        try context.files.move(from: candidate, to: build.assembledProductSource)
+        try context.files.remove(build.assembledDeviceSource)
+        try context.files.move(from: candidate, to: build.assembledDeviceSource)
     }
 
     private func failure(_ message: String) -> AOSPProductCompileFailure {

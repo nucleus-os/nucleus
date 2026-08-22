@@ -33,7 +33,7 @@ filegroup {
 filegroup {
     name: "nucleus_ipc_transport_source",
     srcs: ["native/ipc-transport/NucleusIPCTransportC.c"],
-    visibility: ["//device/nucleus/nucleus_x86_64:__pkg__"],
+    visibility: ["//device/nucleus/common:__pkg__"],
 }
 
 cc_library_shared {
@@ -43,10 +43,10 @@ cc_library_shared {
         "native/ipc-transport/NucleusIPCTransportC.c",
     ],
     include_dirs: [
-        "device/nucleus/nucleus_x86_64/native/display-control-protocol/include",
-        "device/nucleus/nucleus_x86_64/native/gralloc/include",
-        "device/nucleus/nucleus_x86_64/native/ipc-transport/include",
-        "device/nucleus/nucleus_x86_64/native/presentation-protocol/include",
+        "device/nucleus/common/native/display-control-protocol/include",
+        "device/nucleus/common/native/gralloc/include",
+        "device/nucleus/common/native/ipc-transport/include",
+        "device/nucleus/common/native/presentation-protocol/include",
     ],
     shared_libs: [
         "libandroid",

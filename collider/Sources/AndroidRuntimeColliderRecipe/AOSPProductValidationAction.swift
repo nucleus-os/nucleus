@@ -8,7 +8,7 @@ import FoundationXML
 
 struct ValidateAOSPProductAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let productSource: FilePath
+        let deviceSource: FilePath
         let sourceProvenance: FilePath
         let buildRoot: FilePath
         let signingIdentity: FilePath
@@ -24,7 +24,7 @@ struct ValidateAOSPProductAction: ColliderAction {
         let sourceWorkspace: PersistentWorkspaceDeclaration
 
         func encode(into encoder: inout IdentityEncoder) {
-            encoder.append(path: productSource)
+            encoder.append(path: deviceSource)
             encoder.append(path: sourceProvenance)
             encoder.append(path: buildRoot)
             encoder.append(path: signingIdentity)
@@ -58,7 +58,7 @@ struct ValidateAOSPProductAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            productSource: build.productSource,
+            deviceSource: build.deviceSource,
             sourceProvenance: build.sourceProvenance,
             buildRoot: build.artifactRoot,
             signingIdentity: build.signingIdentity,
@@ -76,7 +76,7 @@ struct ValidateAOSPProductAction: ColliderAction {
 
     var requirements: ActionRequirements {
         var effects = [
-            ActionEffect(.read, scope: .input(build.productSource)),
+            ActionEffect(.read, scope: .input(build.deviceSource)),
             ActionEffect(.read, scope: .input(build.sourceProvenance)),
             ActionEffect(
                 .read,
@@ -131,7 +131,7 @@ private struct AOSPProductValidationWorkflow {
             AOSPValidationSourceProvenance.self,
             from: Data(try context.files.read(build.sourceProvenance)))
         let productDigest = try aospProductDefinitionDigest(
-            productSource: build.productSource,
+            deviceSource: build.deviceSource,
             sourceOverlays: build.sourceOverlays,
             files: context.files)
         let staged = build.artifactRoot.appending("staged")

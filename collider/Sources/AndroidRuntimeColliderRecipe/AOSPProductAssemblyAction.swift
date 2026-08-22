@@ -219,7 +219,7 @@ func aospProductOCIExecution(
         imageID: entrypoint.image.path,
         hostname: "android-build",
         workingDirectory: workingDirectory,
-        hostWorkingDirectory: build.productSource,
+        hostWorkingDirectory: build.deviceSource,
         mounts: [entrypoint.mount]
             + readOnlyMounts.map {
                 OCIMount(source: $0.0, target: $0.1, access: .readOnly)
@@ -241,11 +241,10 @@ func aospProductOCIExecution(
         output: output)
 }
 
-func aospProductSourceMounts(
+func aospDeviceSourceMounts(
     build: AOSPProductBuild
 ) -> [(FilePath, String)] {
-    let productRoot = "/src/device/nucleus/nucleus_x86_64"
-    return [(build.assembledProductSource, productRoot)]
+    return [(build.assembledDeviceSource, "/src/device/nucleus")]
 }
 
 func aospProductContainerToolEnvironment() -> [String: String] {
