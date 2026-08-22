@@ -89,7 +89,10 @@ public actor RunRegistry {
         return stream
     }
 
-    public func begin(command: [String]) throws -> RunHandle {
+    public func begin(
+        command: [String],
+        provenance: RunProvenance = .local
+    ) throws -> RunHandle {
         let id = RunID(rawValue: runIdentifier())
         let runs = root.appending("runs")
         let directory = runs.appending(id.rawValue)
@@ -101,7 +104,8 @@ public actor RunRegistry {
         let manifest = RunManifest(
             runID: id,
             command: CredentialScrubber.command(command),
-            startedAt: timestamp())
+            startedAt: timestamp(),
+            provenance: provenance)
         try writeJSON(manifest, to: directory.appending("manifest.json"))
         try replaceLatest(runID: id, runs: runs)
         sequences[id] = 0
@@ -540,9 +544,19 @@ public actor RunRegistry {
                 return $0.0.id.rawValue > $1.0.id.rawValue
             }
         let terminal = recorded.filter { $0.1.status != .running }
-        var retained = Set(terminal.prefix(max(0, keeping)).map(\.0.id))
-        if let newestFailed = terminal.first(where: { $0.1.status == .failed }) {
-            retained.insert(newestFailed.0.id)
+        // Verification evidence and ordinary local runs age out independently.
+        // A shared window would let a day of local building silently reclaim
+        // the record a protected-main run produced, which is the one record
+        // nothing can reproduce by rebuilding.
+        var retained: Set<RunID> = []
+        for authority in ProductArtifactSourceAuthority.allCases {
+            let sameAuthority = terminal.filter {
+                ($0.1.provenance ?? .local).sourceAuthority == authority
+            }
+            retained.formUnion(sameAuthority.prefix(max(0, keeping)).map(\.0.id))
+            if let newestFailed = sameAuthority.first(where: { $0.1.status == .failed }) {
+                retained.insert(newestFailed.0.id)
+            }
         }
         return
             terminal

@@ -85,7 +85,9 @@ public struct ColliderCommand: AsyncParsableCommand {
                     try await registry.resume(requestedRunID)
                 } else {
                     try await registry.begin(
-                        command: [CommandLine.arguments[0]] + arguments)
+                        command: [CommandLine.arguments[0]] + arguments,
+                        provenance: ProtectedMainSourceAssertion.runProvenance(
+                            environment: processEnvironment))
                 }
         } else {
             run = nil

@@ -820,7 +820,7 @@ the declared recovery gate completes.
 ## Phase 6: Define One Complete Verification Graph
 
 Status: the host-contract, provenance, build, and test lanes run on protected
-main.
+main, and their evidence outlives ordinary local work.
 
 Adding it found what a build-only graph had been hiding. Neither staged native
 SDK could be read where it is used: the render SDK and the React Native SDK
@@ -840,6 +840,16 @@ survived all of them, because a link's target is a payload byte rather than an
 identity input. The lanes this phase has yet to add stage considerably more
 content than these two SDKs, and none of it has been read inside a container by
 anything automated.
+
+A run record now states the authority that produced it, and retention windows
+the two authorities separately. Verification evidence was previously reclaimable
+by ordinary local building within a single day, which would have made a red
+`main` push unreconstructible precisely when its record mattered; a run that
+claims an authority must claim the whole contract, so a half-configured runner
+is refused rather than recorded as local work. Listings name the revision each
+verification run covered, and the workflow's closing step names the records this
+revision produced, because the durable evidence is the builder-owned record
+rather than the GitHub job log.
 
 
 Define the required verification graph once as a sequence of existing Collider

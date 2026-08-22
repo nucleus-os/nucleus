@@ -433,6 +433,80 @@ private enum ObservationFixtureFailure: Error {
     #expect(remaining.contains(oldest[oldest.count - 1]))
 }
 
+@Test func localRunsCannotReclaimProtectedMainVerificationEvidence() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-verification-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = FileManager.default
+    let runs = directory.appendingPathComponent("runs")
+    try manager.createDirectory(at: runs, withIntermediateDirectories: true)
+    let retained = 3
+    func record(
+        _ id: String,
+        startedAt: String,
+        status: RunStatus,
+        provenance: RunProvenance
+    ) throws {
+        let run = runs.appendingPathComponent(id)
+        try manager.createDirectory(at: run, withIntermediateDirectories: true)
+        var manifest = RunManifest(
+            runID: RunID(rawValue: id),
+            command: ["collider", "build", "all"],
+            startedAt: startedAt,
+            provenance: provenance)
+        manifest.status = status
+        try JSONEncoder().encode(manifest).write(
+            to: run.appendingPathComponent("manifest.json"))
+    }
+    func verification(_ commit: String) -> RunProvenance {
+        RunProvenance(
+            sourceAuthority: .protectedMain,
+            sourceCommit: commit,
+            producerTrustDomain: .nucleusBuilder)
+    }
+
+    let failedVerification = "2026-01-01T00-00-00Z-100"
+    try record(
+        failedVerification,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        status: .failed,
+        provenance: verification(String(repeating: "a", count: 40)))
+    let succeededVerification = "2026-01-01T00-00-01Z-101"
+    try record(
+        succeededVerification,
+        startedAt: "2026-01-01T00:00:01.000Z",
+        status: .succeeded,
+        provenance: verification(String(repeating: "b", count: 40)))
+
+    // Far more local work than the retention window, including a local
+    // failure, which under one shared window would displace both records
+    // above.
+    var local: [String] = []
+    for index in 0..<(retained * 4) {
+        let id = "2026-01-02T00-00-00Z-\(200 + index)"
+        let milliseconds = String(index)
+        let padded =
+            String(repeating: "0", count: max(0, 3 - milliseconds.count)) + milliseconds
+        try record(
+            id,
+            startedAt: "2026-01-02T00:00:00.\(padded)Z",
+            status: index == 0 ? .failed : .succeeded,
+            provenance: .local)
+        local.append(id)
+    }
+
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let reclaimable = Set(
+        await registry.reclaimableRuns(keeping: retained).map(\.id.rawValue))
+
+    #expect(!reclaimable.contains(failedVerification))
+    #expect(!reclaimable.contains(succeededVerification))
+    #expect(reclaimable.contains(local[1]))
+    for id in local.suffix(retained) {
+        #expect(!reclaimable.contains(id))
+    }
+}
+
 @Test func terminalizingARunAppliesRunRetention() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-terminal-retention-\(UUID().uuidString)")

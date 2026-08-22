@@ -177,6 +177,30 @@ public struct RunTaskRecord: Codable, Sendable {
     }
 }
 
+/// Why one run's evidence is worth keeping. Retention treats protected-main
+/// verification records as a separate class from ordinary local runs, so a
+/// day of local building cannot evict the record a red `main` push produced.
+public struct RunProvenance: Codable, Hashable, Sendable {
+    public let sourceAuthority: ProductArtifactSourceAuthority
+    public let sourceCommit: String?
+    public let producerTrustDomain: ProductArtifactProducerTrustDomain
+
+    public static let local = RunProvenance(
+        sourceAuthority: .localDevelopment,
+        sourceCommit: nil,
+        producerTrustDomain: .localDeveloper)
+
+    public init(
+        sourceAuthority: ProductArtifactSourceAuthority,
+        sourceCommit: String?,
+        producerTrustDomain: ProductArtifactProducerTrustDomain
+    ) {
+        self.sourceAuthority = sourceAuthority
+        self.sourceCommit = sourceCommit
+        self.producerTrustDomain = producerTrustDomain
+    }
+}
+
 public struct RunManifest: Codable, Sendable {
     public let runID: RunID
     public let command: [String]
@@ -194,11 +218,20 @@ public struct RunManifest: Codable, Sendable {
     public var tasks: [String: RunTaskRecord]?
     public var resumedAt: [String]?
     public var resumeCount: Int?
+    /// Absent only in records written before runs carried provenance. Those
+    /// remain readable so retention can still reclaim them.
+    public var provenance: RunProvenance?
 
-    public init(runID: RunID, command: [String], startedAt: String) {
+    public init(
+        runID: RunID,
+        command: [String],
+        startedAt: String,
+        provenance: RunProvenance = .local
+    ) {
         self.runID = runID
         self.command = command
         self.startedAt = startedAt
+        self.provenance = provenance
         finishedAt = nil
         status = .running
         failedTask = nil

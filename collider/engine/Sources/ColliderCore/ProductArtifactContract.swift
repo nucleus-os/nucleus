@@ -17,7 +17,9 @@ public enum ProductArtifactProducerTrustDomain: String, Codable, Hashable, Senda
     case nucleusBuilder = "nucleus-builder"
 }
 
-public enum ProductArtifactSourceAuthority: String, Codable, Hashable, Sendable {
+public enum ProductArtifactSourceAuthority: String, CaseIterable, Codable, Hashable,
+    Sendable
+{
     case localDevelopment = "local-development"
     case protectedMain = "protected-main"
 }

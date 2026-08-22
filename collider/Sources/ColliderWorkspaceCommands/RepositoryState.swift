@@ -11,6 +11,8 @@ struct RunListEntry: Codable, Equatable, Sendable {
     let status: RunStatus
     let failedTask: String?
     let domain: String
+    let sourceAuthority: ProductArtifactSourceAuthority
+    let sourceCommit: String?
 }
 
 struct RunListReport: Codable, Equatable, Sendable {
@@ -89,6 +91,7 @@ struct RepositoryState {
         let text = entries.map {
             "\($0.runID)\t\($0.status.rawValue)\t\($0.domain)\t"
                 + CommandConsole.render(command: Array($0.command.dropFirst()))
+                + verificationSuffix($0)
         }.joined(separator: "\n")
         try context.console.report(RunListReport(runs: entries), text: text)
     }
@@ -180,6 +183,7 @@ struct RepositoryState {
 
     private func listEntry(_ snapshot: RecordedRunSnapshot) -> RunListEntry {
         let manifest = snapshot.manifest
+        let provenance = manifest.provenance ?? .local
         return RunListEntry(
             runID: manifest.runID.rawValue,
             command: manifest.command,
@@ -187,7 +191,9 @@ struct RepositoryState {
             finishedAt: manifest.finishedAt,
             status: manifest.status,
             failedTask: manifest.failedTask?.rawValue,
-            domain: domain(of: manifest))
+            domain: domain(of: manifest),
+            sourceAuthority: provenance.sourceAuthority,
+            sourceCommit: provenance.sourceCommit)
     }
 
     private func logEntry(_ log: RecordedRunLog) -> RunLogEntry {
@@ -208,7 +214,20 @@ struct RepositoryState {
         ]
         if let finishedAt = run.finishedAt { lines.append("finished: \(finishedAt)") }
         if let failedTask = run.failedTask { lines.append("failed task: \(failedTask)") }
+        lines.append("source authority: \(run.sourceAuthority.rawValue)")
+        if let sourceCommit = run.sourceCommit {
+            lines.append("source commit: \(sourceCommit)")
+        }
         return lines
+    }
+
+    /// Local runs are the ordinary case and carry no marker. A verification
+    /// run names the revision it verified, so a listing answers which record
+    /// belongs to a given push without correlating timestamps.
+    private func verificationSuffix(_ run: RunListEntry) -> String {
+        guard run.sourceAuthority == .protectedMain else { return "" }
+        guard let commit = run.sourceCommit else { return "\tprotected-main" }
+        return "\tprotected-main \(commit.prefix(12))"
     }
 
     private func taskState(_ record: RunTaskRecord) -> String {
