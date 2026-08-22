@@ -53,12 +53,19 @@ materialize_repo_metadata() {
   mkdir -p /src/.repo
   for entry in "$source_inputs"/.repo/*; do
     name="$(basename "$entry")"
-    if [[ "$name" == project-objects ]]; then
-      continue
-    fi
-    if [[ ! -e "/src/.repo/$name" ]]; then
-      cp -a "$entry" "/src/.repo/$name"
-    fi
+    case "$name" in
+      # The object store is referenced, never copied.
+      project-objects) continue ;;
+      # Per-project git directories hold refs, indexes, and worktree links that
+      # this volume owns and Repo updates in place as it checks revisions out.
+      projects) continue ;;
+    esac
+    # Everything else describes which revisions to check out, and the host
+    # rewrites it whenever the lock moves. Seeding it once would pin this
+    # volume to the manifest it was first written with, however current the
+    # objects beside it are.
+    rm -rf "/src/.repo/$name"
+    cp -a "$entry" "/src/.repo/$name"
   done
   if [[ -d /src/.repo/project-objects && ! -L /src/.repo/project-objects ]]; then
     echo "replacing the duplicated AOSP object store with its host input" >&2
