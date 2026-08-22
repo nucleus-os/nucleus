@@ -127,8 +127,8 @@ private struct AOSPProductCompileWorkflow {
         let sourceProvenance = try JSONDecoder().decode(
             AOSPCompileSourceProvenance.self,
             from: Data(try context.files.read(build.sourceProvenance)))
-        guard sourceProvenance.status == "materialized" else {
-            throw failure("AOSP source provenance is not materialized")
+        guard sourceProvenance.status == "hydrated" else {
+            throw failure("AOSP source provenance is not hydrated")
         }
         try context.files.createDirectory(build.artifactRoot)
         try assembleProductInput()

@@ -328,12 +328,18 @@ import Testing
             shift
           fi
         done
-        test -n "$output"
+        emit() {
+          if test -n "$output"; then
+            printf '%s\n' "$1" > "$output"
+          else
+            printf '%s\n' "$1"
+          fi
+        }
         case "$command" in
-          genpkey) printf 'private-key\n' > "$output" ;;
-          req) printf 'certificate\n' > "$output" ;;
-          pkcs8) printf 'pkcs8\n' > "$output" ;;
-          x509|pkey) printf 'public-key\n' > "$output" ;;
+          genpkey) emit private-key ;;
+          req) emit certificate ;;
+          pkcs8) emit pkcs8 ;;
+          x509|pkey) emit public-key ;;
           *) exit 2 ;;
         esac
         """#,
@@ -448,7 +454,7 @@ import Testing
     try Data("product".utf8).write(
         to: deviceSource.appendingPathComponent("AndroidProducts.mk"))
     let provenance = fixture.root.appendingPathComponent("source.json")
-    try Data(#"{"status":"materialized"}"#.utf8).write(to: provenance)
+    try Data(#"{"status":"hydrated"}"#.utf8).write(to: provenance)
     let imageID = fixture.root.appendingPathComponent("image-id")
     try Data("fixture-image".utf8).write(to: imageID)
     let product = "nucleus_x86_64"
