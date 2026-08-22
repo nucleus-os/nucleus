@@ -43,6 +43,30 @@ raise SystemExit(1)
 PY
 }
 
+# The volume holds what must be case-sensitive and mutable: per-project git
+# metadata and the working trees. The object store is neither. It is large,
+# immutable, and already hydrated on the host, so it is referenced through its
+# mount rather than copied, which is what lets a later revision reach objects
+# hydrated after this volume was first written.
+materialize_repo_metadata() {
+  local entry name
+  mkdir -p /src/.repo
+  for entry in "$source_inputs"/.repo/*; do
+    name="$(basename "$entry")"
+    if [[ "$name" == project-objects ]]; then
+      continue
+    fi
+    if [[ ! -e "/src/.repo/$name" ]]; then
+      cp -a "$entry" "/src/.repo/$name"
+    fi
+  done
+  if [[ -d /src/.repo/project-objects && ! -L /src/.repo/project-objects ]]; then
+    echo "replacing the duplicated AOSP object store with its host input" >&2
+    rm -rf /src/.repo/project-objects
+  fi
+  ln -sfn "$source_inputs/.repo/project-objects" /src/.repo/project-objects
+}
+
 if [[ ! -f "$repo" \
     || ! -d "$source_inputs/.repo" \
     || ! -f "$expected_manifest" \
@@ -52,6 +76,7 @@ if [[ ! -f "$repo" \
 fi
 
 mkdir -p /src/out
+materialize_repo_metadata
 
 if [[ -d /src/.repo \
     && -f "$resolved_manifest" \
@@ -73,9 +98,7 @@ else
     echo "error: AOSP source volume is nonempty without Repo metadata" >&2
     exit 65
   fi
-  if [[ ! -d /src/.repo ]]; then
-    cp -a "$source_inputs/.repo" /src/.repo
-  fi
+  materialize_repo_metadata
   python3 "$repo" sync \
     --local-only \
     --no-manifest-update \

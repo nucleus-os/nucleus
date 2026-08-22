@@ -220,7 +220,7 @@ func aospProductOCIExecution(
         hostname: "android-build",
         workingDirectory: workingDirectory,
         hostWorkingDirectory: build.deviceSource,
-        mounts: [entrypoint.mount]
+        mounts: [entrypoint.mount, build.sourceInputsMount]
             + readOnlyMounts.map {
                 OCIMount(source: $0.0, target: $0.1, access: .readOnly)
             }

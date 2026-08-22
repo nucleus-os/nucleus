@@ -2,6 +2,9 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+/// The one path at which the host-hydrated Repo cache is visible.
+let aospSourceInputsTarget = "/inputs/source-inputs"
+
 func aospOutputWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
@@ -41,7 +44,11 @@ func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         capacityBytes: 300 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
         journal: .writeback64MiB,
-        retentionPolicy: .protected)
+        // A working tree checked out from the host-hydrated object store. It
+        // exists because AOSP needs case-sensitive files, not because it holds
+        // anything the host does not, so it is expensive to rebuild rather
+        // than authoritative.
+        retentionPolicy: .explicitClean)
 }
 
 struct AOSPProductSourceOverlay: Hashable, Sendable {
@@ -51,6 +58,10 @@ struct AOSPProductSourceOverlay: Hashable, Sendable {
 
 struct AOSPProductBuild: Hashable, Sendable {
     let deviceSource: FilePath
+    /// The host-hydrated Repo cache. The materialized source references its
+    /// object store rather than copying it, so every execution that mounts the
+    /// source volume mounts this too.
+    let sourceInputs: FilePath
     let sourceProvenance: FilePath
     let artifactRoot: FilePath
     let sourceWorkspace: PersistentWorkspaceDeclaration
@@ -72,6 +83,7 @@ struct AOSPProductBuild: Hashable, Sendable {
 
     init(
         deviceSource: FilePath,
+        sourceInputs: FilePath,
         sourceProvenance: FilePath,
         artifactRoot: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
@@ -92,6 +104,7 @@ struct AOSPProductBuild: Hashable, Sendable {
         sourceOverlays: [AOSPProductSourceOverlay] = []
     ) {
         self.deviceSource = deviceSource
+        self.sourceInputs = sourceInputs
         self.sourceProvenance = sourceProvenance
         self.artifactRoot = artifactRoot
         self.sourceWorkspace = sourceWorkspace
@@ -117,6 +130,15 @@ struct AOSPProductBuild: Hashable, Sendable {
             workspace: outputWorkspace,
             target: "/src/out",
             access: .readWrite)
+    }
+
+    /// Where the container reaches the object store the working tree's git
+    /// metadata points at.
+    var sourceInputsMount: OCIMount {
+        OCIMount(
+            source: sourceInputs,
+            target: aospSourceInputsTarget,
+            access: .readOnly)
     }
 
     var sourceMount: OCIPersistentWorkspaceMount {

@@ -71,6 +71,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let tasks: [TaskDeclaration]
         let provenance: ArtifactReference
         let workspace: PersistentWorkspaceDeclaration
+        let sourceInputs: FilePath
     }
 
     private struct SourceTaskArtifacts {
@@ -462,7 +463,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         return SourceArtifacts(
             tasks: [launcher.task, verification.task, inputs.task, source.task],
             provenance: source.provenance,
-            workspace: source.workspace)
+            workspace: source.workspace,
+            sourceInputs: inputs.sourceInputs)
     }
 
     package static func aospImageTasks(
@@ -496,6 +498,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             root: root,
             identityRoot: identityRoot,
             sourceWorkspace: source.workspace,
+            sourceInputs: source.sourceInputs,
             aospBuildRoot: artifactRoot,
             environment: environment,
             sourceProvenance: source.provenance,
@@ -714,6 +717,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         root: FilePath,
         identityRoot: FilePath,
         sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceInputs: FilePath,
         aospBuildRoot: FilePath,
         environment: [String: String],
         sourceProvenance: ArtifactReference,
@@ -768,6 +772,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             "image-provenance.json")
         let build = AOSPProductBuild(
             deviceSource: root.appending("aosp/device/nucleus"),
+            sourceInputs: sourceInputs,
             sourceProvenance: sourceProvenance.path,
             artifactRoot: buildRoot,
             sourceWorkspace: sourceWorkspace,
