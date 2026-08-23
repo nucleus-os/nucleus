@@ -18,9 +18,11 @@ cannot produce is not support.
 
 ## Current State
 
-One AOSP product exists. `android-runtime/aosp-product.lock.json` pins
-`nucleus_x86_64`, and `AOSPProductLock.validate()` rejects every other product,
-so the pin is a hard constraint rather than a default.
+Both supported architectures have an AOSP product.
+`android-runtime/aosp-product.lock.json` pins `nucleus_arm64` and
+`nucleus_x86_64`, `AOSPProductLock.validate()` admits each entry for its own
+architecture and no other, and both generations are built, signed, and
+validated by the graph.
 
 The device tree is architecture-neutral in substance. Across the 61 tracked
 files under `android-runtime/aosp/device/nucleus/nucleus_x86_64`, every `x86`
@@ -144,30 +146,36 @@ the AVB identity the graph generates, and passes product validation with arm64
 provenance. Both generations exist simultaneously, and building one does not
 invalidate the other.
 
-Status: active. Run `2026-08-22T21-30-45.307Z-39952` compiled the product in
-7h28m across 144,172 steps with no failures, signed it in 173s, assembled its
-images in 18s, validated it in 26s, and published
-`1781652681-nucleus-android17-r1-cp2a-nucleus_arm64-user-37-202604` carrying
-`system`, `system_ext`, `product`, `vendor`, `vbmeta`, and `vbmeta_system` as
-raw images with `status: signed`. Soong resolved the shared device tree, the
-Nucleus HALs, and the gfxstream guest for arm64 without a single architecture
-dependency needing a fix, which is what the phase existed to discover.
+Status: complete. Gate evidence: run `2026-08-22T21-30-45.307Z-39952` compiled
+`nucleus_arm64` in 7h28m across 144,172 steps with no failures, and run
+`2026-08-23T06-00-12.958Z-25386` completed the pair with 11 tasks clean and 11
+executed, none failed. Both products publish a generation carrying `system`,
+`system_ext`, `product`, `vendor`, `vbmeta`, and `vbmeta_system` as raw images
+with `status: signed` under one build number, and each names its own product in
+its provenance.
 
-The coexistence clause is outstanding. `aosp-compile.arm64` replans clean after
-an x86_64 build, which is the substance of it, but the signing chain replans
-dirty for reasons unrelated to either product: a task that runs a first-party
-Linux tool hashes the Collider package tree through its Swift product
-requirement, so every change to Collider invalidates the signing identity and
-everything downstream of it. The clause is met when a replan taken with no
-intervening source change reports both products clean.
+Soong resolved the shared device tree, the Nucleus HALs, and the gfxstream
+guest for arm64 without a single architecture dependency needing a fix, which
+is what the phase existed to discover.
 
-Binary translation is the pipeline's least reliable element. The builder is
-arm64 and AOSP's host toolchain is x86_64, so Soong, Siso, the JDK, and every
-host tool run under Rosetta for the whole build. Two Go tools have now died
-there: `soong_zip` on a SIGSEGV, and Siso on a SIGTRAP that cancelled 26
-in-flight actions and failed an x86_64 build outright. Neither had a cause in
-the tree. A native arm64 host toolchain is the durable answer; until then a
-crashed build is retried, not diagnosed.
+The coexistence clause holds. Adding the arm64 product left
+`aosp-compile.x86_64` needing a rebuild only because its own workspace identity
+changed when the workspaces became architecture-neutral, and once both had
+built, a replan taken with no intervening source change reported all fifteen
+AOSP tasks clean across both products. Building one does not invalidate the
+other, and `aosp-compile.arm64` was reused rather than repeated while the
+second product built.
+
+Two properties of the pipeline surfaced here rather than in the phase that
+owns them. A task running a first-party Linux tool hashes the Collider package
+tree through its Swift product requirement, so editing Collider invalidates the
+signing identity and everything downstream of it for both products; the
+compiles are unaffected. And nothing on the development host compiles
+`#if os(Linux)` sources, so a Linux-only caller of a changed signature fails
+first inside a container build.
+
+Binary translation is the pipeline's least reliable element, and it has its own
+plan: [Android native arm64 host toolchain](android-native-arm64-host-toolchain-plan.md).
 
 ## Phase 4: Produce Both Package Inputs From the Graph
 
