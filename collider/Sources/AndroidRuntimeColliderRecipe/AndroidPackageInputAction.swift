@@ -203,6 +203,11 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
                     executable: .path(
                         aospGeneration.appending("tools/avbtool")),
                     role: .semantic),
+                // The published AVB tool is a Python script, so the
+                // interpreter its shebang names is an input to this
+                // materialization rather than an incidental part of the image.
+                ActionToolRequirement(
+                    "python3", executable: .named("python3"), role: .semantic),
                 ActionToolRequirement(
                     "openssl", executable: .named("openssl"), role: .semantic),
                 ActionToolRequirement(

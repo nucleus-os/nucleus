@@ -526,8 +526,15 @@ import Testing
     }
 }
 
-@Test func aospProductAssemblyNormalizesSparseImagesAndStagesOutputs() async throws {
-    let fixture = try AOSPWorkflowFixture(name: "assembly")
+/// Runs AOSP image assembly against a fixture whose container answers the
+/// tool-staging copy with `avbTool`, so both the accepted and the rejected
+/// shape of a published verification tool are exercised through the action.
+private func withAOSPProductAssembly<T>(
+    name: String,
+    avbTool: [UInt8],
+    body: (URL, [OCIExecution]) throws -> T
+) async throws -> T {
+    let fixture = try AOSPWorkflowFixture(name: name)
     defer { fixture.remove() }
     let buildRoot = fixture.root.appendingPathComponent("build")
     let source = fixture.root.appendingPathComponent("source")
@@ -609,6 +616,18 @@ import Testing
                 } else if execution.command.first?.hasSuffix("simg2img") == true {
                     try Data("normalized-image".utf8).write(
                         to: imageCandidate.appendingPathComponent("system.img.raw"))
+                } else if execution.command.first == "/bin/cp" {
+                    guard
+                        let tools = execution.mounts.first(where: {
+                            $0.target == "/tools"
+                        })
+                    else {
+                        Issue.record("tool staging mounted no destination")
+                        return CommandResult(status: 1)
+                    }
+                    try Data(avbTool).write(
+                        to: URL(fileURLWithPath: tools.source.string)
+                            .appendingPathComponent("avbtool"))
                 } else {
                     try Data("images-archive".utf8).write(
                         to: archiveCandidate)
@@ -616,30 +635,66 @@ import Testing
                 return CommandResult(status: 0)
             })))
 
-    #expect(
-        try String(
-            contentsOf: staged.appendingPathComponent("\(product)-images.zip"),
-            encoding: .utf8) == "images-archive")
-    #expect(
-        try String(
-            contentsOf: staged.appendingPathComponent("images/system.img"),
-            encoding: .utf8) == "normalized-image")
-    for name in aospRequiredProductImages where name != "system.img" {
-        #expect(
-            FileManager.default.fileExists(
-                atPath: staged.appendingPathComponent("images/\(name)").path))
-    }
-    let recorded = executions.withLock { $0 }
-    #expect(recorded.count == 3)
-    #expect(recorded.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
-    #expect(
-        recorded.allSatisfy {
-            $0.artifactTarget == .androidX86_64(apiLevel: 37)
-        })
-    #expect(!recorded[0].executableRequirements.isEmpty)
-    #expect(recorded[1].executableRequirements.isEmpty)
-    #expect(!recorded[2].executableRequirements.isEmpty)
+    return try body(staged, executions.withLock { $0 })
 }
+
+@Test func aospProductAssemblyNormalizesSparseImagesAndStagesOutputs() async throws {
+    try await withAOSPProductAssembly(
+        name: "assembly",
+        avbTool: Array(stagedAVBToolContents.utf8)
+    ) { staged, recorded in
+        let imagesArchive = try String(
+            contentsOf: staged.appendingPathComponent("nucleus_x86_64-images.zip"),
+            encoding: .utf8)
+        #expect(imagesArchive == "images-archive")
+        let systemImage = try String(
+            contentsOf: staged.appendingPathComponent("images/system.img"),
+            encoding: .utf8)
+        #expect(systemImage == "normalized-image")
+        for name in aospRequiredProductImages where name != "system.img" {
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: staged.appendingPathComponent("images/\(name)").path))
+        }
+        let publishedAVBTool = try String(
+            contentsOf: staged.appendingPathComponent("tools/avbtool"),
+            encoding: .utf8)
+        #expect(publishedAVBTool == stagedAVBToolContents)
+        #expect(recorded.count == 4)
+        #expect(recorded.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
+        #expect(
+            recorded.allSatisfy {
+                $0.artifactTarget == .androidX86_64(apiLevel: 37)
+            })
+        #expect(!recorded[0].executableRequirements.isEmpty)
+        #expect(recorded[1].executableRequirements.isEmpty)
+        #expect(!recorded[2].executableRequirements.isEmpty)
+        // The verification tool travels with the images as pinned source, so a
+        // generation never carries a host binary built for this product's build
+        // architecture.
+        #expect(recorded[3].command.contains("/src/external/avb/avbtool.py"))
+        #expect(!recorded[3].command.contains(where: { $0.hasPrefix("/src/out/") }))
+        #expect(recorded[3].executableRequirements.isEmpty)
+    }
+}
+
+@Test func aospProductAssemblyRejectsAHostBinaryAsTheVerificationTool() async throws {
+    // A `python_binary_host` build of avbtool is an ELF for the build host's
+    // architecture, so publishing one would ship an unrunnable tool with the
+    // images it is meant to verify.
+    await #expect(throws: (any Error).self) {
+        try await withAOSPProductAssembly(
+            name: "assembly-host-binary",
+            avbTool: [0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]
+        ) { _, _ in }
+    }
+}
+
+private let stagedAVBToolContents = """
+    #!/usr/bin/env python3
+    # fixture avbtool
+
+    """
 
 @Test func aospProductSigningValidatesKeysAndUsesReleaseAVBArguments() async throws {
     let fixture = try AOSPWorkflowFixture(name: "product-signing")
@@ -777,6 +832,12 @@ import Testing
     }
     try Data("system-image".utf8).write(
         to: stagedImages.appendingPathComponent("system.img"))
+    let stagedTools = staged.appendingPathComponent("tools")
+    try FileManager.default.createDirectory(
+        at: stagedTools,
+        withIntermediateDirectories: true)
+    try Data(stagedAVBToolContents.utf8).write(
+        to: stagedTools.appendingPathComponent("avbtool"))
     let build = AOSPProductBuild(
         architecture: .x86_64,
         deviceSource: FilePath(fixture.root.path),
@@ -836,6 +897,10 @@ import Testing
             encoding: .utf8) == "system-image")
     #expect(
         try String(contentsOf: publishedProvenance, encoding: .utf8) == "{}")
+    #expect(
+        try String(
+            contentsOf: buildRoot.appendingPathComponent("tools/avbtool"),
+            encoding: .utf8) == stagedAVBToolContents)
 }
 
 private struct AOSPSigningIdentityFixture: Decodable {

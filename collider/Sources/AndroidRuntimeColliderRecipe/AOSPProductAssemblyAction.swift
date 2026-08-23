@@ -158,10 +158,15 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
     ///
     /// A consumer of a generation verifies its images against it, and the
     /// native package ships it so an installed runtime can verify them again.
-    /// The tool exists only inside the AOSP output workspace, which belongs to
-    /// this product's build, so a consumer that reached for it there would
-    /// depend on its producer's build state rather than on the artifact it was
-    /// given.
+    /// Neither consumer runs in this product's AOSP container, so the tool
+    /// travels with the images rather than being reached for where it was
+    /// found.
+    ///
+    /// It is taken from `external/avb` rather than from `out/host`, because
+    /// the built host tool is a `python_binary_host` — an x86_64 ELF with an
+    /// embedded interpreter, which is both the wrong architecture for an
+    /// arm64 payload and a product of this build rather than a pinned input.
+    /// The source form is the same program as an architecture-neutral script.
     private func stageHostTools(
         context: ActionContext,
         staged: FilePath
@@ -176,17 +181,32 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 build: build,
                 writableMounts: [(candidate, "/tools")],
                 readOnlyMounts: [],
-                persistentWorkspaceMounts: [build.readOnlyOutputMount],
                 command: [
                     "/bin/cp", "--preserve=timestamps",
-                    "/src/out/host/linux-x86/bin/avbtool",
+                    "/src/external/avb/avbtool.py",
                     "/tools/avbtool",
                 ]))
-        try requireRegularFile(
-            candidate.appending("avbtool"),
-            files: context.files)
+        let publishedAVBTool = candidate.appending("avbtool")
+        try requireRegularFile(publishedAVBTool, files: context.files)
+        try requirePortableProgram(publishedAVBTool, files: context.files)
         try context.files.remove(tools)
         try context.files.move(from: candidate, to: tools)
+    }
+
+    /// Asserts at publication that a tool entering the generation is
+    /// architecture-neutral, so a host binary staged by mistake fails here
+    /// rather than in whichever consumer later tries to run it.
+    private func requirePortableProgram(
+        _ path: FilePath,
+        files: ActionFileSystem
+    ) throws {
+        let prefix = try files.readPrefix(path, count: 128)
+        guard let newline = prefix.firstIndex(of: 0x0a),
+            let shebang = String(bytes: prefix[..<newline], encoding: .utf8),
+            shebang.hasPrefix("#!"), shebang.contains("python")
+        else {
+            throw AOSPProductAssemblyFailure.untranslatableHostTool(path)
+        }
     }
 
     private func requireRegularFile(
@@ -304,6 +324,7 @@ func aospProductContainerToolEnvironment() -> [String: String] {
 private enum AOSPProductAssemblyFailure: Error, CustomStringConvertible {
     case missingFile(FilePath)
     case shortImage(FilePath)
+    case untranslatableHostTool(FilePath)
 
     var description: String {
         switch self {
@@ -311,6 +332,11 @@ private enum AOSPProductAssemblyFailure: Error, CustomStringConvertible {
             "required AOSP image assembly input is missing: \(path)"
         case .shortImage(let path):
             "Android image is too short: \(path)"
+        case .untranslatableHostTool(let path):
+            """
+            a tool published into a generation must be architecture-neutral, \
+            and this one is not: \(path)
+            """
         }
     }
 }
