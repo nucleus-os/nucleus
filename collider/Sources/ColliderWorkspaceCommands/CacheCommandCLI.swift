@@ -57,7 +57,9 @@ struct Cache: AsyncParsableCommand {
     struct Prune: ColliderWorkspaceCommand {
         static let configuration = CommandConfiguration(
             abstract:
-                "Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images."
+                "Remove stale run records, abandoned Swift SDK candidates, "
+                + "dangling OCI images, and persistent workspaces no declared "
+                + "identity claims."
         )
         @Flag(help: "Print removals without applying them.")
         var dryRun = false

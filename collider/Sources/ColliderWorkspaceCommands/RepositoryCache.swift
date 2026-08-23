@@ -177,6 +177,10 @@ struct PruneResult: Codable, Equatable, Sendable {
     let removedRuns: [String]
     let targets: [StorageRemovalTarget]
     let persistentWorkspaces: [PersistentWorkspaceRemovalTarget]
+    /// Why the workspace store could not be enumerated, when it could not be.
+    /// Absent means the listing succeeded and `persistentWorkspaces` is the
+    /// complete set of orphans.
+    let persistentWorkspacesUnavailable: String?
     let appleContainerImages: [OCIImageRetentionRecord]
     let selectedAllocatedBytes: UInt64
     let recoveredBytes: UInt64?
@@ -437,12 +441,23 @@ struct RepositoryCache {
             .sorted { $0.id < $1.id }
         let declaredWorkspaceIdentities = Set(
             catalog.components.flatMap(\.persistentWorkspaces).map(\.identity))
-        let orphanedWorkspaceIdentities = Set(
-            await containerPersistentWorkspaces()
-                .filter {
-                    !$0.active && !declaredWorkspaceIdentities.contains($0.identity)
-                }
-                .map(\.identity))
+        let workspacesUnavailable: String?
+        let orphanedWorkspaceIdentities: Set<PersistentWorkspaceIdentity>
+        switch await containerPersistentWorkspaces() {
+        case .success(let workspaces):
+            workspacesUnavailable = nil
+            orphanedWorkspaceIdentities = Set(
+                workspaces
+                    .filter {
+                        !$0.active && !declaredWorkspaceIdentities.contains($0.identity)
+                    }
+                    .map(\.identity))
+        case .failure(let error):
+            // An orphan set cannot be computed against a store that did not
+            // answer. Nothing is reclaimed, and the reason reaches the report.
+            workspacesUnavailable = "\(error)"
+            orphanedWorkspaceIdentities = []
+        }
         var targetRecords: [StorageRemovalTarget]
         var workspaceRecords: [PersistentWorkspaceRemovalTarget]
         var selectedImages: [OCIImageRetentionRecord]
@@ -530,6 +545,7 @@ struct RepositoryCache {
                 removedRuns: reclaimableRuns.map(\.id.rawValue),
                 targets: targetRecords,
                 persistentWorkspaces: workspaceRecords,
+                persistentWorkspacesUnavailable: workspacesUnavailable,
                 appleContainerImages: selectedImages,
                 selectedAllocatedBytes: selectedAllocatedBytes,
                 recoveredBytes: dryRun ? nil : recoveredBytes(since: availableBefore),
@@ -1049,8 +1065,17 @@ struct RepositoryCache {
         return "sha256:" + value
     }
 
-    private func containerPersistentWorkspaces() async -> [OCIPersistentWorkspaceState] {
-        (try? await context.runtime.ociPersistentWorkspaces()) ?? []
+    /// An unreachable workspace store is not an empty one. Reclamation is
+    /// part of what prune is for, so a failure to enumerate is reported and
+    /// the orphan set is withheld rather than silently reported as zero.
+    private func containerPersistentWorkspaces() async -> Result<
+        [OCIPersistentWorkspaceState], any Error
+    > {
+        do {
+            return .success(try await context.runtime.ociPersistentWorkspaces())
+        } catch {
+            return .failure(error)
+        }
     }
 
     private func persistentWorkspaceTargets(
@@ -1303,12 +1328,19 @@ struct RepositoryCache {
 
     private func emit(_ result: PruneResult) throws {
         let action = result.dryRun ? "would remove" : "removed"
+        let workspaceSummary =
+            result.persistentWorkspacesUnavailable == nil
+            ? "\(result.persistentWorkspaces.count) orphaned workspace(s)"
+            : "orphaned workspaces not evaluated"
         var lines = [
             "cache prune: \(action) \(result.removedRuns.count) run(s), "
                 + "\(result.targets.count) declared storage target(s), "
-                + "\(result.persistentWorkspaces.count) orphaned workspace(s), "
+                + workspaceSummary + ", "
                 + "\(formatted(result.selectedAllocatedBytes)) selected allocation"
         ]
+        if let reason = result.persistentWorkspacesUnavailable {
+            lines.append("  persistent workspaces unavailable: \(reason)")
+        }
         if let recoveredBytes = result.recoveredBytes {
             lines.append("  \(formatted(recoveredBytes)) physical space recovered")
         }
