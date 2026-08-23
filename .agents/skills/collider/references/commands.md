@@ -199,7 +199,7 @@ Subcommands:
 
 Assemble the complete Linux runtime package cohort.
 
-Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [--android-arm64 <android-arm64>] [--android-x86-64 <android-x86-64>] [--version] [--help]`
+Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [--version] [--help]`
 
 Arguments and options:
 
@@ -215,8 +215,6 @@ Arguments and options:
 - `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
 - `--as-builder` — Plan as the identity that executes builds, without executing.
 - `--verify-reproduction` — Produce beside the retained result and report whether it reproduces.
-- `--android-arm64` `<android-arm64>`
-- `--android-x86-64` `<android-x86-64>`
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
@@ -343,7 +341,7 @@ Arguments and options:
 Subcommands:
 
 - `status`: Report ownership, retention, allocation, and reclaimability for declared storage.
-- `prune`: Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images.
+- `prune`: Remove stale run records, abandoned Swift SDK candidates, dangling OCI images, and persistent workspaces no declared identity claims.
 - `reclaim`: Return blocks freed inside persistent workspaces to the host filesystem.
 
 ## `collider cache status`
@@ -364,7 +362,7 @@ Arguments and options:
 
 ## `collider cache prune`
 
-Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images.
+Remove stale run records, abandoned Swift SDK candidates, dangling OCI images, and persistent workspaces no declared identity claims.
 
 Usage: `collider cache prune [--dry-run] [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--version] [--help]`
 
