@@ -650,8 +650,6 @@ private func rendered(_ command: CommandSpec) -> String {
 }
 
 public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
-    case invalidEnvironmentKey(String)
-    case invalidEnvironmentValue(key: String)
     case invalidOutput(String)
     case outputLimitExceeded(Int)
     case swiftBuildFailed(attribution: String, reason: String)
@@ -659,9 +657,6 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
 
     public var description: String {
         switch self {
-        case .invalidEnvironmentKey(let key): "invalid environment key: \(key)"
-        case .invalidEnvironmentValue(let key):
-            "environment value for \(key) contains a null byte"
         case .invalidOutput(let path): "task produced an invalid output at \(path)"
         case .outputLimitExceeded(let limit): "captured output exceeded \(limit) bytes"
         case .swiftBuildFailed(let attribution, let reason):

@@ -33,20 +33,6 @@ public enum CapturedChildProcess {
         }
     }
 
-    public enum Failure: Error, CustomStringConvertible {
-        case invalidEnvironmentName(String)
-        case invalidEnvironmentValue(name: String)
-
-        public var description: String {
-            switch self {
-            case .invalidEnvironmentName(let name):
-                "child process environment name is not usable: \(name)"
-            case .invalidEnvironmentValue(let name):
-                "child process environment value is not usable: \(name)"
-            }
-        }
-    }
-
     /// Bounds a runaway child rather than a legitimate one.
     ///
     /// A Git listing grows with the number of tracked paths, and the largest
@@ -84,23 +70,7 @@ public enum CapturedChildProcess {
         environment: [String: String],
         combiningStandardError: Bool = false
     ) async throws -> Capture {
-        // `Environment.Key(rawValue:)` accepts anything, so a name carrying a
-        // NUL or an `=` would reach the child as a corrupted environment entry
-        // rather than as an error. These are the same checks the runtime makes
-        // before building its own environment.
-        var keyed: [Subprocess.Environment.Key: String] = [:]
-        for (name, value) in environment {
-            guard !name.utf8.contains(0), !name.contains("="),
-                name.utf8.first.map({ !(48...57).contains($0) }) ?? true,
-                let key = Subprocess.Environment.Key(rawValue: name)
-            else {
-                throw Failure.invalidEnvironmentName(name)
-            }
-            guard !value.utf8.contains(0) else {
-                throw Failure.invalidEnvironmentValue(name: name)
-            }
-            keyed[key] = value
-        }
+        let keyed = try ChildProcessEnvironment.validated(environment)
         // Combining shares one descriptor between the streams, so what the
         // child interleaved is what the caller reads. Concatenating two
         // separate captures would not preserve that.

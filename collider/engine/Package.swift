@@ -100,6 +100,7 @@ let package = Package(
                 "ColliderDownloads",
                 "ColliderPersistence",
                 "ColliderPlatformC",
+                "ColliderProcess",
                 .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),

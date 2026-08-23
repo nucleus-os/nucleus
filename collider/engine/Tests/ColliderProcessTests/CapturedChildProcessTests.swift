@@ -57,7 +57,7 @@ private func shell(_ script: String) async throws -> CapturedChildProcess.Captur
 }
 
 @Test func captureRejectsAnUnusableEnvironmentName() async throws {
-    await #expect(throws: CapturedChildProcess.Failure.self) {
+    await #expect(throws: ChildProcessEnvironment.Failure.self) {
         _ = try await CapturedChildProcess.capture(
             executable: FilePath("/bin/sh"),
             arguments: ["-c", "true"],

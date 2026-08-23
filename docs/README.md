@@ -48,47 +48,41 @@ reuse.
    so the Android build runs natively on the builder's architecture. Its first
    phase measures what translation costs without re-executing a build; the
    remaining phases supply the arm64 host toolchains AOSP does not ship.
-5. Complete the
-   [Collider process execution plan](collider-process-execution-plan.md) so
-   Collider runs a child process one way. Source capture drains two pipes in
-   sequence today, which deadlocks whenever a child fills one while the parent
-   reads the other, and the layer that does it has no execution path available
-   to it.
-6. Complete Phases 6 and 7 of the
+5. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
    The graph lands with the remaining Linux-runtime packaging mounts and proves
    them through an actual `collider package linux-runtime` execution.
-7. Complete Phases 5 and 6 of the
+6. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-8. Complete Phases 6 and 7 of the
+7. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-9. Complete the remaining qualification plans in the order listed below. Their
+8. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
-8. Complete Phase 7 of the
+9. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
    and R2 authorities.
-9. Complete Phase 8 of the
-   [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-   against the native package, repository, and qualification pipeline.
 10. Complete Phase 8 of the
-   [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
+   against the native package, repository, and qualification pipeline.
+11. Complete Phase 8 of the
+    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish and qualify native update lifecycles.
-11. Complete Phase 9 of the
-   [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
+12. Complete Phase 9 of the
+    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
    product-artifact contract.
-12. Complete Phases 2 through 6 of
+13. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-13. Complete Phases 3 through 10 of the
+14. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
@@ -96,7 +90,7 @@ reuse.
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
 
-Step 9 executes these qualification plans after their corresponding
+Step 8 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
@@ -121,6 +115,11 @@ implementation inputs are available:
 - [macOS host storage consolidation](macos-host-storage-consolidation-plan.md)
   established the conventional per-user host layout and removed custom APFS
   volume policy.
+- [Collider process execution](collider-process-execution-plan.md) put every
+  child process on one concurrently drained mechanism, made the source-identity
+  path async so planning no longer blocks a cooperative thread, gave the
+  persistence and command layers an execution entry point, and left one
+  definition of what environment a child may inherit.
 - [Apple Swift package adoption](swift-package-adoption-plan.md) moved the
   exposed complete-span byte readers onto `swift-binary-parsing` and generated
   `SwiftProtobuf` types, replaced parallel keyed and ordering state with ordered

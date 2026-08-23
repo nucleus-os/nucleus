@@ -1,15 +1,14 @@
 # Collider Process Execution Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
 Collider runs a child process one way. Every execution captures output through
 concurrently drained streams, so no invocation can deadlock because a child
 filled one pipe while the parent was reading another, and no execution blocks a
-cooperative thread while it waits. `Foundation.Process` driven by sequential
-reads is neither, and no layer reaches for it because the layer it needs sits
-above it.
+cooperative thread while it waits. No layer reaches for `Foundation.Process`,
+because every layer has an execution path available to it.
 
 ## Current State
 
@@ -181,13 +180,35 @@ informational path now dispatches an async command as such.
 
 ## Phase 3: Leave One Way To Do It
 
-Each layer exposes exactly one execution entry point: `WorkspaceContext.run`
-above the runtime, and the runtime's own path below it. The structural property
-is what keeps the invariant, because a layer with an execution path available to
-it has no reason to construct a process by hand.
+Two modules construct a child process, and each owns a distinct kind of
+execution. `ColliderRuntime` runs a task's command: logged, cancellable,
+streamed, and able to hold the terminal. `ColliderProcess` captures a child
+whose output is decoded rather than reported, which is what a layer needs when
+routing through the run log would be wrong — a control-plane response carrying
+a registration token, or source provenance hashed below the runtime in the
+dependency graph. `WorkspaceContext.run` is the command layer's route into the
+runtime rather than a third mechanism.
+
+Both build the child's environment through one definition, because a rule
+deciding what a child may inherit is exactly the kind that drifts when it is
+written twice.
+
+The structural property is what keeps the invariant: a layer with an execution
+path available to it has no reason to construct a process by hand.
 
 Gate: every execution site names the entry point its layer exposes, and the
 entry points are the only places that construct a child process.
+
+Status: complete. Only `ColliderRuntime` and `ColliderProcess` import
+`Subprocess`, and the six `Subprocess.run` call sites in Collider are inside
+those two modules. No source constructs a child by any other means: there is no
+`posix_spawn`, `fork`, `popen`, `execve`, `system`, or `NSTask` in the Swift
+sources or in the C shim.
+
+`ChildProcessEnvironment.validated` is the one place that decides whether a
+name and value may reach a child. `ColliderRuntime` had its own copy of those
+rules and its own pair of error cases for them; both are gone, and the
+duplicate cases were removed rather than left unused.
 
 ## Risk Surface
 

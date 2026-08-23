@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderDownloads
 import ColliderPersistence
 import ColliderPlatformC
+import ColliderProcess
 import Foundation
 import Subprocess
 import Synchronization
@@ -652,20 +653,8 @@ public actor ColliderRuntime {
             case .artifact(let reference): .path(.init(reference.path.string))
             case .taskOutput(let path): .path(.init(path.string))
             }
-        var validatedEnvironment: [Subprocess.Environment.Key: String] = [:]
-        for (name, value) in command.environment {
-            guard !name.utf8.contains(0), !name.contains("="),
-                name.utf8.first.map({ !(48...57).contains($0) }) ?? true,
-                let key = Subprocess.Environment.Key(rawValue: name)
-            else {
-                throw RuntimeFailure.invalidEnvironmentKey(name)
-            }
-            guard !value.utf8.contains(0) else {
-                throw RuntimeFailure.invalidEnvironmentValue(key: name)
-            }
-            validatedEnvironment[key] = value
-        }
-        let environment = Subprocess.Environment.custom(validatedEnvironment)
+        let environment = Subprocess.Environment.custom(
+            try ChildProcessEnvironment.validated(command.environment))
         var platform = Subprocess.PlatformOptions()
         #if !os(Windows)
         platform.processGroupID = command.output == .terminal ? nil : 0
