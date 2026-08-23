@@ -41,21 +41,29 @@ The host side is already built for both architectures. gfxstream and its native
 SDK are produced per `PlatformArchitecture`, and the Linux runtime, browser, and
 package cohorts are assembled for arm64 and x86_64.
 
-The Android image pipeline is single-product. `aospProductImageTasks` names one
-product source directory, produces one generation under one active-generation
-link, and declares one set of storage and workspaces. Product validation asserts
-the single pinned product.
+The Android image pipeline is per-product. `aospProductImageTasks` is declared
+once per pinned entry, each product owning its own source directory,
+generation, active-generation link, storage, and workspaces, and validation
+asserts the product it was declared for.
 
 The package input is declared per architecture and produced by the ordinary
 graph. Each input consumes its own generation and the AVB signing identity as
 artifacts, builds the Android runtime products for its architecture, and
 materializes in the builder image, where it verifies that the generation's
-provenance matches the architecture it packages for. The packaging lane names
-those producing tasks; no input is supplied by path.
+provenance matches the architecture it packages for and that the images carry
+the release key. The packaging lane names those producing tasks; no input is
+supplied by path. Both inputs exist, each carrying its own architecture's
+runtime executables and signed provenance.
 
-What remains unproven is execution. Neither package input has been materialized
-and no cohort has been assembled from one, because the arm64 generation they
-consume does not exist yet.
+A generation carries the tool that verifies it. `external/avb/avbtool.py` is
+published beside the images as pinned source rather than as a host build of
+itself, so a consumer outside the AOSP container — the package input, and an
+installed runtime re-verifying later — holds one artifact rather than reaching
+into the build that produced it.
+
+What remains unproven is the cohort. No Linux runtime package has been
+assembled from either input, because assembling one requires building Chromium
+for both architectures.
 
 ## Phase 1: Separate the Device Tree From the Product
 
@@ -188,13 +196,35 @@ Gate: both package inputs are produced by the ordinary graph on the macOS
 builder, each carrying provenance for its own architecture, with no input
 supplied by path.
 
-Status: active. The graph declares `android-runtime.package-input.arm64` and
-`android-runtime.package-input.x86_64`, each consuming its own architecture's
-generation and the signing identity as artifacts and executing in the builder
-image for its own artifact target. `collider package linux-runtime --dry-run`
-plans the complete 103-task cohort with both inputs present and no supplied
-path. The gate itself is unmet: planning is not production, and neither input
-has been materialized.
+Status: complete. Gate evidence: run `2026-08-23T19-08-42.618Z-74397`
+materialized `android-runtime.package-input.arm64` and
+`android-runtime.package-input.x86_64` in one graph, 20 tasks executed and
+none failed, with every input consumed as an artifact and none supplied by
+path. Each input carries the provenance of its own signed product —
+`nucleus_arm64` and `nucleus_x86_64`, both `signed`, each naming the same six
+images — and each stages runtime executables for its own architecture,
+aarch64 in one and x86-64 in the other. Both payloads verify their vbmeta
+chain against the release key inside the assembler container before the
+manifest is written.
+
+The materialization had never executed before this phase. Nine defects
+separated a description that read as working from a path that ran, and each
+became visible only once the one ahead of it was fixed: a filesystem copy
+implemented for macOS alone, a sysroot conflated with a build's library path,
+a named sysroot that was never mounted, native-SDK inputs absent from the
+assembly, and a verification tool read from a path no generation has. The
+last of those was the sharpest — the published tool was Soong's
+`python_binary_host` build of avbtool, an x86_64 ELF that could not have run
+in the arm64 assembler container and could not have shipped in an arm64
+payload. Assembly now asserts at publication that what it publishes is
+architecture-neutral, and a test drives that guard with both shapes.
+
+This is the same finding Phase 1 recorded about the AOSP lane, in the same
+plan, for the second time: a lane described as working had never been run
+end to end, and its coverage exercised its callers rather than its
+execution. The tests around the tool-staging step passed against a fixture
+whose container answered every command it did not recognize with a stub, so
+the step had no coverage at all.
 
 ## Phase 5: Package Both Cohorts From Produced Inputs
 
