@@ -48,20 +48,26 @@ reuse.
    so the Android build runs natively on the builder's architecture. Its first
    phase measures what translation costs without re-executing a build; the
    remaining phases supply the arm64 host toolchains AOSP does not ship.
-5. Complete Phases 6 and 7 of the
+5. Complete the
+   [Collider process execution plan](collider-process-execution-plan.md) so
+   Collider runs a child process one way. Source capture drains two pipes in
+   sequence today, which deadlocks whenever a child fills one while the parent
+   reads the other, and the layer that does it has no execution path available
+   to it.
+6. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
    The graph lands with the remaining Linux-runtime packaging mounts and proves
    them through an actual `collider package linux-runtime` execution.
-6. Complete Phases 5 and 6 of the
+7. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-7. Complete Phases 6 and 7 of the
+8. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-8. Complete the remaining qualification plans in the order listed below. Their
+9. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
 8. Complete Phase 7 of the
@@ -90,7 +96,7 @@ reuse.
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
 
-Step 8 executes these qualification plans after their corresponding
+Step 9 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
