@@ -86,7 +86,7 @@ private func executeWithSwiftPM(
         ])
 }
 
-@Test func coalescedBuildDoesNotWaitForAnActionDependingOnAnotherOwner() throws {
+@Test func aProductBuildDoesNotWaitForAnActionDependingOnAnotherOwner() throws {
     let packageRoot = FilePath("/fixture/package")
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
@@ -122,9 +122,14 @@ private func executeWithSwiftPM(
         AssessedTaskDeclaration(task: qualifier, isClean: false),
     ])
 
-    #expect(lowered.count == 1)
-    #expect(lowered[0].logicalOwners == [assembler.id, qualifier.id])
-    #expect(lowered[0].prerequisites.isEmpty)
+    // One build per product, each owned by the task that asked for it. Neither
+    // waits on the publication between them: that action cannot run until the
+    // assembler's build has completed, so making it a prerequisite of the
+    // qualifier's build would order the two builds behind each other.
+    #expect(lowered.count == 2)
+    #expect(
+        Set(lowered.flatMap(\.logicalOwners)) == [assembler.id, qualifier.id])
+    #expect(lowered.allSatisfy { $0.prerequisites.isEmpty })
 }
 
 @Test func ociLoweringMaterializesLockedDependenciesOnTheHost() throws {
@@ -446,7 +451,7 @@ private func executeWithSwiftPM(
             .map(String.init) == ["build", "build"])
 }
 
-@Test func synthesizedSwiftBuildCoalescesProductsIntoOneRootInvocation() async throws {
+@Test func synthesizedSwiftBuildNamesEveryProductItBuilds() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-swift-product-selection-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -505,10 +510,19 @@ private func executeWithSwiftPM(
     let received = try String(contentsOf: arguments, encoding: .utf8)
         .split(whereSeparator: \.isNewline)
         .map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
-    #expect(received.count == 1)
-    #expect(received[0].first == "build")
-    #expect(!received[0].contains("--product"))
-    #expect(report.swiftPMInvocationCount == 1)
+    // SwiftPM builds one named product or the whole package, so products
+    // sharing a context are built one at a time rather than by an invocation
+    // that names none of them and builds everything.
+    #expect(received.count == 2)
+    #expect(received.allSatisfy { $0.first == "build" })
+    #expect(
+        received.map { line -> String in
+            guard let index = line.firstIndex(of: "--product"),
+                line.index(after: index) < line.endIndex
+            else { return "" }
+            return line[line.index(after: index)]
+        }.sorted() == ["FirstProduct", "SecondProduct"])
+    #expect(report.swiftPMInvocationCount == 2)
     #expect(report.selectedInputHashingDurationNanoseconds > 0)
     #expect(report.executionDurationNanoseconds > 0)
 }

@@ -194,12 +194,36 @@ Arguments and options:
 Subcommands:
 
 - `linux-runtime`: Assemble the complete Linux runtime package cohort.
+- `android-input`: Materialize every locked architecture's Android package input.
 
 ## `collider package linux-runtime`
 
 Assemble the complete Linux runtime package cohort.
 
 Usage: `collider package linux-runtime [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [--version] [--help]`
+
+Arguments and options:
+
+- `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
+- `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
+- `--dry-run` — Print the resolved task graph without executing it.
+- `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
+- `--verbose` — Print each leaf command before executing it.
+- `--quiet` — Keep task output in the durable run log without streaming it.
+- `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
+- `--as-builder` — Plan as the identity that executes builds, without executing.
+- `--verify-reproduction` — Produce beside the retained result and report whether it reproduces.
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider package android-input`
+
+Materialize every locked architecture's Android package input.
+
+Usage: `collider package android-input [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [--version] [--help]`
 
 Arguments and options:
 

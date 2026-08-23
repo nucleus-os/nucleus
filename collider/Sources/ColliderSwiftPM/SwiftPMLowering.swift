@@ -79,7 +79,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
         if !products.isEmpty {
             lowered.append(
-                try loweredBuild(
+                contentsOf: try loweredBuilds(
                     products,
                     context: context,
                     tasksByID: tasksByID,
@@ -96,26 +96,45 @@ public struct SwiftPMLowering: TaskPlanLowering {
         return lowered
     }
 
-    private func loweredBuild(
+    /// One build per product, because SwiftPM builds either one named product
+    /// or the entire package. Grouping several products into one invocation
+    /// therefore stops naming them and builds everything in the package, which
+    /// compiles targets no consumer asked for and drags their dependencies
+    /// into the closure with them. Products sharing a scratch path serialize
+    /// on the invocation's lock, so the builds remain incremental against one
+    /// another.
+    private func loweredBuilds(
         _ entries: [ProductEntry],
         context: SwiftBuildContext,
         tasksByID: [TaskID: TaskDeclaration],
         additionalPrerequisites: Set<TaskID>
-    ) throws -> LoweredExecutionTask {
-        let owners = entries.map(\.owner)
-        return LoweredExecutionTask(
-            task: try buildTask(
-                entries.map(\.requirement),
-                owners: owners),
-            attribution: attribution(
-                entries.map { ($0.owner, $0.requirement.qualifiedProduct) }),
-            logicalOwners: Set(owners.map(\.id)),
-            prerequisites: prerequisites(
-                for: owners,
-                context: context,
-                tasksByID: tasksByID,
-                logicalOwners: Set(owners.map(\.id))
-            ).union(additionalPrerequisites))
+    ) throws -> [LoweredExecutionTask] {
+        let grouped = Dictionary(grouping: entries) {
+            $0.requirement.qualifiedProduct
+        }
+        // Every owner contributing a product to this context, not just the
+        // owners of one product. An action sitting behind any of these builds
+        // cannot be a prerequisite of any of them: it cannot run until the
+        // build it waits on has completed, and in a graph where two owners'
+        // chains cross, treating it as one closes a cycle.
+        let contextOwners = Set(entries.map(\.owner.id))
+        return try grouped.keys.sorted().map { product in
+            let group = grouped[product] ?? []
+            let owners = group.map(\.owner)
+            return LoweredExecutionTask(
+                task: try buildTask(
+                    group.map(\.requirement),
+                    owners: owners),
+                attribution: attribution(
+                    group.map { ($0.owner, $0.requirement.qualifiedProduct) }),
+                logicalOwners: Set(owners.map(\.id)),
+                prerequisites: prerequisites(
+                    for: owners,
+                    context: context,
+                    tasksByID: tasksByID,
+                    logicalOwners: contextOwners
+                ).union(additionalPrerequisites))
+        }
     }
 
     private func loweredTest(
@@ -337,10 +356,11 @@ public struct SwiftPMLowering: TaskPlanLowering {
             products: products,
             prebuildTargets: prebuildTargets)
         let requestedProducts = Array(Set(requirements.map(\.product))).sorted()
-        let buildArguments =
-            requestedProducts.count == 1
-            ? ["build", "--product", requestedProducts[0]]
-            : ["build"]
+        guard requestedProducts.count == 1, let requestedProduct = requestedProducts.first
+        else {
+            throw SwiftPMLoweringFailure.incompatibleBuildContexts
+        }
+        let buildArguments = ["build", "--product", requestedProduct]
         var builder = TaskBuilder(
             id: taskID,
             component: ComponentID(rawValue: "swift-package"))
