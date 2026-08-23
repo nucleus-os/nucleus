@@ -43,20 +43,26 @@ reuse.
    both supported architectures have an AOSP product and every native package
    cohort member is produced by the build graph. The arm64 cohort otherwise
    declares an exact `nucleus-android` member the repository cannot produce.
-4. Complete Phases 6 and 7 of the
+4. Complete the
+   [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md)
+   so the Android build runs natively on the builder's architecture. Its first
+   phase rides along with the parity work above, because both invalidate the
+   same compiles; the remaining phases supply the arm64 host toolchains AOSP
+   does not ship.
+5. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
    The graph lands with the remaining Linux-runtime packaging mounts and proves
    them through an actual `collider package linux-runtime` execution.
-5. Complete Phases 5 and 6 of the
+6. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-6. Complete Phases 6 and 7 of the
+7. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-7. Complete the remaining qualification plans in the order listed below. Their
+8. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
 8. Complete Phase 7 of the
@@ -85,7 +91,7 @@ reuse.
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
 
-Step 7 executes these qualification plans after their corresponding
+Step 8 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
