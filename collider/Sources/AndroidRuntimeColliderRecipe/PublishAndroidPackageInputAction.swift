@@ -47,9 +47,24 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         self.output = output
         self.runtimeScratch = runtimeScratch
         guard case .oci(let assemblerOCI) = assemblerSwiftPM.context.execution,
-            case .oci = runtimeSwiftPM.context.execution
+            case .oci(let runtimeOCI) = runtimeSwiftPM.context.execution
         else {
             throw AndroidPackageInputExecutionFailure.requiresOCI
+        }
+
+        // The sysroot this payload is assembled from has to be present, not
+        // merely named. The assembler image mounts the checkout and the SwiftPM
+        // overlay and nothing else, so the SDK arrives from the invocation that
+        // built the products being staged — which is also what guarantees the
+        // two agree on which SDK that is.
+        let guestSDKDirectory = SwiftPMInvocation.ociSwiftSDKDirectory.string
+        guard
+            let swiftSDKMount = runtimeOCI.mounts.first(where: {
+                $0.target == guestSDKDirectory
+            })
+        else {
+            throw AndroidPackageInputExecutionFailure.missingTargetSDK(
+                guestSDKDirectory)
         }
 
         // Every path this execution names is the path the container sees.
@@ -61,6 +76,7 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         // chain the AOSP build already signed.
         let signingKeyRoot = aospSigningKey.removingLastComponent()
         for mount in [
+            swiftSDKMount,
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
                 target: containerPath(assemblerSwiftPM.productsDirectory),
@@ -147,6 +163,7 @@ package enum AndroidPackageInputExecutionFailure: Error, CustomStringConvertible
 {
     case requiresOCI
     case conflictingMount(String)
+    case missingTargetSDK(String)
 
     package var description: String {
         switch self {
@@ -154,6 +171,8 @@ package enum AndroidPackageInputExecutionFailure: Error, CustomStringConvertible
             "Android package input assembly requires OCI runtime and assembler contexts"
         case .conflictingMount(let target):
             "Android package input assembly has conflicting OCI mount '\(target)'"
+        case .missingTargetSDK(let target):
+            "Android package input assembly found no target SDK mounted at '\(target)'"
         }
     }
 }
