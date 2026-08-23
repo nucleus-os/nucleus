@@ -150,6 +150,43 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         let stagedImages = staged.appending("images")
         try context.files.remove(stagedImages)
         try context.files.move(from: imageCandidate, to: stagedImages)
+
+        try await stageHostTools(context: context, staged: staged)
+    }
+
+    /// Publishes the AVB tool into the generation.
+    ///
+    /// A consumer of a generation verifies its images against it, and the
+    /// native package ships it so an installed runtime can verify them again.
+    /// The tool exists only inside the AOSP output workspace, which belongs to
+    /// this product's build, so a consumer that reached for it there would
+    /// depend on its producer's build state rather than on the artifact it was
+    /// given.
+    private func stageHostTools(
+        context: ActionContext,
+        staged: FilePath
+    ) async throws {
+        let tools = staged.appending("tools")
+        let candidate = staged.appending(".tools-candidate")
+        try context.files.remove(candidate)
+        defer { try? context.files.remove(candidate) }
+        try context.files.createDirectory(candidate)
+        try await context.containers.run(
+            aospProductOCIExecution(
+                build: build,
+                writableMounts: [(candidate, "/tools")],
+                readOnlyMounts: [],
+                persistentWorkspaceMounts: [build.readOnlyOutputMount],
+                command: [
+                    "/bin/cp", "--preserve=timestamps",
+                    "/src/out/host/linux-x86/bin/avbtool",
+                    "/tools/avbtool",
+                ]))
+        try requireRegularFile(
+            candidate.appending("avbtool"),
+            files: context.files)
+        try context.files.remove(tools)
+        try context.files.move(from: candidate, to: tools)
     }
 
     private func requireRegularFile(

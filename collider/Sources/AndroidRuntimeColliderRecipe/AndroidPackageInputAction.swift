@@ -201,7 +201,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
                 ActionToolRequirement(
                     "avbtool",
                     executable: .path(
-                        aospGeneration.appending("out/host/linux-x86/bin/avbtool")),
+                        aospGeneration.appending("tools/avbtool")),
                     role: .semantic),
                 ActionToolRequirement(
                     "openssl", executable: .named("openssl"), role: .semantic),
@@ -344,7 +344,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         }
 
         try copyPortableAVBTool(
-            from: aospGeneration.appending("out/host/linux-x86/bin/avbtool"),
+            from: aospGeneration.appending("tools/avbtool"),
             to: candidate.appending("libexec/android-tools/avbtool"),
             files: context.files)
         try copyRegularFile(

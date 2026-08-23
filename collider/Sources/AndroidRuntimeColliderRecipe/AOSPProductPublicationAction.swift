@@ -73,6 +73,26 @@ struct PublishAOSPProductAction: ColliderAction {
         try context.files.remove(finalImages)
         try context.files.move(from: imageCandidate, to: finalImages)
 
+        // The verification tool travels with the images it verifies, so a
+        // consumer holds one artifact rather than an artifact plus a reference
+        // into its producer's build workspace.
+        let finalTools = build.artifactRoot.appending("tools")
+        let toolCandidate = build.artifactRoot.appending(".tools-publication-candidate")
+        try context.files.remove(toolCandidate)
+        defer { try? context.files.remove(toolCandidate) }
+        guard
+            try context.files.metadata(for: staged.appending("tools"))?.type
+                == .directory
+        else {
+            throw AOSPProductPublicationFailure.missingInput(
+                staged.appending("tools"))
+        }
+        try context.files.copyTree(
+            from: staged.appending("tools"),
+            to: toolCandidate)
+        try context.files.remove(finalTools)
+        try context.files.move(from: toolCandidate, to: finalTools)
+
         // Provenance is the publication commit marker. Framework boot rejects
         // any artifact set whose digests do not match this file.
         try replace(
