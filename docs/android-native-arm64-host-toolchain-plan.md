@@ -29,7 +29,9 @@ native host requires no Soong change.
 `prebuilts/build-tools` already ships `linux-arm64`: thirty-four native
 binaries and a complete eighty-entry `path/linux-arm64` shim, including
 `ninja`, `n2`, `ckati`, `make`, `aidl`, `bison`, `flex`, `openssl`, the Python
-launchers, `toybox`, and `zipalign`.
+launchers, `toybox`, and `zipalign`. `prebuilts/siso` ships `linux-arm64` as
+well, so the executor that fails under translation today already exists as a
+native binary.
 
 Nothing uses any of it. `soong_ui` is an x86_64 Go binary running under
 Rosetta, so `runtime.GOARCH` reads `amd64`, `prebuiltOS()` returns `linux-x86`,
@@ -47,19 +49,26 @@ arm64 tree, among them `soong_zip`, `merge_zips`, `zip2zip`, and `bpfmt`.
 
 ## Phase 1: Measure What Translation Costs
 
-An analysis task mounts the AOSP output workspace read-only, reads
-`.ninja_log`, classifies each output as host or target by its variant and path,
-and reports the wall-clock split per product. The task is declared beside the
-compile rather than inside it, so it neither alters the compile's identity nor
-invalidates a build to produce a number.
+An analysis task mounts the AOSP output workspace read-only, reads the
+executor's per-step timing record, classifies each output as host or target by
+its variant and path, and reports the wall-clock split per product. The task is
+declared beside the compile rather than inside it, so it neither alters the
+compile's identity nor invalidates a build to produce a number.
 
-The build executor is not changed. Siso is upstream's default, it is what
-Phase 5 makes native, and replacing it would be a divergence this plan reverts
-two phases later while hiding the instability that justifies the phases in
-between.
+The record to read is determined against an existing generation, not assumed.
+`.ninja_log` is written by the ninja path in `ui/build/ninja.go`, and Soong
+stats it and falls back when it is absent, so a Siso-executed build may not
+produce one; Siso keeps its own metrics instead.
+
+The build executor is not changed. Siso is upstream's default, and
+`prebuilts/siso` already ships a `linux-arm64` binary, so Phase 5 reaches a
+native Siso without supplying anything. Replacing it would be a divergence this
+plan reverts two phases later while hiding the instability that justifies the
+phases in between.
 
 Gate: the analysis task reports the host-versus-target wall-clock split for
-both products against an existing generation, with no compile re-executed.
+both products against an existing generation, with no compile re-executed and
+no build invalidated to produce it.
 
 ## Phase 2: Supply the Go and JDK Host Toolchains
 
