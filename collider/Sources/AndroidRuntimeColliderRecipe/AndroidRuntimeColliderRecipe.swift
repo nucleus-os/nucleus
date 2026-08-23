@@ -37,6 +37,15 @@ package enum AndroidRuntimeTaskIDs {
     package static func aospValidate(_ architecture: PlatformArchitecture) -> TaskID {
         TaskID(rawValue: "android-runtime.aosp-validate.\(architecture.rawValue)")
     }
+
+    /// One native-package input per locked product. Each is produced from its
+    /// own architecture's generation, so no cohort packages another
+    /// architecture's images.
+    package static func packageInput(
+        _ architecture: PlatformArchitecture
+    ) -> TaskID {
+        TaskID(rawValue: "android-runtime.package-input.\(architecture.rawValue)")
+    }
     package static let apexManifestGenerate = TaskID(
         rawValue: "android-runtime.apex-manifest.generate")
     package static let apexManifestVerify = TaskID(
@@ -57,6 +66,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     package struct Artifacts: Sendable {
         package let gfxstream: [NativeLinuxTarget: GfxstreamArtifacts]
+        /// One native-package input per locked product, named by the cohort
+        /// that consumes it rather than reached by path.
+        package let packageInputs: [PlatformArchitecture: ArtifactReference]
     }
 
     package struct PreparedComponent: Sendable {
@@ -132,6 +144,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         package let tasks: [TaskDeclaration]
         /// One active generation per locked product.
         package let activeGenerations: [PlatformArchitecture: ArtifactReference]
+        /// The AVB identity every product signs with, consumed downstream as
+        /// an artifact rather than reached by path.
+        package let signingDirectory: ArtifactReference
 
         package var architectures: [PlatformArchitecture] {
             activeGenerations.keys.sorted { $0.rawValue < $1.rawValue }
@@ -213,45 +228,61 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     aosp.architectures.map { AndroidRuntimeTaskIDs.aospImage($0) })),
         ]
         var platformStorage: [StorageDeclaration] = []
-        if let configuration = try context.configurationIfPresent(
-            AndroidPackageInputConfiguration.self,
-            for: descriptor.id)
-        {
-            guard
-                let generation = aosp.activeGenerations[configuration.architecture]
-            else {
+        var packageInputRoots: Set<TaskID> = []
+        var packageInputs: [PlatformArchitecture: ArtifactReference] = [:]
+        for architecture in aosp.architectures {
+            guard let generation = aosp.activeGenerations[architecture] else {
                 throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
-                    "no product is locked for "
-                        + configuration.architecture.rawValue)
+                    "no product is locked for " + architecture.rawValue)
             }
-            let package = try packageInputTask(
-                configuration: configuration,
-                repositoryRoot: context.repositoryRoot,
-                managedAOSPGeneration: generation)
+            let runtimeScratch = context.buildRoot.appending(
+                "android-package-input/\(architecture.rawValue)")
+            let output = context.artifactRoot.appending(
+                "android-runtime/package-input/\(architecture.rawValue)")
+            let packageInput = try packageInputTask(
+                AndroidPackageInput(
+                    architecture: architecture,
+                    runtimeSwiftPM: try context.swiftPM(
+                        .linux(architecture, configuration: .release)),
+                    assemblerSwiftPM: try context.swiftPM(.linuxAssembler),
+                    runtimeScratch: runtimeScratch,
+                    aospGeneration: generation,
+                    signingIdentity: aosp.signingDirectory,
+                    output: output.appending("current"),
+                    appArmorPolicy: root.appending(
+                        "container/lxc-nucleus-android.apparmor"),
+                    seccompPolicy: root.appending(
+                        "container/nucleus-android.seccomp"),
+                    placement: context.identityPathMap,
+                    environment: context.environment),
+                repositoryRoot: context.repositoryRoot)
+            let package = packageInput.task
+            packageInputs[architecture] = packageInput.artifact
             tasks.append(package)
-            entrypoints.append(
-                ComponentEntrypoint(
-                    id: AndroidRuntimeEntrypoints.packageInput,
-                    roots: [package.id]))
-            platformStorage = [
+            packageInputRoots.insert(package.id)
+            platformStorage += [
                 StorageDeclaration(
-                    id: "android-package-input-scratch",
+                    id: "android-package-input-scratch-\(architecture.rawValue)",
                     owner: descriptor.id,
                     producers: [.task(package.id)],
                     storageClass: .incremental,
-                    root: configuration.runtimeScratch,
-                    safetyRoot: configuration.runtimeScratch.removingLastComponent(),
+                    root: runtimeScratch,
+                    safetyRoot: runtimeScratch.removingLastComponent(),
                     retentionPolicy: .singleWorkingSet),
                 StorageDeclaration(
-                    id: "android-package-input-publication",
+                    id: "android-package-input-publication-\(architecture.rawValue)",
                     owner: descriptor.id,
                     producers: [.task(package.id)],
                     storageClass: .published,
-                    root: configuration.output,
-                    safetyRoot: configuration.output,
+                    root: output,
+                    safetyRoot: output.removingLastComponent(),
                     retentionPolicy: .protected),
             ]
         }
+        entrypoints.append(
+            ComponentEntrypoint(
+                id: AndroidRuntimeEntrypoints.packageInput,
+                roots: packageInputRoots))
         var storage = [
             // What generation produces. The committed copy beside the sources
             // is authored state no task declares itself the producer of.
@@ -370,7 +401,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             generatedSources: protobuf.mappings)
         return PreparedComponent(
             component: component,
-            artifacts: Artifacts(gfxstream: gfxstreamArtifacts))
+            artifacts: Artifacts(
+                gfxstream: gfxstreamArtifacts,
+                packageInputs: packageInputs))
     }
 
     private static func aospProductSourceOverlays(
@@ -554,7 +587,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             artifactTool: artifactTool)
         return AOSPImageArtifacts(
             tasks: source.tasks + [signing.task] + product.tasks,
-            activeGenerations: product.activeGenerations)
+            activeGenerations: product.activeGenerations,
+            signingDirectory: signing.directory)
     }
 
     private static func aospRepoLauncher(

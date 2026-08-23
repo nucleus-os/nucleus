@@ -11,20 +11,14 @@ func linuxCommandCompositionAddsOnlyInstalledHostOperations() {
     let expectedRoot: [ParsableCommand.Type] = [
         Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self,
         PackageArtifacts.self, Run.self,
-        Install.self, Skill.self, AndroidRuntime.self, Benchmark.self,
+        Install.self, Skill.self, Benchmark.self,
         Clean.self, Cache.self, Tasks.self, Graph.self, Runs.self, Logs.self,
         Status.self,
     ]
     let expectedInstall: [ParsableCommand.Type] = [InstallSession.self]
-    let expectedAndroidRuntime: [ParsableCommand.Type] = [
-        AndroidRuntimePackageInput.self
-    ]
 
     #expect(commandTypes(ColliderCommand.configuration.subcommands) == commandTypes(expectedRoot))
     #expect(commandTypes(Install.configuration.subcommands) == commandTypes(expectedInstall))
-    #expect(
-        commandTypes(AndroidRuntime.configuration.subcommands)
-            == commandTypes(expectedAndroidRuntime))
 }
 
 @Test

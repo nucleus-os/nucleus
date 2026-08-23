@@ -238,6 +238,43 @@ private func storageCoordinate(
 }
 
 @Test
+func everyLockedAndroidProductProducesItsOwnPackageInput() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let catalog = try ComponentRegistry(
+        context: WorkspaceContext(
+            root: root,
+            environment: [:],
+            runtime: ColliderRuntime())
+    ).componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+
+    for architecture in PlatformArchitecture.allCases {
+        let id = AndroidRuntimeTaskIDs.packageInput(architecture)
+        let task = try #require(catalog.tasks.first { $0.id == id })
+        let dependencies = Set(task.dependencies)
+        #expect(dependencies.contains(AndroidRuntimeTaskIDs.aospImage(architecture)))
+        for other in PlatformArchitecture.allCases where other != architecture {
+            #expect(!dependencies.contains(AndroidRuntimeTaskIDs.aospImage(other)))
+        }
+        #expect(
+            dependencies.contains(
+                TaskID(rawValue: "android-runtime.aosp-signing-identity")))
+        #expect(
+            task.action?.requirements.artifactTarget
+                == ArtifactTarget(
+                    operatingSystem: .linux,
+                    architecture: architecture,
+                    abi: "glibc"))
+
+        let payload = try #require(
+            catalog.tasks.first {
+                $0.id == LinuxTaskIDs.packagePayload(architecture, .androidPackage)
+            })
+        #expect(Set(payload.dependencies).contains(id))
+    }
+}
+
+@Test
 func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))

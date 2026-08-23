@@ -21,26 +21,12 @@ private let completeTaskControls = [
 func installedHostPlanningLeavesAcceptTheCompleteTaskControlSet() throws {
     let session = try InstallSession.parse(completeTaskControls)
     assertCompleteTaskControls(session.taskOptions)
-
-    let packageInput = try AndroidRuntimePackageInput.parse(
-        [
-            "--aosp-signing-key", "/tmp/aosp.pem",
-            "--output", "/tmp/android-package-input",
-        ] + completeTaskControls)
-    assertCompleteTaskControls(packageInput.taskOptions)
 }
 
 @Test
 func installedHostPlanningLeavesRejectConflictingOutputControls() {
     #expect(throws: (any Error).self) {
         try InstallSession.parse(["--quiet", "--verbose"])
-    }
-    #expect(throws: (any Error).self) {
-        try AndroidRuntimePackageInput.parse([
-            "--aosp-signing-key", "/tmp/aosp.pem",
-            "--output", "/tmp/android-package-input",
-            "--quiet", "--verbose",
-        ])
     }
 }
 

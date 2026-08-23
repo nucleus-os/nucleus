@@ -1,163 +1,126 @@
 import ColliderCore
 import SystemPackage
 
-public struct AndroidPackageInputConfiguration: RecipeConfiguration {
-    public let swiftPM: SwiftPMInvocation
-    /// Builds the tool that materializes the input inside the builder image.
-    /// Absent only where the materialization runs natively, on a Linux host
-    /// operating its own installed runtime.
-    public let assemblerSwiftPM: SwiftPMInvocation?
+/// One architecture's Android native-package input, as the graph declares it.
+///
+/// Every field is derived from the recipe context and the locked AOSP product.
+/// Nothing here is supplied by a caller: the input is a graph product, and the
+/// cohort that consumes it names the producing task rather than a path.
+struct AndroidPackageInput {
     /// The architecture the packaged Android payload is for.
     ///
     /// Not the architecture running the materialization: an arm64 builder
-    /// packages whichever AOSP product the generation actually holds, and the
-    /// provenance check below is what confirms the two agree.
-    public let architecture: PlatformArchitecture
-    public let runtimeRoot: FilePath?
-    public let runtimeScratch: FilePath
-    public let aospGeneration: FilePath
-    public let usesManagedAOSPGeneration: Bool
-    public let aospSigningKey: FilePath
-    public let output: FilePath
-    public let appArmorPolicy: FilePath
-    public let seccompPolicy: FilePath
-    public let placement: IdentityPathMap
-    public let environment: [String: String]
+    /// packages whichever AOSP product the generation holds, and the
+    /// provenance check inside the materialization is what confirms the two
+    /// agree.
+    let architecture: PlatformArchitecture
+    let runtimeSwiftPM: SwiftPMInvocation
+    let assemblerSwiftPM: SwiftPMInvocation
+    let runtimeScratch: FilePath
+    let aospGeneration: ArtifactReference
+    let signingIdentity: ArtifactReference
+    let output: FilePath
+    let appArmorPolicy: FilePath
+    let seccompPolicy: FilePath
+    let placement: IdentityPathMap
+    let environment: [String: String]
 
-    public init(
-        swiftPM: SwiftPMInvocation,
-        assemblerSwiftPM: SwiftPMInvocation? = nil,
-        architecture: PlatformArchitecture,
-        runtimeRoot: FilePath?,
-        runtimeScratch: FilePath,
-        aospGeneration: FilePath,
-        usesManagedAOSPGeneration: Bool,
-        aospSigningKey: FilePath,
-        output: FilePath,
-        appArmorPolicy: FilePath,
-        seccompPolicy: FilePath,
-        placement: IdentityPathMap = .empty,
-        environment: [String: String]
-    ) {
-        self.swiftPM = swiftPM
-        self.assemblerSwiftPM = assemblerSwiftPM
-        self.architecture = architecture
-        self.runtimeRoot = runtimeRoot
-        self.runtimeScratch = runtimeScratch
-        self.aospGeneration = aospGeneration
-        self.usesManagedAOSPGeneration = usesManagedAOSPGeneration
-        self.aospSigningKey = aospSigningKey
-        self.output = output
-        self.appArmorPolicy = appArmorPolicy
-        self.seccompPolicy = seccompPolicy
-        self.placement = placement
-        self.environment = environment
+    /// The AVB key the materialization derives a public half from to verify
+    /// the chain the AOSP build already signed.
+    var aospSigningKey: FilePath {
+        signingIdentity.path.appending("releasekey.pem")
     }
 }
 
 extension AndroidRuntimeColliderRecipe {
+    struct PreparedPackageInput {
+        let task: TaskDeclaration
+        let artifact: ArtifactReference
+    }
+
     static func packageInputTask(
-        configuration: AndroidPackageInputConfiguration,
-        repositoryRoot: FilePath,
-        managedAOSPGeneration: ArtifactReference
-    ) throws -> TaskDeclaration {
+        _ input: AndroidPackageInput,
+        repositoryRoot: FilePath
+    ) throws -> PreparedPackageInput {
         let productNames = [
             "nucleus-android-runtime",
             "nucleus-android-runtime-privileged",
             "nucleus-android-gfxstream-broker",
             "nucleus-android-display-host",
         ]
-        var products =
-            configuration.runtimeRoot == nil
-            ? productNames.map { product in
-                configuration.swiftPM.product(
-                    package: "nucleus",
-                    product: product,
-                    packageRoot: repositoryRoot,
-                    environment: configuration.environment,
-                    expectedOutputs: [
-                        PathPostcondition(
-                            path: configuration.swiftPM.executable(product),
-                            validation: .executableFile)
-                    ])
-            } : []
-        var inputs: [ArtifactInput] = [
-            .file(configuration.aospSigningKey),
-            .file(configuration.appArmorPolicy),
-            .file(configuration.seccompPolicy),
+        var products = productNames.map { product in
+            input.runtimeSwiftPM.product(
+                package: "nucleus",
+                product: product,
+                packageRoot: repositoryRoot,
+                environment: input.environment,
+                expectedOutputs: [
+                    PathPostcondition(
+                        path: input.runtimeSwiftPM.executable(product),
+                        validation: .executableFile)
+                ])
+        }
+        let tool = "nucleus-android-assembler"
+        products.append(
+            input.assemblerSwiftPM.product(
+                package: "collider-cli",
+                product: tool,
+                packageRoot: input.assemblerSwiftPM.context.packageRoot,
+                environment: input.environment,
+                expectedOutputs: [
+                    PathPostcondition(
+                        path: input.assemblerSwiftPM.executable(tool),
+                        validation: .executableFile)
+                ]))
+        let inputs: [ArtifactInput] = [
+            .file(input.appArmorPolicy),
+            .file(input.seccompPolicy),
+            input.runtimeSwiftPM.identityInput,
+            input.assemblerSwiftPM.identityInput,
         ]
-        if !configuration.usesManagedAOSPGeneration {
-            inputs.append(.tree(configuration.aospGeneration))
-        }
-        if let runtimeRoot = configuration.runtimeRoot {
-            inputs.append(.tree(runtimeRoot))
-        } else {
-            inputs.append(configuration.swiftPM.identityInput)
-        }
-        if let assemblerSwiftPM = configuration.assemblerSwiftPM {
-            let tool = "nucleus-android-assembler"
-            products.append(
-                assemblerSwiftPM.product(
-                    package: "collider-cli",
-                    product: tool,
-                    packageRoot: assemblerSwiftPM.context.packageRoot,
-                    environment: configuration.environment,
-                    expectedOutputs: [
-                        PathPostcondition(
-                            path: assemblerSwiftPM.executable(tool),
-                            validation: .executableFile)
-                    ]))
-            inputs.append(assemblerSwiftPM.identityInput)
-        }
         var builder = TaskBuilder(
-            id: TaskID(rawValue: "android-runtime.package-input"),
+            id: AndroidRuntimeTaskIDs.packageInput(input.architecture),
             component: descriptor.id)
-        if configuration.usesManagedAOSPGeneration {
-            builder.consume(managedAOSPGeneration)
-        }
-        let _: ArtifactReference = try builder.output(
+        builder.consume(input.aospGeneration)
+        builder.consume(input.signingIdentity)
+        let artifact: ArtifactReference = try builder.output(
             "package-input",
-            path: configuration.output,
+            path: input.output,
             validation: .nonEmptyDirectory)
-        return builder.build(
-            swiftProducts: products,
-            inputs: inputs,
-            locks: [
-                .shared(
-                    configuration.output.removingLastComponent().appending(
-                        ".android-package-input.lock"))
-            ],
-            action: try packageInputAction(configuration))
+        return PreparedPackageInput(
+            task: builder.build(
+                swiftProducts: products,
+                inputs: inputs,
+                locks: [
+                    .shared(
+                        input.output.removingLastComponent().appending(
+                            ".android-package-input.lock"))
+                ],
+                action: try packageInputAction(input)),
+            artifact: artifact)
     }
 
-    /// A Linux host operating its own installed runtime materializes the input
-    /// directly. Every other host runs the same materialization inside the
-    /// builder image, because a native action is admitted only on a runner
-    /// whose operating system matches it.
+    /// The materialization runs inside the builder image on every host. A
+    /// native action is admitted only on a runner whose operating system
+    /// matches it, so on the macOS builder this is the only route: without it
+    /// the one Android step nothing containerized could not be planned at all,
+    /// and the package cohort that depends on it could not be assembled.
     private static func packageInputAction(
-        _ configuration: AndroidPackageInputConfiguration
+        _ input: AndroidPackageInput
     ) throws -> AnyColliderAction {
-        if let assemblerSwiftPM = configuration.assemblerSwiftPM {
-            return try AnyColliderAction(
-                PublishAndroidPackageInputAction(
-                    runtimeSwiftPM: configuration.swiftPM,
-                    assemblerSwiftPM: assemblerSwiftPM,
-                    architecture: configuration.architecture,
-                    aospGeneration: configuration.aospGeneration,
-                    aospSigningKey: configuration.aospSigningKey,
-                    runtimeScratch: configuration.runtimeScratch,
-                    output: configuration.output,
-                    appArmorPolicy: configuration.appArmorPolicy,
-                    seccompPolicy: configuration.seccompPolicy,
-                    placement: configuration.placement,
-                    environment: configuration.environment))
-        }
-        #if os(Linux)
-        return try AnyColliderAction(
-            MaterializeAndroidPackageInputAction(configuration: configuration))
-        #else
-        throw AndroidPackageInputExecutionFailure.requiresOCI
-        #endif
+        try AnyColliderAction(
+            PublishAndroidPackageInputAction(
+                runtimeSwiftPM: input.runtimeSwiftPM,
+                assemblerSwiftPM: input.assemblerSwiftPM,
+                architecture: input.architecture,
+                aospGeneration: input.aospGeneration.path,
+                aospSigningKey: input.aospSigningKey,
+                runtimeScratch: input.runtimeScratch,
+                output: input.output,
+                appArmorPolicy: input.appArmorPolicy,
+                seccompPolicy: input.seccompPolicy,
+                placement: input.placement,
+                environment: input.environment))
     }
 }
 
@@ -169,7 +132,6 @@ import ShellColliderRecipe
 package struct MaterializeAndroidPackageInputAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let runtimeProducts: FilePath
-        let runtimeRoot: FilePath?
         let runtimeScratch: FilePath
         let aospGeneration: FilePath
         let aospSigningKey: FilePath
@@ -180,7 +142,6 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: runtimeProducts)
-            encoder.append(runtimeRoot?.string ?? "")
             encoder.append(path: runtimeScratch)
             encoder.append(path: aospGeneration)
             encoder.append(path: aospSigningKey)
@@ -194,7 +155,6 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     package static let kind: ActionKind = "android-runtime.package-input"
 
     let runtimeProducts: FilePath
-    let runtimeRoot: FilePath?
     let runtimeScratch: FilePath
     let aospGeneration: FilePath
     let aospSigningKey: FilePath
@@ -207,7 +167,6 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     package var identity: Identity {
         Identity(
             runtimeProducts: runtimeProducts,
-            runtimeRoot: runtimeRoot,
             runtimeScratch: runtimeScratch,
             aospGeneration: aospGeneration,
             aospSigningKey: aospSigningKey,
@@ -218,7 +177,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     }
 
     package var requirements: ActionRequirements {
-        var effects = [
+        let effects = [
             ActionEffect(.read, scope: .input(runtimeProducts)),
             ActionEffect(.read, scope: .input(aospGeneration)),
             ActionEffect(.read, scope: .input(aospSigningKey)),
@@ -228,9 +187,6 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
             ActionEffect(.readWrite, scope: .scratch(runtimeScratch)),
             ActionEffect(.readWrite, scope: .output(output.removingLastComponent())),
         ]
-        if let runtimeRoot {
-            effects.append(ActionEffect(.read, scope: .input(runtimeRoot)))
-        }
         return ActionRequirements(
             tools: [
                 ActionToolRequirement(
@@ -256,26 +212,11 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
                 abi: "glibc"))
     }
 
-    init(configuration: AndroidPackageInputConfiguration) {
-        self.init(
-            runtimeProducts: configuration.swiftPM.productsDirectory,
-            runtimeRoot: configuration.runtimeRoot,
-            runtimeScratch: configuration.runtimeScratch,
-            aospGeneration: configuration.aospGeneration,
-            aospSigningKey: configuration.aospSigningKey,
-            architecture: configuration.architecture,
-            output: configuration.output,
-            appArmorPolicy: configuration.appArmorPolicy,
-            seccompPolicy: configuration.seccompPolicy,
-            environment: configuration.environment)
-    }
-
     /// The fields the materialization actually reads, for the tool that
     /// re-enters it inside a container with paths named as the container sees
     /// them rather than as a recipe configured them.
     package init(
         runtimeProducts: FilePath,
-        runtimeRoot: FilePath?,
         runtimeScratch: FilePath,
         aospGeneration: FilePath,
         aospSigningKey: FilePath,
@@ -286,7 +227,6 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         environment: [String: String]
     ) {
         self.runtimeProducts = runtimeProducts
-        self.runtimeRoot = runtimeRoot
         self.runtimeScratch = runtimeScratch
         self.aospGeneration = aospGeneration
         self.aospSigningKey = aospSigningKey
@@ -298,13 +238,11 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     }
 
     package func execute(in context: ActionContext) async throws {
-        guard
-            try context.files.metadataWithoutFollowingSymlinks(for: output) == nil
-        else {
-            throw AndroidPackageInputFailure(
-                "output already exists: \(output)")
-        }
+        // A declared output the graph re-materializes whenever the generation
+        // or the runtime products change, so an earlier materialization is
+        // replaced rather than treated as a conflict.
         try context.files.createDirectory(output.removingLastComponent())
+        try context.files.remove(output)
         try context.files.createDirectory(runtimeScratch)
         let candidate = runtimeScratch.appending("package-input-candidate")
         try context.files.remove(candidate)
@@ -313,19 +251,20 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
 
         let buildArchitecture = architecture
 
-        let generatedRuntime = runtimeRoot == nil
-        let resolvedRuntime = runtimeRoot ?? runtimeScratch.appending("runtime")
-        if generatedRuntime {
-            try context.files.remove(resolvedRuntime)
-            defer { try? context.files.remove(resolvedRuntime) }
-            try await stageRuntimeELF(
-                products: runtimeProducts,
-                prefix: resolvedRuntime,
-                environment: environment,
-                productSet: .androidPackage,
-                targetArchitecture: buildArchitecture,
-                context: context)
-        }
+        // Scratch the candidate is copied out of, so it is removed when this
+        // materialization returns. Deferring inside the staging block instead
+        // would delete the tree at the end of that block, before anything read
+        // it.
+        let stagedRuntime = runtimeScratch.appending("runtime")
+        try context.files.remove(stagedRuntime)
+        defer { try? context.files.remove(stagedRuntime) }
+        try await stageRuntimeELF(
+            products: runtimeProducts,
+            prefix: stagedRuntime,
+            environment: environment,
+            productSet: .androidPackage,
+            targetArchitecture: buildArchitecture,
+            context: context)
 
         let provenancePath = aospGeneration.appending(
             "signed/image-provenance.json")
@@ -354,10 +293,10 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         }
 
         try requireDirectory(
-            resolvedRuntime.appending("lib"),
+            stagedRuntime.appending("lib"),
             files: context.files)
         try context.files.copyTree(
-            from: resolvedRuntime.appending("lib"),
+            from: stagedRuntime.appending("lib"),
             to: candidate.appending("lib"))
         for executable in [
             "nucleus-android-runtime",
@@ -366,7 +305,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
             "nucleus-android-display-host",
         ] {
             try copyRegularFile(
-                from: resolvedRuntime.appending("libexec/\(executable)"),
+                from: stagedRuntime.appending("libexec/\(executable)"),
                 to: candidate.appending("libexec/\(executable)"),
                 files: context.files)
         }

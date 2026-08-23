@@ -152,7 +152,9 @@ package struct LinuxRuntimeArtifactLane: Sendable {
 package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
     package let lanes: [PlatformArchitecture: LinuxRuntimeArtifactLane]
     package let browserPackageInputs: [PlatformArchitecture: ChromiumColliderRecipe.PackageInput]
-    package let androidPackageInputs: [PlatformArchitecture: FilePath]
+    /// One produced package input per architecture. There is no default: an
+    /// architecture whose Android input no task produces is not packaged.
+    package let androidPackageInputs: [PlatformArchitecture: ArtifactReference]
     package let assemblerSwiftPM: SwiftPMInvocation
     package let packageSourceSnapshotRoot: FilePath
     package let productStoreRoot: FilePath
@@ -165,7 +167,7 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
         lanes: [PlatformArchitecture: LinuxRuntimeArtifactLane],
         browserPackageInputs:
             [PlatformArchitecture: ChromiumColliderRecipe.PackageInput],
-        androidPackageInputs: [PlatformArchitecture: FilePath]? = nil,
+        androidPackageInputs: [PlatformArchitecture: ArtifactReference],
         assemblerSwiftPM: SwiftPMInvocation,
         packageSourceSnapshotRoot: FilePath,
         productStoreRoot: FilePath,
@@ -175,15 +177,7 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
     ) {
         self.lanes = lanes
         self.browserPackageInputs = browserPackageInputs
-        self.androidPackageInputs =
-            androidPackageInputs
-            ?? Dictionary(
-                uniqueKeysWithValues: lanes.map { architecture, lane in
-                    (
-                        architecture,
-                        lane.packageWorkRoot.appending("android-package-input")
-                    )
-                })
+        self.androidPackageInputs = androidPackageInputs
         self.assemblerSwiftPM = assemblerSwiftPM
         self.packageSourceSnapshotRoot = packageSourceSnapshotRoot
         self.productStoreRoot = productStoreRoot
@@ -809,7 +803,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         lane: LinuxRuntimeArtifactLane,
         runtime: PreparedRuntimeArtifact,
         browser: ChromiumColliderRecipe.PackageInput,
-        androidPackageInput: FilePath,
+        androidPackageInput: ArtifactReference,
         configuration: LinuxRuntimeArtifactConfiguration
     ) throws -> PreparedNativePackagePayload {
         let assembler = configuration.assemblerSwiftPM.product(
@@ -832,15 +826,16 @@ public enum LinuxColliderRecipe: ColliderComponent {
         builder.consume(runtime.packageManifests)
         builder.consume(browser.reference)
         builder.consume(browser.payloadReference)
+        if package == .androidPackage {
+            builder.consume(androidPackageInput)
+        }
         let payload: ArtifactReference = try builder.output(
             "payload",
             path: outputRoot.appending("current"),
             validation: .symlinkTarget)
         let task = builder.build(
             swiftProducts: [assembler],
-            inputs: [configuration.assemblerSwiftPM.identityInput]
-                + (package == .androidPackage
-                    ? [.tree(androidPackageInput)] : []),
+            inputs: [configuration.assemblerSwiftPM.identityInput],
             locks: [.shared(outputRoot.appending(".publish.lock"))],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
@@ -850,7 +845,8 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     runtimeArtifactRoot: lane.artifactRoot,
                     browser: browser,
                     androidPackageInputRoot:
-                        package == .androidPackage ? androidPackageInput : nil,
+                        package == .androidPackage
+                        ? androidPackageInput.path : nil,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     outputRoot: outputRoot,
                     placement: configuration.placement,

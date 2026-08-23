@@ -16,7 +16,6 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     #endif
     commands.append(Skill.self)
     #if os(Linux)
-    commands.append(AndroidRuntime.self)
     #endif
     commands.append(contentsOf: WorkspaceCommandSet.rootSuffix)
     return commands
@@ -101,23 +100,6 @@ package struct Install: AsyncParsableCommand {
         #else
         return []
         #endif
-    }
-
-    package init() {}
-}
-
-package struct AndroidRuntime: AsyncParsableCommand {
-    package static let configuration = CommandConfiguration(
-        commandName: "android-runtime",
-        abstract: "Build and operate the contained Android runtime.",
-        subcommands: androidRuntimeSubcommands())
-
-    private static func androidRuntimeSubcommands() -> [ParsableCommand.Type] {
-        var commands: [ParsableCommand.Type] = []
-        #if os(Linux)
-        commands.append(contentsOf: LinuxOperationCommandSet.androidRuntime)
-        #endif
-        return commands
     }
 
     package init() {}

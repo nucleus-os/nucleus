@@ -44,17 +44,16 @@ product source directory, produces one generation under one active-generation
 link, and declares one set of storage and workspaces. Product validation asserts
 the single pinned product.
 
-The package input is containerized but unselected. Its materialization runs in
-the builder image, and it verifies that the generation's provenance matches the
-architecture it packages for. Nothing in the catalog declares it, and the
-packaging lane still reads the input as a supplied tree with no producing task,
-through `--android-arm64` and `--android-x86-64`.
+The package input is declared per architecture and produced by the ordinary
+graph. Each input consumes its own generation and the AVB signing identity as
+artifacts, builds the Android runtime products for its architecture, and
+materializes in the builder image, where it verifies that the generation's
+provenance matches the architecture it packages for. The packaging lane names
+those producing tasks; no input is supplied by path.
 
-The consequence is that the arm64 cohort declares `nucleus-android` as an exact
-member and no product in this repository can produce it. Native package
-distribution records an earlier run assembling and qualifying arm64 cohorts,
-which the current provenance check would not admit from an x86_64 generation;
-that evidence is superseded by the gates below rather than relied on.
+What remains unproven is execution. Neither package input has been materialized
+and no cohort has been assembled from one, because the arm64 generation they
+consume does not exist yet.
 
 ## Phase 1: Separate the Device Tree From the Product
 
@@ -156,6 +155,14 @@ Gate: both package inputs are produced by the ordinary graph on the macOS
 builder, each carrying provenance for its own architecture, with no input
 supplied by path.
 
+Status: active. The graph declares `android-runtime.package-input.arm64` and
+`android-runtime.package-input.x86_64`, each consuming its own architecture's
+generation and the signing identity as artifacts and executing in the builder
+image for its own artifact target. `collider package linux-runtime --dry-run`
+plans the complete 103-task cohort with both inputs present and no supplied
+path. The gate itself is unmet: planning is not production, and neither input
+has been materialized.
+
 ## Phase 5: Package Both Cohorts From Produced Inputs
 
 The packaging lane consumes the produced package-input artifact for each
@@ -166,6 +173,12 @@ input path that no task produces.
 Gate: `collider package linux-runtime` assembles and qualifies both
 architectures' complete cohorts, including `nucleus-android`, from graph-produced
 inputs alone, and the complete verification graph runs it on protected `main`.
+
+Status: active. Each architecture's Android payload consumes its package-input
+artifact, and the synthesized default input path is gone along with
+`--android-arm64`, `--android-x86-64`, and the path-supplied
+`collider android-runtime package-input` command. The gate is unmet: no cohort
+has been assembled from a produced input.
 
 ## Phase 6: Qualify the arm64 Guest on Hardware
 
@@ -182,7 +195,7 @@ graphics and lifecycle failure paths.
 
 The plumbing phases are mechanical: a file move, a parameterized path, a
 duplicated board fragment, and a task graph that already loops over
-architectures elsewhere. The substantive unknowns are concentrated in Phase 2
+architectures elsewhere. The substantive unknowns are concentrated in Phase 3
 and Phase 6 — whether the Nucleus HALs and the gfxstream guest are genuinely
 architecture-neutral in behavior as well as in source, and whether the arm64
 guest boots and passes isolation and graphics qualification on real hardware.

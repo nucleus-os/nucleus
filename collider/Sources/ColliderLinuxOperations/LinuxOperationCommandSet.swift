@@ -5,7 +5,4 @@ package enum LinuxOperationCommandSet {
     package static let install: [ParsableCommand.Type] = [
         InstallSession.self
     ]
-    package static let androidRuntime: [ParsableCommand.Type] = [
-        AndroidRuntimePackageInput.self
-    ]
 }
