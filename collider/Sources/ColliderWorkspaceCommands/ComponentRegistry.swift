@@ -686,6 +686,18 @@ package struct ComponentRegistry {
             current: current.map(\.string))
     }
 
+    func packageAndroidInputs(controls: TaskControls) async throws {
+        let catalog = try componentCatalog()
+        try await context.execute(
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: AndroidRuntimeEntrypoints.packageInput,
+                    selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
+            ],
+            controls: controls)
+    }
+
     func packageLinuxRuntime(controls: TaskControls) async throws {
         try await checkBrowserPrerequisites(
             selection: "browser",
