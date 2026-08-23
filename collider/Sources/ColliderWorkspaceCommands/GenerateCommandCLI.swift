@@ -40,7 +40,7 @@ struct Adopt: ColliderWorkspaceCommand {
     var presentationKind: CommandPresentationKind { .none }
 
     mutating func run(in context: WorkspaceContext) async throws {
-        let adoption = try ComponentRegistry(context: context)
+        let adoption = try await ComponentRegistry(context: context)
             .adoptGeneratedSources(target)
         try context.console.report(adoption, text: adoption.summary)
     }

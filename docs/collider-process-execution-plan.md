@@ -16,14 +16,11 @@ above it.
 Two mechanisms execute child processes. `ColliderRuntime` uses the pinned
 `nucleus-os` fork of `swift-subprocess`, which drains concurrently by
 construction, and `WorkspaceContext.run` routes command-shaped work through it.
-`ColliderPersistence` reaches the same fork through `CapturedChildProcess`,
-which Phase 1 established as that layer's execution entry point.
+Every other layer reaches the same fork through `CapturedChildProcess` in
+`ColliderProcess`, which owns how Collider captures a child.
 
-Three sites still construct `Foundation.Process` directly:
-`SwiftPackageGraphResolver` and `MacOSBuilderProvisioning` in
-`ColliderWorkspaceCommands`, and `ManagedSkillDocumentation` in `ColliderCLI`.
-The two source-capture sites in `ColliderPersistence` shared the same shape
-until Phase 1 converted them:
+No site constructs `Foundation.Process`. Five did before Phases 1 and 2, and
+three of them shared one shape:
 
 ```swift
 try process.run()
@@ -146,6 +143,41 @@ such site records which of the two reasons applies.
 Gate: no site in Collider constructs `Foundation.Process`, and dependency
 resolution, builder provisioning, and skill generation produce the same results
 as before the change.
+
+Status: complete. No `Foundation.Process`, `Pipe`, or `readDataToEndOfFile`
+remains anywhere in Collider. Three sites were in the deadlock class —
+`SwiftPackageGraphResolver.runSwiftPackage`,
+`MacOSBuilderProvisioning.githubResponse`, and
+`ManagedSkillDocumentation.runGit` — and `commandSucceeds` was not, because it
+discarded both streams; each records which reason applies. `githubResponse`
+also lost the comment that excused its ordering, which rested on how much a
+third-party tool writes to standard error.
+
+Gate evidence: the identity dump is byte identical to the baseline recorded
+before Phase 1, across all 16,712 encoded component lines and all 18 planned
+task identities, which is what covers dependency resolution — `swiftPMInvocation`
+feeds task construction. `collider skill verify collider` verifies the
+generated skill, and `collider skill verify swift-cxx-interop` clones from
+Swift.org through the converted capture and correctly reports the checked-in
+content as behind upstream. `collider test collider` passes. Builder
+provisioning is not exercised here: it reconciles a GitHub runner group and
+needs organization credentials this host does not hold.
+
+Two structural changes were required rather than optional. `CapturedChildProcess`
+moved to its own `ColliderProcess` target: cross-package API in Collider is
+`public`, so leaving it in `ColliderPersistence` would have published a
+subprocess primitive as part of the persistence library's contract. And
+`SwiftPackageGraphResolver` held a mutex across a whole materialization to
+describe each package root exactly once; describing suspends now, so an actor
+holds the in-flight materialization and callers share that instead of a lock.
+
+Converting the skill commands exposed a latent defect in command dispatch.
+`ColliderCommand.execute` ran every non-workspace command through the
+synchronous `run()`, and `ParsableCommand` supplies one that requests help, so
+an `AsyncParsableCommand` reached that way printed usage and exited zero
+instead of running. Nothing had triggered it: every async command until now was
+either a workspace command or a group with no `run()` of its own. The
+informational path now dispatches an async command as such.
 
 ## Phase 3: Leave One Way To Do It
 

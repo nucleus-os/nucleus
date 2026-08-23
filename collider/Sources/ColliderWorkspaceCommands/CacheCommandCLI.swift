@@ -25,7 +25,7 @@ struct Cache: AsyncParsableCommand {
         /// and stays wherever it was invoked.
         var requiresBuilderIdentity: Bool { measureAllocations }
         mutating func run(in context: WorkspaceContext) async throws {
-            let catalog = try ComponentRegistry(context: context).componentCatalog()
+            let catalog = try await ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog
@@ -46,7 +46,7 @@ struct Cache: AsyncParsableCommand {
         var requiresExecutionAdmission: Bool { !dryRun }
 
         mutating func run(in context: WorkspaceContext) async throws {
-            let catalog = try ComponentRegistry(context: context).componentCatalog()
+            let catalog = try await ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog
@@ -68,7 +68,7 @@ struct Cache: AsyncParsableCommand {
         var requiresExecutionAdmission: Bool { !dryRun }
 
         mutating func run(in context: WorkspaceContext) async throws {
-            let catalog = try ComponentRegistry(context: context).componentCatalog()
+            let catalog = try await ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog

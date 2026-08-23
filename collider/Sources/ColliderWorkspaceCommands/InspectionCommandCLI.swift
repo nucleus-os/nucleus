@@ -56,7 +56,7 @@ struct Tasks: ColliderInspectionCommand {
     var matching: String?
 
     mutating func run(in context: WorkspaceContext) async throws {
-        let catalog = try ComponentRegistry(context: context).componentCatalog()
+        let catalog = try await ComponentRegistry(context: context).componentCatalog()
         let componentID: ComponentID?
         if let component {
             guard
@@ -133,7 +133,7 @@ struct Graph: ColliderInspectionCommand {
     var target: String?
 
     mutating func run(in context: WorkspaceContext) async throws {
-        let catalog = try ComponentRegistry(context: context).componentCatalog()
+        let catalog = try await ComponentRegistry(context: context).componentCatalog()
         let selection = target ?? "all"
         var requests = [
             ComponentEntrypointRequest(

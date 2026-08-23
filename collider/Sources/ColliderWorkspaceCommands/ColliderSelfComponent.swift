@@ -11,20 +11,22 @@ enum ColliderSelfComponent {
         canonicalName: "collider",
         directoryName: "collider")
 
-    static func makeComponent(in context: WorkspaceContext) throws -> ComponentDefinition {
+    static func makeComponent(
+        in context: WorkspaceContext
+    ) async throws -> ComponentDefinition {
         let packageRoot = context.root.appending("collider")
         let engineRoot = packageRoot.appending("engine")
         let cli = testTask(
             id: ColliderSelfTaskIDs.cliTests,
             package: "collider-cli",
             testProduct: "collider-cliPackageTests",
-            invocation: try context.swiftPMInvocation(packageRoot: packageRoot),
+            invocation: try await context.swiftPMInvocation(packageRoot: packageRoot),
             environment: context.taskEnvironment)
         let engine = testTask(
             id: ColliderSelfTaskIDs.engineTests,
             package: "engine",
             testProduct: "enginePackageTests",
-            invocation: try context.swiftPMInvocation(packageRoot: engineRoot),
+            invocation: try await context.swiftPMInvocation(packageRoot: engineRoot),
             environment: context.taskEnvironment)
         return try ComponentDefinition(
             descriptor: descriptor,

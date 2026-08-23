@@ -37,7 +37,7 @@ extension WorkspaceContext {
         toolchainIdentity: String? = nil,
         scratchRoot: FilePath? = nil,
         swiftExecutable: CommandSpec.Executable = .named("swift")
-    ) throws -> SwiftPMInvocation {
+    ) async throws -> SwiftPMInvocation {
         let packageRoot = explicitPackageRoot ?? layout.root
         let manifest = packageRoot.appending("Package.swift")
         guard FileManager.default.fileExists(atPath: manifest.string) else {
@@ -119,7 +119,7 @@ extension WorkspaceContext {
             ].filter {
                 FileManager.default.fileExists(atPath: $0.string)
             },
-            sourceGraph: try swiftPackageGraphs.graph(
+            sourceGraph: try await swiftPackageGraphs.graph(
                 packageRoot: packageRoot,
                 swiftExecutable: graphSwiftPath()))
         let isDefaultContext =

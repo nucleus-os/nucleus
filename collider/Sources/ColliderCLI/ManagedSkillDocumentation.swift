@@ -1,5 +1,7 @@
 import ArgumentParser
 import ColliderCore
+import ColliderPersistence
+import ColliderProcess
 import Foundation
 import SystemPackage
 
@@ -17,13 +19,18 @@ enum SynchronizedSkill: String, CaseIterable, ExpressibleByArgument {
 }
 
 enum ManagedSkillDocumentation {
-    static func verifyAll(at repositoryRoot: FilePath) throws -> [String] {
-        try ManagedSkill.allCases.map { skill in
-            try verify(skill, at: repositoryRoot)
+    static func verifyAll(at repositoryRoot: FilePath) async throws -> [String] {
+        var verified: [String] = []
+        for skill in ManagedSkill.allCases {
+            verified.append(try await verify(skill, at: repositoryRoot))
         }
+        return verified
     }
 
-    static func verify(_ skill: ManagedSkill, at repositoryRoot: FilePath) throws -> String {
+    static func verify(
+        _ skill: ManagedSkill,
+        at repositoryRoot: FilePath
+    ) async throws -> String {
         switch skill {
         case .collider:
             try verify(
@@ -31,7 +38,8 @@ enum ManagedSkillDocumentation {
                 under: repositoryRoot.appending(ColliderSkillDocumentation.root))
             return "verified .agents/skills/collider against the current Collider grammar"
         case .swiftCxxInterop:
-            return try SwiftCxxInteropSkillDocumentation.verifyLatest(at: repositoryRoot)
+            return try await SwiftCxxInteropSkillDocumentation.verifyLatest(
+                at: repositoryRoot)
         }
     }
 
@@ -70,8 +78,8 @@ enum SwiftCxxInteropSkillDocumentation {
     private static let safeInteropPath = "documentation/cxx-interop/safe-interop/index.md"
     private static let licensePath = "LICENSE.txt"
 
-    static func sync(to repositoryRoot: FilePath) throws -> String {
-        let upstream = try fetchLatest()
+    static func sync(to repositoryRoot: FilePath) async throws -> String {
+        let upstream = try await fetchLatest()
         let skillRoot = repositoryRoot.appending(root)
         let checkedInDocumentation = try? read(
             skillRoot.appending("references/mixing-swift-and-cxx.md"))
@@ -83,7 +91,7 @@ enum SwiftCxxInteropSkillDocumentation {
             checkedInDocumentation == upstream.documentation
             && checkedInSafeInterop == upstream.safeInterop
             && checkedInLicense == upstream.license
-        let recordedRevision = try? checkedInRevision(at: skillRoot)
+        let recordedRevision = try? await checkedInRevision(at: skillRoot)
         let provenanceRevision =
             contentMatches
             ? recordedRevision ?? upstream.revision
@@ -106,7 +114,7 @@ enum SwiftCxxInteropSkillDocumentation {
             "synchronized .agents/skills/swift-cxx-interop from Swift.org revision \(upstream.revision)"
     }
 
-    static func fetchLatest() throws -> UpstreamSnapshot {
+    static func fetchLatest() async throws -> UpstreamSnapshot {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("nucleus-swift-cxx-interop-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
@@ -115,27 +123,27 @@ enum SwiftCxxInteropSkillDocumentation {
         try FileManager.default.createDirectory(
             at: temporaryRoot,
             withIntermediateDirectories: true)
-        _ = try runGit([
+        _ = try await runGit([
             "clone", "--quiet", "--depth", "1", "--filter=blob:none", "--no-checkout",
             upstreamRepository, checkout.path,
         ])
         let revision = try utf8(
-            runGit(["-C", checkout.path, "rev-parse", "HEAD"]),
+            await runGit(["-C", checkout.path, "rev-parse", "HEAD"]),
             label: "upstream revision"
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         guard validGitRevision(revision) else {
             throw SkillDocumentationFailure.invalid(
                 "Swift.org returned invalid Git revision '\(revision)'")
         }
-        let documentationSource = try runGit([
+        let documentationSource = try await runGit([
             "-C", checkout.path, "show", "\(revision):\(documentationPath)",
         ])
-        let safeInteropSource = try runGit([
+        let safeInteropSource = try await runGit([
             "-C", checkout.path, "show", "\(revision):\(safeInteropPath)",
         ])
         let documentation = try renderTableOfContents(in: documentationSource)
         let safeInterop = try renderTableOfContents(in: safeInteropSource)
-        let license = try runGit([
+        let license = try await runGit([
             "-C", checkout.path, "show", "\(revision):\(licensePath)",
         ])
         _ = try synchronizedDocuments(
@@ -150,17 +158,20 @@ enum SwiftCxxInteropSkillDocumentation {
             license: license)
     }
 
-    static func verifyLatest(at repositoryRoot: FilePath) throws -> String {
+    static func verifyLatest(at repositoryRoot: FilePath) async throws -> String {
         try verifyCheckedIn(at: repositoryRoot)
-        let upstream = try fetchLatest()
-        try verify(upstream, at: repositoryRoot)
+        let upstream = try await fetchLatest()
+        try await verify(upstream, at: repositoryRoot)
         return
             "verified .agents/skills/swift-cxx-interop against the latest Swift.org content at revision \(upstream.revision)"
     }
 
-    static func verify(_ upstream: UpstreamSnapshot, at repositoryRoot: FilePath) throws {
+    static func verify(
+        _ upstream: UpstreamSnapshot,
+        at repositoryRoot: FilePath
+    ) async throws {
         let skillRoot = repositoryRoot.appending(root)
-        let checkedInRevision = try checkedInRevision(at: skillRoot)
+        let checkedInRevision = try await checkedInRevision(at: skillRoot)
         let documentation = try read(
             skillRoot.appending("references/mixing-swift-and-cxx.md"))
         let safeInterop = try read(
@@ -420,7 +431,7 @@ enum SwiftCxxInteropSkillDocumentation {
         }
     }
 
-    private static func checkedInRevision(at skillRoot: FilePath) throws -> String {
+    private static func checkedInRevision(at skillRoot: FilePath) async throws -> String {
         let provenance = try utf8(
             read(skillRoot.appending("references/upstream.md")),
             label: "upstream provenance")
@@ -488,32 +499,30 @@ enum SwiftCxxInteropSkillDocumentation {
         return value
     }
 
-    private static func runGit(_ arguments: [String]) throws -> Data {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
+    /// Was in the deadlock class: standard output was read to end of file
+    /// before standard error, so a child filling standard error would have
+    /// stalled against a parent that had not started reading it.
+    private static func runGit(_ arguments: [String]) async throws -> Data {
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
-        process.environment = environment
-        process.standardOutput = output
-        process.standardError = errors
+        let capture: CapturedChildProcess.Capture
         do {
-            try process.run()
+            capture = try await CapturedChildProcess.capture(
+                executable: FilePath("/usr/bin/git"),
+                arguments: arguments,
+                workingDirectory: FilePath(
+                    FileManager.default.currentDirectoryPath),
+                environment: environment)
         } catch {
             throw SkillDocumentationFailure.git("could not launch git: \(error)")
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let message = String(decoding: errorData, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard capture.status == 0 else {
+            let message = capture.standardErrorText
             throw SkillDocumentationFailure.git(
-                message.isEmpty ? "git exited with status \(process.terminationStatus)" : message)
+                message.isEmpty
+                    ? "git exited with status \(capture.status)" : message)
         }
-        return data
+        return Data(capture.standardOutput)
     }
 }
 

@@ -67,7 +67,7 @@ func swiftCxxInteropRenderingExpandsTheWebsiteTableOfContents() throws {
 }
 
 @Test
-func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws {
+func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() async throws {
     let repositoryRoot = FilePath(
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -90,7 +90,7 @@ func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws
             fileURLWithPath: skillRoot.appending(
                 "references/safe-interop.md"
             ).string))
-    try SwiftCxxInteropSkillDocumentation.verify(
+    try await SwiftCxxInteropSkillDocumentation.verify(
         .init(
             revision: String(repeating: "f", count: 40),
             documentation: documentation,
@@ -100,8 +100,8 @@ func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws
 
     var changedDocumentation = documentation
     changedDocumentation.append(UInt8(ascii: "\n"))
-    #expect(throws: SkillDocumentationFailure.self) {
-        try SwiftCxxInteropSkillDocumentation.verify(
+    await #expect(throws: SkillDocumentationFailure.self) {
+        try await SwiftCxxInteropSkillDocumentation.verify(
             .init(
                 revision: String(repeating: "f", count: 40),
                 documentation: changedDocumentation,
@@ -112,8 +112,8 @@ func swiftCxxInteropFreshnessComparesContentInsteadOfRepositoryRevision() throws
 
     var changedSafeInterop = safeInterop
     changedSafeInterop.append(UInt8(ascii: "\n"))
-    #expect(throws: SkillDocumentationFailure.self) {
-        try SwiftCxxInteropSkillDocumentation.verify(
+    await #expect(throws: SkillDocumentationFailure.self) {
+        try await SwiftCxxInteropSkillDocumentation.verify(
             .init(
                 revision: String(repeating: "f", count: 40),
                 documentation: documentation,

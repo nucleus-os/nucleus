@@ -1,5 +1,6 @@
 import ColliderCore
 import ColliderPersistence
+import ColliderProcess
 import Foundation
 import Synchronization
 import SystemPackage
@@ -73,7 +74,38 @@ package final class SwiftPackageGraphResolver: Sendable {
     private let cacheRoot: FilePath
     private let identityPathMap: IdentityPathMap
     private let environment: [String: String]
-    private let memory = Mutex<[FilePath: SwiftPackageSourceGraph]>([:])
+    private let memory = GraphMemory()
+
+    /// Materializes one package root exactly once, even when two callers ask
+    /// at the same time.
+    ///
+    /// A mutex held across the whole materialization gave that property while
+    /// describing a package was synchronous. It suspends now, so what callers
+    /// share is the in-flight materialization rather than the lock. A failed
+    /// one is dropped so a later caller retries instead of inheriting it,
+    /// which is what the mutex did by only recording successes.
+    private actor GraphMemory {
+        private var materializations: [FilePath: Task<SwiftPackageSourceGraph, any Error>] = [:]
+
+        func graph(
+            for packageRoot: FilePath,
+            materialize:
+                @Sendable @escaping () async throws ->
+                SwiftPackageSourceGraph
+        ) async throws -> SwiftPackageSourceGraph {
+            if let existing = materializations[packageRoot] {
+                return try await existing.value
+            }
+            let materialization = Task { try await materialize() }
+            materializations[packageRoot] = materialization
+            do {
+                return try await materialization.value
+            } catch {
+                materializations[packageRoot] = nil
+                throw error
+            }
+        }
+    }
 
     package init(
         cacheRoot: FilePath,
@@ -102,24 +134,18 @@ package final class SwiftPackageGraphResolver: Sendable {
     package func graph(
         packageRoot: FilePath,
         swiftExecutable: FilePath
-    ) throws -> SwiftPackageSourceGraph {
-        try memory.withLock { memory in
-            try graph(
+    ) async throws -> SwiftPackageSourceGraph {
+        try await memory.graph(for: packageRoot) {
+            try await self.materialize(
                 packageRoot: packageRoot,
-                swiftExecutable: swiftExecutable,
-                memory: &memory)
+                swiftExecutable: swiftExecutable)
         }
     }
 
-    /// The caller holds the memory lock for the whole materialization, so one
-    /// package root is described, cached, and retained exactly once.
-    private func graph(
+    private func materialize(
         packageRoot: FilePath,
-        swiftExecutable: FilePath,
-        memory: inout [FilePath: SwiftPackageSourceGraph]
-    ) throws -> SwiftPackageSourceGraph {
-        if let graph = memory[packageRoot] { return graph }
-
+        swiftExecutable: FilePath
+    ) async throws -> SwiftPackageSourceGraph {
         // Filed under this workspace's own name, not the canonical one: the
         // cache records absolute paths, so a second checkout reading it would
         // find descriptions for a root it does not have.
@@ -135,16 +161,18 @@ package final class SwiftPackageGraphResolver: Sendable {
                 root: packageRoot,
                 locations: cache.locations,
                 descriptions: cache.packages)
-            memory[packageRoot] = graph
             return graph
         }
 
-        let locations = try dependencyLocations(
+        let locations = try await dependencyLocations(
             packageRoot,
             swift: swiftExecutable)
-        let descriptions = try locations.map {
-            try describe(FilePath($0.path), swift: swiftExecutable)
-        }.sorted { $0.path < $1.path }
+        var described: [Description] = []
+        for location in locations {
+            described.append(
+                try await describe(FilePath(location.path), swift: swiftExecutable))
+        }
+        let descriptions = described.sorted { $0.path < $1.path }
 
         let graph = try sourceGraph(
             root: packageRoot,
@@ -177,7 +205,6 @@ package final class SwiftPackageGraphResolver: Sendable {
         try cacheData.write(
             to: URL(fileURLWithPath: cacheFile.string),
             options: .atomic)
-        memory[packageRoot] = graph
         return graph
     }
 
@@ -208,8 +235,8 @@ package final class SwiftPackageGraphResolver: Sendable {
     private func dependencyLocations(
         _ packageRoot: FilePath,
         swift: FilePath
-    ) throws -> [PackageLocation] {
-        let data = try runSwiftPackage(
+    ) async throws -> [PackageLocation] {
+        let data = try await runSwiftPackage(
             packageRoot,
             swift: swift,
             arguments: ["show-dependencies", "--format", "json"])
@@ -242,8 +269,8 @@ package final class SwiftPackageGraphResolver: Sendable {
     private func describe(
         _ packageRoot: FilePath,
         swift: FilePath
-    ) throws -> Description {
-        let data = try runSwiftPackage(
+    ) async throws -> Description {
+        let data = try await runSwiftPackage(
             packageRoot,
             swift: swift,
             arguments: ["describe", "--type", "json"])
@@ -254,15 +281,14 @@ package final class SwiftPackageGraphResolver: Sendable {
         }
     }
 
+    /// Was in the deadlock class: standard output was read to end of file
+    /// before standard error, so a SwiftPM run that filled standard error with
+    /// diagnostics would have stalled against a parent not yet reading it.
     private func runSwiftPackage(
         _ packageRoot: FilePath,
         swift: FilePath,
         arguments: [String]
-    ) throws -> Data {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        process.executableURL = URL(fileURLWithPath: swift.string)
+    ) async throws -> Data {
         // Describing a package makes SwiftPM materialize workspace state, and
         // without a scratch path it writes `.build` beside the manifest. The
         // packages described here are vendored inside the checkout, which the
@@ -271,7 +297,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         // belonging to a single workspace.
         let scratch = cacheRoot.appending(
             "package-graph/scratch/" + resolutionKey(packageRoot))
-        process.arguments =
+        let packageArguments =
             [
                 "package", "--package-path", packageRoot.string,
                 "--scratch-path", scratch.string,
@@ -286,27 +312,24 @@ package final class SwiftPackageGraphResolver: Sendable {
                 "--only-use-versions-from-resolved-file",
             ]
             + arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: packageRoot.string)
-        var processEnvironment = environment
-        processEnvironment["GIT_TERMINAL_PROMPT"] = "0"
-        process.environment = processEnvironment
-        process.standardOutput = output
-        process.standardError = errors
+        var packageEnvironment = environment
+        packageEnvironment["GIT_TERMINAL_PROMPT"] = "0"
+        let capture: CapturedChildProcess.Capture
         do {
-            try process.run()
+            capture = try await CapturedChildProcess.capture(
+                executable: swift,
+                arguments: packageArguments,
+                workingDirectory: packageRoot,
+                environment: packageEnvironment)
         } catch {
             throw SwiftPackageGraphFailure.couldNotLaunch(swift, error)
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        guard capture.status == 0 else {
             throw SwiftPackageGraphFailure.packageCommandFailed(
                 packageRoot,
-                String(decoding: errorData, as: UTF8.self)
-                    .trimmingCharacters(in: .whitespacesAndNewlines))
+                capture.standardErrorText)
         }
-        return data
+        return Data(capture.standardOutput)
     }
 
     private func sourceGraph(

@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "ColliderEngine", targets: ["ColliderEngine"]),
         .library(name: "ColliderPersistence", targets: ["ColliderPersistence"]),
         .library(name: "ColliderPlanning", targets: ["ColliderPlanning"]),
+        .library(name: "ColliderProcess", targets: ["ColliderProcess"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
         .library(name: "ColliderTesting", targets: ["ColliderTesting"]),
     ],
@@ -59,10 +60,17 @@ let package = Package(
             dependencies: [
                 "ColliderCore",
                 "ColliderPlatformC",
+                "ColliderProcess",
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SystemPackage", package: "swift-system"),
+            ]),
+        .target(
+            name: "ColliderProcess",
+            dependencies: [
+                "ColliderCore",
                 .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),
-                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ]),
         .target(
@@ -119,6 +127,9 @@ let package = Package(
             dependencies: [
                 "ColliderCore", "ColliderPersistence", "ColliderPlanning",
             ]),
+        .testTarget(
+            name: "ColliderProcessTests",
+            dependencies: ["ColliderProcess"]),
     ]
 )
 

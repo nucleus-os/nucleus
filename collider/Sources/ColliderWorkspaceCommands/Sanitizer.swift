@@ -26,7 +26,7 @@ struct SanitizerCommand {
         _ selection: SanitizerSelection,
         controls: TaskControls
     ) async throws {
-        let catalog = try ComponentRegistry(context: context).componentCatalog()
+        let catalog = try await ComponentRegistry(context: context).componentCatalog()
         let requests = selection.sanitizers.map { sanitizer in
             ComponentEntrypointRequest(
                 entrypoint: sanitizer.entrypoint,

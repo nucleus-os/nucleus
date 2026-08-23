@@ -21,7 +21,7 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     return commands
 }
 
-package struct Skill: ParsableCommand {
+package struct Skill: AsyncParsableCommand {
     package static let configuration = CommandConfiguration(
         abstract: "Maintain repository-scoped agent skills.",
         subcommands: [GenerateSkill.self, SyncSkill.self, VerifySkill.self])
@@ -49,7 +49,7 @@ private struct GenerateSkill: ParsableCommand {
     }
 }
 
-private struct SyncSkill: ParsableCommand {
+private struct SyncSkill: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "sync",
         abstract: "Synchronize a skill from its canonical upstream source.")
@@ -57,18 +57,18 @@ private struct SyncSkill: ParsableCommand {
     @Argument(help: "The upstream-backed skill to synchronize.")
     var skill: SynchronizedSkill
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let root = try resolveWorkspaceRoot(
             environment: ProcessInfo.processInfo.environment)
         switch skill {
         case .swiftCxxInterop:
             throw CleanExit.message(
-                try SwiftCxxInteropSkillDocumentation.sync(to: root))
+                try await SwiftCxxInteropSkillDocumentation.sync(to: root))
         }
     }
 }
 
-private struct VerifySkill: ParsableCommand {
+private struct VerifySkill: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "verify",
         abstract: "Verify managed skills against their authoritative sources.")
@@ -76,15 +76,15 @@ private struct VerifySkill: ParsableCommand {
     @Argument(help: "The skill to verify; omit to verify every managed skill.")
     var skill: ManagedSkill?
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let root = try resolveWorkspaceRoot(
             environment: ProcessInfo.processInfo.environment)
         if let skill {
             throw CleanExit.message(
-                try ManagedSkillDocumentation.verify(skill, at: root))
+                try await ManagedSkillDocumentation.verify(skill, at: root))
         }
         throw CleanExit.message(
-            try ManagedSkillDocumentation.verifyAll(at: root)
+            try await ManagedSkillDocumentation.verifyAll(at: root)
                 .joined(separator: "\n"))
     }
 }

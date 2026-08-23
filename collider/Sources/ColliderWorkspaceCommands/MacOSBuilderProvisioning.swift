@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderProcess
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -222,19 +223,19 @@ struct MacOSBuilderProvisioning {
         }
         try validateProvisioningScripts()
 
-        let local = try localState()
+        let local = try await localState()
         guard local != .inconsistent else {
             throw WorkspaceFailure.message(
                 "local builder provisioning is partial; inspect it before retrying")
         }
 
         try stage("validating GitHub authorization")
-        try validateOrganizationAuthorization()
+        try await validateOrganizationAuthorization()
 
         try stage("reconciling the protected runner group")
-        let groupID = try reconciledRunnerGroup()
+        let groupID = try await reconciledRunnerGroup()
 
-        let registeredNames = try runnerNames(inGroup: groupID)
+        let registeredNames = try await runnerNames(inGroup: groupID)
         let runner = builderRunnerState(
             registeredNames: registeredNames,
             expected: contract.builder.runnerName)
@@ -249,7 +250,7 @@ struct MacOSBuilderProvisioning {
         switch action {
         case .provision:
             try stage("provisioning the isolated builder identity")
-            let token = try registrationToken()
+            let token = try await registrationToken()
             try await sudoScript(
                 "provision-nucleus-builder.sh",
                 arguments: [archivePath.string],
@@ -267,7 +268,7 @@ struct MacOSBuilderProvisioning {
         else {
             throw WorkspaceFailure.message("provisioned runner label is absent")
         }
-        guard try runnerNames(inGroup: groupID) == [contract.builder.runnerName] else {
+        guard try await runnerNames(inGroup: groupID) == [contract.builder.runnerName] else {
             throw WorkspaceFailure.message("runner group membership drifted")
         }
         try stage("all local and GitHub gates passed")
@@ -279,9 +280,9 @@ struct MacOSBuilderProvisioning {
 
     private func retire() async throws {
         try stage("validating GitHub authorization")
-        try validateOrganizationAuthorization()
+        try await validateOrganizationAuthorization()
 
-        let registered = try organizationRunner()
+        let registered = try await organizationRunner()
         if let registered {
             guard !registered.busy else {
                 throw WorkspaceFailure.message(
@@ -294,16 +295,16 @@ struct MacOSBuilderProvisioning {
 
         if let registered {
             try stage("removing the organization runner registration")
-            try gh([
+            try await gh([
                 "api", "--method", "DELETE",
                 "orgs/\(organization)/actions/runners/\(registered.id)",
             ])
         }
 
-        guard try organizationRunner() == nil else {
+        guard try await organizationRunner() == nil else {
             throw WorkspaceFailure.message("organization runner registration survived retirement")
         }
-        let local = try localState()
+        let local = try await localState()
         guard local == .preArtifact || local == .fresh else {
             throw WorkspaceFailure.message(
                 "local state after retirement is \(local.rawValue); commission resumes "
@@ -317,11 +318,11 @@ struct MacOSBuilderProvisioning {
 
     // MARK: Local state
 
-    private func localState() throws -> BuilderLocalState {
+    private func localState() async throws -> BuilderLocalState {
         let account: BuilderAccountPresence =
-            directoryServicesRecordExists() ? .present : .absent
+            await directoryServicesRecordExists() ? .present : .absent
         let service: BuilderServicePresence =
-            launchDaemonIsLoaded() ? .present : .absent
+            await launchDaemonIsLoaded() ? .present : .absent
         guard account == .present, service == .absent else {
             return builderLocalState(account: account, service: service, recovery: .absent)
         }
@@ -389,23 +390,23 @@ struct MacOSBuilderProvisioning {
             from: Data(contentsOf: URL(fileURLWithPath: contract.builder.runnerRoot + "/.runner")))
     }
 
-    private func directoryServicesRecordExists() -> Bool {
-        commandSucceeds("/usr/bin/dscl", [".", "-read", "/Users/\(contract.builder.user)"])
+    private func directoryServicesRecordExists() async -> Bool {
+        await commandSucceeds("/usr/bin/dscl", [".", "-read", "/Users/\(contract.builder.user)"])
     }
 
-    private func launchDaemonIsLoaded() -> Bool {
-        commandSucceeds(
+    private func launchDaemonIsLoaded() async -> Bool {
+        await commandSucceeds(
             "/bin/launchctl", ["print", "system/\(contract.builder.runnerServiceLabel)"])
     }
 
     // MARK: GitHub control plane
 
-    private func validateOrganizationAuthorization() throws {
-        guard commandSucceeds("/usr/bin/which", ["gh"]) else {
+    private func validateOrganizationAuthorization() async throws {
+        guard await commandSucceeds("/usr/bin/which", ["gh"]) else {
             throw WorkspaceFailure.message("gh is required to reconcile the runner group")
         }
         let status = String(
-            decoding: try githubResponse(
+            decoding: try await githubResponse(
                 ["auth", "status", "-h", "github.com"], mergingStandardError: true),
             as: UTF8.self)
         guard
@@ -418,17 +419,17 @@ struct MacOSBuilderProvisioning {
         }
     }
 
-    private func reconciledRunnerGroup() throws -> Int {
-        let repositoryID = try ghDecode(
+    private func reconciledRunnerGroup() async throws -> Int {
+        let repositoryID = try await ghDecode(
             GitHubRepository.self, ["api", "repos/\(organization)/\(repositoryName)"]
         ).id
-        let existing = try ghDecode(
+        let existing = try await ghDecode(
             GitHubRunnerGroupList.self, ["api", "orgs/\(organization)/actions/runner-groups"]
         ).runnerGroups.first { $0.name == contract.builder.runnerGroup }
 
         let groupID: Int
         if let existing {
-            try gh(
+            try await gh(
                 [
                     "api", "--method", "PATCH",
                     "orgs/\(organization)/actions/runner-groups/\(existing.id)",
@@ -436,19 +437,19 @@ struct MacOSBuilderProvisioning {
                     + runnerGroupFields)
             groupID = existing.id
         } else {
-            groupID = try ghDecode(
+            groupID = try await ghDecode(
                 GitHubRunnerGroup.self,
                 ["api", "--method", "POST", "orgs/\(organization)/actions/runner-groups"]
                     + runnerGroupFields
             ).id
         }
-        try gh([
+        try await gh([
             "api", "--method", "PUT",
             "orgs/\(organization)/actions/runner-groups/\(groupID)/repositories",
             "-F", "selected_repository_ids[]=\(repositoryID)",
         ])
 
-        let reconciled = try ghDecode(
+        let reconciled = try await ghDecode(
             GitHubRunnerGroup.self,
             ["api", "orgs/\(organization)/actions/runner-groups/\(groupID)"])
         guard reconciled.visibility == "selected" else {
@@ -460,7 +461,7 @@ struct MacOSBuilderProvisioning {
         guard reconciled.selectedWorkflows?.contains(workflow) == true else {
             throw WorkspaceFailure.message("runner group workflow allowlist drifted")
         }
-        let repositories = try ghDecode(
+        let repositories = try await ghDecode(
             GitHubRepositoryList.self,
             ["api", "orgs/\(organization)/actions/runner-groups/\(groupID)/repositories"]
         ).repositories.map(\.id)
@@ -480,23 +481,23 @@ struct MacOSBuilderProvisioning {
         ]
     }
 
-    private func runnerNames(inGroup group: Int) throws -> [String] {
-        try ghDecode(
+    private func runnerNames(inGroup group: Int) async throws -> [String] {
+        try await ghDecode(
             GitHubRunnerList.self,
             ["api", "orgs/\(organization)/actions/runner-groups/\(group)/runners"]
         ).runners.map(\.name)
     }
 
-    private func organizationRunner() throws -> GitHubRunner? {
-        try ghDecode(
+    private func organizationRunner() async throws -> GitHubRunner? {
+        try await ghDecode(
             GitHubRunnerList.self, ["api", "orgs/\(organization)/actions/runners"]
         ).runners.first { $0.name == contract.builder.runnerName }
     }
 
     /// The registration token travels from this call to the privileged
     /// boundary on standard input only, never through argv or the environment.
-    private func registrationToken() throws -> String {
-        let token = try JSONDecoder().decode(
+    private func registrationToken() async throws -> String {
+        let token = try await JSONDecoder().decode(
             GitHubRegistrationToken.self,
             from: try githubResponse([
                 "api", "--method", "POST",
@@ -511,7 +512,7 @@ struct MacOSBuilderProvisioning {
 
     private func awaitOnlineRunner() async throws -> GitHubRunner {
         for _ in 0..<60 {
-            if let runner = try organizationRunner(), runner.status == "online" {
+            if let runner = try await organizationRunner(), runner.status == "online" {
                 return runner
             }
             try await Task.sleep(for: .seconds(1))
@@ -524,51 +525,47 @@ struct MacOSBuilderProvisioning {
     ///
     /// Control-plane responses are decoded into typed values, so none of them
     /// needs to be echoed, and one carries a registration token that must never
-    /// reach the terminal or the durable run log. Standard error is captured
-    /// rather than inherited so a failure reports why instead of printing past
-    /// the command. `gh` writes far less to standard error than a pipe buffer
-    /// holds, so draining standard output first cannot stall it.
+    /// reach the terminal or the durable run log. That is why this captures
+    /// rather than routing through the logging runtime.
+    ///
+    /// Was in the deadlock class: standard output was read to end of file
+    /// before standard error. The argument that excused it — that `gh` writes
+    /// less to standard error than a pipe buffer holds — was an assumption
+    /// about a third-party tool's output, and concurrent draining removes the
+    /// need to make it.
     private func githubResponse(
         _ arguments: [String],
         mergingStandardError: Bool = false
-    ) throws -> Data {
-        let process = Process()
-        let output = Pipe()
-        let errorOutput = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["gh"] + arguments
-        process.environment = sanitizedEnvironment(context.environment)
-        process.standardOutput = output
-        process.standardError = mergingStandardError ? output : errorOutput
-        try process.run()
-        let response = output.fileHandleForReading.readDataToEndOfFile()
+    ) async throws -> Data {
+        let capture = try await CapturedChildProcess.capture(
+            executable: FilePath("/usr/bin/env"),
+            arguments: ["gh"] + arguments,
+            workingDirectory: context.root,
+            environment: sanitizedEnvironment(context.environment),
+            combiningStandardError: mergingStandardError)
         guard !mergingStandardError else {
-            process.waitUntilExit()
-            return response
+            return Data(capture.standardOutput)
         }
-        let failure = errorOutput.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        guard capture.status == 0 else {
             throw WorkspaceFailure.message(
                 "gh \(arguments.prefix(2).joined(separator: " ")) failed: "
-                    + String(decoding: failure, as: UTF8.self)
-                    .trimmingCharacters(in: .whitespacesAndNewlines))
+                    + capture.standardErrorText)
         }
-        return response
+        return Data(capture.standardOutput)
     }
 
     @discardableResult
-    private func gh(_ arguments: [String]) throws -> String {
-        String(decoding: try githubResponse(arguments), as: UTF8.self)
+    private func gh(_ arguments: [String]) async throws -> String {
+        String(decoding: try await githubResponse(arguments), as: UTF8.self)
     }
 
     private func ghDecode<Value: Decodable>(
         _ type: Value.Type,
         _ arguments: [String]
-    ) throws -> Value {
+    ) async throws -> Value {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(Value.self, from: try githubResponse(arguments))
+        return try await decoder.decode(Value.self, from: try githubResponse(arguments))
     }
 
     // MARK: Privileged boundary
@@ -662,19 +659,19 @@ struct MacOSBuilderProvisioning {
         try context.console.diagnostic("provision: \(message)")
     }
 
-    private func commandSucceeds(_ executable: String, _ arguments: [String]) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+    /// Not in the deadlock class: both streams are discarded, so there was
+    /// never a pipe to drain. Converted for singularity of mechanism, so no
+    /// layer keeps a reason to build a process by hand.
+    private func commandSucceeds(
+        _ executable: String,
+        _ arguments: [String]
+    ) async -> Bool {
+        guard
+            let status = try? await CapturedChildProcess.status(
+                executable: FilePath(executable),
+                arguments: arguments)
+        else { return false }
+        return status == 0
     }
 }
 

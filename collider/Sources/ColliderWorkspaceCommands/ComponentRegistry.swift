@@ -33,7 +33,7 @@ package struct ComponentRegistry {
         environment environmentOverride: [String: String]? = nil,
         hostAugmentation explicitHostAugmentation: HostCatalogAugmentation? = nil,
         forceSwiftSDKGeneration: Bool = false
-    ) throws -> ComponentCatalog {
+    ) async throws -> ComponentCatalog {
         let hostAugmentation =
             try explicitHostAugmentation
             ?? defaultHostCatalogAugmentation()
@@ -70,16 +70,16 @@ package struct ComponentRegistry {
             base: nativeBuilder.configuration,
             swiftSDK: swiftTargetSDK.activeSDK)
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
-            .hostDebug: try context.swiftPMInvocation()
+            .hostDebug: try await context.swiftPMInvocation()
         ]
         for architecture in PlatformArchitecture.allCases {
-            buildContexts[.linux(architecture)] = try linuxSwiftPMInvocation(
+            buildContexts[.linux(architecture)] = try await linuxSwiftPMInvocation(
                 architecture: architecture,
                 builder: nativeConfiguration)
         }
         var linuxReleaseContexts: [PlatformArchitecture: SwiftPMInvocation] = [:]
         for architecture in PlatformArchitecture.allCases {
-            let invocation = try linuxSwiftPMInvocation(
+            let invocation = try await linuxSwiftPMInvocation(
                 architecture: architecture,
                 configuration: .release,
                 builder: nativeConfiguration)
@@ -88,19 +88,19 @@ package struct ComponentRegistry {
                 .linux(architecture, configuration: .release)
             ] = invocation
         }
-        let runtimeAssembler = try linuxAssemblerSwiftPMInvocation(
+        let runtimeAssembler = try await linuxAssemblerSwiftPMInvocation(
             builder: nativeConfiguration)
         buildContexts[.linuxAssembler] = runtimeAssembler
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
-                try linuxSwiftPMInvocation(
+                try await linuxSwiftPMInvocation(
                     sanitizer: sanitizer.rawValue,
                     linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [],
                     builder: nativeConfiguration)
         }
         buildContexts[
             .androidARM64(apiLevel: androidToolchain.minimumSDK)
-        ] = try androidSwiftPMInvocation(
+        ] = try await androidSwiftPMInvocation(
             toolchain: androidToolchain,
             inputs: targetSDKInputs,
             swiftSDKRoot: swiftTargetSDK.activeSDK.path,
@@ -228,7 +228,7 @@ package struct ComponentRegistry {
             VulkanColliderRecipe.self,
         ]
         let components =
-            [
+            await [
                 try ColliderStorageComponent.makeComponent(in: context),
                 try ColliderSelfComponent.makeComponent(in: context),
                 nativeBuilder.component, swiftTargetSDK.component,
@@ -544,7 +544,7 @@ package struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         try await checkBrowserPrerequisites(selection: selection, controls: controls)
-        let catalog = try componentCatalog(
+        let catalog = try await componentCatalog(
             forceSwiftSDKGeneration:
                 selection == SwiftTargetSDKColliderRecipe.descriptor.canonicalName
                 && controls.rebuild)
@@ -563,7 +563,7 @@ package struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         try await checkBrowserPrerequisites(selection: selection, controls: controls)
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -579,7 +579,7 @@ package struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         try await checkBrowserPrerequisites(selection: selection, controls: controls)
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         if selection == ReleaseGateColliderRecipe.descriptor.canonicalName {
             try await context.execute(
                 catalog: catalog,
@@ -612,7 +612,7 @@ package struct ComponentRegistry {
         _ selection: String,
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -636,8 +636,8 @@ package struct ComponentRegistry {
     /// file and saving it, performed by the account that owns the checkout.
     func adoptGeneratedSources(
         _ selection: String
-    ) throws -> GeneratedSourceAdoption {
-        let catalog = try componentCatalog()
+    ) async throws -> GeneratedSourceAdoption {
+        let catalog = try await componentCatalog()
         let components = catalog.components.filter {
             $0.descriptor.canonicalName == selection
                 || $0.descriptor.aliases.contains(selection)
@@ -687,7 +687,7 @@ package struct ComponentRegistry {
     }
 
     func packageAndroidInputs(controls: TaskControls) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -702,7 +702,7 @@ package struct ComponentRegistry {
         try await checkBrowserPrerequisites(
             selection: "browser",
             controls: controls)
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -717,7 +717,7 @@ package struct ComponentRegistry {
         _ entrypoint: ComponentEntrypointID,
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -731,7 +731,7 @@ package struct ComponentRegistry {
     func verifyAndroidRuntimeSourceLock(
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -745,7 +745,7 @@ package struct ComponentRegistry {
     func prepareAndroidRuntimeSource(
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -759,7 +759,7 @@ package struct ComponentRegistry {
     func buildAndroidRuntimeImage(
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -771,7 +771,7 @@ package struct ComponentRegistry {
     }
 
     func buildAndroidRuntimeHost() async throws {
-        let catalog = try componentCatalog()
+        let catalog = try await componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -796,8 +796,8 @@ package struct ComponentRegistry {
     package func shellRuntimePublicationConfiguration(
         prefix: FilePath,
         selection: RuntimeBuildSelection
-    ) throws -> ShellRuntimePublicationConfiguration {
-        let swiftPM = try context.swiftPMInvocation(
+    ) async throws -> ShellRuntimePublicationConfiguration {
+        let swiftPM = try await context.swiftPMInvocation(
             configuration: selection.optimization == .debug ? .debug : .release,
             sanitizer: selection.sanitizer?.rawValue,
             cFlags: selection.tracy ? ["-DTRACY_ENABLE"] : [],
@@ -863,7 +863,7 @@ package struct ComponentRegistry {
         sanitizer: String? = nil,
         linkerFlags additionalLinkerFlags: [String] = [],
         builder: NativeOCIConfiguration
-    ) throws -> SwiftPMInvocation {
+    ) async throws -> SwiftPMInvocation {
         let root = context.layout.root
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
@@ -990,7 +990,7 @@ package struct ComponentRegistry {
                 ],
                 environmentProjection: nucleusSwiftPMEnvironmentProjection,
                 swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
-        return try context.swiftPMInvocation(
+        return try await context.swiftPMInvocation(
             buildSystem: .swiftbuild,
             configuration: configuration,
             sanitizer: sanitizer,
@@ -1016,7 +1016,7 @@ package struct ComponentRegistry {
 
     private func linuxAssemblerSwiftPMInvocation(
         builder: NativeOCIConfiguration
-    ) throws -> SwiftPMInvocation {
+    ) async throws -> SwiftPMInvocation {
         let root = context.layout.root
         let packageRoot = root.appending("collider")
         let scratchRoot = context.cacheRoot.appending(
@@ -1063,7 +1063,7 @@ package struct ComponentRegistry {
                 ],
                 environmentProjection: nucleusSwiftPMEnvironmentProjection,
                 swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
-        return try context.swiftPMInvocation(
+        return try await context.swiftPMInvocation(
             packageRoot: packageRoot,
             configuration: .release,
             debugInformationFormat: SwiftDebugInformationFormat.none,
@@ -1082,7 +1082,7 @@ package struct ComponentRegistry {
         swiftSDKRoot: FilePath,
         swiftIncludeRoot: FilePath,
         swiftExecutable: CommandSpec.Executable
-    ) throws -> SwiftPMInvocation {
+    ) async throws -> SwiftPMInvocation {
         let nativeSDK = context.nativeSDKRoot(named: "android-arm64")
         let placement = context.identityPathMap
         let nativeCompiler = nativeSDKCompilerConfiguration(
@@ -1092,7 +1092,7 @@ package struct ComponentRegistry {
         let swiftCxxLibraries = swiftSDKRoot.appending(
             "\(inputs.androidBundleID).artifactbundle/swift-android/"
                 + "swift-resources/usr/lib/swift-aarch64/android")
-        return try context.swiftPMInvocation(
+        return try await context.swiftPMInvocation(
             configuration: .release,
             swiftFlags: ["-disable-cmo"],
             cFlags: nativeCompiler.cFlags

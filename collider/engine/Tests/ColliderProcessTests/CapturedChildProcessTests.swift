@@ -1,8 +1,7 @@
+import ColliderProcess
 import Foundation
 import SystemPackage
 import Testing
-
-@testable import ColliderPersistence
 
 /// Larger than any pipe buffer a supported platform gives a child: Linux
 /// allocates 64 KiB and Darwin grows to 64 KiB, so a child writing this much

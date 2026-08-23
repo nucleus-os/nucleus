@@ -4,7 +4,7 @@ struct BenchmarkCommand {
     let context: WorkspaceContext
 
     func run(controls: TaskControls) async throws {
-        let catalog = try ComponentRegistry(context: context).componentCatalog()
+        let catalog = try await ComponentRegistry(context: context).componentCatalog()
         try await context.execute(
             catalog: catalog,
             requests: [

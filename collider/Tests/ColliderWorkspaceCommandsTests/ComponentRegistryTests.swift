@@ -45,20 +45,35 @@ private let fixtureRepositoryRoot = FilePath(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent().path)
-private let sharedFixtureCatalogStorage = Mutex<ComponentCatalog?>(nil)
+/// Builds the fixture catalog once for the whole suite. Constructing it now
+/// suspends, so tests share the in-flight construction rather than a lock held
+/// across it.
+private actor SharedFixtureCatalog {
+    static let shared = SharedFixtureCatalog()
+    private var construction: Task<ComponentCatalog, any Error>?
 
-private func sharedFixtureCatalog() throws -> ComponentCatalog {
-    try sharedFixtureCatalogStorage.withLock { cached in
-        if let cached { return cached }
-        let catalog = try ComponentRegistry(
-            context: WorkspaceContext(
-                root: fixtureRepositoryRoot,
-                environment: [:],
-                runtime: ColliderRuntime())
-        ).componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
-        cached = catalog
-        return catalog
+    func catalog() async throws -> ComponentCatalog {
+        if let construction { return try await construction.value }
+        let construction = Task {
+            try await ComponentRegistry(
+                context: WorkspaceContext(
+                    root: fixtureRepositoryRoot,
+                    environment: [:],
+                    runtime: ColliderRuntime())
+            ).componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+        }
+        self.construction = construction
+        do {
+            return try await construction.value
+        } catch {
+            self.construction = nil
+            throw error
+        }
     }
+}
+
+private func sharedFixtureCatalog() async throws -> ComponentCatalog {
+    try await SharedFixtureCatalog.shared.catalog()
 }
 
 private struct RelocatableStorageSignature: Equatable {
@@ -102,8 +117,8 @@ private func selectedTestTasks(
 }
 
 @Test
-func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
-    let catalog = try sharedFixtureCatalog()
+func normalizedRootVerbsResolveTheRetiredDomainOperations() async throws {
+    let catalog = try await sharedFixtureCatalog()
 
     #expect(
         try selectedTasks(in: catalog, entrypoint: .build, selection: "android-native")
@@ -160,7 +175,7 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
         ])
 }
 
-@Test func macOSCacheOwnershipIgnoresProcessWideXDGOverrides() throws {
+@Test func macOSCacheOwnershipIgnoresProcessWideXDGOverrides() async throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-storage-relocation-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
@@ -182,9 +197,9 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
             "XDG_CACHE_HOME": overriddenCache.path,
         ],
         runtime: ColliderRuntime())
-    let defaultCatalog = try ComponentRegistry(context: defaultContext).componentCatalog(
+    let defaultCatalog = try await ComponentRegistry(context: defaultContext).componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
-    let overriddenCatalog = try ComponentRegistry(
+    let overriddenCatalog = try await ComponentRegistry(
         context: overriddenContext
     ).componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
@@ -238,10 +253,10 @@ private func storageCoordinate(
 }
 
 @Test
-func everyLockedAndroidProductProducesItsOwnPackageInput() throws {
+func everyLockedAndroidProductProducesItsOwnPackageInput() async throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let catalog = try ComponentRegistry(
+    let catalog = try await ComponentRegistry(
         context: WorkspaceContext(
             root: root,
             environment: [:],
@@ -275,7 +290,7 @@ func everyLockedAndroidProductProducesItsOwnPackageInput() throws {
 }
 
 @Test
-func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws {
+func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
@@ -283,13 +298,13 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
             root: root,
             environment: [:],
             runtime: ColliderRuntime()))
-    let shellConfiguration = try registry.shellRuntimePublicationConfiguration(
+    let shellConfiguration = try await registry.shellRuntimePublicationConfiguration(
         prefix: FilePath("/nucleus-runtime"),
         selection: RuntimeBuildSelection())
 
-    let withoutLinuxOperations = try registry.componentCatalog(
+    let withoutLinuxOperations = try await registry.componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
-    let withLinuxOperations = try registry.componentCatalog(
+    let withLinuxOperations = try await registry.componentCatalog(
         hostAugmentation: .linux(
             shellConfiguration: shellConfiguration))
 
@@ -428,7 +443,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     async throws
 {
     let root = fixtureRepositoryRoot
-    let catalog = try sharedFixtureCatalog()
+    let catalog = try await sharedFixtureCatalog()
     let selected = Set(
         try selectedTasks(
             in: catalog,
@@ -789,7 +804,7 @@ private func fixtureReactNativeNodeModules(
 }
 
 @Test func linuxBuildLanesUsePatchedNativeSwiftPMForBothTargetArchitectures()
-    throws
+    async throws
 {
     let environment = ["HOME": "/tmp/nucleus-fixture"]
     let registry = ComponentRegistry(
@@ -803,10 +818,10 @@ private func fixtureReactNativeNodeModules(
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
 
-    let arm64 = try registry.linuxSwiftPMInvocation(
+    let arm64 = try await registry.linuxSwiftPMInvocation(
         architecture: .arm64,
         builder: builder)
-    let amd64 = try registry.linuxSwiftPMInvocation(
+    let amd64 = try await registry.linuxSwiftPMInvocation(
         architecture: .x86_64,
         builder: builder)
 
@@ -1033,7 +1048,7 @@ private func fixtureReactNativeNodeModules(
         ]) == FilePath(ndk.path))
 }
 
-@Test func androidSwiftPMIncludesTheActiveToolchainInteropHeaders() throws {
+@Test func androidSwiftPMIncludesTheActiveToolchainInteropHeaders() async throws {
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: fixtureRepositoryRoot,
@@ -1046,7 +1061,7 @@ private func fixtureReactNativeNodeModules(
     let swiftSDKRoot = FilePath("/cache/swift-target-sdks/current/swift-sdks")
     let swiftIncludeRoot = FilePath(
         "/cache/swift-target-sdks/current/toolchain/usr/include")
-    let invocation = try registry.androidSwiftPMInvocation(
+    let invocation = try await registry.androidSwiftPMInvocation(
         toolchain: toolchain,
         inputs: inputs,
         swiftSDKRoot: swiftSDKRoot,
@@ -1059,8 +1074,8 @@ private func fixtureReactNativeNodeModules(
     #expect(invocation.context.cxxFlags.contains(includeFlag))
 }
 
-@Test func runtimeTestSelectionsUseNativeARM64LinuxLane() throws {
-    let catalog = try sharedFixtureCatalog()
+@Test func runtimeTestSelectionsUseNativeARM64LinuxLane() async throws {
+    let catalog = try await sharedFixtureCatalog()
     let armBuild = try #require(
         catalog.tasks.first {
             $0.id == TaskID(rawValue: "linux.arm64.build")
@@ -1142,7 +1157,7 @@ private func fixtureReactNativeNodeModules(
 @Test func linuxRuntimeArtifactsBuildOncePerArchitectureAndPublishTypedOutputs()
     async throws
 {
-    let catalog = try sharedFixtureCatalog()
+    let catalog = try await sharedFixtureCatalog()
     let selected = try selectedTasks(
         in: catalog,
         entrypoint: .build,
@@ -1213,7 +1228,7 @@ private func artifactInput(
     }
 }
 
-@Test func unselectedWorkDoesNotRequireDRMHardware() throws {
+@Test func unselectedWorkDoesNotRequireDRMHardware() async throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
@@ -1221,7 +1236,7 @@ private func artifactInput(
             root: root,
             environment: ["SWIFTC": "/definitely/unavailable/swiftc"],
             runtime: ColliderRuntime()))
-    let catalog = try registry.componentCatalog()
+    let catalog = try await registry.componentCatalog()
     let declared = Set(catalog.tasks.map(\.id))
     for selection in [
         "runtime", "tracy", "vulkan", "wayland", "core", "config", "ipc",
@@ -1387,7 +1402,7 @@ private func artifactInput(
             == layout.swiftScratch(for: debug, under: scratchRoot))
 }
 
-@Test func hostScratchIdentityFollowsCompilerInsteadOfTargetSDKSource() throws {
+@Test func hostScratchIdentityFollowsCompilerInsteadOfTargetSDKSource() async throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-host-swift-identity-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: workspace) }
@@ -1406,8 +1421,8 @@ private func artifactInput(
     try Data("first compiler".utf8).write(to: firstCompiler)
     try Data("second compiler".utf8).write(to: secondCompiler)
 
-    func invocation(sourceID: String, compiler: URL) throws -> SwiftPMInvocation {
-        try WorkspaceContext(
+    func invocation(sourceID: String, compiler: URL) async throws -> SwiftPMInvocation {
+        try await WorkspaceContext(
             root: FilePath(workspace.path),
             environment: [
                 "HOME": workspace.path,
@@ -1418,10 +1433,11 @@ private func artifactInput(
         ).swiftPMInvocation()
     }
 
-    let first = try invocation(sourceID: "target-source-a", compiler: firstCompiler)
-    let changedSource = try invocation(
+    let first = try await invocation(
+        sourceID: "target-source-a", compiler: firstCompiler)
+    let changedSource = try await invocation(
         sourceID: "target-source-b", compiler: firstCompiler)
-    let changedCompiler = try invocation(
+    let changedCompiler = try await invocation(
         sourceID: "target-source-a", compiler: secondCompiler)
 
     #expect(first.scratchPath == changedSource.scratchPath)
@@ -1638,8 +1654,8 @@ private func artifactInput(
             == firstSwiftPM["scratchPath"] as? String)
 }
 
-@Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {
-    let catalog = try sharedFixtureCatalog()
+@Test func releaseGatesDeclareTheLinuxARM64OCIContext() async throws {
+    let catalog = try await sharedFixtureCatalog()
     let allTasks = catalog.tasks
     let releaseTasks = allTasks.filter {
         $0.component.rawValue == "release-gate"
@@ -1666,7 +1682,7 @@ private func artifactInput(
         })
 }
 
-@Test func drmSelectionResolvesTheRecipeOwnedTask() throws {
+@Test func drmSelectionResolvesTheRecipeOwnedTask() async throws {
     let repositoryRoot = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let root = repositoryRoot.appending("compositor/compositor-core")
@@ -1681,7 +1697,7 @@ private func artifactInput(
         root: root,
         environment: [:],
         swiftPM: swiftPM)
-    let catalog = try sharedFixtureCatalog()
+    let catalog = try await sharedFixtureCatalog()
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
     #expect(try selectedTestTasks(in: catalog, selection: "gpu-drm") == [task.id])
@@ -2798,7 +2814,7 @@ private func artifactInput(
         root: fixtureRepositoryRoot,
         environment: [:],
         runtime: ColliderRuntime())
-    let catalog = try ComponentRegistry(context: context)
+    let catalog = try await ComponentRegistry(context: context)
         .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
     let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
     let services = TaskPlanningServices(

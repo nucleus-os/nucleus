@@ -30,8 +30,18 @@ public struct ColliderCommand: AsyncParsableCommand {
         try validateColliderEntrypoint(environment: processEnvironment)
         let command = try parseAsRoot(arguments)
         guard var workspaceCommand = command as? any ColliderWorkspaceCommand else {
-            var informationalCommand = command
-            try informationalCommand.run()
+            // An informational command reports and exits through `CleanExit`
+            // rather than composing an application. Async ones are run as
+            // such: `ParsableCommand` supplies a synchronous `run()` that
+            // requests help, so dispatching an `AsyncParsableCommand` through
+            // the synchronous path silently prints usage instead of running
+            // it.
+            if var asyncCommand = command as? any AsyncParsableCommand {
+                try await asyncCommand.run()
+            } else {
+                var informationalCommand = command
+                try informationalCommand.run()
+            }
             throw WorkspaceFailure.message(
                 "parsed Collider command did not exit or accept application composition")
         }
