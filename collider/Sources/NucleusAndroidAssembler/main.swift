@@ -48,7 +48,6 @@ struct NucleusAndroidAssembler {
         }
         return MaterializeAndroidPackageInputAction(
             runtimeProducts: FilePath(arguments[0]),
-            runtimeRoot: nil,
             runtimeScratch: FilePath(arguments[4]),
             aospGeneration: FilePath(arguments[1]),
             aospSigningKey: FilePath(arguments[2]),
