@@ -46,9 +46,8 @@ reuse.
 4. Complete the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md)
    so the Android build runs natively on the builder's architecture. Its first
-   phase rides along with the parity work above, because both invalidate the
-   same compiles; the remaining phases supply the arm64 host toolchains AOSP
-   does not ship.
+   phase measures what translation costs without re-executing a build; the
+   remaining phases supply the arm64 host toolchains AOSP does not ship.
 5. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.

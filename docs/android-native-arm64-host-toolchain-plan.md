@@ -45,27 +45,21 @@ has no arm64 counterpart, and Soong itself is Go. `prebuilts/rust-toolchain`
 has no arm64 counterpart. Eight of forty build tools are also absent from the
 arm64 tree, among them `soong_zip`, `merge_zips`, `zip2zip`, and `bpfmt`.
 
-## Phase 1: Stop Running the Build Executor Under Translation
+## Phase 1: Measure What Translation Costs
 
-The compile action selects plain ninja through `SOONG_NINJA=ninja`. Siso is a
-Go program and the least reliable element of the translated toolchain; ninja is
-C++ and carries no Go runtime for the translation layer to mistranslate.
-Upstream already makes this exact substitution where Siso is unreliable, in
-`ui/build/config.go`, for macOS CI builders.
-
-The same change carries the measurement that scopes every phase after it. A
-separate analysis task mounts the AOSP output workspace read-only, reads
+An analysis task mounts the AOSP output workspace read-only, reads
 `.ninja_log`, classifies each output as host or target by its variant and path,
-and reports the wall-clock split. That task is declared beside the compile
-rather than inside it, so the compile's identity does not depend on the
-measurement.
+and reports the wall-clock split per product. The task is declared beside the
+compile rather than inside it, so it neither alters the compile's identity nor
+invalidates a build to produce a number.
 
-This phase changes the compile task's environment, which changes its identity
-and invalidates both products' compiles. It therefore lands with a change that
-already invalidates them rather than on its own.
+The build executor is not changed. Siso is upstream's default, it is what
+Phase 5 makes native, and replacing it would be a divergence this plan reverts
+two phases later while hiding the instability that justifies the phases in
+between.
 
-Gate: both products compile with ninja as the executor, and the analysis task
-reports the host-versus-target wall-clock split for each.
+Gate: the analysis task reports the host-versus-target wall-clock split for
+both products against an existing generation, with no compile re-executed.
 
 ## Phase 2: Supply the Go and JDK Host Toolchains
 
@@ -131,3 +125,9 @@ host-versus-target split shows translated host work is a small fraction of
 wall-clock time, the reliability argument still stands on its own, but the
 performance argument does not, and the supply phases should be scoped against
 reliability alone.
+
+Until Phase 5 lands, a host tool that dies under translation is retried, not
+diagnosed and not worked around. A crashed build resumes from the persistent
+output workspace, so a retry costs the interval before the crash is noticed
+rather than the build. Each occurrence is recorded, because the frequency is
+evidence for the phases above and a substitute executor would erase it.
