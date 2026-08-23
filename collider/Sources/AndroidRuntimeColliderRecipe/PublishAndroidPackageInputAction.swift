@@ -54,14 +54,15 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
 
         // The sysroot this payload is assembled from has to be present, not
         // merely named. The assembler image mounts the checkout and the SwiftPM
-        // overlay and nothing else, so the SDK arrives from the invocation that
-        // built the products being staged — which is also what guarantees the
-        // two agree on which SDK that is.
+        // overlay and nothing else, so staging reads its inputs from the
+        // invocation that built the products being staged: the Swift SDK the
+        // binaries were compiled against and the native SDKs their libraries
+        // come from. Taking the whole read-only set rather than naming each one
+        // is what stops the assembly discovering them a missing library at a
+        // time.
         let guestSDKDirectory = SwiftPMInvocation.ociSwiftSDKDirectory.string
-        guard
-            let swiftSDKMount = runtimeOCI.mounts.first(where: {
-                $0.target == guestSDKDirectory
-            })
+        let runtimeInputMounts = runtimeOCI.mounts.filter(\.isReadOnly)
+        guard runtimeInputMounts.contains(where: { $0.target == guestSDKDirectory })
         else {
             throw AndroidPackageInputExecutionFailure.missingTargetSDK(
                 guestSDKDirectory)
@@ -75,8 +76,7 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         // container: the tool derives its public half to verify the image
         // chain the AOSP build already signed.
         let signingKeyRoot = aospSigningKey.removingLastComponent()
-        for mount in [
-            swiftSDKMount,
+        for mount in runtimeInputMounts + [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
                 target: containerPath(assemblerSwiftPM.productsDirectory),
@@ -98,8 +98,14 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
                 boundedExport: output.removingLastComponent(),
                 target: containerPath(output.removingLastComponent())),
         ] {
-            guard !mounts.contains(where: { $0.target == mount.target }) else {
-                throw AndroidPackageInputExecutionFailure.conflictingMount(mount.target)
+            if let existing = mounts.first(where: { $0.target == mount.target }) {
+                // The same input reaching the container by two routes is not a
+                // conflict. Two different sources at one target is.
+                guard existing.source == mount.source else {
+                    throw AndroidPackageInputExecutionFailure.conflictingMount(
+                        mount.target)
+                }
+                continue
             }
             mounts.append(mount)
         }

@@ -235,6 +235,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 throw AndroidRuntimeRecipeFailure.invalidAOSPProductLock(
                     "no product is locked for " + architecture.rawValue)
             }
+            let linuxTarget = NativeLinuxTarget(architecture: architecture)
             let runtimeScratch = context.buildRoot.appending(
                 "android-package-input/\(architecture.rawValue)")
             let output = context.artifactRoot.appending(
@@ -247,11 +248,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     assemblerSwiftPM: try context.swiftPM(.linuxAssembler),
                     runtimeScratch: runtimeScratch,
                     targetLibraryRoots: NucleusLinuxABI.targetLibraryRoots(
-                        triple: NativeLinuxTarget(architecture: architecture)
-                            .targetTriple,
-                        gnuArchitecture: NativeLinuxTarget(
-                            architecture: architecture
-                        ).gnuArchitecture),
+                        triple: linuxTarget.targetTriple,
+                        gnuArchitecture: linuxTarget.gnuArchitecture)
+                        + [
+                            // Wayland ships with the payload rather than with
+                            // the Swift SDK, and the display host links it.
+                            FilePath(
+                                context.executionPath(
+                                    native.nativeSDK(for: linuxTarget)
+                                        .appending("wayland/lib")))
+                        ],
                     aospGeneration: generation,
                     signingIdentity: aosp.signingDirectory,
                     output: output.appending("current"),
