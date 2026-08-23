@@ -21,7 +21,7 @@ private func fixtureVolumeConfiguration() -> OCIRuntimeConfiguration {
 
 private func fixtureVolumeDeclaration(
     key: String = "build-output",
-    target: ArtifactTarget = .linuxARM64,
+    target: ArtifactTarget? = .linuxARM64,
     role: String = "build",
     capacityBytes: UInt64 = 2 * 1_024 * 1_024 * 1_024
 ) -> PersistentWorkspaceDeclaration {
@@ -142,6 +142,32 @@ private actor FixtureAppleVolumeStore {
     #expect(state.capacityBytes == declaration.capacityBytes)
     #expect(state.allocatedBytes == declaration.capacityBytes / 8)
     #expect(!state.active)
+}
+
+@Test func appleVolumeStatesReadBackAWorkspaceHoldingNoTarget() async throws {
+    let store = FixtureAppleVolumeStore()
+    let manager = ApplePersistentWorkspaceManager(
+        configuration: fixtureVolumeConfiguration(),
+        operations: store.operations())
+    let shared = fixtureVolumeDeclaration(key: "aosp-output-api37", target: nil)
+    let targeted = fixtureVolumeDeclaration()
+    let mounts = [shared, targeted].map {
+        OCIPersistentWorkspaceMount(
+            workspace: $0,
+            target: "/build",
+            access: .readWrite)
+    }
+
+    _ = try await manager.resolve(mounts)
+
+    // A workspace whose identity names no target is readable, and its presence
+    // does not prevent reading the ones that do.
+    let states = try await manager.states()
+    #expect(
+        Set(states.map(\.identity)) == [shared.identity, targeted.identity])
+    let sharedState = try #require(
+        states.first { $0.identity == shared.identity })
+    #expect(sharedState.identity.artifactTarget == nil)
 }
 
 @Test func appleVolumeManagerRejectsConfigurationDrift() async throws {

@@ -244,9 +244,19 @@ struct ApplePersistentWorkspaceManager: Sendable {
         let namespace = configuration.managedLabelNamespace
         guard let key = labels["\(namespace).persistent-workspace.key"],
             let encodedTarget = labels["\(namespace).persistent-workspace.target"],
-            let target = decodedTarget(encodedTarget),
             let role = labels["\(namespace).persistent-workspace.role"]
         else { return nil }
+        // A workspace holding no target's state encodes an empty target, which
+        // is a value rather than a parse failure. Reading it back as a failure
+        // makes every such workspace unreadable, and one unreadable workspace
+        // fails the whole enumeration.
+        let target: ArtifactTarget?
+        if encodedTarget.isEmpty {
+            target = nil
+        } else {
+            guard let decoded = decodedTarget(encodedTarget) else { return nil }
+            target = decoded
+        }
         return PersistentWorkspaceIdentity(
             key: key,
             artifactTarget: target,
