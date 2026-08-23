@@ -16,13 +16,14 @@ above it.
 Two mechanisms execute child processes. `ColliderRuntime` uses the pinned
 `nucleus-os` fork of `swift-subprocess`, which drains concurrently by
 construction, and `WorkspaceContext.run` routes command-shaped work through it.
-Five sites construct `Foundation.Process` directly:
-`GitSourceCheckoutHasher` and `ProductArtifactSourceSnapshot` in
-`ColliderPersistence`, `SwiftPackageGraphResolver` and
-`MacOSBuilderProvisioning` in `ColliderWorkspaceCommands`, and
-`ManagedSkillDocumentation` in `ColliderCLI`.
+`ColliderPersistence` reaches the same fork through `CapturedChildProcess`,
+which Phase 1 established as that layer's execution entry point.
 
-Three of them share one shape:
+Three sites still construct `Foundation.Process` directly:
+`SwiftPackageGraphResolver` and `MacOSBuilderProvisioning` in
+`ColliderWorkspaceCommands`, and `ManagedSkillDocumentation` in `ColliderCLI`.
+The two source-capture sites in `ColliderPersistence` shared the same shape
+until Phase 1 converted them:
 
 ```swift
 try process.run()
@@ -41,9 +42,9 @@ implementation.
 
 The structural cause is not that `Subprocess` is declared for one module. It is
 that `Subprocess` is async-only — every `run` overload it offers is `async
-throws` — and all five sites are synchronous functions. A site cannot adopt it
-without becoming async, and for the two in `ColliderPersistence` the
-synchronous chain above them is the whole planning layer:
+throws` — and every one of these sites is a synchronous function. A site cannot
+adopt it without becoming async, and for the two in `ColliderPersistence` the
+synchronous chain above them was the whole planning layer:
 `PlanningArtifactDigestCache`, `PlanningInputProvider`, the closure types in
 `TaskPlanningServices`, `TaskIdentityBuilder`, `ColliderPlanner`, and the
 `planning:` closure the engine invokes.
