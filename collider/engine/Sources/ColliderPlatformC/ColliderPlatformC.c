@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <wchar.h>
 #if defined(__linux__)
+#include <dirent.h>
+#include <limits.h>
 #include <linux/android/binderfs.h>
 #include <linux/loop.h>
 #include <linux/mount.h>
@@ -36,12 +38,165 @@ int32_t collider_unlock(int32_t descriptor) {
     return flock(descriptor, LOCK_UN);
 }
 
+#if defined(__linux__)
+// Contents, mode, and timestamps, never extended attributes. A POSIX ACL lives
+// in system.posix_acl_access, so copying no xattrs is what leaves the ACL
+// behind. A plain read/write loop rather than copy_file_range, because the
+// copies that matter here cross mount boundaries between a read-only input and
+// a writable export, where the kernel may refuse the reflink path.
+static int32_t collider_copy_regular_linux(
+    const char *source, const char *destination, const struct stat *info) {
+    int in = open(source, O_RDONLY | O_CLOEXEC);
+    if (in < 0) {
+        return -1;
+    }
+    int out = open(
+        destination, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, info->st_mode & 07777);
+    if (out < 0) {
+        int failure = errno;
+        close(in);
+        errno = failure;
+        return -1;
+    }
+    char buffer[131072];
+    for (;;) {
+        ssize_t read_count = read(in, buffer, sizeof(buffer));
+        if (read_count == 0) {
+            break;
+        }
+        if (read_count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            int failure = errno;
+            close(in);
+            close(out);
+            errno = failure;
+            return -1;
+        }
+        ssize_t written = 0;
+        while (written < read_count) {
+            ssize_t write_count = write(out, buffer + written, (size_t)(read_count - written));
+            if (write_count < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                int failure = errno;
+                close(in);
+                close(out);
+                errno = failure;
+                return -1;
+            }
+            written += write_count;
+        }
+    }
+    if (fchmod(out, info->st_mode & 07777) != 0) {
+        int failure = errno;
+        close(in);
+        close(out);
+        errno = failure;
+        return -1;
+    }
+    struct timespec times[2];
+    times[0] = info->st_atim;
+    times[1] = info->st_mtim;
+    (void)futimens(out, times);
+    close(in);
+    if (close(out) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int32_t collider_copy_entry_linux(const char *source, const char *destination);
+
+static int32_t collider_copy_directory_linux(
+    const char *source, const char *destination, const struct stat *info) {
+    if (mkdir(destination, info->st_mode & 07777) != 0 && errno != EEXIST) {
+        return -1;
+    }
+    DIR *directory = opendir(source);
+    if (directory == NULL) {
+        return -1;
+    }
+    int32_t result = 0;
+    struct dirent *entry;
+    while (result == 0 && (entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        char *child_source = NULL;
+        char *child_destination = NULL;
+        if (asprintf(&child_source, "%s/%s", source, entry->d_name) < 0
+            || asprintf(&child_destination, "%s/%s", destination, entry->d_name) < 0) {
+            free(child_source);
+            errno = ENOMEM;
+            result = -1;
+            break;
+        }
+        result = collider_copy_entry_linux(child_source, child_destination);
+        free(child_source);
+        free(child_destination);
+    }
+    int failure = errno;
+    closedir(directory);
+    if (result != 0) {
+        errno = failure;
+        return -1;
+    }
+    struct timespec times[2];
+    times[0] = info->st_atim;
+    times[1] = info->st_mtim;
+    (void)utimensat(AT_FDCWD, destination, times, AT_SYMLINK_NOFOLLOW);
+    return 0;
+}
+
+static int32_t collider_copy_entry_linux(const char *source, const char *destination) {
+    struct stat info;
+    if (lstat(source, &info) != 0) {
+        return -1;
+    }
+    if (S_ISLNK(info.st_mode)) {
+        char target[PATH_MAX];
+        ssize_t length = readlink(source, target, sizeof(target) - 1);
+        if (length < 0) {
+            return -1;
+        }
+        target[length] = '\0';
+        if (unlink(destination) != 0 && errno != ENOENT) {
+            return -1;
+        }
+        return symlink(target, destination) == 0 ? 0 : -1;
+    }
+    if (S_ISDIR(info.st_mode)) {
+        return collider_copy_directory_linux(source, destination, &info);
+    }
+    if (!S_ISREG(info.st_mode)) {
+        // Sockets, devices, and fifos are not build outputs. Refusing them is
+        // better than materializing something the consumer cannot reason about.
+        errno = ENOTSUP;
+        return -1;
+    }
+    return collider_copy_regular_linux(source, destination, &info);
+}
+#endif
+
 int32_t collider_copy_file_without_acl(const char *source, const char *destination) {
 #if defined(__APPLE__)
     // COPYFILE_DATA and COPYFILE_STAT without COPYFILE_ACL: mode, timestamps,
     // and contents travel with the copy; the source's access-control list does
     // not.
     return (int32_t)copyfile(source, destination, NULL, COPYFILE_DATA | COPYFILE_STAT);
+#elif defined(__linux__)
+    struct stat info;
+    if (stat(source, &info) != 0) {
+        return -1;
+    }
+    if (!S_ISREG(info.st_mode)) {
+        errno = ENOTSUP;
+        return -1;
+    }
+    return collider_copy_regular_linux(source, destination, &info);
 #else
     (void)source;
     (void)destination;
@@ -55,6 +210,8 @@ int32_t collider_copy_tree_without_acl(const char *source, const char *destinati
     return (int32_t)copyfile(
         source, destination, NULL,
         COPYFILE_DATA | COPYFILE_STAT | COPYFILE_RECURSIVE);
+#elif defined(__linux__)
+    return collider_copy_entry_linux(source, destination);
 #else
     (void)source;
     (void)destination;
