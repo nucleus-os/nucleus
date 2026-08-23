@@ -24,7 +24,7 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         assertedBranch: String? = nil,
         sourcePaths: [FilePath]? = nil,
         observe: SourceCaptureObserver? = nil
-    ) throws -> Self {
+    ) async throws -> Self {
         let sourcePaths = sourcePaths ?? [repositoryRoot]
         guard !sourcePaths.isEmpty else {
             throw ProductArtifactStoreFailure("product source closure is empty")
@@ -36,19 +36,23 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             }
             return relative.string
         }
-        let closure = try sourceDigest(sourcePaths, observe: observe)
-        let submodules = try submodulePaths(repositoryRoot).filter { relative in
+        let closure = try await sourceDigest(sourcePaths, observe: observe)
+        let submodulePaths = try await submodulePaths(repositoryRoot).filter {
+            relative in
             scopes.contains {
                 sourcePath(relative, isWithin: $0)
                     || sourcePath($0, isWithin: relative)
             }
-        }.map { relative in
-            ProductArtifactSourceClosure(
-                relativePath: relative,
-                digest: try sourceDigest(
-                    repositoryRoot.appending(relative), observe: observe))
         }
-        let head = try gitText(
+        var submodules: [ProductArtifactSourceClosure] = []
+        for relative in submodulePaths {
+            submodules.append(
+                ProductArtifactSourceClosure(
+                    relativePath: relative,
+                    digest: try await sourceDigest(
+                        repositoryRoot.appending(relative), observe: observe)))
+        }
+        let head = try await gitText(
             at: repositoryRoot,
             arguments: ["rev-parse", "HEAD"])
         if sourceAuthority == .protectedMain {
@@ -61,7 +65,7 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
                     "protected-main source requires refs/heads/main")
             }
         }
-        let checkoutBranch = try gitText(
+        let checkoutBranch = try await gitText(
             at: repositoryRoot,
             arguments: ["symbolic-ref", "-q", "HEAD"],
             permitsNoMatch: true)
@@ -77,13 +81,13 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         }
         let provenanceScopes =
             sourceAuthority == .protectedMain ? [""] : scopes
-        let changed = try gitPaths(
+        let changed = try await gitPaths(
             at: repositoryRoot,
             arguments: ["diff", "--name-only", "-z", "HEAD", "--"]
         ).filter { path in
             provenanceScopes.contains { sourcePath(path, isWithin: $0) }
         }
-        let untracked = try gitPaths(
+        let untracked = try await gitPaths(
             at: repositoryRoot,
             arguments: ["ls-files", "--others", "--exclude-standard", "-z"]
         ).filter { path in
@@ -113,22 +117,22 @@ private func isFullGitCommit(_ value: String) -> Bool {
 private func sourceDigest(
     _ checkouts: [FilePath],
     observe: SourceCaptureObserver? = nil
-) throws -> ArtifactDigest {
-    try GitSourceCheckoutHasher.digest(
+) async throws -> ArtifactDigest {
+    try await GitSourceCheckoutHasher.digest(
         checkouts,
         digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: { try sourceDigest($0, observe: observe) },
+        digestNestedCheckout: { try await sourceDigest($0, observe: observe) },
         observe: observe)
 }
 
 private func sourceDigest(
     _ checkout: FilePath,
     observe: SourceCaptureObserver? = nil
-) throws -> ArtifactDigest {
-    try GitSourceCheckoutHasher.digest(
+) async throws -> ArtifactDigest {
+    try await GitSourceCheckoutHasher.digest(
         checkout,
         digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: { try sourceDigest($0, observe: observe) },
+        digestNestedCheckout: { try await sourceDigest($0, observe: observe) },
         observe: observe)
 }
 
@@ -136,10 +140,10 @@ private func sourcePath(_ candidate: String, isWithin scope: String) -> Bool {
     scope.isEmpty || candidate == scope || candidate.hasPrefix(scope + "/")
 }
 
-private func submodulePaths(_ repositoryRoot: FilePath) throws -> [String] {
+private func submodulePaths(_ repositoryRoot: FilePath) async throws -> [String] {
     guard repositoryRoot.appending(".gitmodules").exists() else { return [] }
     let output =
-        try gitText(
+        try await gitText(
             at: repositoryRoot,
             arguments: [
                 "config", "--file", ".gitmodules", "--get-regexp", "path",
@@ -157,8 +161,8 @@ private func submodulePaths(_ repositoryRoot: FilePath) throws -> [String] {
 private func gitPaths(
     at repositoryRoot: FilePath,
     arguments: [String]
-) throws -> [String] {
-    try runGit(at: repositoryRoot, arguments: arguments).output
+) async throws -> [String] {
+    try await runGit(at: repositoryRoot, arguments: arguments).output
         .split(separator: 0)
         .map { record in
             guard let path = String(data: Data(record), encoding: .utf8) else {
@@ -173,8 +177,8 @@ private func gitText(
     at repositoryRoot: FilePath,
     arguments: [String],
     permitsNoMatch: Bool = false
-) throws -> String? {
-    let result = try runGit(
+) async throws -> String? {
+    let result = try await runGit(
         at: repositoryRoot,
         arguments: arguments,
         permitsNoMatch: permitsNoMatch)
@@ -185,48 +189,33 @@ private func gitText(
 
 private struct SourceGitResult {
     let status: Int32
-    let output: Data
+    let output: [UInt8]
 }
 
 private func runGit(
     at repositoryRoot: FilePath,
     arguments: [String],
     permitsNoMatch: Bool = false
-) throws -> SourceGitResult {
-    let process = Process()
-    let standardOutput = Pipe()
-    let standardError = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.currentDirectoryURL = URL(fileURLWithPath: repositoryRoot.string)
-    process.arguments = ["--no-optional-locks"] + arguments
+) async throws -> SourceGitResult {
     var environment = ProcessInfo.processInfo.environment
     environment["GIT_TERMINAL_PROMPT"] = "0"
     environment["LC_ALL"] = "C"
-    process.environment = environment
-    process.standardOutput = standardOutput
-    process.standardError = standardError
+    let capture: CapturedChildProcess.Capture
     do {
-        try process.run()
+        capture = try await CapturedChildProcess.capture(
+            executable: FilePath("/usr/bin/git"),
+            arguments: ["--no-optional-locks"] + arguments,
+            workingDirectory: repositoryRoot,
+            environment: environment)
     } catch {
         throw ProductArtifactStoreFailure(
             "could not execute Git for source provenance: \(error)")
     }
-    let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
-    let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
-    defer {
-        try? standardOutput.fileHandleForReading.close()
-        try? standardError.fileHandleForReading.close()
-    }
-    process.waitUntilExit()
-    if process.terminationStatus != 0
-        && !(permitsNoMatch && process.terminationStatus == 1)
-    {
-        let message = String(decoding: errorOutput, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    if capture.status != 0 && !(permitsNoMatch && capture.status == 1) {
         throw ProductArtifactStoreFailure(
-            "Git failed while reading source provenance: \(message)")
+            "Git failed while reading source provenance: \(capture.standardErrorText)")
     }
-    return SourceGitResult(status: process.terminationStatus, output: output)
+    return SourceGitResult(status: capture.status, output: capture.standardOutput)
 }
 
 extension FilePath {

@@ -100,6 +100,34 @@ on both streams; a source closure hashes with no descriptor growth across
 checkouts; and the recorded provenance for an unchanged closure is byte
 identical to the provenance recorded before the change.
 
+Status: complete. `CapturedChildProcess` is the persistence layer's execution
+entry point, and `GitSourceCheckoutHasher` and `ProductArtifactSourceSnapshot`
+reach `Subprocess` through it. The async path runs from
+`TaskPlanningServices` through `TaskIdentityBuilder`, `ColliderPlanner`, and
+the engine's planning closure down to `PlanningArtifactDigestCache`, and no
+recipe changed.
+
+Gate evidence: `collider build runtime --dry-run --explain-identity` produces
+a byte-identical identity dump across all 16,712 encoded component lines and
+all 18 planned task identities, including `core.skia.linux-arm64`, whose
+closure spans 53 checkouts. A child filling either pipe while the other stays
+open is captured completely on both streams, sixty-four consecutive captures
+end with no more open descriptors than they started with, and
+`collider test collider` passes.
+
+Two encoders had to be restructured, because `IdentityEncoder.appendSequence`
+takes a synchronous closure and source capture suspends. Both now resolve
+their digests before encoding and encode from what the resolution produced.
+The branch deciding whether Git already identifies a path has one definition
+that both passes call: a disagreement between them would change what a source
+checkout hashes to, which is the failure this phase exists to avoid.
+
+The capture limit found its own defect. It was first set to 16 MB on the
+stated assumption that Git output is small, and `llvm-project` — 165k tracked
+paths, 16.9 MB from `ls-files -s -z` — exceeded it on the first real run. The
+limit is now sized against that measurement rather than against an
+assumption.
+
 ## Phase 2: Convert the Command Layer
 
 `SwiftPackageGraphResolver`, `MacOSBuilderProvisioning`, and

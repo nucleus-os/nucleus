@@ -150,7 +150,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 hostPhases: hostPhases,
                 ociConfiguration: ociConfiguration),
             signals: signals)
-        let sourceAtStart = try revalidatedSourceSnapshot(
+        let sourceAtStart = try await revalidatedSourceSnapshot(
             workspace: workspace,
             environment: environment)
         defer {
@@ -183,7 +183,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try await workspaceCommand.run(in: application.workspace)
             }
             await application.runtime.shutdown()
-            try rejectSupersededSource(
+            try await rejectSupersededSource(
                 sourceAtStart,
                 workspace: workspace,
                 environment: environment)
@@ -219,7 +219,7 @@ public struct ColliderCommand: AsyncParsableCommand {
             let wasInterrupted = await application.cancellation.wasInterrupted()
             let interruptionSignal =
                 await application.cancellation.receivedInterruptionSignal()
-            let sourceWasSuperseded = sourceIdentityChanged(
+            let sourceWasSuperseded = await sourceIdentityChanged(
                 sourceAtStart,
                 workspace: workspace,
                 environment: environment)
@@ -376,9 +376,9 @@ private struct SupersededSourceFailure: Error {}
 private func revalidatedSourceSnapshot(
     workspace: FilePath,
     environment: [String: String]
-) throws -> ProductArtifactSourceSnapshot? {
+) async throws -> ProductArtifactSourceSnapshot? {
     guard environment["NUCLEUS_REVALIDATE_SOURCE"] == "1" else { return nil }
-    return try ProductArtifactSourceSnapshot.capture(
+    return try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: workspace,
         sourceAuthority: .localDevelopment)
 }
@@ -387,10 +387,10 @@ private func sourceIdentityChanged(
     _ initial: ProductArtifactSourceSnapshot?,
     workspace: FilePath,
     environment: [String: String]
-) -> Bool {
+) async -> Bool {
     guard let initial else { return false }
     guard
-        let current = try? revalidatedSourceSnapshot(
+        let current = try? await revalidatedSourceSnapshot(
             workspace: workspace,
             environment: environment)
     else { return true }
@@ -410,9 +410,9 @@ private func rejectSupersededSource(
     _ initial: ProductArtifactSourceSnapshot?,
     workspace: FilePath,
     environment: [String: String]
-) throws {
+) async throws {
     guard
-        sourceIdentityChanged(
+        await sourceIdentityChanged(
             initial,
             workspace: workspace,
             environment: environment)

@@ -33,7 +33,7 @@ public struct ColliderEngine: Sendable {
             hostPhases: hostPhases,
             options: options
         ) { services in
-            try ColliderPlanner().plan(
+            try await ColliderPlanner().plan(
                 graph: graph,
                 selected: selected,
                 rebuildSelected: options.rebuildSelected,
@@ -63,7 +63,7 @@ public struct ColliderEngine: Sendable {
             hostPhases: hostPhases,
             options: options
         ) { services in
-            try ColliderPlanner().plan(
+            try await ColliderPlanner().plan(
                 catalog: catalog,
                 requests: requests,
                 rebuildSelected: options.rebuildSelected,
@@ -80,7 +80,7 @@ public struct ColliderEngine: Sendable {
         registry: RunRegistry?,
         hostPhases: HostPhaseRecorder?,
         options: TaskExecutionOptions,
-        planning: (TaskPlanningServices) throws -> ExecutionPlan
+        planning: (TaskPlanningServices) async throws -> ExecutionPlan
     ) async throws -> TaskExecutionReport {
         if !options.dryRun {
             try FileManager.default.createDirectory(
@@ -119,7 +119,7 @@ public struct ColliderEngine: Sendable {
                         },
                         observeIdentity: options.identityObserver)
                 }
-                var plan = try planning(services())
+                var plan = try await planning(services())
                 // A dry run reports what planning decided. Confirming that a
                 // clean image output is still present in the image store means
                 // asking the container service, which only the builder account
@@ -132,7 +132,7 @@ public struct ColliderEngine: Sendable {
                 {
                     let imageValidator = OCIImageOutputValidator(
                         images: try await runtime.ociImages())
-                    plan = try planning(
+                    plan = try await planning(
                         services(validatingOCIImages: imageValidator))
                 }
                 let hashingDuration = planningInputs.hashingDurationNanoseconds

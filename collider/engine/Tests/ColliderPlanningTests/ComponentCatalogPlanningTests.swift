@@ -107,7 +107,7 @@ private func catalogComponent(
     }
 }
 
-@Test func plannerValidatesCompleteCatalogOutputOwnership() throws {
+@Test func plannerValidatesCompleteCatalogOutputOwnership() async throws {
     let producerID = ComponentID(rawValue: "producer")
     let producerTaskID = TaskID(rawValue: "producer.build")
     let producer = try catalogComponent(
@@ -129,8 +129,8 @@ private func catalogComponent(
     let rawCatalog = ComponentCatalog(
         components: [producer, rawConsumer],
         publicEntrypoints: [catalogRequest("producer"), catalogRequest("core")])
-    #expect(throws: ColliderPlanningFailure.self) {
-        _ = try plan(rawCatalog, request: catalogRequest("core"))
+    await #expect(throws: ColliderPlanningFailure.self) {
+        _ = try await plan(rawCatalog, request: catalogRequest("core"))
     }
 
     let overlapping = try catalogComponent(
@@ -140,12 +140,12 @@ private func catalogComponent(
     let overlapCatalog = ComponentCatalog(
         components: [producer, overlapping],
         publicEntrypoints: [catalogRequest("producer"), catalogRequest("core")])
-    #expect(throws: ColliderPlanningFailure.self) {
-        _ = try plan(overlapCatalog, request: catalogRequest("core"))
+    await #expect(throws: ColliderPlanningFailure.self) {
+        _ = try await plan(overlapCatalog, request: catalogRequest("core"))
     }
 }
 
-@Test func plannerOutputOwnershipUsesPathComponentsAndAllowsOneOwner() throws {
+@Test func plannerOutputOwnershipUsesPathComponentsAndAllowsOneOwner() async throws {
     let owner = catalogTask(
         output: FilePath("/outputs/generated"),
         additionalOutputs: [
@@ -166,10 +166,10 @@ private func catalogComponent(
         ],
         publicEntrypoints: [catalogRequest("core")])
 
-    _ = try plan(catalog, request: catalogRequest("core"))
+    _ = try await plan(catalog, request: catalogRequest("core"))
 }
 
-@Test func plannerFindsAnEarlierDescendantWhenItsAncestorIsDeclaredLater() throws {
+@Test func plannerFindsAnEarlierDescendantWhenItsAncestorIsDeclaredLater() async throws {
     let descendantID = TaskID(rawValue: "core.a-descendant")
     let descendant = catalogTask(
         descendantID,
@@ -183,7 +183,7 @@ private func catalogComponent(
         publicEntrypoints: [catalogRequest("core")])
 
     do {
-        _ = try plan(catalog, request: catalogRequest("core"))
+        _ = try await plan(catalog, request: catalogRequest("core"))
         Issue.record("expected overlapping output ownership")
     } catch let failure as ColliderPlanningFailure {
         guard case .overlappingOutput(let first, let second, let path) = failure else {
@@ -196,7 +196,7 @@ private func catalogComponent(
     }
 }
 
-@Test func plannerAllowsATaskToReadWithinItsOwnOutput() throws {
+@Test func plannerAllowsATaskToReadWithinItsOwnOutput() async throws {
     let task = catalogTask(
         inputs: [
             .file(FilePath("/outputs/generated/value.json")),
@@ -207,15 +207,15 @@ private func catalogComponent(
         components: [try catalogComponent(tasks: [task])],
         publicEntrypoints: [catalogRequest("core")])
 
-    _ = try plan(catalog, request: catalogRequest("core"))
+    _ = try await plan(catalog, request: catalogRequest("core"))
 }
 
 private func plan(
     _ catalog: ComponentCatalog,
     request: ComponentEntrypointRequest
-) throws -> ExecutionPlan {
+) async throws -> ExecutionPlan {
     let digest = ArtifactDigest(bytes: Array(repeating: 19, count: 32))
-    return try ColliderPlanner().plan(
+    return try await ColliderPlanner().plan(
         catalog: catalog,
         requests: [request],
         rebuildSelected: false,

@@ -69,7 +69,7 @@ package struct CaptureLinuxPackageSourceSnapshotAction: ColliderAction {
         } else {
             authority = .localDevelopment
         }
-        let snapshot = try ProductArtifactSourceSnapshot.capture(
+        let snapshot = try await ProductArtifactSourceSnapshot.capture(
             repositoryRoot: repositoryRoot,
             sourceAuthority: authority,
             assertedCommit: assertedCommit,

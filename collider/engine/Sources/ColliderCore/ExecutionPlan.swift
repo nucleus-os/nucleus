@@ -188,8 +188,8 @@ public struct TaskPlanningServices {
     public let digestBytes: ([UInt8]) -> ArtifactDigest
     public let digestFile: (FilePath) throws -> ArtifactDigest
     public let digestTree: (FilePath) throws -> ArtifactDigest
-    public let digestSourceCheckout: (FilePath) throws -> ArtifactDigest
-    public let digestSourceCheckoutClosure: ([FilePath]) throws -> ArtifactDigest
+    public let digestSourceCheckout: (FilePath) async throws -> ArtifactDigest
+    public let digestSourceCheckoutClosure: ([FilePath]) async throws -> ArtifactDigest
     public let semanticToolIdentity:
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
@@ -207,9 +207,9 @@ public struct TaskPlanningServices {
         digestBytes: @escaping ([UInt8]) -> ArtifactDigest,
         digestFile: @escaping (FilePath) throws -> ArtifactDigest,
         digestTree: @escaping (FilePath) throws -> ArtifactDigest,
-        digestSourceCheckout: @escaping (FilePath) throws -> ArtifactDigest,
+        digestSourceCheckout: @escaping (FilePath) async throws -> ArtifactDigest,
         digestSourceCheckoutClosure:
-            (([FilePath]) throws -> ArtifactDigest)? = nil,
+            (([FilePath]) async throws -> ArtifactDigest)? = nil,
         semanticToolIdentity:
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
@@ -226,11 +226,18 @@ public struct TaskPlanningServices {
         self.digestSourceCheckout = digestSourceCheckout
         self.digestSourceCheckoutClosure =
             digestSourceCheckoutClosure ?? { paths in
+                // Capture suspends and `appendSequence` does not, so the
+                // digests are resolved first and encoded after. The encoded
+                // order and contents are unchanged: one entry per checkout in
+                // sorted path order, each a path followed by its digest.
+                var resolved: [(path: FilePath, digest: ArtifactDigest)] = []
+                for path in paths.sorted(by: { $0.string < $1.string }) {
+                    resolved.append((path, try await digestSourceCheckout(path)))
+                }
                 var encoder = IdentityEncoder()
-                try encoder.appendSequence(paths.sorted { $0.string < $1.string }) {
-                    entry, path in
-                    entry.append(path: path)
-                    entry.append(bytes: try digestSourceCheckout(path).bytes)
+                encoder.appendSequence(resolved) { entry, element in
+                    entry.append(path: element.path)
+                    entry.append(bytes: element.digest.bytes)
                 }
                 return digestBytes(encoder.bytes)
             }

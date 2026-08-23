@@ -29,10 +29,10 @@ enum GitSourceCheckoutHasher {
     static func digest(
         _ checkout: FilePath,
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
-        digestNestedCheckout: (FilePath) throws -> ArtifactDigest,
+        digestNestedCheckout: (FilePath) async throws -> ArtifactDigest,
         observe: SourceCaptureObserver? = nil
-    ) throws -> ArtifactDigest {
-        try digest(
+    ) async throws -> ArtifactDigest {
+        try await digest(
             [checkout],
             digestFile: digestFile,
             digestNestedCheckout: digestNestedCheckout,
@@ -42,9 +42,9 @@ enum GitSourceCheckoutHasher {
     static func digest(
         _ checkouts: [FilePath],
         digestFile: (FilePath, Stat) throws -> ArtifactDigest,
-        digestNestedCheckout: (FilePath) throws -> ArtifactDigest,
+        digestNestedCheckout: (FilePath) async throws -> ArtifactDigest,
         observe: SourceCaptureObserver? = nil
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         let checkouts = Array(Set(checkouts.map { canonicalFileSystemPath($0) }))
             .sorted { $0.string < $1.string }
         guard let first = checkouts.first else {
@@ -58,7 +58,7 @@ enum GitSourceCheckoutHasher {
         }
         let repository = canonicalFileSystemPath(
             FilePath(
-                try git(
+                try await git(
                     at: inspectionDirectory,
                     arguments: ["rev-parse", "--show-toplevel"]
                 ).textOutput
@@ -90,15 +90,15 @@ enum GitSourceCheckoutHasher {
         let pathspecs = scopes.map {
             $0.components.isEmpty ? "." : $0.string
         }
-        let listedPaths = try git(
+        let listedPaths = try await git(
             at: repository,
             arguments: [
                 "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--",
             ] + pathspecs)
-        let tracked = try trackedEntries(
+        let tracked = try await trackedEntries(
             repository: repository,
             pathspecs: pathspecs)
-        let modified = try modifiedPaths(
+        let modified = try await modifiedPaths(
             repository: repository,
             pathspecs: pathspecs)
 
@@ -158,26 +158,50 @@ enum GitSourceCheckoutHasher {
                     inspectedPaths: paths.count - identified))
         }
 
+        // Capturing a file's object identity and descending into a nested
+        // checkout both suspend, and `appendSequence` does not, so the paths
+        // needing either are resolved first. Both passes take the same branch
+        // through `gitIdentifiedEntry`, so what is encoded is unchanged.
+        var inspected: [String: InspectedPath] = [:]
+        for relative in paths {
+            guard
+                gitIdentifiedEntry(
+                    tracked[relative], modified: modified, relative: relative) == nil
+            else { continue }
+            let path = repository.appending(relative)
+            switch try path.stat(followTargetSymlink: false).type {
+            case .regular:
+                inspected[relative] = .objectIdentity(
+                    try await gitObjectIdentity(repository: repository, path: path))
+            case .directory
+            where (try? path.appending(".git").stat(followTargetSymlink: false))
+                != nil:
+                inspected[relative] = .nestedCheckout(
+                    try await digestNestedCheckout(path))
+            default:
+                continue
+            }
+        }
+
         try encoder.appendSequence(paths) { entry, relative in
-            let indexEntry = tracked[relative]
             // Content Git already identifies is never touched. The index holds
             // an object identity for exactly the bytes on disk, and the mode
             // gives the type and executable bit, whenever the path is tracked
             // and does not differ from the index. The discriminator keeps
             // object identities and content digests in separate domains so one
             // can never be read as the other.
-            if let mode = gitIdentifiedMode(indexEntry, modified: modified, path: relative),
-                let indexEntry, mode != "160000"
+            if let identified = gitIdentifiedEntry(
+                tracked[relative], modified: modified, relative: relative)
             {
                 entry.append(relative)
-                entry.append(mode == "100755")
-                entry.append(mode.gitEntryKind)
-                if mode == "120000" {
+                entry.append(identified.mode == "100755")
+                entry.append(identified.mode.gitEntryKind)
+                if identified.mode == "120000" {
                     entry.append(
                         try FileManager.default.destinationOfSymbolicLink(
                             atPath: repository.appending(relative).string))
                 } else {
-                    entry.append(indexEntry.object)
+                    entry.append(identified.entry.object)
                 }
                 return
             }
@@ -188,7 +212,11 @@ enum GitSourceCheckoutHasher {
             switch metadata.type {
             case .regular:
                 entry.append("file")
-                entry.append(try gitObjectIdentity(repository: repository, path: path))
+                guard case .objectIdentity(let object) = inspected[relative] else {
+                    throw GitSourceCheckoutFailure(
+                        "object identity was not resolved before encoding: \(path)")
+                }
+                entry.append(object)
             case .symbolicLink:
                 entry.append("symlink")
                 entry.append(
@@ -199,7 +227,11 @@ enum GitSourceCheckoutHasher {
                     followTargetSymlink: false)) != nil
                 {
                     entry.append("nested-checkout")
-                    entry.append(bytes: try digestNestedCheckout(path).bytes)
+                    guard case .nestedCheckout(let digest) = inspected[relative] else {
+                        throw GitSourceCheckoutFailure(
+                            "nested checkout was not resolved before encoding: \(path)")
+                    }
+                    entry.append(bytes: digest.bytes)
                 } else {
                     entry.append("directory")
                 }
@@ -209,6 +241,27 @@ enum GitSourceCheckoutHasher {
         }
         return ArtifactHasher.digest(bytes: encoder.bytes)
     }
+}
+
+/// What a path needed that could only be had by suspending.
+private enum InspectedPath {
+    case objectIdentity(String)
+    case nestedCheckout(ArtifactDigest)
+}
+
+/// Whether Git already identifies this path's content, and the index entry
+/// that says so. Both the resolution pass and the encoder branch on this, so
+/// it has one definition: a disagreement between them would change what a
+/// source checkout hashes to.
+private func gitIdentifiedEntry(
+    _ indexEntry: TrackedEntry?,
+    modified: Set<String>,
+    relative: String
+) -> (mode: String, entry: TrackedEntry)? {
+    guard let mode = gitIdentifiedMode(indexEntry, modified: modified, path: relative),
+        let indexEntry, mode != "160000"
+    else { return nil }
+    return (mode, indexEntry)
 }
 
 /// One index entry: the mode Git records and the object identity of the
@@ -221,8 +274,8 @@ struct TrackedEntry {
 private func trackedEntries(
     repository: FilePath,
     pathspecs: [String]
-) throws -> [String: TrackedEntry] {
-    let result = try git(
+) async throws -> [String: TrackedEntry] {
+    let result = try await git(
         at: repository,
         arguments: ["ls-files", "-v", "--stage", "-z", "--"] + pathspecs)
     var entries: [String: TrackedEntry] = [:]
@@ -264,8 +317,8 @@ private func trackedEntries(
 private func modifiedPaths(
     repository: FilePath,
     pathspecs: [String]
-) throws -> Set<String> {
-    let result = try git(
+) async throws -> Set<String> {
+    let result = try await git(
         at: repository,
         arguments: ["diff-files", "--name-only", "-z", "--"] + pathspecs)
     var modified: Set<String> = []
@@ -287,8 +340,8 @@ private func modifiedPaths(
 private func gitObjectIdentity(
     repository: FilePath,
     path: FilePath
-) throws -> String {
-    try git(
+) async throws -> String {
+    try await git(
         at: repository,
         arguments: ["hash-object", "--", path.string]
     ).textOutput
@@ -336,7 +389,7 @@ private func contains(_ candidate: String, in parent: String) -> Bool {
 }
 
 private struct GitResult {
-    let output: Data
+    let output: [UInt8]
 
     var textOutput: String {
         String(decoding: output, as: UTF8.self)
@@ -347,41 +400,26 @@ private struct GitResult {
 private func git(
     at directory: FilePath,
     arguments: [String]
-) throws -> GitResult {
-    let process = Process()
-    let standardOutput = Pipe()
-    let standardError = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.currentDirectoryURL = URL(fileURLWithPath: directory.string)
-    process.arguments = ["--no-optional-locks"] + arguments
+) async throws -> GitResult {
     var environment = ProcessInfo.processInfo.environment
     environment["GIT_TERMINAL_PROMPT"] = "0"
     environment["LC_ALL"] = "C"
-    process.environment = environment
-    process.standardOutput = standardOutput
-    process.standardError = standardError
+    let capture: CapturedChildProcess.Capture
     do {
-        try process.run()
+        capture = try await CapturedChildProcess.capture(
+            executable: FilePath("/usr/bin/git"),
+            arguments: ["--no-optional-locks"] + arguments,
+            workingDirectory: directory,
+            environment: environment)
     } catch {
         throw GitSourceCheckoutFailure(
             "could not execute Git for \(directory): \(error)")
     }
-    let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
-    let errorOutput = standardError.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
-    // Source capture runs Git once per checkout, and a source closure has
-    // hundreds. Waiting for these pipes to close on deallocation leaks four
-    // descriptors per invocation, which exhausts a default process limit long
-    // before the closure is hashed.
-    try? standardOutput.fileHandleForReading.close()
-    try? standardError.fileHandleForReading.close()
-    guard process.terminationStatus == 0 else {
-        let message = String(decoding: errorOutput, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard capture.status == 0 else {
         throw GitSourceCheckoutFailure(
-            "Git failed for \(directory): \(message)")
+            "Git failed for \(directory): \(capture.standardErrorText)")
     }
-    return GitResult(output: output)
+    return GitResult(output: capture.standardOutput)
 }
 
 struct GitSourceCheckoutFailure: Error, CustomStringConvertible {

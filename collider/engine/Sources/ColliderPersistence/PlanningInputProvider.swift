@@ -29,12 +29,14 @@ package final class PlanningInputProvider: @unchecked Sendable {
         try digests.digest(tree: path)
     }
 
-    package func digest(sourceCheckout path: FilePath) throws -> ArtifactDigest {
-        try digests.digest(sourceCheckout: path)
+    package func digest(sourceCheckout path: FilePath) async throws -> ArtifactDigest {
+        try await digests.digest(sourceCheckout: path)
     }
 
-    package func digest(sourceCheckoutClosure paths: [FilePath]) throws -> ArtifactDigest {
-        try digests.digest(sourceCheckoutClosure: paths)
+    package func digest(
+        sourceCheckoutClosure paths: [FilePath]
+    ) async throws -> ArtifactDigest {
+        try await digests.digest(sourceCheckoutClosure: paths)
     }
 
     package func semanticToolIdentity(

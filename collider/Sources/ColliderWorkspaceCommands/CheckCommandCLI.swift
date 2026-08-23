@@ -36,7 +36,7 @@ struct Check: TaskControlledCommand {
                 try await ComponentRegistry(context: context)
                     .verifyAndroidRuntimeSourceLock(controls: taskOptions.controls)
             case .protectedMainSource:
-                try ProtectedMainSourceAssertion(
+                try await ProtectedMainSourceAssertion(
                     environment: context.environment
                 ).validate(
                     repositoryRoot: context.root,

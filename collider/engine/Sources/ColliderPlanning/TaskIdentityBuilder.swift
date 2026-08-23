@@ -6,9 +6,9 @@ struct TaskIdentityBuilder {
         of task: TaskDeclaration,
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         var resolutions = TaskIdentityResolutions()
-        return try identity(
+        return try await identity(
             of: task,
             dependencies: dependencies,
             services: services,
@@ -20,7 +20,7 @@ struct TaskIdentityBuilder {
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices,
         resolutions: inout TaskIdentityResolutions
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         var encoder = IdentityEncoder(
             identityPathMap: services.identityPathMap)
         encoder.append(task.id.rawValue)
@@ -80,7 +80,25 @@ struct TaskIdentityBuilder {
             }
         }
 
-        try encoder.appendSequence(identityInputs(of: task)) { inputEncoder, input in
+        // Source capture suspends and `appendSequence` does not, so every
+        // checkout digest this task names is resolved before the sequence is
+        // encoded. The encoding below reads the resolutions it populated, so
+        // encoded order and contents are unchanged.
+        let inputs = identityInputs(of: task)
+        for input in inputs {
+            switch input {
+            case .sourceCheckout(let path):
+                _ = try await resolutions.sourceCheckoutDigest(
+                    path, services: services)
+            case .sourceCheckoutClosure(let paths):
+                _ = try await resolutions.sourceCheckoutClosureDigest(
+                    paths, services: services)
+            default:
+                continue
+            }
+        }
+
+        try encoder.appendSequence(inputs) { inputEncoder, input in
             switch input {
             case .value(let name, let bytes):
                 inputEncoder.append(name)
@@ -109,19 +127,14 @@ struct TaskIdentityBuilder {
             case .sourceCheckout(let path):
                 inputEncoder.append(path: path)
                 inputEncoder.append(
-                    bytes: try resolutions.sourceCheckoutDigest(
-                        path,
-                        services: services
-                    ).bytes)
+                    bytes: try resolutions.resolvedSourceCheckoutDigest(path).bytes)
             case .sourceCheckoutClosure(let paths):
                 inputEncoder.appendSequence(paths.sorted { $0.string < $1.string }) {
                     $0.append(path: $1)
                 }
                 inputEncoder.append(
-                    bytes: try resolutions.sourceCheckoutClosureDigest(
-                        paths,
-                        services: services
-                    ).bytes)
+                    bytes: try resolutions.resolvedSourceCheckoutClosureDigest(paths)
+                        .bytes)
             case .tool(let executable):
                 let environment =
                     task.swiftProducts.first?.environment
@@ -265,6 +278,20 @@ struct TaskIdentityBuilder {
 private func hashing<Result>(
     _ kind: String,
     _ path: FilePath,
+    _ body: () async throws -> Result
+) async throws -> Result {
+    do {
+        return try await body()
+    } catch let failure as PlanningInputFailure {
+        throw failure
+    } catch {
+        throw PlanningInputFailure(kind: kind, path: path, underlying: error)
+    }
+}
+
+private func hashing<Result>(
+    _ kind: String,
+    _ path: FilePath,
     _ body: () throws -> Result
 ) throws -> Result {
     do {
@@ -290,9 +317,14 @@ private enum TaskIdentityFailure: Error, CustomStringConvertible {
     case uncanonicalizedPlacement(
         TaskID,
         roots: [(IdentityPathRoot, [String])])
+    case unresolvedSourceCheckout(FilePath)
 
     var description: String {
         switch self {
+        case .unresolvedSourceCheckout(let path):
+            return
+                "source checkout digest was not resolved before encoding: "
+                + path.string
         case .uncanonicalizedPlacement(let task, let roots):
             var message =
                 "task identity contains an uncanonicalized placement path: "
@@ -351,10 +383,10 @@ private struct TaskIdentityResolutions {
     mutating func sourceCheckoutDigest(
         _ path: FilePath,
         services: TaskPlanningServices
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         if let digest = sourceCheckoutDigests[path] { return digest }
-        let digest = try hashing("source checkout", path) {
-            try services.digestSourceCheckout(path)
+        let digest = try await hashing("source checkout", path) {
+            try await services.digestSourceCheckout(path)
         }
         sourceCheckoutDigests[path] = digest
         return digest
@@ -363,11 +395,40 @@ private struct TaskIdentityResolutions {
     mutating func sourceCheckoutClosureDigest(
         _ paths: [FilePath],
         services: TaskPlanningServices
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         let paths = paths.sorted { $0.string < $1.string }
         if let digest = sourceCheckoutClosureDigests[paths] { return digest }
-        let digest = try services.digestSourceCheckoutClosure(paths)
+        let digest = try await services.digestSourceCheckoutClosure(paths)
         sourceCheckoutClosureDigests[paths] = digest
+        return digest
+    }
+
+    /// Reads what the pre-resolution pass populated. A miss means the encoder
+    /// reached an input the pass did not, which is a defect in this file
+    /// rather than a condition a caller can produce.
+    func resolvedSourceCheckoutDigest(
+        _ path: FilePath
+    ) throws -> ArtifactDigest {
+        guard let digest = sourceCheckoutDigests[path] else {
+            throw PlanningInputFailure(
+                kind: "source checkout",
+                path: path,
+                underlying: TaskIdentityFailure.unresolvedSourceCheckout(path))
+        }
+        return digest
+    }
+
+    func resolvedSourceCheckoutClosureDigest(
+        _ paths: [FilePath]
+    ) throws -> ArtifactDigest {
+        let paths = paths.sorted { $0.string < $1.string }
+        guard let digest = sourceCheckoutClosureDigests[paths] else {
+            throw PlanningInputFailure(
+                kind: "source checkout closure",
+                path: paths.first ?? FilePath(""),
+                underlying: TaskIdentityFailure.unresolvedSourceCheckout(
+                    paths.first ?? FilePath("")))
+        }
         return digest
     }
 

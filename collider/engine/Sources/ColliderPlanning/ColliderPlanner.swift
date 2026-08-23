@@ -17,9 +17,9 @@ public struct ColliderPlanner {
         rebuildSelected: Bool,
         lowerings: [any TaskPlanLowering],
         services: TaskPlanningServices
-    ) throws -> ExecutionPlan {
+    ) async throws -> ExecutionPlan {
         let index = try ComponentCatalogIndex(catalog)
-        return try plan(
+        return try await plan(
             graph: TaskGraph(index.tasks),
             selected: index.roots(for: requests),
             rebuildSelected: rebuildSelected,
@@ -33,7 +33,7 @@ public struct ColliderPlanner {
         rebuildSelected: Bool,
         lowerings: [any TaskPlanLowering],
         services: TaskPlanningServices
-    ) throws -> ExecutionPlan {
+    ) async throws -> ExecutionPlan {
         try validateCompleteGraph(graph.declarations)
         let ordered = try graph.orderedTasks(selecting: selected)
         let explicitlySelected = Set(selected)
@@ -48,7 +48,7 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let identity = try identityBuilder.build(
+            let identity = try await identityBuilder.build(
                 of: task,
                 dependencies: dependencyIdentities,
                 services: services)
@@ -104,7 +104,10 @@ public struct ColliderPlanner {
             throw ColliderPlanningFailure.unloweredLogicalRequirements(missingLowering)
         }
 
-        let loweredEntries = try lowered.map { lowered in
+        // Identity resolution suspends where a task names a source checkout,
+        // so the lowered entries are built in order rather than mapped.
+        var loweredEntries: [TaskPlanEntry] = []
+        for lowered in lowered {
             let dependencyIdentities = try lowered.task.dependencies.map {
                 guard let identity = identities[$0] else {
                     throw TaskGraphFailure.missing(
@@ -113,7 +116,7 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let identity = try identityBuilder.build(
+            let identity = try await identityBuilder.build(
                 of: lowered.task,
                 dependencies: dependencyIdentities,
                 services: services)
@@ -130,24 +133,25 @@ public struct ColliderPlanner {
                 lane: lane,
                 coordinates: coordinates,
                 mode: lowered.task.durationEstimationMode)
-            return TaskPlanEntry(
-                task: lowered.task.id,
-                identity: identity,
-                isClean: assessment.isClean,
-                explanation: assessment.explanation,
-                coordinates: coordinates,
-                lane: lane,
-                claims: normalizedClaims(for: lowered.task),
-                logicalOwners: lowered.logicalOwners.sorted {
-                    $0.rawValue < $1.rawValue
-                },
-                attribution: lowered.attribution,
-                durationWorkload: workload,
-                durationEstimate: services.durationEstimate(workload).map {
-                    TaskDurationEstimate(
-                        workload: workload,
-                        durationNanoseconds: $0)
-                })
+            loweredEntries.append(
+                TaskPlanEntry(
+                    task: lowered.task.id,
+                    identity: identity,
+                    isClean: assessment.isClean,
+                    explanation: assessment.explanation,
+                    coordinates: coordinates,
+                    lane: lane,
+                    claims: normalizedClaims(for: lowered.task),
+                    logicalOwners: lowered.logicalOwners.sorted {
+                        $0.rawValue < $1.rawValue
+                    },
+                    attribution: lowered.attribution,
+                    durationWorkload: workload,
+                    durationEstimate: services.durationEstimate(workload).map {
+                        TaskDurationEstimate(
+                            workload: workload,
+                            durationNanoseconds: $0)
+                    }))
         }
         return ExecutionPlan(
             declaredTasks: ordered,

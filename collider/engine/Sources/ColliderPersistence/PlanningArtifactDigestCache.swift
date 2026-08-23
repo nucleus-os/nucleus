@@ -3,8 +3,10 @@ import Foundation
 import SystemPackage
 
 /// A planning-local memoization layer backed by a durable file metadata index.
-/// Mutation is confined to one synchronous planning operation; callers persist
-/// the updated index only after planning has produced a complete plan.
+/// Mutation is confined to one planning operation, which has no internal
+/// concurrency, so the suspension points source capture introduces do not make
+/// this state shared. Callers persist the updated index only after planning has
+/// produced a complete plan.
 package final class PlanningArtifactDigestCache: @unchecked Sendable {
     private struct CacheFile: Codable {
         let files: [String: FileEntry]
@@ -132,35 +134,55 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
         return digest
     }
 
-    package func digest(sourceCheckout path: FilePath) throws -> ArtifactDigest {
-        try measured {
-            try digestSourceCheckout(path)
+    package func digest(sourceCheckout path: FilePath) async throws -> ArtifactDigest {
+        try await measured {
+            try await digestSourceCheckout(path)
         }
     }
 
-    private func digestSourceCheckout(_ path: FilePath) throws -> ArtifactDigest {
+    private func digestSourceCheckout(
+        _ path: FilePath
+    ) async throws -> ArtifactDigest {
         if let digest = sourceCheckouts[path] { return digest }
-        let digest = try GitSourceCheckoutHasher.digest(
+        let digest = try await GitSourceCheckoutHasher.digest(
             path,
             digestFile: { try self.digestFile($0, metadata: $1) },
-            digestNestedCheckout: { try self.digestSourceCheckout($0) })
+            digestNestedCheckout: { try await self.digestSourceCheckout($0) })
         sourceCheckouts[path] = digest
         return digest
     }
 
     package func digest(
         sourceCheckoutClosure paths: [FilePath]
-    ) throws -> ArtifactDigest {
-        try measured {
+    ) async throws -> ArtifactDigest {
+        try await measured {
             let paths = paths.sorted { $0.string < $1.string }
             if let digest = sourceCheckoutClosures[paths] { return digest }
-            let digest = try GitSourceCheckoutHasher.digest(
+            let digest = try await GitSourceCheckoutHasher.digest(
                 paths,
                 digestFile: { try self.digestFile($0, metadata: $1) },
-                digestNestedCheckout: { try self.digestSourceCheckout($0) })
+                digestNestedCheckout: { try await self.digestSourceCheckout($0) })
             sourceCheckoutClosures[paths] = digest
             return digest
         }
+    }
+
+    /// Source capture suspends, so the measured region has an async form. The
+    /// two overloads bracket the same counters; Swift selects between them by
+    /// whether the caller awaits.
+    private func measured<Result>(
+        _ operation: () async throws -> Result
+    ) async rethrows -> Result {
+        let recordsDuration = measurementDepth == 0
+        let start = recordsDuration ? ContinuousClock().now : nil
+        measurementDepth += 1
+        defer {
+            measurementDepth -= 1
+            if let start {
+                hashingDurationNanoseconds &+= elapsedNanoseconds(since: start)
+            }
+        }
+        return try await operation()
     }
 
     private func measured<Result>(

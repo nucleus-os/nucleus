@@ -189,7 +189,7 @@ import Testing
     #expect(object["invalid-entry"] == nil)
 }
 
-@Test func sourceCheckoutDigestUsesGitTreesAcrossCheckoutLocations() throws {
+@Test func sourceCheckoutDigestUsesGitTreesAcrossCheckoutLocations() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-placement-\(UUID().uuidString)")
     let first = directory.appendingPathComponent("first")
@@ -209,11 +209,11 @@ import Testing
     }
 
     #expect(
-        try sourceCheckoutDigest(first.appendingPathComponent("Sources"))
+        try await sourceCheckoutDigest(first.appendingPathComponent("Sources"))
             == sourceCheckoutDigest(second.appendingPathComponent("Sources")))
 }
 
-@Test func sourceCheckoutDigestTracksScopedWorkingCopyContents() throws {
+@Test func sourceCheckoutDigestTracksScopedWorkingCopyContents() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-dirty-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -228,33 +228,33 @@ import Testing
     try Data("Sources/*.ignored\n".utf8).write(
         to: repository.appendingPathComponent(".gitignore"))
     try commitAll(repository)
-    let baseline = try sourceCheckoutDigest(sources)
+    let baseline = try await sourceCheckoutDigest(sources)
 
     try Data("changed outside\n".utf8).write(
         to: other.appendingPathComponent("value"))
-    #expect(try sourceCheckoutDigest(sources) == baseline)
+    #expect(try await sourceCheckoutDigest(sources) == baseline)
 
     try Data("ignored\n".utf8).write(
         to: sources.appendingPathComponent("cache.ignored"))
-    #expect(try sourceCheckoutDigest(sources) == baseline)
+    #expect(try await sourceCheckoutDigest(sources) == baseline)
 
     let untracked = sources.appendingPathComponent("New.swift")
     try Data("let added = true\n".utf8).write(to: untracked)
-    #expect(try sourceCheckoutDigest(sources) != baseline)
+    #expect(try await sourceCheckoutDigest(sources) != baseline)
     try FileManager.default.removeItem(at: untracked)
 
     try Data("let value = 2\n".utf8).write(to: tracked)
-    #expect(try sourceCheckoutDigest(sources) != baseline)
+    #expect(try await sourceCheckoutDigest(sources) != baseline)
     try Data("let value = 1\n".utf8).write(to: tracked)
-    #expect(try sourceCheckoutDigest(sources) == baseline)
+    #expect(try await sourceCheckoutDigest(sources) == baseline)
 
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755],
         ofItemAtPath: tracked.path)
-    #expect(try sourceCheckoutDigest(sources) != baseline)
+    #expect(try await sourceCheckoutDigest(sources) != baseline)
 }
 
-@Test func sourceCheckoutDigestMatchesBeforeAndAfterCommit() throws {
+@Test func sourceCheckoutDigestMatchesBeforeAndAfterCommit() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-commit-independent-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -273,13 +273,13 @@ import Testing
     try FileManager.default.removeItem(at: removed)
     let added = sources.appendingPathComponent("Added.swift")
     try Data("let added = true\n".utf8).write(to: added)
-    let dirty = try sourceCheckoutDigest(sources)
+    let dirty = try await sourceCheckoutDigest(sources)
 
     try commitAll(repository)
-    #expect(try sourceCheckoutDigest(sources) == dirty)
+    #expect(try await sourceCheckoutDigest(sources) == dirty)
 }
 
-@Test func sourceCheckoutDigestSupportsAnEntirelyNewSourceDirectory() throws {
+@Test func sourceCheckoutDigestSupportsAnEntirelyNewSourceDirectory() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-new-scope-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -294,13 +294,13 @@ import Testing
         withIntermediateDirectories: true)
     let source = sources.appendingPathComponent("Value.swift")
     try Data("let value = 1\n".utf8).write(to: source)
-    let initial = try sourceCheckoutDigest(sources)
+    let initial = try await sourceCheckoutDigest(sources)
 
     try Data("let value = 2\n".utf8).write(to: source)
-    #expect(try sourceCheckoutDigest(sources) != initial)
+    #expect(try await sourceCheckoutDigest(sources) != initial)
 }
 
-@Test func sourceCheckoutClosureTracksOnlySelectedTargetDirectories() throws {
+@Test func sourceCheckoutClosureTracksOnlySelectedTargetDirectories() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-closure-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -317,18 +317,18 @@ import Testing
     }
     try commitAll(repository)
     let selected = [FilePath(app.path), FilePath(shared.path)]
-    let baseline = try sourceCheckoutClosureDigest(selected)
+    let baseline = try await sourceCheckoutClosureDigest(selected)
 
     try Data("changed\n".utf8).write(
         to: unrelated.appendingPathComponent("value"))
-    #expect(try sourceCheckoutClosureDigest(selected) == baseline)
+    #expect(try await sourceCheckoutClosureDigest(selected) == baseline)
 
     try Data("changed\n".utf8).write(
         to: shared.appendingPathComponent("value"))
-    #expect(try sourceCheckoutClosureDigest(selected) != baseline)
+    #expect(try await sourceCheckoutClosureDigest(selected) != baseline)
 }
 
-@Test func sourceCheckoutDigestIncludesDirtyNestedSubmodules() throws {
+@Test func sourceCheckoutDigestIncludesDirtyNestedSubmodules() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-submodule-\(UUID().uuidString)")
     let child = directory.appendingPathComponent("child")
@@ -346,14 +346,14 @@ import Testing
             child.path, "Dependency",
         ])
     try commitAll(parent)
-    let baseline = try sourceCheckoutDigest(parent)
+    let baseline = try await sourceCheckoutDigest(parent)
 
     try Data("second\n".utf8).write(
         to: parent.appendingPathComponent("Dependency/value"))
-    #expect(try sourceCheckoutDigest(parent) != baseline)
+    #expect(try await sourceCheckoutDigest(parent) != baseline)
 }
 
-@Test func productSourceSnapshotSeparatesContentFromGitProvenance() throws {
+@Test func productSourceSnapshotSeparatesContentFromGitProvenance() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-product-source-snapshot-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -362,7 +362,7 @@ import Testing
     try Data("let value = 1\n".utf8).write(to: source)
     try commitAll(repository)
 
-    let clean = try ProductArtifactSourceSnapshot.capture(
+    let clean = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment)
     #expect(clean.provenance.baseCommit?.isEmpty == false)
@@ -371,14 +371,14 @@ import Testing
     try Data("let value = 2\n".utf8).write(to: source)
     try Data("untracked\n".utf8).write(
         to: repository.appendingPathComponent("New.txt"))
-    let dirty = try ProductArtifactSourceSnapshot.capture(
+    let dirty = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment)
     #expect(dirty.closure != clean.closure)
     #expect(dirty.provenance.dirtyPaths == ["New.txt", "Source.swift"])
 
     try commitAll(repository)
-    let committed = try ProductArtifactSourceSnapshot.capture(
+    let committed = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment)
     #expect(committed.closure == dirty.closure)
@@ -386,7 +386,7 @@ import Testing
     #expect(committed.provenance.identity != dirty.provenance.identity)
 }
 
-@Test func productSourceSnapshotUsesItsDeclaredSourceClosure() throws {
+@Test func productSourceSnapshotUsesItsDeclaredSourceClosure() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-scoped-product-source-snapshot-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -398,7 +398,7 @@ import Testing
     try commitAll(repository)
 
     let sourcePaths = [FilePath(source.path)]
-    let clean = try ProductArtifactSourceSnapshot.capture(
+    let clean = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment,
         sourcePaths: sourcePaths)
@@ -406,14 +406,14 @@ import Testing
     try Data("second\n".utf8).write(to: unrelated)
     try Data("untracked\n".utf8).write(
         to: repository.appendingPathComponent("Untracked.md"))
-    let unrelatedDirty = try ProductArtifactSourceSnapshot.capture(
+    let unrelatedDirty = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment,
         sourcePaths: sourcePaths)
     #expect(unrelatedDirty == clean)
 
     try Data("let value = 2\n".utf8).write(to: source)
-    let sourceDirty = try ProductArtifactSourceSnapshot.capture(
+    let sourceDirty = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .localDevelopment,
         sourcePaths: sourcePaths)
@@ -421,7 +421,7 @@ import Testing
     #expect(sourceDirty.provenance.dirtyPaths == ["Source.swift"])
 }
 
-@Test func protectedMainSourceSnapshotRequiresAnExactCleanCheckout() throws {
+@Test func protectedMainSourceSnapshotRequiresAnExactCleanCheckout() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-protected-main-source-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -431,7 +431,7 @@ import Testing
     try commitAll(repository)
     let commit = try gitOutput(at: repository, arguments: ["rev-parse", "HEAD"])
 
-    let snapshot = try ProductArtifactSourceSnapshot.capture(
+    let snapshot = try await ProductArtifactSourceSnapshot.capture(
         repositoryRoot: FilePath(repository.path),
         sourceAuthority: .protectedMain,
         assertedCommit: commit,
@@ -441,15 +441,15 @@ import Testing
     #expect(snapshot.provenance.branch == "refs/heads/main")
     #expect(snapshot.provenance.dirtyPaths.isEmpty)
 
-    #expect(throws: ProductArtifactStoreFailure.self) {
-        try ProductArtifactSourceSnapshot.capture(
+    await #expect(throws: ProductArtifactStoreFailure.self) {
+        try await ProductArtifactSourceSnapshot.capture(
             repositoryRoot: FilePath(repository.path),
             sourceAuthority: .protectedMain,
             assertedCommit: String(commit.prefix(12)),
             assertedBranch: "refs/heads/main")
     }
-    #expect(throws: ProductArtifactStoreFailure.self) {
-        try ProductArtifactSourceSnapshot.capture(
+    await #expect(throws: ProductArtifactStoreFailure.self) {
+        try await ProductArtifactSourceSnapshot.capture(
             repositoryRoot: FilePath(repository.path),
             sourceAuthority: .protectedMain,
             assertedCommit: commit,
@@ -458,8 +458,8 @@ import Testing
 
     try Data("untracked\n".utf8).write(
         to: repository.appendingPathComponent("OutsideDeclaredClosure.txt"))
-    #expect(throws: ProductArtifactContractFailure.self) {
-        try ProductArtifactSourceSnapshot.capture(
+    await #expect(throws: ProductArtifactContractFailure.self) {
+        try await ProductArtifactSourceSnapshot.capture(
             repositoryRoot: FilePath(repository.path),
             sourceAuthority: .protectedMain,
             assertedCommit: commit,
@@ -468,7 +468,7 @@ import Testing
     }
 }
 
-@Test func sourceCaptureReportsWhatItMustReadBeforeReadingIt() throws {
+@Test func sourceCaptureReportsWhatItMustReadBeforeReadingIt() async throws {
     let repository = FileManager.default.temporaryDirectory
         .appendingPathComponent("nucleus-capture-progress-\(UUID().uuidString)")
     try initializeGitRepository(repository)
@@ -481,9 +481,9 @@ import Testing
     try commitAll(repository)
     defer { try? FileManager.default.removeItem(at: repository) }
 
-    func capture() throws -> [SourceCaptureProgress] {
+    func capture() async throws -> [SourceCaptureProgress] {
         let recorded = Mutex<[SourceCaptureProgress]>([])
-        _ = try ProductArtifactSourceSnapshot.capture(
+        _ = try await ProductArtifactSourceSnapshot.capture(
             repositoryRoot: FilePath(repository.path),
             sourceAuthority: .localDevelopment,
             observe: { progress in recorded.withLock { $0.append(progress) } })
@@ -491,7 +491,7 @@ import Testing
     }
 
     // A clean tree costs nothing to read, and says so.
-    let clean = try capture()
+    let clean = try await capture()
     #expect(clean.count == 1)
     #expect(clean.first?.identifiedPaths == 2)
     #expect(clean.first?.inspectedPaths == 0)
@@ -504,13 +504,13 @@ import Testing
     try "new".write(
         to: repository.appendingPathComponent("third.txt"),
         atomically: true, encoding: .utf8)
-    let dirty = try capture()
+    let dirty = try await capture()
     #expect(dirty.count == 1)
     #expect(dirty.first?.identifiedPaths == 1)
     #expect(dirty.first?.inspectedPaths == 2)
 }
 
-@Test func sourceCheckoutDigestRejectsPathsGitReportsWithoutInspecting() throws {
+@Test func sourceCheckoutDigestRejectsPathsGitReportsWithoutInspecting() async throws {
     let repository = FileManager.default.temporaryDirectory
         .appendingPathComponent("nucleus-unverifiable-\(UUID().uuidString)")
     try initializeGitRepository(repository)
@@ -519,7 +519,7 @@ import Testing
     try commitAll(repository)
     defer { try? FileManager.default.removeItem(at: repository) }
 
-    let clean = try sourceCheckoutDigest(repository)
+    let clean = try await sourceCheckoutDigest(repository)
 
     // assume-unchanged tells Git to report the path as unmodified without
     // looking at it. An identity taken on that word would claim content the
@@ -527,16 +527,16 @@ import Testing
     try runGit(
         at: repository, arguments: ["update-index", "--assume-unchanged", "source.txt"])
     try "two".write(to: tracked, atomically: true, encoding: .utf8)
-    #expect(throws: (any Error).self) { try sourceCheckoutDigest(repository) }
+    await #expect(throws: (any Error).self) { try await sourceCheckoutDigest(repository) }
 
     try runGit(
         at: repository, arguments: ["update-index", "--no-assume-unchanged", "source.txt"])
-    #expect(try sourceCheckoutDigest(repository) != clean)
+    #expect(try await sourceCheckoutDigest(repository) != clean)
     try "one".write(to: tracked, atomically: true, encoding: .utf8)
-    #expect(try sourceCheckoutDigest(repository) == clean)
+    #expect(try await sourceCheckoutDigest(repository) == clean)
 }
 
-@Test func sourceCheckoutDigestIgnoresHowTheTreeWasMaterialized() throws {
+@Test func sourceCheckoutDigestIgnoresHowTheTreeWasMaterialized() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("collider-materialization-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -584,14 +584,14 @@ import Testing
     #expect(try gitEntryType(standalone) == .typeDirectory)
     #expect(try gitEntryType(submodule) == .typeRegular)
 
-    #expect(try sourceCheckoutDigest(standalone) == sourceCheckoutDigest(submodule))
+    #expect(try await sourceCheckoutDigest(standalone) == sourceCheckoutDigest(submodule))
 
     // The repository database is not source. A tree digest counts it, which is
     // what made one commit hash two ways; a source checkout must not.
-    let before = try sourceCheckoutDigest(standalone)
+    let before = try await sourceCheckoutDigest(standalone)
     try Data("residue\n".utf8).write(
         to: standalone.appendingPathComponent(".git/collider-fixture-residue"))
-    #expect(try sourceCheckoutDigest(standalone) == before)
+    #expect(try await sourceCheckoutDigest(standalone) == before)
     #expect(try treeDigest(standalone) != before)
 }
 
@@ -599,15 +599,15 @@ private func treeDigest(_ url: URL) throws -> ArtifactDigest {
     try PlanningArtifactDigestCache().digest(tree: FilePath(url.path))
 }
 
-private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
-    try PlanningArtifactDigestCache().digest(
+private func sourceCheckoutDigest(_ url: URL) async throws -> ArtifactDigest {
+    try await PlanningArtifactDigestCache().digest(
         sourceCheckout: FilePath(url.path))
 }
 
 private func sourceCheckoutClosureDigest(
     _ paths: [FilePath]
-) throws -> ArtifactDigest {
-    try PlanningArtifactDigestCache().digest(sourceCheckoutClosure: paths)
+) async throws -> ArtifactDigest {
+    try await PlanningArtifactDigestCache().digest(sourceCheckoutClosure: paths)
 }
 
 private func initializeGitRepository(_ repository: URL) throws {

@@ -6,7 +6,7 @@ import Synchronization
 import SystemPackage
 import Testing
 
-@Test func identicalDeclarationsAndSnapshotsProduceIdenticalPlanBytes() throws {
+@Test func identicalDeclarationsAndSnapshotsProduceIdenticalPlanBytes() async throws {
     let input = FilePath("/fixture/selected-input")
     let selected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.selected"),
@@ -16,13 +16,13 @@ import Testing
     let digest = ArtifactDigest(bytes: Array(repeating: 11, count: 32))
     let services = deterministicServices(digest: digest)
 
-    let first = try ColliderPlanner().plan(
+    let first = try await ColliderPlanner().plan(
         graph: graph,
         selected: [selected.id],
         rebuildSelected: false,
         lowerings: [],
         services: services)
-    let second = try ColliderPlanner().plan(
+    let second = try await ColliderPlanner().plan(
         graph: graph,
         selected: [selected.id],
         rebuildSelected: false,
@@ -33,7 +33,7 @@ import Testing
     #expect(try encoder.encode(first.reportedEntries) == encoder.encode(second.reportedEntries))
 }
 
-@Test func plannerFreezesStableDurationWorkloadAndSelectedEstimate() throws {
+@Test func plannerFreezesStableDurationWorkloadAndSelectedEstimate() async throws {
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.release"),
         component: ComponentID(rawValue: "fixture"),
@@ -57,7 +57,7 @@ import Testing
         },
         validateOutputs: { _ in })
 
-    let plan = try ColliderPlanner().plan(
+    let plan = try await ColliderPlanner().plan(
         graph: TaskGraph([task]),
         selected: [task.id],
         rebuildSelected: false,
@@ -70,7 +70,7 @@ import Testing
     #expect(entry.durationEstimate?.durationNanoseconds == 42_000)
 }
 
-@Test func planningDoesNotReadUnselectedInputsOrValidateUnselectedOutputs() throws {
+@Test func planningDoesNotReadUnselectedInputsOrValidateUnselectedOutputs() async throws {
     let selected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.selected"),
         component: ComponentID(rawValue: "fixture"),
@@ -100,7 +100,7 @@ import Testing
         taskState: { _ in .missing },
         validateOutputs: { _ in validations.withLock { $0 += 1 } })
 
-    _ = try ColliderPlanner().plan(
+    _ = try await ColliderPlanner().plan(
         graph: TaskGraph([selected, unselected]),
         selected: [selected.id],
         rebuildSelected: false,
@@ -112,11 +112,11 @@ import Testing
     #expect(validations.withLock { $0 } == 0)
 }
 
-@Test func executionAndArtifactCoordinatesAffectTaskIdentity() throws {
+@Test func executionAndArtifactCoordinatesAffectTaskIdentity() async throws {
     func identity(
         execution: ExecutionPlatform,
         artifact: ArtifactTarget
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         let action = try AnyColliderAction(
             PlacementIdentityAction(
                 executionPlatform: execution,
@@ -126,7 +126,7 @@ import Testing
             component: ComponentID(rawValue: "fixture"),
             action: action)
         let services = deterministicHashingServices()
-        let plan = try ColliderPlanner().plan(
+        let plan = try await ColliderPlanner().plan(
             graph: TaskGraph([task]),
             selected: [task.id],
             rebuildSelected: false,
@@ -135,13 +135,13 @@ import Testing
         return try #require(plan.declaredEntries.first).identity
     }
 
-    let armExecution = try identity(
+    let armExecution = try await identity(
         execution: .linuxARM64OCI,
         artifact: .linuxX86_64)
-    let amdExecution = try identity(
+    let amdExecution = try await identity(
         execution: .linuxAMD64OCI,
         artifact: .linuxX86_64)
-    let armArtifact = try identity(
+    let armArtifact = try await identity(
         execution: .linuxARM64OCI,
         artifact: .linuxARM64)
 
@@ -149,11 +149,11 @@ import Testing
     #expect(armExecution != armArtifact)
 }
 
-@Test func taskIdentityIsStableAcrossWorkspaceAndCacheRelocation() throws {
+@Test func taskIdentityIsStableAcrossWorkspaceAndCacheRelocation() async throws {
     func plannedIdentity(
         workspace: FilePath,
         cache: FilePath
-    ) throws -> ArtifactDigest {
+    ) async throws -> ArtifactDigest {
         let input = workspace.appending("Sources/input.txt")
         let output = cache.appending("generated/result.json")
         var builder = TaskBuilder(
@@ -186,7 +186,7 @@ import Testing
                 IdentityPathRoot(name: "workspace", path: workspace),
                 IdentityPathRoot(name: "cache", path: cache),
             ]))
-        let plan = try ColliderPlanner().plan(
+        let plan = try await ColliderPlanner().plan(
             graph: TaskGraph([task]),
             selected: [task.id],
             rebuildSelected: false,
@@ -195,21 +195,21 @@ import Testing
         return try #require(plan.declaredEntries.first).identity
     }
 
-    let first = try plannedIdentity(
+    let first = try await plannedIdentity(
         workspace: FilePath("/first/checkout"),
         cache: FilePath("/first/cache"))
-    let second = try plannedIdentity(
+    let second = try await plannedIdentity(
         workspace: FilePath("/second/nucleus"),
         cache: FilePath("/second/cache"))
 
     #expect(first == second)
 }
 
-@Test func taskIdentityIgnoresTheAccountThatPlansTheBuild() throws {
+@Test func taskIdentityIgnoresTheAccountThatPlansTheBuild() async throws {
     let workspace = FilePath("/nucleus/checkout")
     let cache = FilePath("/nucleus/cache")
 
-    func plannedIdentity(account: String) throws -> ArtifactDigest {
+    func plannedIdentity(account: String) async throws -> ArtifactDigest {
         let input = workspace.appending("Sources/input.txt")
         let output = cache.appending("generated/result.json")
         var builder = TaskBuilder(
@@ -236,7 +236,7 @@ import Testing
                 IdentityPathRoot(name: "workspace", path: workspace),
                 IdentityPathRoot(name: "cache", path: cache),
             ]))
-        let plan = try ColliderPlanner().plan(
+        let plan = try await ColliderPlanner().plan(
             graph: TaskGraph([task]),
             selected: [task.id],
             rebuildSelected: false,
@@ -245,13 +245,13 @@ import Testing
         return try #require(plan.declaredEntries.first).identity
     }
 
-    let developer = try plannedIdentity(account: "maddy")
-    let builder = try plannedIdentity(account: "nucleus-builder")
+    let developer = try await plannedIdentity(account: "maddy")
+    let builder = try await plannedIdentity(account: "nucleus-builder")
 
     #expect(developer == builder)
 }
 
-@Test func taskIdentityMatchesBeforeAndAfterCommittingTheEffectiveSourceTree() throws {
+@Test func taskIdentityMatchesBeforeAndAfterCommittingTheEffectiveSourceTree() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-task-source-commit-independent-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: repository) }
@@ -269,13 +269,13 @@ import Testing
         id: TaskID(rawValue: "fixture.source-checkout"),
         component: ComponentID(rawValue: "fixture"),
         inputs: [.sourceCheckout(sourcePath)])
-    func plannedIdentity() throws -> ArtifactDigest {
+    func plannedIdentity() async throws -> ArtifactDigest {
         let digests = PlanningArtifactDigestCache()
         let services = TaskPlanningServices(
             digestBytes: { ArtifactHasher.digest(bytes: Data($0)) },
             digestFile: { try digests.digest(file: $0) },
             digestTree: { try digests.digest(tree: $0) },
-            digestSourceCheckout: { try digests.digest(sourceCheckout: $0) },
+            digestSourceCheckout: { try await digests.digest(sourceCheckout: $0) },
             semanticToolIdentity: { _, _ in
                 ToolIdentitySnapshot(
                     path: FilePath("/fixture/tool"),
@@ -283,7 +283,7 @@ import Testing
             },
             taskState: { _ in .missing },
             validateOutputs: { _ in })
-        let plan = try ColliderPlanner().plan(
+        let plan = try await ColliderPlanner().plan(
             graph: TaskGraph([task]),
             selected: [task.id],
             rebuildSelected: false,
@@ -295,13 +295,13 @@ import Testing
     try Data("let value = 2\n".utf8).write(to: tracked)
     try Data("let added = true\n".utf8).write(
         to: sources.appendingPathComponent("Added.swift"))
-    let dirty = try plannedIdentity()
+    let dirty = try await plannedIdentity()
     try commitAll(repository)
 
-    #expect(try plannedIdentity() == dirty)
+    #expect(try await plannedIdentity() == dirty)
 }
 
-@Test func semanticDependencyOrderDoesNotAffectTaskIdentity() throws {
+@Test func semanticDependencyOrderDoesNotAffectTaskIdentity() async throws {
     let first = TaskDeclaration(
         id: TaskID(rawValue: "fixture.first"),
         component: ComponentID(rawValue: "fixture"),
@@ -312,12 +312,12 @@ import Testing
         inputs: [.string(name: "value", value: "second")])
     let consumerID = TaskID(rawValue: "fixture.consumer")
 
-    func identity(dependencies: [TaskID]) throws -> ArtifactDigest {
+    func identity(dependencies: [TaskID]) async throws -> ArtifactDigest {
         let consumer = TaskDeclaration(
             id: consumerID,
             component: ComponentID(rawValue: "fixture"),
             dependencies: dependencies)
-        let plan = try ColliderPlanner().plan(
+        let plan = try await ColliderPlanner().plan(
             graph: TaskGraph([first, second, consumer]),
             selected: [consumerID],
             rebuildSelected: false,
@@ -329,7 +329,7 @@ import Testing
     }
 
     #expect(
-        try identity(dependencies: [first.id, second.id])
+        try await identity(dependencies: [first.id, second.id])
             == identity(dependencies: [second.id, first.id]))
 }
 

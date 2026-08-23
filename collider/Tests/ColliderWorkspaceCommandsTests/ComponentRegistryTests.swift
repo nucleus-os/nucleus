@@ -2793,7 +2793,7 @@ private func artifactInput(
 /// command arguments and stay green, because only the lanes someone runs are
 /// ever encoded. The packaging and qualification lanes reached exactly that
 /// state.
-@Test func everyDeclaredTaskIdentityIsPlacementIndependent() throws {
+@Test func everyDeclaredTaskIdentityIsPlacementIndependent() async throws {
     let context = WorkspaceContext(
         root: fixtureRepositoryRoot,
         environment: [:],
@@ -2827,7 +2827,7 @@ private func artifactInput(
     // dependency closure of its roots.
     var covered: Set<TaskID> = []
     for entry in requests where !entry.roots.isSubset(of: covered) {
-        _ = try planner.plan(
+        _ = try await planner.plan(
             catalog: catalog,
             requests: [entry.request],
             rebuildSelected: false,
