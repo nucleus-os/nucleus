@@ -79,24 +79,28 @@ import Testing
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
+            targetLibraryRoots: [],
             environment: ["PATH": "/one"],
             executionPlatform: .linuxX86_64Native))
     let sameDeclaration = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
+            targetLibraryRoots: [],
             environment: ["PATH": "/one"],
             executionPlatform: .linuxX86_64Native))
     let differentOutput = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/elsewhere/report.json"),
+            targetLibraryRoots: [],
             environment: ["PATH": "/one"],
             executionPlatform: .linuxX86_64Native))
     let androidPackage = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
+            targetLibraryRoots: [],
             environment: ["PATH": "/one"],
             productSet: .androidPackage,
             executionPlatform: .linuxX86_64Native))
@@ -160,7 +164,8 @@ import Testing
     try await ValidateRuntimeELFAction(
         root: FilePath("/products"),
         report: FilePath("/products/runtime-elf-report.json"),
-        environment: ["NUCLEUS_TARGET_LIBRARY_PATH": "/target-libraries"],
+        targetLibraryRoots: [FilePath("/target-libraries")],
+        environment: [:],
         executionPlatform: .linuxX86_64Native
     ).execute(in: context)
 
@@ -218,8 +223,9 @@ import Testing
     try await StageRuntimeELFAction(
         products: FilePath("/products"),
         prefix: FilePath("/runtime"),
+        targetLibraryRoots: [FilePath("/toolchain")],
         environment: [
-            "NUCLEUS_TARGET_LIBRARY_PATH": "/toolchain"
+            "PATH": "/toolchain"
         ],
         executionPlatform: .linuxX86_64Native
     ).execute(in: context)
@@ -266,7 +272,8 @@ import Testing
         try await StageRuntimeELFAction(
             products: FilePath("/products"),
             prefix: FilePath("/runtime"),
-            environment: ["NUCLEUS_TARGET_LIBRARY_PATH": "/missing"],
+            targetLibraryRoots: [FilePath("/missing")],
+            environment: [:],
             executionPlatform: .linuxX86_64Native
         ).execute(in: context)
     }

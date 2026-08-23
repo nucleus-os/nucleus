@@ -32,11 +32,14 @@ public struct StageRuntimeELFAction: ColliderAction {
     public struct Identity: ColliderActionIdentity {
         public let products: FilePath
         public let prefix: FilePath
+        public let targetLibraryRoots: [FilePath]
         public let productSet: RuntimeELFProductSet
 
         public func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: products)
             encoder.append(path: prefix)
+            // The sysroot a payload is assembled from decides what it ships.
+            encoder.appendSequence(targetLibraryRoots) { $0.append(path: $1) }
             encoder.append(productSet.rawValue)
         }
     }
@@ -45,6 +48,7 @@ public struct StageRuntimeELFAction: ColliderAction {
 
     public let products: FilePath
     public let prefix: FilePath
+    public let targetLibraryRoots: [FilePath]
     public let environment: [String: String]
     public let productSet: RuntimeELFProductSet
     public let executionPlatform: ExecutionPlatform
@@ -53,6 +57,7 @@ public struct StageRuntimeELFAction: ColliderAction {
         Identity(
             products: products,
             prefix: prefix,
+            targetLibraryRoots: targetLibraryRoots,
             productSet: productSet)
     }
 
@@ -78,12 +83,14 @@ public struct StageRuntimeELFAction: ColliderAction {
     public init(
         products: FilePath,
         prefix: FilePath,
+        targetLibraryRoots: [FilePath],
         environment: [String: String],
         productSet: RuntimeELFProductSet = .baseRuntime,
         executionPlatform: ExecutionPlatform
     ) {
         self.products = products
         self.prefix = prefix
+        self.targetLibraryRoots = targetLibraryRoots
         self.environment = environment
         self.productSet = productSet
         self.executionPlatform = executionPlatform
@@ -93,6 +100,7 @@ public struct StageRuntimeELFAction: ColliderAction {
         try await stageRuntimeELF(
             products: products,
             prefix: prefix,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             productSet: productSet,
             targetArchitecture: executionPlatform.architecture,
@@ -100,9 +108,18 @@ public struct StageRuntimeELFAction: ColliderAction {
     }
 }
 
+/// Stages a runtime's executables and the shared libraries they need.
+///
+/// `targetLibraryRoots` is the sysroot this payload is assembled from, in
+/// search order. It is a parameter rather than an ambient value because the
+/// libraries a payload ships are not the libraries a build links against: a
+/// build container also offers its own `/lib/<triplet>`, and resolving a
+/// dependency there would stage the builder image's C library into a shipped
+/// package instead of the pinned one the products were built for.
 package func stageRuntimeELF(
     products: FilePath,
     prefix: FilePath,
+    targetLibraryRoots: [FilePath],
     environment: [String: String],
     productSet: RuntimeELFProductSet,
     targetArchitecture: PlatformArchitecture,
@@ -159,7 +176,7 @@ package func stageRuntimeELF(
                 soname,
                 neededBy: artifact,
                 runpath: parseReadELFDynamic(dynamic).runpath,
-                environment: environment,
+                targetLibraryRoots: targetLibraryRoots,
                 preferredArtifactLibraryRoot: nil,
                 owner: owner,
                 files: context.files)
@@ -237,11 +254,14 @@ public struct ValidateRuntimeELFAction: ColliderAction {
     public struct Identity: ColliderActionIdentity {
         public let root: FilePath
         public let report: FilePath
+        public let targetLibraryRoots: [FilePath]
         public let productSet: RuntimeELFProductSet
 
         public func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: root)
             encoder.append(path: report)
+            // What a validation resolves against decides what it accepts.
+            encoder.appendSequence(targetLibraryRoots) { $0.append(path: $1) }
             encoder.append(productSet.rawValue)
         }
     }
@@ -250,6 +270,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
 
     public let root: FilePath
     public let report: FilePath
+    public let targetLibraryRoots: [FilePath]
     public let environment: [String: String]
     public let productSet: RuntimeELFProductSet
     public let executionPlatform: ExecutionPlatform
@@ -258,6 +279,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
         Identity(
             root: root,
             report: report,
+            targetLibraryRoots: targetLibraryRoots,
             productSet: productSet)
     }
 
@@ -278,12 +300,14 @@ public struct ValidateRuntimeELFAction: ColliderAction {
     public init(
         root: FilePath,
         report: FilePath,
+        targetLibraryRoots: [FilePath],
         environment: [String: String],
         productSet: RuntimeELFProductSet = .baseRuntime,
         executionPlatform: ExecutionPlatform
     ) {
         self.root = root
         self.report = report
+        self.targetLibraryRoots = targetLibraryRoots
         self.environment = environment
         self.productSet = productSet
         self.executionPlatform = executionPlatform
@@ -293,6 +317,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
         try await validateRuntimeELF(
             root: root,
             report: report,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             productSet: productSet,
             targetArchitecture: executionPlatform.architecture,
@@ -317,6 +342,7 @@ private func linuxArtifactTarget(
 func validateRuntimeELF(
     root: FilePath,
     report: FilePath,
+    targetLibraryRoots: [FilePath],
     environment: [String: String],
     productSet: RuntimeELFProductSet,
     targetArchitecture: PlatformArchitecture,
@@ -376,6 +402,7 @@ func validateRuntimeELF(
         try validateGlibcImports(symbols, artifact: executable.name)
         try await validateStaticELFClosure(
             root: path,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             targetArchitecture: targetArchitecture,
             preferredArtifactLibraryRoot: staged ? root.appending("lib") : nil,
@@ -505,7 +532,7 @@ private func resolveELFDependency(
     _ soname: String,
     neededBy artifact: FilePath,
     runpath: String,
-    environment: [String: String],
+    targetLibraryRoots: [FilePath],
     preferredArtifactLibraryRoot: FilePath?,
     owner: NucleusLinuxABI.ELFOwner,
     files: ActionFileSystem
@@ -514,9 +541,7 @@ private func resolveELFDependency(
     if owner == .artifact, let preferredArtifactLibraryRoot {
         roots.append(preferredArtifactLibraryRoot)
     }
-    if let value = environment["NUCLEUS_TARGET_LIBRARY_PATH"] {
-        roots += value.split(separator: ":").map { FilePath(String($0)) }
-    }
+    roots += targetLibraryRoots
     let origin = artifact.removingLastComponent().string
     for component in runpath.split(separator: ":") {
         let expanded = String(component)
@@ -542,6 +567,7 @@ private func resolveELFDependency(
 
 private func validateStaticELFClosure(
     root: FilePath,
+    targetLibraryRoots: [FilePath],
     environment: [String: String],
     targetArchitecture: PlatformArchitecture,
     preferredArtifactLibraryRoot: FilePath?,
@@ -604,7 +630,7 @@ private func validateStaticELFClosure(
                     soname,
                     neededBy: artifact,
                     runpath: metadata.dynamic.runpath,
-                    environment: environment,
+                    targetLibraryRoots: targetLibraryRoots,
                     preferredArtifactLibraryRoot: preferredArtifactLibraryRoot,
                     owner: owner,
                     files: context.files))

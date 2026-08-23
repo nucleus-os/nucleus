@@ -246,6 +246,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                         .linux(architecture, configuration: .release)),
                     assemblerSwiftPM: try context.swiftPM(.linuxAssembler),
                     runtimeScratch: runtimeScratch,
+                    targetLibraryRoots: NucleusLinuxABI.targetLibraryRoots(
+                        triple: NativeLinuxTarget(architecture: architecture)
+                            .targetTriple,
+                        gnuArchitecture: NativeLinuxTarget(
+                            architecture: architecture
+                        ).gnuArchitecture),
                     aospGeneration: generation,
                     signingIdentity: aosp.signingDirectory,
                     output: output.appending("current"),

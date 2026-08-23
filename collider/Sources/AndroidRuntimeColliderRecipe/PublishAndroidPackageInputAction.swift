@@ -34,6 +34,7 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         runtimeSwiftPM: SwiftPMInvocation,
         assemblerSwiftPM: SwiftPMInvocation,
         architecture: PlatformArchitecture,
+        targetLibraryRoots: [FilePath],
         aospGeneration: FilePath,
         aospSigningKey: FilePath,
         runtimeScratch: FilePath,
@@ -125,6 +126,9 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
                 containerPath(appArmorPolicy),
                 containerPath(seccompPolicy),
                 architecture.rawValue,
+                // Already guest paths: the sysroot is named where the
+                // materialization will look for it, not where a host holds it.
+                targetLibraryRoots.map(\.string).joined(separator: ":"),
             ],
             environment: environment,
             output: .logged)

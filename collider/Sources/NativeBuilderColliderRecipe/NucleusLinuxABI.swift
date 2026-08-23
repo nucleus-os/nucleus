@@ -1,3 +1,6 @@
+import ColliderCore
+import SystemPackage
+
 public enum NucleusLinuxABI {
     public enum ELFOwner: String, Codable, Hashable, Sendable {
         case artifact
@@ -85,6 +88,36 @@ public enum NucleusLinuxABI {
         "libzstd.so.1",
         "linux-vdso.so.1",
     ]
+
+    /// Where the Linux Swift SDK for a target sits inside an execution
+    /// environment that mounts the SDK bundle.
+    public static func guestTargetSDK(triple: String) -> String {
+        SwiftPMInvocation.ociSwiftSDKDirectory.string
+            + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+            + triple + "/" + sdkDirectoryName
+    }
+
+    /// The sysroot a payload for this target is assembled from, in search
+    /// order: the Swift runtime, the target's multiarch directory, and the
+    /// sysroot's own library root, which is where the program interpreter
+    /// lives.
+    ///
+    /// Deliberately excludes the execution environment's own `/lib` and
+    /// `/usr/lib`. Those belong to whichever image is running the assembly,
+    /// and staging from them would ship that image's C library rather than the
+    /// pinned one the products were built against — silently, on any
+    /// architecture where the two happen to match.
+    public static func targetLibraryRoots(
+        triple: String,
+        gnuArchitecture: String
+    ) -> [FilePath] {
+        let sdk = guestTargetSDK(triple: triple)
+        return [
+            FilePath(sdk + "/usr/lib/swift/linux"),
+            FilePath(sdk + "/usr/lib/" + gnuArchitecture),
+            FilePath(sdk + "/usr/lib"),
+        ]
+    }
 
     public static func owner(ofSONAME name: String) -> ELFOwner? {
         if artifactOwnedSONames.contains(name) || name.hasPrefix("libswift") {

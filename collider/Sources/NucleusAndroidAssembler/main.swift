@@ -41,17 +41,21 @@ struct NucleusAndroidAssembler {
     private static func packageInput(
         _ arguments: [String]
     ) throws -> any ColliderAction {
-        guard arguments.count == 8,
+        guard arguments.count == 9,
             let architecture = PlatformArchitecture(rawValue: arguments[7])
         else {
             throw AndroidAssemblerFailure.invalidArguments
         }
+        let targetLibraryRoots = arguments[8]
+            .split(separator: ":")
+            .map { FilePath(String($0)) }
         return MaterializeAndroidPackageInputAction(
             runtimeProducts: FilePath(arguments[0]),
             runtimeScratch: FilePath(arguments[4]),
             aospGeneration: FilePath(arguments[1]),
             aospSigningKey: FilePath(arguments[2]),
             architecture: architecture,
+            targetLibraryRoots: targetLibraryRoots,
             output: FilePath(arguments[3]),
             appArmorPolicy: FilePath(arguments[5]),
             seccompPolicy: FilePath(arguments[6]),
@@ -94,8 +98,8 @@ private enum AndroidAssemblerFailure: Error, CustomStringConvertible {
         case .invalidArguments:
             "expected 'package-input' with runtime products, AOSP generation, "
                 + "signing key, output, scratch, AppArmor policy, seccomp "
-                + "policy, and architecture, or 'signing-identity' with a "
-                + "destination and subject"
+                + "policy, architecture, and target library roots, or "
+                + "'signing-identity' with a destination and subject"
         case .linuxRequired:
             "Android products are assembled on Linux"
         }

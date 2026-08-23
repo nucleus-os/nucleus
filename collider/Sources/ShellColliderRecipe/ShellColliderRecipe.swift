@@ -8,6 +8,8 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
     public let packageManifestsRoot: FilePath
     public let sessionPackage: FilePath
     public let buildMetadata: String
+    /// The sysroot this runtime's payload is assembled from, in search order.
+    public let targetLibraryRoots: [FilePath]
     public let environment: [String: String]
 
     public init(
@@ -17,6 +19,7 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
         packageManifestsRoot: FilePath,
         sessionPackage: FilePath,
         buildMetadata: String,
+        targetLibraryRoots: [FilePath],
         environment: [String: String]
     ) {
         self.swiftPM = swiftPM
@@ -25,6 +28,7 @@ public struct ShellRuntimePublicationConfiguration: RecipeConfiguration {
         self.packageManifestsRoot = packageManifestsRoot
         self.sessionPackage = sessionPackage
         self.buildMetadata = buildMetadata
+        self.targetLibraryRoots = targetLibraryRoots
         self.environment = environment
     }
 }

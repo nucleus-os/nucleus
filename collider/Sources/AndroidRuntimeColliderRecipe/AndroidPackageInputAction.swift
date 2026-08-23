@@ -17,6 +17,9 @@ struct AndroidPackageInput {
     let runtimeSwiftPM: SwiftPMInvocation
     let assemblerSwiftPM: SwiftPMInvocation
     let runtimeScratch: FilePath
+    /// The sysroot the payload is assembled from, for the architecture it
+    /// packages rather than for the image running the assembly.
+    let targetLibraryRoots: [FilePath]
     let aospGeneration: ArtifactReference
     let signingIdentity: ArtifactReference
     let output: FilePath
@@ -113,6 +116,7 @@ extension AndroidRuntimeColliderRecipe {
                 runtimeSwiftPM: input.runtimeSwiftPM,
                 assemblerSwiftPM: input.assemblerSwiftPM,
                 architecture: input.architecture,
+                targetLibraryRoots: input.targetLibraryRoots,
                 aospGeneration: input.aospGeneration.path,
                 aospSigningKey: input.aospSigningKey,
                 runtimeScratch: input.runtimeScratch,
@@ -139,6 +143,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         let appArmorPolicy: FilePath
         let seccompPolicy: FilePath
         let architecture: PlatformArchitecture
+        let targetLibraryRoots: [FilePath]
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: runtimeProducts)
@@ -149,6 +154,8 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
             encoder.append(path: appArmorPolicy)
             encoder.append(path: seccompPolicy)
             encoder.appendEnum(architecture)
+            // The sysroot the payload is assembled from decides what it ships.
+            encoder.appendSequence(targetLibraryRoots) { $0.append(path: $1) }
         }
     }
 
@@ -162,6 +169,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
     let appArmorPolicy: FilePath
     let seccompPolicy: FilePath
     let architecture: PlatformArchitecture
+    let targetLibraryRoots: [FilePath]
     package let environment: [String: String]
 
     package var identity: Identity {
@@ -173,7 +181,8 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
             output: output,
             appArmorPolicy: appArmorPolicy,
             seccompPolicy: seccompPolicy,
-            architecture: architecture)
+            architecture: architecture,
+            targetLibraryRoots: targetLibraryRoots)
     }
 
     package var requirements: ActionRequirements {
@@ -221,6 +230,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         aospGeneration: FilePath,
         aospSigningKey: FilePath,
         architecture: PlatformArchitecture,
+        targetLibraryRoots: [FilePath],
         output: FilePath,
         appArmorPolicy: FilePath,
         seccompPolicy: FilePath,
@@ -231,6 +241,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         self.aospGeneration = aospGeneration
         self.aospSigningKey = aospSigningKey
         self.architecture = architecture
+        self.targetLibraryRoots = targetLibraryRoots
         self.output = output
         self.appArmorPolicy = appArmorPolicy
         self.seccompPolicy = seccompPolicy
@@ -261,6 +272,7 @@ package struct MaterializeAndroidPackageInputAction: ColliderAction {
         try await stageRuntimeELF(
             products: runtimeProducts,
             prefix: stagedRuntime,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             productSet: .androidPackage,
             targetArchitecture: buildArchitecture,

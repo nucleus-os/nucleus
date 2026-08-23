@@ -13,6 +13,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         let sessionPackage: FilePath
         let buildMetadata: String
         let targetArchitecture: PlatformArchitecture
+        let targetLibraryRoots: [FilePath]
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: products)
@@ -23,6 +24,8 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             encoder.append(path: sessionPackage)
             encoder.append(buildMetadata)
             encoder.append(targetArchitecture.rawValue)
+            // The sysroot a generation is assembled from decides what it ships.
+            encoder.appendSequence(targetLibraryRoots) { $0.append(path: $1) }
         }
     }
 
@@ -36,6 +39,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
     let sessionPackage: FilePath
     let buildMetadata: String
     let targetArchitecture: PlatformArchitecture
+    let targetLibraryRoots: [FilePath]
     package let environment: [String: String]
 
     package var identity: Identity {
@@ -47,7 +51,8 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
             rollbackGenerationCount: rollbackGenerationCount,
             sessionPackage: sessionPackage,
             buildMetadata: buildMetadata,
-            targetArchitecture: targetArchitecture)
+            targetArchitecture: targetArchitecture,
+            targetLibraryRoots: targetLibraryRoots)
     }
 
     package var requirements: ActionRequirements {
@@ -97,6 +102,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         sessionPackage = configuration.sessionPackage
         buildMetadata = configuration.buildMetadata
         targetArchitecture = RunnerPlatform.current.architecture
+        targetLibraryRoots = configuration.targetLibraryRoots
         environment = configuration.environment
     }
 
@@ -109,6 +115,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         sessionPackage: FilePath,
         buildMetadata: String,
         targetArchitecture: PlatformArchitecture,
+        targetLibraryRoots: [FilePath],
         environment: [String: String]
     ) {
         self.products = products
@@ -119,6 +126,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         self.sessionPackage = sessionPackage
         self.buildMetadata = buildMetadata
         self.targetArchitecture = targetArchitecture
+        self.targetLibraryRoots = targetLibraryRoots
         self.environment = environment
     }
 
@@ -153,6 +161,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         try await stageRuntimeELF(
             products: products,
             prefix: candidate,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             productSet: .baseRuntime,
             targetArchitecture: targetArchitecture,
@@ -167,6 +176,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
         try await validateRuntimeELF(
             root: candidate,
             report: report,
+            targetLibraryRoots: targetLibraryRoots,
             environment: environment,
             productSet: .baseRuntime,
             targetArchitecture: targetArchitecture,
@@ -346,6 +356,7 @@ package struct PublishRuntimeGenerationAction: ColliderAction {
                 root: relocated,
                 report: relocated.appending(
                     "share/nucleus/runtime-elf-report.json"),
+                targetLibraryRoots: targetLibraryRoots,
                 environment: environment,
                 productSet: .baseRuntime,
                 targetArchitecture: targetArchitecture,

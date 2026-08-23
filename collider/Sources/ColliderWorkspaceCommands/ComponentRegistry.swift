@@ -809,6 +809,10 @@ package struct ComponentRegistry {
             packageManifestsRoot: runtimePackageManifestsRoot(for: prefix),
             sessionPackage: context.layout.compositorSessionPackage,
             buildMetadata: selection.metadata,
+            // A development runtime published natively resolves against the
+            // host it will run on, through each artifact's own RUNPATH and the
+            // staged library root. It is not assembled from a target sysroot.
+            targetLibraryRoots: [],
             environment: context.taskEnvironment)
     }
 
@@ -878,10 +882,7 @@ package struct ComponentRegistry {
             "swiftpm/\(target.identifier)")
         let swiftPMDependencyCache = context.cacheRoot.appending(
             "swiftpm-user/cache")
-        let guestTargetSDK =
-            guestSDKRoot
-            + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
-            + resolvedTriple + "/" + NucleusLinuxABI.sdkDirectoryName
+        let guestTargetSDK = NucleusLinuxABI.guestTargetSDK(triple: resolvedTriple)
         let targetRuntimeLibraryDirectory =
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
         let hostSwiftRuntimeLibraryDirectory = "/opt/swift/usr/lib/swift/linux"
