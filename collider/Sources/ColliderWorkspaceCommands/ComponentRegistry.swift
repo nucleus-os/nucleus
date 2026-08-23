@@ -177,6 +177,11 @@ package struct ComponentRegistry {
                                 "missing Linux release context for "
                                     + architecture.rawValue)
                         }
+                        let linuxTarget = NativeLinuxTarget(
+                            architecture: architecture)
+                        let waylandLibraries = context.nativeSDKRoot(
+                            for: linuxTarget
+                        ).appending("wayland/lib")
                         return (
                             architecture,
                             LinuxRuntimeArtifactLane(
@@ -192,7 +197,23 @@ package struct ComponentRegistry {
                                         + architecture.rawValue),
                                 qualificationRoot: context.artifactRoot.appending(
                                     "package-qualification/linux-"
-                                        + architecture.rawValue))
+                                        + architecture.rawValue),
+                                targetLibraryRoots:
+                                    NucleusLinuxABI.targetLibraryRoots(
+                                        triple: linuxTarget.targetTriple,
+                                        gnuArchitecture: linuxTarget
+                                            .gnuArchitecture)
+                                    + [
+                                        // Wayland is host-owned, so the payload
+                                        // does not ship it, but staging still
+                                        // resolves every dependency to check
+                                        // its architecture. The Swift SDK
+                                        // sysroot has no libwayland, so the
+                                        // native SDK is where it is found.
+                                        FilePath(
+                                            context.identityPathMap
+                                                .executionPath(waylandLibraries))
+                                    ])
                         )
                     }),
                 browserPackageInputs: Dictionary(

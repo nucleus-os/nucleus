@@ -131,6 +131,9 @@ package struct LinuxRuntimeArtifactLane: Sendable {
     package let packageWorkRoot: FilePath
     package let productPublicationRoot: FilePath
     package let qualificationRoot: FilePath
+    /// The sysroot this architecture's payload is assembled from, in search
+    /// order, as the publishing container sees it.
+    package let targetLibraryRoots: [FilePath]
 
     package init(
         runtimeSwiftPM: SwiftPMInvocation,
@@ -138,7 +141,8 @@ package struct LinuxRuntimeArtifactLane: Sendable {
         packageRoot: FilePath,
         packageWorkRoot: FilePath,
         productPublicationRoot: FilePath,
-        qualificationRoot: FilePath
+        qualificationRoot: FilePath,
+        targetLibraryRoots: [FilePath]
     ) {
         self.runtimeSwiftPM = runtimeSwiftPM
         self.artifactRoot = artifactRoot
@@ -146,6 +150,7 @@ package struct LinuxRuntimeArtifactLane: Sendable {
         self.packageWorkRoot = packageWorkRoot
         self.productPublicationRoot = productPublicationRoot
         self.qualificationRoot = qualificationRoot
+        self.targetLibraryRoots = targetLibraryRoots
     }
 }
 
@@ -713,6 +718,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     runtimeSwiftPM: lane.runtimeSwiftPM,
                     assemblerSwiftPM: configuration.assemblerSwiftPM,
                     architecture: architecture,
+                    targetLibraryRoots: lane.targetLibraryRoots,
                     artifactRoot: lane.artifactRoot,
                     generationsRoot: generations,
                     packageManifestsRoot: packageManifests,

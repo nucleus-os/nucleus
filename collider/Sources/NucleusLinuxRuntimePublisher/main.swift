@@ -17,12 +17,15 @@ struct NucleusLinuxRuntimePublisher {
 
     private static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments.count == 8,
+        guard arguments.count == 9,
             let rollbackGenerationCount = UInt32(arguments[4]),
             let targetArchitecture = PlatformArchitecture(rawValue: arguments[7])
         else {
             throw LinuxRuntimePublisherFailure.invalidArguments
         }
+        let targetLibraryRoots = arguments[8]
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map { FilePath(String($0)) }
         let runtime = ColliderRuntime()
         do {
             _ = try await runtime.execute(
@@ -35,6 +38,7 @@ struct NucleusLinuxRuntimePublisher {
                     sessionPackage: FilePath(arguments[5]),
                     buildMetadata: arguments[6],
                     targetArchitecture: targetArchitecture,
+                    targetLibraryRoots: targetLibraryRoots,
                     environment: ProcessInfo.processInfo.environment))
             await runtime.shutdown()
         } catch {

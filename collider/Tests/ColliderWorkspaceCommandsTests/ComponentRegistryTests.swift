@@ -1199,7 +1199,28 @@ private func fixtureReactNativeNodeModules(
         #expect(
             execution.command.dropFirst().first?.hasSuffix(
                 "nucleus-linux-runtime-publisher") == true)
-        #expect(execution.command.last == architecture.rawValue)
+        #expect(execution.command.dropLast().last == architecture.rawValue)
+        // The sysroot the payload is assembled from is named on the command
+        // rather than inherited from the build environment, because what a
+        // package ships is not what the build linked against.
+        let assemblyRoots = try #require(execution.command.last)
+            .split(separator: ":")
+        #expect(
+            assemblyRoots.contains {
+                $0.contains(
+                    "/swift-linux/\(architecture == .arm64 ? "aarch64" : "x86_64")")
+            })
+        // Wayland is host-owned and never shipped, but staging resolves every
+        // dependency to check its architecture, and the Swift SDK sysroot has
+        // no libwayland.
+        #expect(assemblyRoots.contains { $0.hasSuffix("/wayland/lib") })
+        // Never the execution image's own libraries: staging from them would
+        // ship that image's C library rather than the pinned one.
+        #expect(
+            assemblyRoots.allSatisfy {
+                $0 != "/lib" && $0 != "/usr/lib" && !$0.hasPrefix("/lib/")
+                    && !$0.hasPrefix("/usr/lib/")
+            })
         #expect(!execution.command.contains("swift"))
         #expect(
             execution.containerEnvironment["LD_LIBRARY_PATH"]

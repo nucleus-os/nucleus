@@ -23,6 +23,7 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         runtimeSwiftPM: SwiftPMInvocation,
         assemblerSwiftPM: SwiftPMInvocation,
         architecture: PlatformArchitecture,
+        targetLibraryRoots: [FilePath],
         artifactRoot: FilePath,
         generationsRoot: FilePath,
         packageManifestsRoot: FilePath,
@@ -107,6 +108,10 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 containerPath(sessionPackage),
                 "release",
                 architecture.rawValue,
+                // The sysroot the payload is assembled from, in search order.
+                // Named rather than inherited from the build environment: what
+                // a package ships is not what the build linked against.
+                targetLibraryRoots.map(\.string).joined(separator: ":"),
             ],
             environment: environment,
             output: .logged)
