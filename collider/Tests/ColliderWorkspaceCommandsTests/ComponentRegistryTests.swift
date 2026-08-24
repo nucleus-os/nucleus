@@ -2564,7 +2564,7 @@ private func artifactInput(
     #expect(x86Configure.artifactTarget == .linuxX86_64)
     #expect(x86Configure.executableRequirements.isEmpty)
     #expect(x86Setup.contains("--prefix=/sdk"))
-    #expect(x86Setup.contains("--cross-file=/build/nucleus-configuration.ini"))
+    #expect(x86Setup.contains("--cross-file=/build/wayland/nucleus-configuration.ini"))
     #expect(
         x86Setup.contains(
             "--sysroot=" + NativeLinuxTarget(architecture: .x86_64).containerSwiftSDKRoot))
@@ -2676,7 +2676,7 @@ private func artifactInput(
 
 @Test func mesonSetupScriptDiscardsADirectoryConfiguredFromSomethingElse() {
     let build = MesonBuildDirectory(
-        path: "/build",
+        path: "/build/wayland",
         source: "/src",
         target: NativeLinuxTarget(architecture: .x86_64),
         nativeToolchain: .guestDefault,
@@ -2685,14 +2685,14 @@ private func artifactInput(
 
     // The document lives inside the directory it configured, so the two are
     // discarded together and can never disagree.
-    #expect(script.contains("'/build/nucleus-configuration.ini'"))
-    // The contents are removed rather than the directory, which is sometimes
-    // the persistent workspace's own mount point.
-    #expect(script.contains("find '/build' -mindepth 1 -delete"))
-    #expect(!script.contains("rm -rf '/build'"))
+    #expect(script.contains("'/build/wayland/nucleus-configuration.ini'"))
+    // Discarding a configuration removes the directory, which is why it has to
+    // be one the build owns: a workspace mount point carries an ext4
+    // `lost+found` the builder identity cannot remove.
+    #expect(script.contains("rm -rf '/build/wayland'"))
     // An already-configured directory is left for meson's own incremental
     // machinery rather than reconfigured.
-    #expect(script.contains("if [ ! -f '/build/meson-private/coredata.dat' ]; then"))
+    #expect(script.contains("if [ ! -f '/build/wayland/meson-private/coredata.dat' ]; then"))
     #expect(!script.contains("--reconfigure"))
     // The heredoc terminator must start its own line for the shell to see it.
     #expect(script.contains("\nNUCLEUS_MESON_CONFIGURATION\n"))

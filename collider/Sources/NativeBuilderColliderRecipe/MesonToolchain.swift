@@ -171,9 +171,11 @@ package struct MesonBuildDirectory: Sendable {
     ///
     /// The document is written beside meson's own state inside the build
     /// directory, so the two are discarded together and can never disagree.
-    /// The directory's contents are removed rather than the directory itself,
-    /// because a build directory is sometimes the persistent workspace's own
-    /// mount point.
+    ///
+    /// `path` must therefore be a directory the build owns rather than a
+    /// persistent workspace's mount point: discarding a configuration removes
+    /// the directory, and a workspace root carries an ext4 `lost+found` that
+    /// belongs to root and that the builder identity cannot remove.
     package var setupScript: String {
         let pending = "/tmp/nucleus-meson-configuration.ini"
         return """
@@ -183,7 +185,8 @@ package struct MesonBuildDirectory: Sendable {
             \(documentContent)
             NUCLEUS_MESON_CONFIGURATION
             if ! cmp -s \(shellQuoted(pending)) \(shellQuoted(documentPath)); then
-                find \(shellQuoted(path)) -mindepth 1 -delete
+                rm -rf \(shellQuoted(path))
+                mkdir -p \(shellQuoted(path))
                 cp \(shellQuoted(pending)) \(shellQuoted(documentPath))
             fi
             if [ ! -f \(shellQuoted(path + "/meson-private/coredata.dat")) ]; then

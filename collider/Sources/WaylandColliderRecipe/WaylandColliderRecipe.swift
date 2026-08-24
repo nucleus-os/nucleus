@@ -151,7 +151,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         }
 
         let buildDirectory = MesonBuildDirectory(
-            path: "/build",
+            path: "/build/wayland",
             source: "/src",
             target: target,
             nativeToolchain: .guestDefault,
@@ -232,7 +232,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 target: target,
                                 workspaces: workspaces,
                                 environment: environment,
-                                command: ["meson", "compile", "-C", "/build"]),
+                                command: ["meson", "compile", "-C", buildDirectory.path]),
                             try nativeExecution(
                                 root: root,
                                 source: source,
@@ -242,7 +242,10 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 target: target,
                                 workspaces: workspaces,
                                 environment: environment,
-                                command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
+                                command: [
+                                    "meson", "install", "-C", buildDirectory.path,
+                                    "--no-rebuild",
+                                ]),
                         ]))
         )
         return NativeSDKArtifacts(
