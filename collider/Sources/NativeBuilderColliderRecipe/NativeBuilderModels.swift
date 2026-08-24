@@ -29,6 +29,22 @@ package struct NativeLinuxTarget: Hashable, Sendable {
         }
     }
 
+    /// Whether producing this target inside the canonical ARM64 builder guest
+    /// is a cross compilation. The guest is always ARM64, so an ARM64 target
+    /// builds natively and an x86_64 target does not.
+    package var isCrossCompiledInBuilder: Bool {
+        architecture == .x86_64
+    }
+
+    /// The CPU family meson names this architecture by, which is not always
+    /// what Nucleus names it.
+    package var mesonCPUFamily: String {
+        switch architecture {
+        case .arm64: "aarch64"
+        case .x86_64: "x86_64"
+        }
+    }
+
     package var artifactTarget: ArtifactTarget {
         switch architecture {
         case .arm64: .linuxARM64

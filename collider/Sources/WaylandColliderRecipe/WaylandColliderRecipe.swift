@@ -141,29 +141,28 @@ public enum WaylandColliderRecipe: ColliderComponent {
             nativeScanner?.path.removingLastComponent()
             .removingLastComponent() ?? sdk
         let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
-        var inputs: [ArtifactInput] = [
+        let inputs: [ArtifactInput] = [
             .sourceCheckout(source)
         ]
         if target.architecture == .x86_64 {
             guard nativeScanner != nil else {
                 preconditionFailure("the x86_64 Wayland build requires the native scanner")
             }
-            inputs += [
-                .file(root.appending("build-support/linux-x86_64.ini"))
-            ]
         }
 
-        let configureArguments =
-            [
-                "meson", "setup", "/build", "/src",
+        let buildDirectory = MesonBuildDirectory(
+            path: "/build",
+            source: "/src",
+            target: target,
+            nativeToolchain: .guestDefault,
+            options: [
                 "--prefix=\(targetSDKMount)", "--libdir=lib",
                 "--buildtype=release",
                 "-Dtests=false", "-Ddocumentation=false",
                 "-Ddtd_validation=false",
                 "-Dscanner=\(target.architecture == .arm64 ? "true" : "false")",
-            ]
-            + (target.architecture == .x86_64
-                ? ["--cross-file=/build-support/linux-x86_64.ini"] : [])
+            ])
+        let configureArguments = ["bash", "-lc", buildDirectory.setupScript]
 
         var task = TaskBuilder(
             id: WaylandTaskIDs.nativeSDK(target),
@@ -758,10 +757,6 @@ private func nativeExecution(
         OCIMount(
             boundedExport: sdk,
             target: target.architecture == .arm64 ? "/native-wayland" : "/sdk"),
-        OCIMount(
-            source: root.appending("build-support"),
-            target: "/build-support",
-            access: .readOnly),
         OCIMount(
             source: builder.swiftSDKRoot,
             target: "/swift-sdk",

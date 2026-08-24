@@ -109,6 +109,19 @@ baseline. The same scan at the former 2.38 floor still reports ten runtime
 libraries, so the baseline moved because it had to rather than because the
 check was weakened.
 
+The rebase surfaced a second definition of the sysroot. Two checked-in meson
+cross files, one under `android-runtime/build-support` and one under
+`swift-wayland/build-support`, wrote the sysroot as a literal in five places
+each, so moving the baseline moved only the paths Collider derives. gfxstream
+then compiled with `--sysroot` naming the 2.38 sysroot and `-isystem` naming
+the 2.43 one, which no header search satisfies, and a command-line `-D` option
+replaces a machine file's `[built-in options]` rather than merging with them,
+so the half naming the sysroot was the half that lost. Both files are now
+generated where they are used, from the same constant the rest of the toolchain
+paths derive from, and neither is checked in. A meson build directory carries
+the configuration document it was set up from and is discarded when the two
+differ, so a moved sysroot cannot leave a directory holding half of each.
+
 The rebuild reached SDK validation and reported
 `libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
 failure this phase existed to surface. Reading every built library rather than

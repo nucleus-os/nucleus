@@ -2539,17 +2539,21 @@ private func artifactInput(
     #expect(x86Action.kind == "wayland.build-native-sdk")
     let armConfigure = try #require(
         try await ociExecutions(in: arm.action).first {
-            $0.command.starts(with: ["wayland", "meson", "setup"])
+            $0.command.starts(with: ["wayland", "bash", "-lc"])
         })
     let x86Configure = try #require(
         try await ociExecutions(in: x86.action).first {
-            $0.command.starts(with: ["wayland", "meson", "setup"])
+            $0.command.starts(with: ["wayland", "bash", "-lc"])
         })
+    let armSetup = try #require(armConfigure.command.last)
+    let x86Setup = try #require(x86Configure.command.last)
 
     #expect(armConfigure.executionPlatform == .linuxARM64OCI)
     #expect(armConfigure.artifactTarget == .linuxARM64)
     #expect(armConfigure.executableRequirements.isEmpty)
-    #expect(armConfigure.command.contains("--prefix=/native-wayland"))
+    #expect(armSetup.contains("--prefix=/native-wayland"))
+    #expect(!armSetup.contains("--cross-file"))
+    #expect(!armSetup.contains(NucleusLinuxABI.sdkDirectoryName))
     #expect(
         Set(armConfigure.persistentWorkspaceMounts.map(\.target)) == ["/build", "/ccache"])
     #expect(armConfigure.containerEnvironment["CCACHE_DIR"] == "/ccache")
@@ -2559,8 +2563,11 @@ private func artifactInput(
     #expect(x86Configure.executionPlatform == .linuxARM64OCI)
     #expect(x86Configure.artifactTarget == .linuxX86_64)
     #expect(x86Configure.executableRequirements.isEmpty)
-    #expect(x86Configure.command.contains("--prefix=/sdk"))
-    #expect(x86Configure.command.contains("--cross-file=/build-support/linux-x86_64.ini"))
+    #expect(x86Setup.contains("--prefix=/sdk"))
+    #expect(x86Setup.contains("--cross-file=/build/nucleus-configuration.ini"))
+    #expect(
+        x86Setup.contains(
+            "--sysroot=" + NativeLinuxTarget(architecture: .x86_64).containerSwiftSDKRoot))
     #expect(
         Set(x86Configure.persistentWorkspaceMounts.map(\.target)) == ["/build", "/ccache"])
     let armWorkspaceIdentities = Set(
@@ -2594,6 +2601,101 @@ private func artifactInput(
         x86Configure.containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"]
             == "/native-wayland/lib/pkgconfig")
     #expect(x86Configure.containerEnvironment["LD_LIBRARY_PATH"] == nil)
+}
+
+@Test func mesonCrossFileNamesOneSysrootEverywhereItIsNeeded() {
+    let target = NativeLinuxTarget(architecture: .x86_64)
+    let sysroot = target.containerSwiftSDKRoot
+    let crossFile = MesonToolchain.crossFile(for: target)
+
+    // The four places meson needs the sysroot. A checked-in file supplied some
+    // of them as literals, so moving the ABI baseline moved only the rest and
+    // the compiler searched a sysroot that no longer existed.
+    #expect(
+        crossFile.contains(
+            "c = ['clang', '--target=\(target.targetTriple)', '--sysroot=\(sysroot)']"))
+    #expect(
+        crossFile.contains(
+            "cpp = ['clang++', '--target=\(target.targetTriple)', '--sysroot=\(sysroot)']"))
+    #expect(crossFile.contains("sys_root = '\(sysroot)'"))
+    #expect(crossFile.contains("-isystem\(target.containerLibCXXIncludeRoot)"))
+    #expect(crossFile.contains("-L\(target.containerLibCXXLibraryRoot)"))
+    #expect(crossFile.contains("cpu_family = 'x86_64'"))
+
+    // Every sysroot path in the file is the declared one. A file naming two
+    // different sysroots is the failure this generator exists to prevent.
+    let sdkDirectories = crossFile.split(separator: "/").filter {
+        $0.hasPrefix("nucleus-linux-glibc-")
+    }
+    #expect(!sdkDirectories.isEmpty)
+    #expect(sdkDirectories.allSatisfy { $0.hasPrefix(NucleusLinuxABI.sdkDirectoryName) })
+}
+
+@Test func mesonBuildDirectoryDeliversTheToolchainItsTargetNeeds() {
+    let cross = MesonBuildDirectory(
+        path: "/build/host",
+        source: "/gfxstream",
+        target: NativeLinuxTarget(architecture: .x86_64),
+        nativeToolchain: .nucleusSysroot,
+        options: ["-Dbuildtype=release"])
+    let native = MesonBuildDirectory(
+        path: "/build/host",
+        source: "/gfxstream",
+        target: NativeLinuxTarget(architecture: .arm64),
+        nativeToolchain: .nucleusSysroot,
+        options: ["-Dbuildtype=release"])
+    let guestNative = MesonBuildDirectory(
+        path: "/build",
+        source: "/src",
+        target: NativeLinuxTarget(architecture: .arm64),
+        nativeToolchain: .guestDefault,
+        options: ["-Dbuildtype=release"])
+
+    // A cross build takes the toolchain through the machine file, because a
+    // cross build also needs `[binaries]`, which has no command-line form.
+    // Passing the same options on the command line as well would replace the
+    // machine file's `[built-in options]` rather than merge with them.
+    #expect(
+        cross.configureArguments.contains(
+            "--cross-file=/build/host/nucleus-configuration.ini"))
+    #expect(!cross.configureArguments.contains { $0.hasPrefix("-Dcpp_args=") })
+    #expect(cross.documentContent.contains("[binaries]"))
+
+    #expect(!native.configureArguments.contains { $0.hasPrefix("--cross-file") })
+    #expect(native.configureArguments.contains { $0.hasPrefix("-Dcpp_args=") })
+    #expect(!native.documentContent.contains("[binaries]"))
+
+    #expect(!guestNative.configureArguments.contains { $0.hasPrefix("-Dcpp_args=") })
+    #expect(!guestNative.documentContent.contains(NucleusLinuxABI.sdkDirectoryName))
+
+    // The document records the whole configure command, so a build directory
+    // set up from different options is discarded rather than reconfigured.
+    #expect(cross.documentContent.contains("-Dbuildtype=release"))
+    #expect(guestNative.documentContent.contains("-Dbuildtype=release"))
+}
+
+@Test func mesonSetupScriptDiscardsADirectoryConfiguredFromSomethingElse() {
+    let build = MesonBuildDirectory(
+        path: "/build",
+        source: "/src",
+        target: NativeLinuxTarget(architecture: .x86_64),
+        nativeToolchain: .guestDefault,
+        options: ["--prefix=/sdk"])
+    let script = build.setupScript
+
+    // The document lives inside the directory it configured, so the two are
+    // discarded together and can never disagree.
+    #expect(script.contains("'/build/nucleus-configuration.ini'"))
+    // The contents are removed rather than the directory, which is sometimes
+    // the persistent workspace's own mount point.
+    #expect(script.contains("find '/build' -mindepth 1 -delete"))
+    #expect(!script.contains("rm -rf '/build'"))
+    // An already-configured directory is left for meson's own incremental
+    // machinery rather than reconfigured.
+    #expect(script.contains("if [ ! -f '/build/meson-private/coredata.dat' ]; then"))
+    #expect(!script.contains("--reconfigure"))
+    // The heredoc terminator must start its own line for the shell to see it.
+    #expect(script.contains("\nNUCLEUS_MESON_CONFIGURATION\n"))
 }
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {

@@ -1166,28 +1166,40 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let artifactRoot = sdkRoot.appending("android/gfxstream")
         let hostSource = repositoryRoot.appending("third-party/gfxstream")
         let guestSource = repositoryRoot.appending("third-party/mesa")
-        let crossFile = root.appending("build-support/linux-x86_64.ini")
-        let crossOption =
-            target.architecture == .x86_64
-            ? " --cross-file=/build-support/linux-x86_64.ini" : ""
-        let targetCXXOptions =
-            " -Dcpp_args=\"['-stdlib=libc++','-nostdinc++','-isystem"
-            + target.containerLibCXXIncludeRoot
-            + "']\" -Dc_link_args=\"['-fuse-ld=lld','-L"
-            + target.containerLibCXXLibraryRoot
-            + "']\" -Dcpp_link_args=\"['-stdlib=libc++','-fuse-ld=lld','-L"
-            + target.containerLibCXXLibraryRoot
-            + "']\""
-        // Meson bakes the sysroot into the build options it caches at first
-        // setup, and `--reconfigure` keeps those options while re-reading the
-        // rest. A sysroot that moves therefore produces a build directory
-        // holding the new include paths and the old `--sysroot`, which fails
-        // on the first header it cannot find. Keying the directory to the
-        // sysroot means a toolchain change starts a fresh configuration and
-        // leaves repeat builds against the same toolchain incremental.
-        let toolchainKey = NucleusLinuxABI.sdkDirectoryName
-        let hostBuild = "/build/host-\(toolchainKey)"
-        let guestBuild = "/build/guest-\(toolchainKey)"
+        let hostBuild = MesonBuildDirectory(
+            path: "/build/host",
+            source: "/gfxstream",
+            target: target,
+            nativeToolchain: .nucleusSysroot,
+            options: [
+                "-Dbuildtype=release",
+                "-Ddefault_library=static",
+                "-Ddecoders=gles,vulkan,composer",
+                "-Dgfxstream-build=host",
+            ])
+        let guestBuild = MesonBuildDirectory(
+            path: "/build/guest",
+            source: "/mesa",
+            target: target,
+            nativeToolchain: .nucleusSysroot,
+            options: [
+                "-Dbuildtype=release",
+                "-Dvulkan-drivers=gfxstream",
+                "-Dgallium-drivers=[]",
+                "-Dplatforms=[]",
+                "-Dglx=disabled",
+                "-Degl=disabled",
+                "-Dgbm=disabled",
+                "-Dgles1=disabled",
+                "-Dgles2=disabled",
+                "-Dopengl=false",
+                "-Dllvm=disabled",
+                "-Dshared-glapi=disabled",
+                "-Dvalgrind=disabled",
+                "-Dlibunwind=disabled",
+                "-Dbuild-tests=false",
+                "-Dvideo-codecs=[]",
+            ])
         let buildWorkspace = PersistentWorkspaceDeclaration(
             identity: PersistentWorkspaceIdentity(
                 key: "android-gfxstream-intermediates",
@@ -1223,7 +1235,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .sourceCheckout(hostSource),
                 .sourceCheckout(guestSource),
                 tool.input,
-            ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
+            ],
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
@@ -1246,21 +1258,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 environment: environment,
                                 command: [
                                     "bash", "-lc",
-                                    "meson_mode=; test ! -f"
-                                        + " \(hostBuild)/meson-private/coredata.dat"
-                                        + " || meson_mode=--reconfigure;"
-                                        + " meson setup $meson_mode \(hostBuild) /gfxstream"
-                                        + " -Dbuildtype=release -Ddefault_library=static"
-                                        + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
-                                        + crossOption
-                                        + targetCXXOptions
-                                        + " || { status=$?; cat"
-                                        + " \(hostBuild)/meson-logs/meson-log.txt; exit $status; };"
-                                        + " meson compile -C \(hostBuild) gfxstream_backend"
-                                        + " && mkdir -p /export/lib"
-                                        + " && install -m 0644"
-                                        + " \(hostBuild)/host/libgfxstream_backend.a"
-                                        + " /export/lib/libgfxstream_backend.a",
+                                    hostBuild.setupScript + """
+
+                                        meson compile -C \(hostBuild.path) gfxstream_backend
+                                        mkdir -p /export/lib
+                                        install -m 0644 \(hostBuild.path)/host/libgfxstream_backend.a /export/lib/libgfxstream_backend.a
+                                        """,
                                 ]),
                             try gfxstreamExecution(
                                 root: root,
@@ -1275,27 +1278,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                 environment: environment,
                                 command: [
                                     "bash", "-lc",
-                                    "meson_mode=; test ! -f"
-                                        + " \(guestBuild)/meson-private/coredata.dat"
-                                        + " || meson_mode=--reconfigure;"
-                                        + " meson setup $meson_mode \(guestBuild) /mesa"
-                                        + " -Dbuildtype=release -Dvulkan-drivers=gfxstream"
-                                        + " -Dgallium-drivers=[] -Dplatforms=[] -Dglx=disabled"
-                                        + " -Degl=disabled -Dgbm=disabled -Dgles1=disabled"
-                                        + " -Dgles2=disabled -Dopengl=false -Dllvm=disabled"
-                                        + " -Dshared-glapi=disabled -Dvalgrind=disabled"
-                                        + " -Dlibunwind=disabled -Dbuild-tests=false"
-                                        + " -Dvideo-codecs=[]"
-                                        + crossOption
-                                        + targetCXXOptions
-                                        + " || { status=$?; cat"
-                                        + " \(guestBuild)/meson-logs/meson-log.txt; exit $status; };"
-                                        + " meson compile -C \(guestBuild) vulkan_gfxstream"
-                                        + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
-                                        + " && mkdir -p /export/lib"
-                                        + " && install -m 0755"
-                                        + " \(guestBuild)/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so"
-                                        + " /export/lib/libvulkan_gfxstream.so",
+                                    guestBuild.setupScript + """
+
+                                        meson compile -C \(guestBuild.path) vulkan_gfxstream gfxstream_vk_icd gfxstream_vk_devenv_icd
+                                        mkdir -p /export/lib
+                                        install -m 0755 \(guestBuild.path)/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so /export/lib/libvulkan_gfxstream.so
+                                        """,
                                 ]),
                         ])))
         return GfxstreamArtifacts(
@@ -1362,10 +1350,6 @@ private func gfxstreamExecution(
             OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
             OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
             OCIMount(boundedExport: artifactRoot, target: "/export"),
-            OCIMount(
-                source: root.appending("build-support"),
-                target: "/build-support",
-                access: .readOnly),
             OCIMount(
                 source: builder.swiftSDKRoot,
                 target: "/swift-sdk",
