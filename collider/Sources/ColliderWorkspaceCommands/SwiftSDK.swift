@@ -20,7 +20,6 @@ func swiftTargetSDKArtifactID(
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
-    sysrootPreparer: FilePath,
     sdkPackageSanitizer: FilePath,
     pkgConfigDirectory: FilePath,
     generatorSourceID: String
@@ -34,7 +33,6 @@ func swiftTargetSDKArtifactID(
     encoder.append(sourceID)
     encoder.append(bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
     encoder.append(bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     encoder.append(bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
     encoder.append(generatorSourceID)
     encoder.append(bytes: try ArtifactHasher.digest(file: sdkPackageSanitizer).bytes)
@@ -47,7 +45,6 @@ func swiftTargetRuntimeBuildID(
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
-    sysrootPreparer: FilePath
 ) throws -> String {
     var encoder = IdentityEncoder()
     encoder.append(inputs.snapshot)
@@ -59,7 +56,6 @@ func swiftTargetRuntimeBuildID(
     encoder.append(sourceID)
     encoder.append(bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
     encoder.append(bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 

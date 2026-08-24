@@ -63,7 +63,6 @@ import Testing
             "swift-sdk/runtime-build-container"),
         runtimeBuilderBaseImage: nativeBuilderImage,
         linuxTargets: linuxTargets,
-        sysrootPreparer: root.appending("swift-sdk/prepare-linux-sysroot.sh"),
         sdkPackageSanitizer: root.appending(
             "swift-sdk/sanitize-linux-sdk-package.sh"),
         pkgConfigDirectory: root.appending("swift-sdk/pkgconfig"),

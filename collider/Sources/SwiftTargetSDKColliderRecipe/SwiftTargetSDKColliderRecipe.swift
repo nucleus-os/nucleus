@@ -1,4 +1,5 @@
 import ColliderCore
+import ContainerizationArchive
 import Foundation
 import NativeBuilderColliderRecipe
 import SystemPackage
@@ -153,7 +154,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let runtimeBuilderContext: FilePath
     public let runtimeBuilderBaseImage: ArtifactReference
     public let linuxTargets: [SwiftLinuxTargetBuildConfiguration]
-    public let sysrootPreparer: FilePath
     public let sdkPackageSanitizer: FilePath
     public let pkgConfigDirectory: FilePath
     public let candidate: FilePath
@@ -179,7 +179,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         runtimeBuilderContext: FilePath,
         runtimeBuilderBaseImage: ArtifactReference,
         linuxTargets: [SwiftLinuxTargetBuildConfiguration],
-        sysrootPreparer: FilePath,
         sdkPackageSanitizer: FilePath,
         pkgConfigDirectory: FilePath,
         candidate: FilePath,
@@ -204,7 +203,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.runtimeBuilderContext = runtimeBuilderContext
         self.runtimeBuilderBaseImage = runtimeBuilderBaseImage
         self.linuxTargets = linuxTargets
-        self.sysrootPreparer = sysrootPreparer
         self.sdkPackageSanitizer = sdkPackageSanitizer
         self.pkgConfigDirectory = pkgConfigDirectory
         self.candidate = candidate
@@ -760,13 +758,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             path: target.sysroot,
             validation: .nonEmptyDirectory)
         let task = builder.build(
-            inputs: [.file(configuration.sysrootPreparer)],
+            inputs: [],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime-inputs")],
             assessmentPolicy: .incremental,
             action:
                 try AnyColliderAction(
                     PrepareLinuxSysrootAction(
-                        preparer: configuration.sysrootPreparer,
                         sysroot: target.sysroot,
                         architecture: architecture.gnuArchitecture,
                         packages: downloads.runtimePackages.map(\.artifact.path),
@@ -2176,13 +2173,11 @@ private struct ValidateSwiftTargetSDKArtifactsAction: ColliderAction {
 
 private struct PrepareLinuxSysrootAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let preparer: FilePath
         let sysroot: FilePath
         let architecture: String
         let packages: [FilePath]
 
         func encode(into encoder: inout IdentityEncoder) {
-            encoder.append(path: preparer)
             encoder.append(path: sysroot)
             encoder.append(architecture)
             encoder.appendSequence(packages) { $0.append(path: $1) }
@@ -2191,7 +2186,6 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
 
     static let kind: ActionKind = "swift-sdk.prepare-linux-sysroot"
 
-    let preparer: FilePath
     let sysroot: FilePath
     let architecture: String
     let packages: [FilePath]
@@ -2199,7 +2193,6 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            preparer: preparer,
             sysroot: sysroot,
             architecture: architecture,
             packages: packages)
@@ -2207,12 +2200,6 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "sysroot-preparer",
-                    executable: .path(preparer),
-                    role: .operational)
-            ],
             effects: packages.map {
                 ActionEffect(.read, scope: .input($0))
             } + [
@@ -2223,18 +2210,83 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
             executionPlatform: .macOSARM64Native)
     }
 
+    /// Unpacks the pinned Debian packages into the target sysroot.
+    ///
+    /// The payloads are `data.tar.zst`, and macOS `tar` decompresses zstd by
+    /// running an external `zstd`, which the task PATH does not carry and
+    /// should not: a deterministic transformation of already-pinned inputs has
+    /// no reason to depend on what a host happens to have installed.
+    /// `ContainerizationArchive` reads both the outer `ar` container and the
+    /// compressed payload in process, so this behaves the same on any host and
+    /// gains whatever compression that library supports.
     func execute(in context: ActionContext) async throws {
         let workingDirectory = sysroot.removingLastComponent()
         try context.files.createDirectory(workingDirectory)
-        let result = try await context.commands.execute(
-            CommandSpec(
-                executable: .path(preparer),
-                arguments: [sysroot.string, architecture] + packages.map(\.string),
-                workingDirectory: workingDirectory,
-                environment: environment,
-                output: .logged))
-        guard result.succeeded else {
-            throw result.executionFailure(reason: "Linux sysroot preparation failed")
+        let staging = workingDirectory.appending(".sysroot-staging")
+        try context.files.remove(staging)
+        defer { try? context.files.remove(staging) }
+        let root = staging.appending("root")
+        try context.files.createDirectory(root)
+
+        for package in packages {
+            let unpacked = staging.appending("package")
+            try context.files.remove(unpacked)
+            try context.files.createDirectory(unpacked)
+            _ = try ArchiveReader(file: URL(fileURLWithPath: package.string))
+                .extractContents(to: URL(fileURLWithPath: unpacked.string))
+            guard
+                let payload = try context.files.listRecursively(unpacked).first(
+                    where: {
+                        $0.path.lastComponent?.string.hasPrefix("data.tar") == true
+                    })
+            else {
+                throw PrepareLinuxSysrootFailure.missingPayload(package)
+            }
+            _ = try ArchiveReader(file: URL(fileURLWithPath: payload.path.string))
+                .extractContents(to: URL(fileURLWithPath: root.string))
+            try context.files.remove(unpacked)
+        }
+
+        // The packages assume the distribution's merged-/usr root links, which
+        // no payload owns itself.
+        for (link, target) in [("lib", "usr/lib"), ("lib64", "usr/lib64")] {
+            try FileManager.default.createSymbolicLink(
+                atPath: root.appending(link).string,
+                withDestinationPath: target)
+        }
+
+        for entry in try context.files.listRecursively(root) {
+            guard let name = entry.path.lastComponent?.string else { continue }
+            if name.hasPrefix("libstdc++") || name.hasPrefix("libstdcxx") {
+                throw PrepareLinuxSysrootFailure.forbiddenLibraries(entry.path)
+            }
+        }
+        for required in [
+            root.appending("usr/include/c++/v1"),
+            root.appending("usr/lib/\(architecture)/libc++.so.1"),
+        ] where try context.files.metadataWithoutFollowingSymlinks(for: required) == nil {
+            throw PrepareLinuxSysrootFailure.missingSysrootContents(required)
+        }
+
+        try context.files.remove(sysroot)
+        try context.files.move(from: root, to: sysroot)
+    }
+
+}
+
+private enum PrepareLinuxSysrootFailure: Error, CustomStringConvertible {
+    case missingPayload(FilePath)
+    case forbiddenLibraries(FilePath)
+    case missingSysrootContents(FilePath)
+
+    var description: String {
+        switch self {
+        case .missingPayload(let package):
+            "Debian package carries no data payload: \(package)"
+        case .forbiddenLibraries(let path):
+            "Linux target sysroot contains forbidden libstdc++ files: \(path)"
+        case .missingSysrootContents(let path):
+            "Linux target sysroot is missing required contents: \(path)"
         }
     }
 }

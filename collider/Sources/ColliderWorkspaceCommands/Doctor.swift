@@ -205,7 +205,6 @@ struct WorkspaceDoctor {
                     "swift-sdk/source",
                     "swift-sdk/target-sdk-inputs.json",
                     "swift-sdk/validate-target-sdk-artifacts.sh",
-                    "swift-sdk/prepare-linux-sysroot.sh",
                     "swift-sdk/nucleus-target-runtime-presets.ini",
                     "swift-sdk/runtime-build-container/entrypoint.sh",
                     "swift-sdk/runtime-build-container/nucleus-target-swiftc",

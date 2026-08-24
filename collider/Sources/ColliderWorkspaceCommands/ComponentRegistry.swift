@@ -1255,7 +1255,6 @@ package struct ComponentRegistry {
         let runtimeBuilderContext = recipeRoot.appending("runtime-build-container")
         let runtimePreset = recipeRoot.appending(
             "nucleus-target-runtime-presets.ini")
-        let sysrootPreparer = recipeRoot.appending("prepare-linux-sysroot.sh")
         let sdkPackageSanitizer = recipeRoot.appending(
             "sanitize-linux-sdk-package.sh")
         let pkgConfigDirectory = recipeRoot.appending("pkgconfig")
@@ -1270,7 +1269,6 @@ package struct ComponentRegistry {
             sourceID: sourceID,
             runtimeBuilderContext: runtimeBuilderContext,
             runtimePreset: runtimePreset,
-            sysrootPreparer: sysrootPreparer,
             sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             generatorSourceID: generatorSourceID)
@@ -1280,8 +1278,7 @@ package struct ComponentRegistry {
                 target: target,
                 sourceID: sourceID,
                 runtimeBuilderContext: runtimeBuilderContext,
-                runtimePreset: runtimePreset,
-                sysrootPreparer: sysrootPreparer)
+                runtimePreset: runtimePreset)
             let root = paths.artifactRoot.appending(
                 "runtime-inputs/\(target.architecture.rawValue)/\(buildID)")
             return SwiftLinuxTargetBuildConfiguration(
@@ -1320,7 +1317,6 @@ package struct ComponentRegistry {
             runtimeBuilderContext: runtimeBuilderContext,
             runtimeBuilderBaseImage: runtimeBuilderBaseImage,
             linuxTargets: linuxTargets,
-            sysrootPreparer: sysrootPreparer,
             sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             candidate: paths.artifactRoot.appending(

@@ -30,8 +30,6 @@ import Testing
         recipe.appendingPathComponent("runtime-build-container", isDirectory: true).path)
     let preset = FilePath(
         recipe.appendingPathComponent("nucleus-target-runtime-presets.ini").path)
-    let sysroot = FilePath(
-        recipe.appendingPathComponent("prepare-linux-sysroot.sh").path)
     let arm64 = try #require(
         inputs.linuxTargets.first { $0.architecture == .arm64 })
     let amd64 = try #require(
@@ -42,29 +40,25 @@ import Testing
         target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
     let repeated = try swiftTargetRuntimeBuildID(
         inputs: inputs,
         target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
     let changedSource = try swiftTargetRuntimeBuildID(
         inputs: inputs,
         target: arm64,
         sourceID: "source-b",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
     let otherArchitecture = try swiftTargetRuntimeBuildID(
         inputs: inputs,
         target: amd64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
     let sdkPackagesChanged = try swiftTargetRuntimeBuildID(
         inputs: inputs,
         target: SwiftTargetSDKInputs.LinuxTarget(
@@ -73,8 +67,7 @@ import Testing
             sdkUbuntuPackages: amd64.sdkUbuntuPackages),
         sourceID: "source-a",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
     let runtimePackagesChanged = try swiftTargetRuntimeBuildID(
         inputs: inputs,
         target: SwiftTargetSDKInputs.LinuxTarget(
@@ -83,8 +76,7 @@ import Testing
             sdkUbuntuPackages: arm64.sdkUbuntuPackages),
         sourceID: "source-a",
         runtimeBuilderContext: builder,
-        runtimePreset: preset,
-        sysrootPreparer: sysroot)
+        runtimePreset: preset)
 
     #expect(first.count == 24)
     #expect(repeated == first)
@@ -113,8 +105,6 @@ import Testing
         recipe.appendingPathComponent("runtime-build-container", isDirectory: true).path)
     let preset = FilePath(
         recipe.appendingPathComponent("nucleus-target-runtime-presets.ini").path)
-    let sysroot = FilePath(
-        recipe.appendingPathComponent("prepare-linux-sysroot.sh").path)
     let sanitizer = FilePath(
         recipe.appendingPathComponent("sanitize-linux-sdk-package.sh").path)
     let pkgConfig = FilePath(
@@ -129,7 +119,6 @@ import Testing
         sourceID: "runtime-source",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
-        sysrootPreparer: sysroot,
         sdkPackageSanitizer: sanitizer,
         pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-a")
@@ -142,7 +131,6 @@ import Testing
         sourceID: "runtime-source",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
-        sysrootPreparer: sysroot,
         sdkPackageSanitizer: sanitizer,
         pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-b")
