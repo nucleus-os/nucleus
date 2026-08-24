@@ -100,7 +100,16 @@ Gate: `collider package linux-runtime` assembles both architectures' payloads
 from the rebased sysroot, and no shipped artifact imports a GLIBC symbol newer
 than the declared baseline.
 
-Status: in progress. The rebuild reached SDK validation and reported
+Status: the SDK is built and active; the payload gate is what remains.
+Generation `3b02f4f08084db2f48c3cb50` publishes
+`nucleus-linux-glibc-2.43.sdk` for both triples, each sysroot carries
+`libbsd.so.0` and `libmd.so.0` beside the `libXdmcp.so.6` that needs them, and
+no library in the generation imports a GLIBC symbol newer than the declared
+baseline. The same scan at the former 2.38 floor still reports ten runtime
+libraries, so the baseline moved because it had to rather than because the
+check was weakened.
+
+The rebuild reached SDK validation and reported
 `libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
 failure this phase existed to surface. Reading every built library rather than
 the first one to fail showed fifteen distinct symbols, thirteen of them libm
