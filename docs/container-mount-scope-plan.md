@@ -106,7 +106,25 @@ Gate: no OCI execution names the checkout root as a mount source unless its
 action declares an unrestricted read scope, and the complete packaging graph
 produces byte-identical task identities.
 
-## Phase 3: Hold the Boundary
+## Phase 3: Revalidate the Source a Run Consumed
+
+A run detects that its source changed underneath it by capturing the whole
+repository, because `ProductArtifactSourceSnapshot.capture` defaults its
+`sourcePaths` to the repository root and the command layer passes nothing else.
+Editing a document therefore supersedes a build that no document can affect: a
+fifteen-line change to a plan file ended a packaging run that had been
+executing for a minute, and would have ended one that had been executing for
+hours.
+
+Revalidation names the source closure the plan consumed, which the graph
+already declares through `.sourceCheckout` inputs, so a run is superseded by a
+change to something it read rather than by a change to anything in the
+checkout. The parameter for this exists and is unused.
+
+Gate: editing a path no task declares does not supersede a running build, and
+editing a path a running task declares still does.
+
+## Phase 4: Hold the Boundary
 
 A container execution that mounts a tree no declaration names fails to
 construct. The property is structural: a mount set derived from declarations
