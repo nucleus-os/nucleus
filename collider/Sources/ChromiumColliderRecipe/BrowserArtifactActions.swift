@@ -74,19 +74,25 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
             to: candidate.appending(
                 "share/applications/dev.nucleus.Browser.desktop.in"),
             files: context.files)
-        for size in [16, 22, 24, 32, 48, 64, 128, 256] {
-            if let icon = try browserIcon(
-                size: size,
-                source: assembly.chromiumSource,
-                files: context.files)
-            {
-                try copyItem(
-                    from: icon,
-                    to: candidate.appending(
-                        "share/icons/hicolor/\(size)x\(size)/apps/"
-                            + "dev.nucleus.Browser.png"),
+        for size in browserIconSizes {
+            // The package contract declares a link for every one of these, so a
+            // size Chromium stops shipping has to fail here rather than leave
+            // that link pointing at nothing.
+            guard
+                let icon = try browserIcon(
+                    size: size,
+                    source: assembly.chromiumSource,
                     files: context.files)
+            else {
+                throw BrowserArtifactActionFailure.invalidOutput(
+                    "chromium source has no \(size)x\(size) product logo")
             }
+            try copyItem(
+                from: icon,
+                to: candidate.appending(
+                    "share/icons/hicolor/\(size)x\(size)/apps/"
+                        + "dev.nucleus.Browser.png"),
+                files: context.files)
         }
         try copyItem(
             from: builtManifest,

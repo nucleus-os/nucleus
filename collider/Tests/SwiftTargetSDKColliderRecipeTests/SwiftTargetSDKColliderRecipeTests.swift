@@ -330,12 +330,24 @@ import Testing
     #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
     for target in inputs.linuxTargets {
         #expect(target.runtimeUbuntuPackages.count == 16)
-        #expect(target.sdkUbuntuPackages.count == 49)
-        // The sysroot is closed under dependency: libXdmcp needs libbsd, and
-        // libbsd needs libmd, and ELF staging resolves every dependency to
-        // check its architecture whether or not the payload ships it.
+        #expect(target.sdkUbuntuPackages.count == 88)
+        // The sysroot is closed under dependency, and the closure is transitive
+        // rather than one level deep. Payload assembly walks the whole dynamic
+        // graph and requires every undefined symbol in it to be defined
+        // somewhere in it, so it descends into host-provided libraries too:
+        // their exports are what satisfy the artifacts.
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libbsd0_") })
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libmd0_") })
+        // libwayland needs libffi; libinput needs libevdev, libmtdev, and
+        // libwacom; libwacom reaches libgudev and libglib; libcurl reaches its
+        // TLS and Kerberos closure; and pam.pc requires audit.pc, which
+        // requires libcap-ng.pc.
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libffi8_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libevdev2_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libwacom9_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libaudit-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libcap-ng-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgssapi-krb5-2_") })
         // Built from the release the builder image runs.
         #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("libc6_2.43") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })

@@ -125,12 +125,16 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
     }
     try Data("locale".utf8).write(
         to: output.appendingPathComponent("locales/en-US.pak"))
-    let icon = source.appendingPathComponent(
-        "chrome/app/theme/chromium/linux/product_logo_128.png")
-    try FileManager.default.createDirectory(
-        at: icon.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data("icon".utf8).write(to: icon)
+    // Every size the package contract declares, because the assembly now
+    // refuses to publish a generation missing one of them.
+    for size in browserIconSizes {
+        let icon = source.appendingPathComponent(
+            "chrome/app/theme/chromium/linux/product_logo_\(size).png")
+        try FileManager.default.createDirectory(
+            at: icon.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try Data("icon".utf8).write(to: icon)
+    }
     let launcher = directory.appendingPathComponent("nucleus-browser")
     try Data("#!/bin/sh\nexit 0\n".utf8).write(to: launcher)
     let desktop = directory.appendingPathComponent("browser.desktop.in")

@@ -2,6 +2,22 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+/// The hicolor icon sizes the browser package ships.
+///
+/// Chromium's theme directory decides this: it carries
+/// `product_logo_<size>.png` for each of these and nothing else usable as an
+/// app icon. It has a `product_logo_22_mono.png`, which is a symbolic
+/// monochrome variant rather than a 22x22 app icon, and a
+/// `product_logo_name_22.png`, which is a wordmark — so 22 is not a size the
+/// package can offer.
+///
+/// The producer and the package contract read this one list. They previously
+/// held the same literal twice, and the producer copied each size only when it
+/// found one while the contract declared a symbolic link for every size
+/// unconditionally, so a size Chromium does not ship became a dangling link in
+/// the payload rather than an error at the point it went missing.
+package let browserIconSizes = [16, 24, 32, 48, 64, 128, 256]
+
 package struct BrowserPackageInputPublication: Hashable, Sendable {
     package let target: ArtifactTarget
     package let distributionRoot: FilePath
@@ -175,8 +191,9 @@ package func validateBrowserGenerationStructure(
                 "browser generation is missing: \(relative)")
         }
     }
-    for relative in [
-        "share/icons/hicolor/128x128/apps/dev.nucleus.Browser.png",
+    for relative in browserIconSizes.map({
+        "share/icons/hicolor/\($0)x\($0)/apps/dev.nucleus.Browser.png"
+    }) + [
         "nucleus-build-manifest.json",
         "bin/nucleus-browser",
     ] {

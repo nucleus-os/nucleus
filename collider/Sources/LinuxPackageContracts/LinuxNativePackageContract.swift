@@ -418,7 +418,7 @@ package struct LinuxNativePackageCohortContract: Sendable {
     }
 
     private static func browserIconPaths() -> [LinuxNativePackageOwnedPath] {
-        [16, 22, 24, 32, 48, 64, 128, 256].map { size in
+        browserIconSizes.map { size in
             LinuxNativePackageOwnedPath(
                 path:
                     "/usr/share/icons/hicolor/\(size)x\(size)/apps/"
