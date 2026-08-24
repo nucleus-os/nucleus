@@ -82,19 +82,16 @@ package enum MesonToolchain {
         ["-stdlib=libc++"] + cLinkArguments(for: target)
     }
 
-    /// The builder guest's own multiarch tree, searched only after the
-    /// sysroot's.
-    ///
-    /// The guest carries headers and libraries for both target architectures,
-    /// and a cross build reaches for them when the pinned sysroot does not
-    /// carry what the source expects — Wayland links `libffi` from here. A
-    /// native build has them on the default search path already, which is why
-    /// they appear in the cross file rather than in the options every target
-    /// passes.
-    ///
-    /// The ordering is the whole of the guarantee: the sysroot decides what a
-    /// product links against wherever it carries the library at all, and the
-    /// guest supplies only what the sysroot does not pin.
+    // The builder guest carries headers and libraries for both target
+    // architectures, and a cross build reaches for them where the pinned
+    // sysroot does not carry what the source expects: Wayland links `libffi`
+    // from there. Both fall back rather than lead, and that ordering is the
+    // whole of the guarantee — the sysroot decides what a product compiles and
+    // links against wherever it carries the header or library at all, and the
+    // guest supplies only what the sysroot does not pin. A native build has
+    // both trees on its default search paths already, which is why these
+    // appear in the cross file rather than in the options every target passes.
+
     private static func fallbackIncludeArguments(
         for target: NativeLinuxTarget
     ) -> [String] {
