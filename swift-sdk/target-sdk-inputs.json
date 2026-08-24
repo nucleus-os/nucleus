@@ -99,6 +99,22 @@
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/p/pam/libpam0g_1.7.0-5ubuntu3.1_arm64.deb"
         },
         {
+          "sha256": "236d3d6847137e12b0a92c1541a8a7fb8791bc45835b086cbc9b11720554d1dd",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/a/audit/libaudit-dev_4.1.2-1build1_arm64.deb"
+        },
+        {
+          "sha256": "4561feb91aa8be7048cd463968886721b11020585c7f853f96bcd3c58afe3f35",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/a/audit/libaudit1_4.1.2-1build1_arm64.deb"
+        },
+        {
+          "sha256": "8379d438c4200d4c56347202ffb693016233a09a57fc9bb5b665ff3106f25a3d",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libc/libcap-ng/libcap-ng-dev_0.8.5-4build5_arm64.deb"
+        },
+        {
+          "sha256": "c1ad6327ec32015a25e6ea0aa8d391c7d2a508d284f87cc1a0dfa2c4f8205c83",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4build5_arm64.deb"
+        },
+        {
           "sha256": "3b74d9ea45a26e6f66b306f0baff6c6da72e30a11f0ad6d37eeace11b62c7318",
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libd/libdrm/libdrm-dev_2.4.131-1_arm64.deb"
         },
@@ -364,6 +380,22 @@
         {
           "sha256": "841f7b67724887d4218b37702d8b308e085ef713ca5afe48786ff511b799e258",
           "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/pam/libpam0g_1.7.0-5ubuntu3.1_amd64.deb"
+        },
+        {
+          "sha256": "55674f3b9cde488257f54952a85402b8b6d9887ad96cbc0f232b47a921a9098b",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/audit/libaudit-dev_4.1.2-1build1_amd64.deb"
+        },
+        {
+          "sha256": "d3b8aa4efc9851ad9641ef2b1cc13d125c7c45d167e53527c694255d0c47b68f",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/audit/libaudit1_4.1.2-1build1_amd64.deb"
+        },
+        {
+          "sha256": "cc8e37d194eb5dda55787031da9805e6c95325b71b8299b65da4057b9e1e0acb",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcap-ng/libcap-ng-dev_0.8.5-4build5_amd64.deb"
+        },
+        {
+          "sha256": "ef20434fbf03076d238155e937870cf389884ae81bd8c3569ff6043aef6da398",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4build5_amd64.deb"
         },
         {
           "sha256": "cfec0a51730336538df6c2bbb4f5b473bdcac9281def27981edbdccec99a9be9",

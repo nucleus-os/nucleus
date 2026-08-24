@@ -122,6 +122,19 @@ paths derive from, and neither is checked in. A meson build directory carries
 the configuration document it was set up from and is discarded when the two
 differ, so a moved sysroot cannot leave a directory holding half of each.
 
+The closure the invariant states is a pkg-config graph as well as an ELF one,
+and the rebase opened a second hole in it. PAM 1.7.0 ships a `pam.pc` that
+1.5.3 did not, declaring `Requires.private: audit`, and `audit.pc` in turn
+declares `Requires.private: libcap-ng`; neither `libaudit-dev` nor
+`libcap-ng-dev` was pinned. SwiftPM resolves `.pc` files itself, and a missing
+one is a warning rather than an error there — `couldn't find pc file for audit`
+— so it dropped every flag the package would have contributed and the PAM
+helper linked with no `-lpam` at all, failing on five undefined symbols rather
+than on the configuration that caused them. `libaudit1`, `libaudit-dev`,
+`libcap-ng0`, and `libcap-ng-dev` join the pinned set for both architectures,
+which closes `pam.pc` and the `libpam.so.0` to `libaudit.so.1` to
+`libcap-ng.so.0` chain beneath it.
+
 The rebuild reached SDK validation and reported
 `libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
 failure this phase existed to surface. Reading every built library rather than
