@@ -20,7 +20,6 @@ func swiftTargetSDKArtifactID(
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
-    sdkPackageSanitizer: FilePath,
     pkgConfigDirectory: FilePath,
     generatorSourceID: String
 ) throws -> String {
@@ -35,7 +34,6 @@ func swiftTargetSDKArtifactID(
     encoder.append(bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
     encoder.append(bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
     encoder.append(generatorSourceID)
-    encoder.append(bytes: try ArtifactHasher.digest(file: sdkPackageSanitizer).bytes)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 

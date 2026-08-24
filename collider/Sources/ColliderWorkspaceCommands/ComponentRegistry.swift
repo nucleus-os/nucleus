@@ -1255,8 +1255,6 @@ package struct ComponentRegistry {
         let runtimeBuilderContext = recipeRoot.appending("runtime-build-container")
         let runtimePreset = recipeRoot.appending(
             "nucleus-target-runtime-presets.ini")
-        let sdkPackageSanitizer = recipeRoot.appending(
-            "sanitize-linux-sdk-package.sh")
         let pkgConfigDirectory = recipeRoot.appending("pkgconfig")
         let swiftExecutable = FilePath(
             environment["SWIFT"] ?? "/usr/bin/swift")
@@ -1269,7 +1267,6 @@ package struct ComponentRegistry {
             sourceID: sourceID,
             runtimeBuilderContext: runtimeBuilderContext,
             runtimePreset: runtimePreset,
-            sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             generatorSourceID: generatorSourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
@@ -1317,7 +1314,6 @@ package struct ComponentRegistry {
             runtimeBuilderContext: runtimeBuilderContext,
             runtimeBuilderBaseImage: runtimeBuilderBaseImage,
             linuxTargets: linuxTargets,
-            sdkPackageSanitizer: sdkPackageSanitizer,
             pkgConfigDirectory: pkgConfigDirectory,
             candidate: paths.artifactRoot.appending(
                 "generations/.candidate-\(artifactID)"),

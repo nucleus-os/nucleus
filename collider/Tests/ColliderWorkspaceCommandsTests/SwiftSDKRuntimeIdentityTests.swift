@@ -105,8 +105,6 @@ import Testing
         recipe.appendingPathComponent("runtime-build-container", isDirectory: true).path)
     let preset = FilePath(
         recipe.appendingPathComponent("nucleus-target-runtime-presets.ini").path)
-    let sanitizer = FilePath(
-        recipe.appendingPathComponent("sanitize-linux-sdk-package.sh").path)
     let pkgConfig = FilePath(
         recipe.appendingPathComponent("pkgconfig", isDirectory: true).path)
 
@@ -119,7 +117,6 @@ import Testing
         sourceID: "runtime-source",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
-        sdkPackageSanitizer: sanitizer,
         pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-a")
     let changedGenerator = try swiftTargetSDKArtifactID(
@@ -131,7 +128,6 @@ import Testing
         sourceID: "runtime-source",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
-        sdkPackageSanitizer: sanitizer,
         pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-b")
 

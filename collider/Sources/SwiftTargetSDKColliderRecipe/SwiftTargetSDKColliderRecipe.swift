@@ -154,7 +154,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let runtimeBuilderContext: FilePath
     public let runtimeBuilderBaseImage: ArtifactReference
     public let linuxTargets: [SwiftLinuxTargetBuildConfiguration]
-    public let sdkPackageSanitizer: FilePath
     public let pkgConfigDirectory: FilePath
     public let candidate: FilePath
     public let generation: FilePath
@@ -179,7 +178,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         runtimeBuilderContext: FilePath,
         runtimeBuilderBaseImage: ArtifactReference,
         linuxTargets: [SwiftLinuxTargetBuildConfiguration],
-        sdkPackageSanitizer: FilePath,
         pkgConfigDirectory: FilePath,
         candidate: FilePath,
         generation: FilePath,
@@ -203,7 +201,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.runtimeBuilderContext = runtimeBuilderContext
         self.runtimeBuilderBaseImage = runtimeBuilderBaseImage
         self.linuxTargets = linuxTargets
-        self.sdkPackageSanitizer = sdkPackageSanitizer
         self.pkgConfigDirectory = pkgConfigDirectory
         self.candidate = candidate
         self.generation = generation
@@ -724,11 +721,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 validation: .regularFile)
         }
         let task = builder.build(
-            inputs: [.file(configuration.sdkPackageSanitizer)],
+            inputs: [],
             assessmentPolicy: .incremental,
             action: try AnyColliderAction(
                 SanitizeLinuxSDKPackagesAction(
-                    sanitizer: configuration.sdkPackageSanitizer,
                     inputs: inputs.map(\.path),
                     outputRoot: outputRoot,
                     outputs: outputs.map(\.path),
@@ -1523,13 +1519,11 @@ private func linuxTripleSwiftSDKMetadata(
 
 private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let sanitizer: FilePath
         let inputs: [FilePath]
         let outputRoot: FilePath
         let outputs: [FilePath]
 
         func encode(into encoder: inout IdentityEncoder) {
-            encoder.append(path: sanitizer)
             encoder.appendSequence(inputs) { $0.append(path: $1) }
             encoder.append(path: outputRoot)
             encoder.appendSequence(outputs) { $0.append(path: $1) }
@@ -1538,7 +1532,6 @@ private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
 
     static let kind: ActionKind = "swift-sdk.sanitize-linux-packages"
 
-    let sanitizer: FilePath
     let inputs: [FilePath]
     let outputRoot: FilePath
     let outputs: [FilePath]
@@ -1546,7 +1539,6 @@ private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
 
     var identity: Identity {
         Identity(
-            sanitizer: sanitizer,
             inputs: inputs,
             outputRoot: outputRoot,
             outputs: outputs)
@@ -1554,12 +1546,6 @@ private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "SDK package sanitizer",
-                    executable: .path(sanitizer),
-                    role: .operational)
-            ],
             effects: inputs.map { ActionEffect(.read, scope: .input($0)) }
                 + [ActionEffect(.readWrite, scope: .output(outputRoot))],
             executionPlatform: .macOSARM64Native)
@@ -1574,17 +1560,121 @@ private struct SanitizeLinuxSDKPackagesAction: ColliderAction {
             try context.files.createDirectory(output.removingLastComponent())
         }
         for (input, output) in zip(inputs, outputs) {
-            let result = try await context.commands.execute(
-                CommandSpec(
-                    executable: .path(sanitizer),
-                    arguments: [input.string, output.string],
-                    workingDirectory: output.removingLastComponent(),
-                    environment: environment,
-                    output: .logged))
-            guard result.succeeded else {
-                throw result.executionFailure(
-                    reason: "Linux SDK package sanitation failed")
-            }
+            try sanitize(input, to: output, files: context.files)
+        }
+    }
+
+    /// Rewrites a Debian package without the contents a compiler sysroot must
+    /// not carry.
+    ///
+    /// Manual pages are never compiler inputs, and the eight netfilter
+    /// target/match interfaces below exist in both cases, which collide on the
+    /// case-insensitive filesystem macOS uses by default. Nucleus exposes none
+    /// of them; the rest of the kernel UAPI stays intact.
+    ///
+    /// Done in process because the payload is `data.tar.zst` and macOS `tar`
+    /// decompresses zstd by running an external `zstd` the task PATH does not
+    /// carry. The `ar` container is written directly rather than shelled out
+    /// to: its format is fixed, and writing it here lets every field that has
+    /// no meaning for a build artifact be zero, so the same input produces the
+    /// same bytes.
+    private func sanitize(
+        _ input: FilePath,
+        to output: FilePath,
+        files: ActionFileSystem
+    ) throws {
+        let staging = output.removingLastComponent()
+            .appending(".sanitize-\(output.lastComponent?.string ?? "package")")
+        try files.remove(staging)
+        defer { try? files.remove(staging) }
+        let unpacked = staging.appending("package")
+        let root = staging.appending("root")
+        try files.createDirectory(unpacked)
+        try files.createDirectory(root)
+
+        _ = try ArchiveReader(file: URL(fileURLWithPath: input.string))
+            .extractContents(to: URL(fileURLWithPath: unpacked.string))
+        let members = try files.listRecursively(unpacked).map(\.path)
+        func member(_ prefix: String) throws -> FilePath {
+            guard
+                let found = members.first(where: {
+                    $0.lastComponent?.string.hasPrefix(prefix) == true
+                })
+            else { throw SanitizeLinuxSDKPackageFailure.invalidPackage(input) }
+            return found
+        }
+        let control = try member("control.tar")
+        let data = try member("data.tar")
+        let debianBinary = try member("debian-binary")
+
+        _ = try ArchiveReader(file: URL(fileURLWithPath: data.string))
+            .extractContents(to: URL(fileURLWithPath: root.string))
+        for excluded in sanitizedSDKPackageExclusions {
+            try files.remove(root.appending(excluded))
+        }
+
+        let rebuilt = staging.appending("data.tar.gz")
+        let writer = try ArchiveWriter(
+            configuration: ArchiveWriterConfiguration(
+                format: .paxRestricted, filter: .gzip))
+        try writer.open(file: URL(fileURLWithPath: rebuilt.string))
+        try writer.archiveDirectory(URL(fileURLWithPath: root.string))
+        try writer.finishEncoding()
+
+        var container = Array("!<arch>\n".utf8)
+        for (name, path) in [
+            ("debian-binary", debianBinary),
+            (control.lastComponent?.string ?? "control.tar", control),
+            ("data.tar.gz", rebuilt),
+        ] {
+            let bytes = try files.read(path)
+            container += arMemberHeader(name: name, size: bytes.count)
+            container += bytes
+            if bytes.count % 2 == 1 { container.append(0x0a) }
+        }
+        try files.remove(output)
+        try files.write(container, to: output)
+    }
+
+    /// A fixed-width `ar` member header. Every field a build artifact has no
+    /// use for is zero, so the same input produces the same archive.
+    private func arMemberHeader(name: String, size: Int) -> [UInt8] {
+        func padded(_ value: String, _ width: Int) -> String {
+            value.count >= width
+                ? String(value.prefix(width))
+                : value + String(repeating: " ", count: width - value.count)
+        }
+        let header =
+            padded(name, 16) + padded("0", 12) + padded("0", 6) + padded("0", 6)
+            + padded("100644", 8) + padded(String(size), 10) + "`\n"
+        return Array(header.utf8)
+    }
+}
+
+/// Contents a compiler sysroot must not carry: manual pages, and the
+/// case-colliding netfilter interfaces Nucleus does not expose.
+private let sanitizedSDKPackageExclusions: [String] =
+    [
+        "usr/share/man"
+    ]
+    + [
+        "CONNMARK", "connmark", "DSCP", "dscp", "MARK", "mark", "RATEEST", "rateest",
+        "TCPMSS", "tcpmss",
+    ].map { "usr/include/linux/netfilter/xt_\($0).h" }
+    + [
+        "ECN", "ecn", "TTL", "ttl",
+    ].map { "usr/include/linux/netfilter_ipv4/ipt_\($0).h" }
+    + [
+        "HL", "hl",
+    ].map { "usr/include/linux/netfilter_ipv6/ip6t_\($0).h" }
+
+private enum SanitizeLinuxSDKPackageFailure: Error, CustomStringConvertible {
+    case invalidPackage(FilePath)
+
+    var description: String {
+        switch self {
+        case .invalidPackage(let path):
+            "not a Debian package: \(path)"
         }
     }
 }
