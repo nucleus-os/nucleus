@@ -63,8 +63,8 @@ package enum MesonToolchain {
             [built-in options]
             c_args = \(mesonArray(fallbackIncludeArguments(for: target)))
             cpp_args = \(mesonArray(compilerArguments(for: target) + fallbackIncludeArguments(for: target)))
-            c_link_args = \(mesonArray(cLinkArguments(for: target)))
-            cpp_link_args = \(mesonArray(cxxLinkArguments(for: target)))
+            c_link_args = \(mesonArray(cLinkArguments(for: target) + fallbackLibraryArguments(for: target)))
+            cpp_link_args = \(mesonArray(cxxLinkArguments(for: target) + fallbackLibraryArguments(for: target)))
             """
     }
 
@@ -82,16 +82,29 @@ package enum MesonToolchain {
         ["-stdlib=libc++"] + cLinkArguments(for: target)
     }
 
-    /// The builder guest's own headers, searched only after the sysroot's.
+    /// The builder guest's own multiarch tree, searched only after the
+    /// sysroot's.
     ///
-    /// A cross build reaches for these when the sysroot does not carry a header
-    /// the source expects; a native build has them on the default search path
-    /// already, which is why they appear in the cross file rather than in the
-    /// options every target passes.
+    /// The guest carries headers and libraries for both target architectures,
+    /// and a cross build reaches for them when the pinned sysroot does not
+    /// carry what the source expects — Wayland links `libffi` from here. A
+    /// native build has them on the default search path already, which is why
+    /// they appear in the cross file rather than in the options every target
+    /// passes.
+    ///
+    /// The ordering is the whole of the guarantee: the sysroot decides what a
+    /// product links against wherever it carries the library at all, and the
+    /// guest supplies only what the sysroot does not pin.
     private static func fallbackIncludeArguments(
         for target: NativeLinuxTarget
     ) -> [String] {
         ["-idirafter/usr/include", "-idirafter/usr/include/\(target.gnuArchitecture)"]
+    }
+
+    private static func fallbackLibraryArguments(
+        for target: NativeLinuxTarget
+    ) -> [String] {
+        ["-L/usr/lib/\(target.gnuArchitecture)"]
     }
 
     private static func mesonArray(_ elements: [String]) -> String {

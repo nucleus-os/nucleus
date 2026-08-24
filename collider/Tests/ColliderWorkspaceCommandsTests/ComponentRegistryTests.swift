@@ -2620,6 +2620,15 @@ private func artifactInput(
     #expect(crossFile.contains("sys_root = '\(sysroot)'"))
     #expect(crossFile.contains("-isystem\(target.containerLibCXXIncludeRoot)"))
     #expect(crossFile.contains("-L\(target.containerLibCXXLibraryRoot)"))
+    // The guest's own multiarch tree is a fallback, so the sysroot decides
+    // what a product links against wherever it carries the library at all.
+    let sysrootLibrary = crossFile.range(of: "-L\(target.containerLibCXXLibraryRoot)")
+    let guestLibrary = crossFile.range(of: "-L/usr/lib/\(target.gnuArchitecture)'")
+    #expect(sysrootLibrary != nil)
+    #expect(guestLibrary != nil)
+    if let sysrootLibrary, let guestLibrary {
+        #expect(sysrootLibrary.lowerBound < guestLibrary.lowerBound)
+    }
     #expect(crossFile.contains("cpu_family = 'x86_64'"))
 
     // Every sysroot path in the file is the declared one. A file naming two
