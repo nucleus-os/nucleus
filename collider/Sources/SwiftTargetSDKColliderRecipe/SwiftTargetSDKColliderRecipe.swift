@@ -427,8 +427,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 retentionPolicy: .keepActiveAndRollback(count: 0),
                 activeGenerationLink: configuration.active,
                 generationNaming: .contentIdentity,
+                // The candidate is named for the artifact identity alone, so
+                // a pattern expecting a timestamp and a process could never
+                // match one and retention never reclaimed an interrupted
+                // build's leftovers.
                 interruptedCandidateNaming: DirectoryNamePattern(
-                    rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#)),
+                    rawValue: #"^\.candidate-[0-9a-f]{24}$"#)),
             StorageDeclaration(
                 id: "swift-sdk-generator-build",
                 owner: descriptor.id,
