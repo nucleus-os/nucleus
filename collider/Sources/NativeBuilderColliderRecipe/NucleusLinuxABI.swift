@@ -7,7 +7,14 @@ public enum NucleusLinuxABI {
         case host
     }
 
-    public static let minimumGlibcVersion = "2.38"
+    /// The oldest glibc a Nucleus artifact may require.
+    ///
+    /// Ubuntu 26.04 is the release the target sysroot is built from, and glibc
+    /// 2.43 re-versioned a batch of libm functions the Swift runtime calls, so
+    /// `libswiftCore`, `libFoundation`, and `libswiftGlibc` bind thirteen math
+    /// symbols to `GLIBC_2.43`. That is not something the ceiling can hold
+    /// below the sysroot: a payload built here needs 2.43 wherever it runs.
+    public static let minimumGlibcVersion = "2.43"
     public static let sdkDirectoryName =
         "nucleus-linux-glibc-\(minimumGlibcVersion).sdk"
 

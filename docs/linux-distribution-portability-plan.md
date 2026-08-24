@@ -36,15 +36,21 @@ code paths to this plan.
 
 The compositor, window manager, shell, and session protocol are Linux-facing and
 contain no essential Ubuntu product architecture. Collider now declares glibc
-2.38 as the minimum Linux ABI and classifies the supported ELF closure by SONAME
+2.43 as the minimum Linux ABI and classifies the supported ELF closure by SONAME
 as either artifact-owned or host-owned. Unknown dependencies fail staging and
 validation.
 
-- the target Swift SDK is published as `nucleus-linux-glibc-2.38.sdk` beneath
+The baseline is 2.43 because the target sysroot is built from Ubuntu 26.04, and
+glibc 2.43 re-versioned a batch of libm functions the Swift runtime calls: the
+runtime binds thirteen math symbols to `GLIBC_2.43`, so a payload built from
+that sysroot requires 2.43 wherever it runs. A distribution older than that is
+not supported, which excludes Ubuntu 24.04, Debian 13, and RHEL 10.
+
+- the target Swift SDK is published as `nucleus-linux-glibc-2.43.sdk` beneath
   each architecture triple;
-- Ubuntu Noble packages remain pinned SDK assembly inputs but do not appear in
-  installed SDK paths or metadata;
-- SDK and runtime validation reject glibc imports newer than `GLIBC_2.38`;
+- Ubuntu Resolute packages remain pinned SDK assembly inputs but do not appear
+  in installed SDK paths or metadata;
+- SDK and runtime validation reject glibc imports newer than `GLIBC_2.43`;
 - libc++, libc++abi, libunwind, the Swift runtime, and Nucleus-owned native
   libraries are artifact-owned;
 - glibc, graphics, input, seat, PAM, and service-manager libraries are

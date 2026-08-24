@@ -69,7 +69,7 @@ import Testing
         from: Data(bytes))
 
     #expect(requirements.architecture == "arm64")
-    #expect(requirements.minimumGlibcVersion == "2.38")
+    #expect(requirements.minimumGlibcVersion == "2.43")
     #expect(requirements.serviceManager == "systemd")
     #expect(requirements.pamService == "nucleus")
     #expect(requirements.sessionBus == "private-dbus-run-session")

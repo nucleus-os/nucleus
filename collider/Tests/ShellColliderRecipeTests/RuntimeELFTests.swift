@@ -45,7 +45,7 @@ import Testing
 }
 
 @Test func linuxABIContractRejectsUnknownDependencies() {
-    #expect(NucleusLinuxABI.minimumGlibcVersion == "2.38")
+    #expect(NucleusLinuxABI.minimumGlibcVersion == "2.43")
     #expect(NucleusLinuxABI.owner(ofSONAME: "libswiftCore.so") == .artifact)
     #expect(NucleusLinuxABI.owner(ofSONAME: "libc++.so.1") == .artifact)
     #expect(NucleusLinuxABI.owner(ofSONAME: "libvulkan.so.1") == .host)
@@ -55,10 +55,13 @@ import Testing
 @Test func glibcImportsCannotExceedTheLinuxABIBaseline() throws {
     try validateGlibcImports(
         "0000 DF *UND* 0000 (GLIBC_2.38) fmod",
-        artifact: "valid")
+        artifact: "older")
+    try validateGlibcImports(
+        "0000 DF *UND* 0000 (GLIBC_2.43) remainder",
+        artifact: "baseline")
     #expect(throws: RuntimeELFFailure.self) {
         try validateGlibcImports(
-            "0000 DF *UND* 0000 (GLIBC_2.39) future",
+            "0000 DF *UND* 0000 (GLIBC_2.44) future",
             artifact: "future")
     }
 }
@@ -172,7 +175,7 @@ import Testing
     let bytes = try #require(reportBytes.withLock { $0 })
     let report = try JSONDecoder().decode(RuntimeELFReport.self, from: Data(bytes))
     #expect(report.staged == false)
-    #expect(report.minimumGlibcVersion == "2.38")
+    #expect(report.minimumGlibcVersion == "2.43")
     #expect(report.executables.count == 7)
     #expect(report.executables.map(\.name).contains("NucleusCompositor"))
     #expect(

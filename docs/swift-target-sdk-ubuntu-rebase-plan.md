@@ -30,12 +30,13 @@ its architecture, so the gap stops a payload being assembled. It was invisible
 while staging resolved against the builder image's own `/lib`; naming the
 sysroot explicitly is what surfaced it.
 
-The ABI baseline is independent of the sysroot and stays where it is.
-`NucleusLinuxABI.minimumGlibcVersion` is `2.38`, and `validateGlibcImports`
-rejects any shipped artifact importing a newer GLIBC symbol. The SDK already
-builds against a newer glibc than that baseline, so rebasing the sysroot does
-not move the floor a distribution must meet, and `sdkDirectoryName` derives
-from the baseline rather than the release, so no container path changes.
+The ABI baseline is a separate statement from the sysroot, but not an
+independent one. `validateGlibcImports` rejects any shipped artifact importing
+a GLIBC symbol newer than `NucleusLinuxABI.minimumGlibcVersion`, and that holds
+below the sysroot only where the newer glibc has not re-versioned a symbol the
+runtime calls. Across 2.38 to 2.39 nothing it calls moved, which is why a 2.38
+ceiling over a 2.39 sysroot worked. Across 2.38 to 2.43 thirteen libm functions
+moved, so the baseline follows the sysroot to 2.43.
 
 Two facts make the rebase smaller than it looks. Every one of the 63 packages
 exists in resolute under the same name, including `libgcc-13-dev` and the
@@ -91,22 +92,36 @@ output `ubuntu-resolute.sdk`.
 ## Phase 3: Rebuild and Hold the Baseline
 
 The target SDK is rebuilt for both architectures and the Linux runtime payload
-is assembled from it. `minimumGlibcVersion` stays at `2.38`, so an artifact
-that imports a symbol newer than the baseline is a failure to fix rather than a
-reason to move the baseline.
+is assembled from it. `minimumGlibcVersion` is `2.43`, matching the sysroot,
+because the symbols that forced the question are in the Swift runtime itself
+rather than in Nucleus code that could avoid them.
 
 Gate: `collider package linux-runtime` assembles both architectures' payloads
 from the rebased sysroot, and no shipped artifact imports a GLIBC symbol newer
 than the declared baseline.
 
+Status: in progress. The rebuild reached SDK validation and reported
+`libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
+failure this phase existed to surface. Reading every built library rather than
+the first one to fail showed fifteen distinct symbols, thirteen of them libm
+functions glibc 2.43 re-versioned — `acosf`, `acoshf`, `asinf`, `atan2f`,
+`atanhf`, `coshf`, `lgammaf_r`, `log10f`, `remainder`, `remainderf`, `sinhf`,
+`sqrtf`, `tgammaf` — across twenty runtime libraries including `libswiftCore`,
+`libFoundation`, and `libswiftGlibc`.
+
+They are not avoidable by changing Nucleus code: the Swift runtime calls them,
+and the sysroot it links against binds them. Holding the ceiling below the
+sysroot would require forcing older symbol versions when linking the runtime
+and maintaining that list as glibc re-versions more. The baseline moves to
+2.43 instead, and Nucleus supports Ubuntu 26.04 and newer.
+
 ## Risk Surface
 
-The substantive unknown is Phase 3. Compiling against glibc 2.43 headers while
-holding artifacts to a 2.38 symbol ceiling is exactly the arrangement that
-surfaces newer symbol versions, and each one is a real incompatibility with the
-distributions the packages target rather than a validator being fussy. The
-count is not knowable before the rebuild, which is why the rebuild and the
-ceiling are one phase: the failures are the phase's work.
+The unknown in Phase 3 resolved against the rebase's original premise. The
+count was fifteen and the symbols were in the Swift runtime rather than in
+Nucleus code, so there was nothing to fix short of a compatibility layer, and
+the baseline moved. The cost is stated rather than hidden: Ubuntu 24.04,
+Debian 13, and RHEL 10 no longer run a Nucleus payload.
 
 The bootstrap compiler is a Swift.org toolchain built for Ubuntu 24.04, running
 on a 26.04 image. That combination is already what runs today, so the rebase
