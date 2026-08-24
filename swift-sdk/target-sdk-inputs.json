@@ -115,6 +115,10 @@
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4build5_arm64.deb"
         },
         {
+          "sha256": "cfab73343f076b79df0f4a9d5430319fdb6153760d3e8c2964c448b49edad084",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libf/libffi/libffi8_3.5.2-4_arm64.deb"
+        },
+        {
           "sha256": "3b74d9ea45a26e6f66b306f0baff6c6da72e30a11f0ad6d37eeace11b62c7318",
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libd/libdrm/libdrm-dev_2.4.131-1_arm64.deb"
         },
@@ -396,6 +400,10 @@
         {
           "sha256": "ef20434fbf03076d238155e937870cf389884ae81bd8c3569ff6043aef6da398",
           "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcap-ng/libcap-ng0_0.8.5-4build5_amd64.deb"
+        },
+        {
+          "sha256": "4a7423124bbd459c0aa38b7389ec7802fa6899654767a95fc27de70967fedd48",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi8_3.5.2-4_amd64.deb"
         },
         {
           "sha256": "cfec0a51730336538df6c2bbb4f5b473bdcac9281def27981edbdccec99a9be9",

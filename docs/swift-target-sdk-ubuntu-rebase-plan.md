@@ -135,6 +135,15 @@ than on the configuration that caused them. `libaudit1`, `libaudit-dev`,
 which closes `pam.pc` and the `libpam.so.0` to `libaudit.so.1` to
 `libcap-ng.so.0` chain beneath it.
 
+A third gap sits in the ELF graph and predates the rebase. Wayland's
+`libwayland-client.so.0` and `libwayland-server.so.0` need `libffi.so.8`, which
+was never pinned, so payload assembly cannot resolve it once it reaches that
+check — which no run had, because every earlier one failed further up the
+graph. `libffi8` joins the pinned set. Scanning every shared object in both
+native SDKs against the target library roots reports no other unresolved
+dependency, so the closure is checked rather than repaired one failure at a
+time.
+
 The rebuild reached SDK validation and reported
 `libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
 failure this phase existed to surface. Reading every built library rather than
