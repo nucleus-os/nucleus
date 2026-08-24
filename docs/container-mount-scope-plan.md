@@ -27,14 +27,22 @@ build:
 
 The cost is host file descriptors. Collider caps container executions at two,
 and with two running the host open-file table climbs from a 9,589 baseline to
-between 220,000 and 440,000 against a `kern.maxfiles` of 491,520. It exhausts
-the table outright: `collider package linux-runtime` failed twice with `Too many
-open files in system`, once at 45 tasks and once at 5, and the failure is a
-host-side `ENFILE` rather than anything the container reports.
+436,059 against a `kern.maxfiles` of 491,520. `collider package linux-runtime`
+failed twice with `Too many open files in system`, a host-side `ENFILE` rather
+than anything the container reports.
 
 The climb is a ramp rather than a step. Descriptors reach 436,000 within
 twenty-five seconds of the first two containers starting, then oscillate as
 reclamation runs against continued growth.
+
+Containers are not the only consumer of this magnitude, and measuring one
+without isolating the other is how this was first misread. A host Swift Build
+of the `collider` package reaches 329,639 descriptors on its own, with no
+container and no task graph. The two accounts keep separate build stores, so a
+Collider source change rebuilds that package twice — once for the interactive
+account and once for the builder, the latter peaking at 423,810. Those spikes
+are serial with the task graph rather than concurrent with it, but each alone
+is most of the table.
 
 The AOSP lane is the contrast that isolates the cause. Its containers mount
 source and output as persistent workspace volumes and reach the host only for a
@@ -57,8 +65,29 @@ recorded.
 
 Gate: an identical `collider package linux-runtime` run reports peak host open
 files before and after, the exposed file count falls from 696,026 to about
-226,776, and every task that was clean before the change is clean after it,
-because what a container may read is not an input to what it produces.
+226,776, and the run reaches container execution without exhausting the table.
+
+A mount is encoded in the execution's identity, so narrowing one invalidates
+the tasks that carry it. That is correct: what a container may read is part of
+what it is. The gate is that identities change once and the outputs they
+produce do not.
+
+Status: complete. The two trees are covered by an empty directory mounted over
+them, because the package root is the checkout root and neither can be excluded
+by mounting something narrower.
+
+Gate evidence: peak host open files across a full `collider package
+linux-runtime` run fell from 436,059 to 77,920, sixteen percent of the limit,
+against a sixty-seven percent reduction in exposed files. Cost follows
+exposure. No run since has reported `ENFILE`, and the run reached eighteen
+tasks where the unmasked runs failed at five and seven.
+
+The first measurement of this phase reported no reduction and was wrong. It
+sampled a run that never reached the task graph, spending its whole window in
+the host Swift Build described above. A second measurement made the same
+mistake against the builder account's copy of that build. Both are why the
+current state now names that consumer: an experiment that cannot tell its
+intervention from its confound reports the confound.
 
 ## Phase 2: Mount What the Task Declares
 

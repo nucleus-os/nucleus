@@ -899,6 +899,8 @@ package struct ComponentRegistry {
             + architecture.rawValue
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
+        let containerMaskDirectory = try emptyContainerMaskDirectory(
+            under: context.cacheRoot)
         let swiftPMRoot = context.cacheRoot.appending(
             "swiftpm/\(target.identifier)")
         let swiftPMDependencyCache = context.cacheRoot.appending(
@@ -926,38 +928,44 @@ package struct ComponentRegistry {
                     OCIMount(
                         source: root,
                         target: placement.executionPath(root),
-                        access: .readOnly),
-                    OCIMount(
-                        source: nativeSDK,
-                        target: placement.executionPath(nativeSDK),
-                        access: .readOnly),
-                    // The native SDK's include tree links into the materialized
-                    // JavaScript workspace and the generated sources beside it,
-                    // and those links record the path the container sees, so
-                    // both trees are mounted where the declared roots put them.
-                    OCIMount(
-                        source: ReactNativeColliderRecipe.javaScriptWorkspace(
-                            cacheRoot: context.cacheRoot),
-                        target: placement.executionPath(
-                            ReactNativeColliderRecipe.javaScriptWorkspace(
-                                cacheRoot: context.cacheRoot)),
-                        access: .readOnly),
-                    OCIMount(
-                        source: ReactNativeColliderRecipe.codegenRoot(
-                            cacheRoot: context.cacheRoot),
-                        target: placement.executionPath(
-                            ReactNativeColliderRecipe.codegenRoot(
-                                cacheRoot: context.cacheRoot)),
-                        access: .readOnly),
-                    OCIMount(
-                        source: builder.swiftSDKRoot,
-                        target: guestSDKRoot,
-                        access: .readOnly),
-                    OCIMount(
-                        source: builder.swiftPMOverlay.path,
-                        target: "/swiftpm-overlay",
-                        access: .readOnly),
-                ],
+                        access: .readOnly)
+                ]
+                    + containerMaskedCheckoutSubtrees(
+                        root: root,
+                        mask: containerMaskDirectory,
+                        placement: placement)
+                    + [
+                        OCIMount(
+                            source: nativeSDK,
+                            target: placement.executionPath(nativeSDK),
+                            access: .readOnly),
+                        // The native SDK's include tree links into the materialized
+                        // JavaScript workspace and the generated sources beside it,
+                        // and those links record the path the container sees, so
+                        // both trees are mounted where the declared roots put them.
+                        OCIMount(
+                            source: ReactNativeColliderRecipe.javaScriptWorkspace(
+                                cacheRoot: context.cacheRoot),
+                            target: placement.executionPath(
+                                ReactNativeColliderRecipe.javaScriptWorkspace(
+                                    cacheRoot: context.cacheRoot)),
+                            access: .readOnly),
+                        OCIMount(
+                            source: ReactNativeColliderRecipe.codegenRoot(
+                                cacheRoot: context.cacheRoot),
+                            target: placement.executionPath(
+                                ReactNativeColliderRecipe.codegenRoot(
+                                    cacheRoot: context.cacheRoot)),
+                            access: .readOnly),
+                        OCIMount(
+                            source: builder.swiftSDKRoot,
+                            target: guestSDKRoot,
+                            access: .readOnly),
+                        OCIMount(
+                            source: builder.swiftPMOverlay.path,
+                            target: "/swiftpm-overlay",
+                            access: .readOnly),
+                    ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
                         key: "nucleus-swiftpm",
@@ -1330,4 +1338,43 @@ package struct ComponentRegistry {
                 runtimeSourceID: sourceID))
     }
 
+}
+
+/// Subtrees of the checkout no Swift build reads, shadowed inside the
+/// container by an empty directory.
+///
+/// A bind-mounted host directory is shared with the guest file by file, so what
+/// a container is shown costs host descriptors whether or not it is read. The
+/// package root is the checkout root, so these cannot be excluded by mounting
+/// something narrower; they are covered instead.
+///
+/// `swift-sdk/source` is the Swift toolchain source closure, which the
+/// target-SDK graph builds and no product build reads. The `.build` trees are
+/// host SwiftPM output; a container builds into its own workspace.
+func containerMaskedCheckoutSubtrees(
+    root: FilePath,
+    mask: FilePath,
+    placement: IdentityPathMap
+) -> [OCIMount] {
+    [
+        "swift-sdk/source",
+        ".build",
+        "collider/.build",
+        "collider/engine/.build",
+        "third-party/container/.build",
+    ].map { relative in
+        OCIMount(
+            source: mask,
+            target: placement.executionPath(root.appending(relative)),
+            access: .readOnly)
+    }
+}
+
+/// One empty directory, reused as the source of every mask mount.
+func emptyContainerMaskDirectory(under cacheRoot: FilePath) throws -> FilePath {
+    let directory = cacheRoot.appending("container-mask")
+    try FileManager.default.createDirectory(
+        atPath: directory.string,
+        withIntermediateDirectories: true)
+    return directory
 }
