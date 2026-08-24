@@ -135,14 +135,24 @@ than on the configuration that caused them. `libaudit1`, `libaudit-dev`,
 which closes `pam.pc` and the `libpam.so.0` to `libaudit.so.1` to
 `libcap-ng.so.0` chain beneath it.
 
-A third gap sits in the ELF graph and predates the rebase. Wayland's
-`libwayland-client.so.0` and `libwayland-server.so.0` need `libffi.so.8`, which
-was never pinned, so payload assembly cannot resolve it once it reaches that
-check — which no run had, because every earlier one failed further up the
-graph. `libffi8` joins the pinned set. Scanning every shared object in both
-native SDKs against the target library roots reports no other unresolved
-dependency, so the closure is checked rather than repaired one failure at a
-time.
+The third gap sits in the ELF graph and predates the rebase. Payload assembly
+walks the whole dynamic closure and requires every undefined symbol in it to be
+defined somewhere in it, so it descends into host-provided libraries as well:
+their exports are what satisfy the artifacts, which is why the walk cannot stop
+at a library the target supplies. The sysroot was closed one level deep.
+`libwayland-client.so.0` and `libwayland-server.so.0` needed `libffi.so.8`;
+`libinput.so.10` needed `libevdev.so.2`, `libmtdev.so.1`, and `libwacom.so.9`;
+`libcurl.so.4` needed its TLS, Kerberos, LDAP, and compression closure;
+`libfreetype.so.6` needed `libpng16` and `libbz2`. None of it had been reached
+before, because every earlier run failed further up the graph.
+
+The pinned set is now that transitive closure rather than a list extended one
+failure at a time: 88 packages per architecture, computed by resolving each
+unresolved SONAME against the release's own file index, fetching it, and
+rescanning until nothing was missing. Every digest was verified against the
+downloaded package. `dri_gbm.so` names a Gallium library the closure excludes,
+and correctly so: it is a GBM backend loaded by name at runtime, and no
+dependency in the graph declares it.
 
 The rebuild reached SDK validation and reported
 `libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
