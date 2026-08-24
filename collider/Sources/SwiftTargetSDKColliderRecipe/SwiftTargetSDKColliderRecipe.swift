@@ -1752,8 +1752,10 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             let temporarySDKName = "\(linuxBundleID)-\(target.architecture)"
             let generatedTripleRoot = generatedTarget.appending(
                 "Bundles/\(linuxBundle)/\(temporarySDKName)/\(target.triple)")
+            // The generator names its output for the release it built from,
+            // which is the release the builder image runs.
             let generatedTargetRoot = generatedTripleRoot.appending(
-                "ubuntu-noble.sdk")
+                "ubuntu-resolute.sdk")
             let finalTripleRoot = finalLinuxSDK.appending(target.triple)
             let finalTargetRoot = finalTripleRoot.appending(
                 NucleusLinuxABI.sdkDirectoryName)
@@ -1763,7 +1765,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 "--no-host-toolchain",
                 "--target", target.triple,
                 "--distribution-name", "ubuntu",
-                "--distribution-version", "24.04",
+                "--distribution-version", "26.04",
                 "--swift-version", snapshot,
                 "--target-swift-package-path", target.runtimeInstall.string,
                 "--sdk-name", temporarySDKName,
