@@ -333,7 +333,14 @@ import Testing
     #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
     for target in inputs.linuxTargets {
         #expect(target.runtimeUbuntuPackages.count == 16)
-        #expect(target.sdkUbuntuPackages.count == 47)
+        #expect(target.sdkUbuntuPackages.count == 49)
+        // The sysroot is closed under dependency: libXdmcp needs libbsd, and
+        // libbsd needs libmd, and ELF staging resolves every dependency to
+        // check its architecture whether or not the payload ships it.
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libbsd0_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libmd0_") })
+        // Built from the release the builder image runs.
+        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("libc6_2.43") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libicu") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
