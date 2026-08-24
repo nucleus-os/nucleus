@@ -1,6 +1,6 @@
 # Swift Target SDK Ubuntu Rebase Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -100,68 +100,49 @@ Gate: `collider package linux-runtime` assembles both architectures' payloads
 from the rebased sysroot, and no shipped artifact imports a GLIBC symbol newer
 than the declared baseline.
 
-Status: the SDK is built and active; the payload gate is what remains.
-Generation `3b02f4f08084db2f48c3cb50` publishes
-`nucleus-linux-glibc-2.43.sdk` for both triples, each sysroot carries
-`libbsd.so.0` and `libmd.so.0` beside the `libXdmcp.so.6` that needs them, and
-no library in the generation imports a GLIBC symbol newer than the declared
-baseline. The same scan at the former 2.38 floor still reports ten runtime
-libraries, so the baseline moved because it had to rather than because the
-check was weakened.
+Status: complete. `collider package linux-runtime` assembles and qualifies both
+architectures' complete cohorts from the rebased sysroot, and the highest GLIBC
+version any of the 33 shipped objects per architecture imports is 2.43, which
+is the declared baseline exactly. The same scan at the former 2.38 floor still
+reports ten runtime libraries, so the baseline moved because it had to rather
+than because the check was weakened.
 
-The rebase surfaced a second definition of the sysroot. Two checked-in meson
-cross files, one under `android-runtime/build-support` and one under
-`swift-wayland/build-support`, wrote the sysroot as a literal in five places
-each, so moving the baseline moved only the paths Collider derives. gfxstream
-then compiled with `--sysroot` naming the 2.38 sysroot and `-isystem` naming
-the 2.43 one, which no header search satisfies, and a command-line `-D` option
-replaces a machine file's `[built-in options]` rather than merging with them,
-so the half naming the sysroot was the half that lost. Both files are now
-generated where they are used, from the same constant the rest of the toolchain
-paths derive from, and neither is checked in. A meson build directory carries
-the configuration document it was set up from and is discarded when the two
-differ, so a moved sysroot cannot leave a directory holding half of each.
+The baseline moved because the symbols are the Swift runtime's own. SDK
+validation reported `libFoundation.so imports GLIBC_2.43, newer than
+GLIBC_2.38`; reading every built library rather than the first to fail showed
+fifteen distinct symbols, thirteen of them libm functions glibc 2.43
+re-versioned, across twenty runtime libraries including `libswiftCore`,
+`libFoundation`, and `libswiftGlibc`. Nucleus code cannot avoid them.
 
-The closure the invariant states is a pkg-config graph as well as an ELF one,
-and the rebase opened a second hole in it. PAM 1.7.0 ships a `pam.pc` that
-1.5.3 did not, declaring `Requires.private: audit`, and `audit.pc` in turn
-declares `Requires.private: libcap-ng`; neither `libaudit-dev` nor
-`libcap-ng-dev` was pinned. SwiftPM resolves `.pc` files itself, and a missing
-one is a warning rather than an error there — `couldn't find pc file for audit`
-— so it dropped every flag the package would have contributed and the PAM
-helper linked with no `-lpam` at all, failing on five undefined symbols rather
-than on the configuration that caused them. `libaudit1`, `libaudit-dev`,
-`libcap-ng0`, and `libcap-ng-dev` join the pinned set for both architectures,
-which closes `pam.pc` and the `libpam.so.0` to `libaudit.so.1` to
-`libcap-ng.so.0` chain beneath it.
+Closing the sysroot took three distinct repairs, and the durable one is that
+closure is a property of two graphs rather than one.
 
-The third gap sits in the ELF graph and predates the rebase. Payload assembly
-walks the whole dynamic closure and requires every undefined symbol in it to be
-defined somewhere in it, so it descends into host-provided libraries as well:
-their exports are what satisfy the artifacts, which is why the walk cannot stop
-at a library the target supplies. The sysroot was closed one level deep.
-`libwayland-client.so.0` and `libwayland-server.so.0` needed `libffi.so.8`;
-`libinput.so.10` needed `libevdev.so.2`, `libmtdev.so.1`, and `libwacom.so.9`;
-`libcurl.so.4` needed its TLS, Kerberos, LDAP, and compression closure;
-`libfreetype.so.6` needed `libpng16` and `libbz2`. None of it had been reached
-before, because every earlier run failed further up the graph.
+The sysroot had a second definition. Two checked-in meson cross files wrote it
+as a literal, so moving the baseline moved only the paths Collider derives and
+gfxstream compiled with `--sysroot` naming the old sysroot and `-isystem`
+naming the new one. A command-line `-D` option replaces a machine file's
+`[built-in options]` rather than merging with them, so the half naming the
+sysroot was the half that lost. Both files are now generated where they are
+used, from the constant the rest of the toolchain paths derive from.
 
-The pinned set is now that transitive closure rather than a list extended one
-failure at a time: 88 packages per architecture, computed by resolving each
-unresolved SONAME against the release's own file index, fetching it, and
-rescanning until nothing was missing. Every digest was verified against the
-downloaded package. `dri_gbm.so` names a Gallium library the closure excludes,
-and correctly so: it is a GBM backend loaded by name at runtime, and no
-dependency in the graph declares it.
+The pkg-config graph was open. PAM 1.7.0 ships a `pam.pc` that 1.5.3 did not,
+declaring `Requires.private: audit`, and `audit.pc` declares
+`Requires.private: libcap-ng`. SwiftPM resolves `.pc` files itself and treats a
+missing one as a warning, so it dropped every flag `pam.pc` would have
+contributed and the PAM helper linked with no `-lpam`, failing on undefined
+symbols rather than on the configuration that caused them.
 
-The rebuild reached SDK validation and reported
-`libFoundation.so imports GLIBC_2.43, newer than GLIBC_2.38`, which is the
-failure this phase existed to surface. Reading every built library rather than
-the first one to fail showed fifteen distinct symbols, thirteen of them libm
-functions glibc 2.43 re-versioned — `acosf`, `acoshf`, `asinf`, `atan2f`,
-`atanhf`, `coshf`, `lgammaf_r`, `log10f`, `remainder`, `remainderf`, `sinhf`,
-`sqrtf`, `tgammaf` — across twenty runtime libraries including `libswiftCore`,
-`libFoundation`, and `libswiftGlibc`.
+The ELF graph was closed only one level deep, which predates the rebase.
+Assembly walks the whole dynamic closure and requires every undefined symbol in
+it to be defined somewhere in it, so it descends into host-provided libraries
+too: their exports are what satisfy the artifacts, which is why the walk cannot
+stop at a library the target supplies. The pinned set is now that transitive
+closure — 88 packages per architecture, computed by resolving each unresolved
+SONAME against the release's own file index, fetching it, and rescanning until
+nothing was missing, with every digest verified against the downloaded package.
+`dri_gbm.so` names a Gallium library the closure excludes, correctly: it is a
+GBM backend loaded by name at runtime, and no dependency in the graph declares
+it.
 
 They are not avoidable by changing Nucleus code: the Swift runtime calls them,
 and the sysroot it links against binds them. Holding the ceiling below the

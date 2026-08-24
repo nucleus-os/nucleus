@@ -32,29 +32,24 @@ reuse.
    checkout today, two thirds of which no build reads, and the host open-file
    table is exhausted by two concurrent containers. This blocks the packaging
    graph, so it precedes the phases that depend on it.
-2. Complete the
-   [Swift target SDK Ubuntu rebase plan](swift-target-sdk-ubuntu-rebase-plan.md)
-   so the target sysroot is built from the release the builder image runs. The
-   image is Ubuntu 26.04 and the sysroot is 24.04, and the sysroot is not closed
-   under dependency, which stops payload assembly.
-3. Complete Phases 4 and 5 of the
+2. Complete Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    run the first bounded `collider build all` lane from the clean CI checkout,
    prove that it reuses the authoritative checkout's warm state, close the
    remaining cross-account and build-store gates, and enforce the source,
    account, credential, network, and recovery boundaries.
-4. Complete the product-execution portions of the
+3. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-5. Complete Phases 1 through 5 of the
+4. Complete Phases 1 through 5 of the
    [Android architecture parity plan](android-architecture-parity-plan.md) so
    both supported architectures have an AOSP product and every native package
    cohort member is produced by the build graph. The arm64 cohort otherwise
    declares an exact `nucleus-android` member the repository cannot produce.
-6. Reduce the Android lane's flake risk before cutover with the
+5. Reduce the Android lane's flake risk before cutover with the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    This gates no product and no publication: the arm64 product already builds
    with its host tools translated. It is sequenced here because translation has
@@ -63,41 +58,41 @@ reuse.
    runner cannot absorb the way a watched build can. Its first phase measures
    what translation costs without re-executing a build; the remaining phases
    supply the arm64 host toolchains AOSP does not ship.
-7. Complete Phases 6 and 7 of the
+6. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
    The graph lands with the remaining Linux-runtime packaging mounts and proves
    them through an actual `collider package linux-runtime` execution.
-8. Complete Phases 5 and 6 of the
+7. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-9. Complete Phases 6 and 7 of the
+8. Complete Phases 6 and 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the exact native package cohorts: first qualify one unchanged artifact
    across distributions, then qualify both architectures on physical hardware.
-10. Complete the remaining qualification plans in the order listed below. Their
+9. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts before CI cutover.
-11. Complete Phase 7 of the
+10. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
    and R2 authorities.
-12. Complete Phase 8 of the
+11. Complete Phase 8 of the
     [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    against the native package, repository, and qualification pipeline.
-13. Complete Phase 8 of the
+12. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish and qualify native update lifecycles.
-14. Complete Phase 9 of the
+13. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
    product-artifact contract.
-15. Complete Phases 2 through 6 of
+14. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-16. Complete Phases 3 through 10 of the
+15. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
@@ -108,16 +103,22 @@ Component implementation plans continue in the dependency order in
 Step 10 executes these qualification plans after their corresponding
 implementation inputs are available:
 
-1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
-2. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
-3. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
-4. [Android application integration](android-application-integration-plan.md)
-5. [Android container security](android-container-security-qualification-plan.md)
-6. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
-7. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+16. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
+17. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
+18. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
+19. [Android application integration](android-application-integration-plan.md)
+20. [Android container security](android-container-security-qualification-plan.md)
+21. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
+22. [Nucleus Browser](nucleus-browser-qualification-plan.md)
 
 ## Completed architecture consolidation
 
+- [Swift target SDK Ubuntu rebase](swift-target-sdk-ubuntu-rebase-plan.md)
+  built the Linux target sysroot from the release the builder image runs, moved
+  the ABI baseline to the glibc that sysroot carries, and closed the sysroot
+  over both graphs that decide what a product may link: the pkg-config graph a
+  `.pc` file's `Requires.private` declares, and the transitive dynamic closure
+  payload assembly walks.
 - [Collider throughput optimization](collider-throughput-optimization-plan.md)
   established concurrent architecture packaging, single-materialization
   payloads, independently cached family adapters, bounded control-only batches,

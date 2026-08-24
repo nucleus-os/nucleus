@@ -240,8 +240,18 @@ inputs alone, and the complete verification graph runs it on protected `main`.
 Status: active. Each architecture's Android payload consumes its package-input
 artifact, and the synthesized default input path is gone along with
 `--android-arm64`, `--android-x86-64`, and the path-supplied
-`collider android-runtime package-input` command. The gate is unmet: no cohort
-has been assembled from a produced input.
+`collider android-runtime package-input` command.
+
+The first half of the gate is met. `collider package linux-runtime` assembles
+and qualifies both architectures' complete cohorts from graph-produced inputs
+alone, including `nucleus-android` for each: `nucleus-android_arm64.deb`,
+`nucleus-android-...aarch64.rpm`, and `nucleus-android-...aarch64.pkg.tar.zst`
+beside their amd64 counterparts, alongside `nucleus`, `nucleus-runtime`,
+`nucleus-browser`, `nucleus-development-host`, and `nucleus-session` in all
+three families.
+
+The remaining half is the verification graph running it on protected `main`,
+which no run has done.
 
 ## Phase 6: Qualify the arm64 Guest on Hardware
 

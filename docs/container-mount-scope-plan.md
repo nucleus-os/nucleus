@@ -90,6 +90,14 @@ current state now names that consumer: an experiment that cannot tell its
 intervention from its confound reports the confound.
 
 ## Phase 2: Mount What the Task Declares
+Phase 1 measured a graph that failed early. The complete packaging graph is
+larger and runs heavier work concurrently, and it still reaches the ceiling: a
+full `collider package linux-runtime` exhausted the host file table once, in an
+AOSP compile running alongside Swift package builds, and a lighter incremental
+run of the same command peaked at 282,966 of 491,520. Fifty-seven percent is
+not headroom for a graph that grows, so this phase is required rather than
+merely worthwhile.
+
 
 A container execution composes its mounts from the task's declared inputs and
 effect scopes rather than from the checkout root. A task naming
