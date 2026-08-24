@@ -60,6 +60,12 @@ Gate: the generator accepts `--distribution-version 26.04` and reports the
 required packages for it, and the pinned source closure names the fork revision
 that added it.
 
+Status: complete. The fork carries `resolute` at `66a4e8e` on
+`nucleus-ubuntu-2604`, and the source closure points at it. The release maps in
+both directions and declares `libgcc-13-dev`, `libicu78`, and
+`libstdc++-13-dev`; only the ICU soname moves from noble. The fork's own
+distribution tests cover the new release in both directions and pass.
+
 ## Phase 2: Repin the Sysroot
 
 `target-sdk-inputs.json` pins every package at its resolute version for both
@@ -72,6 +78,15 @@ Gate: the sysroot for each architecture contains every SONAME its own contents
 name, `libXdmcp.so.6` resolves `libbsd.so.0` and `libbsd.so.0` resolves
 `libmd.so.0` within it, and every pinned URL matches the digest recorded beside
 it.
+
+Status: complete for the lock; the sysroot itself is produced by Phase 3. All
+126 entries are repinned at their resolute versions from the release's own
+package index, and `libbsd0` and `libmd0` are added per architecture. Every
+package kept its name, so nothing is renamed and no toolchain series moves.
+Digests were verified end to end for the added packages and for `libc6` and
+`libxdmcp6` on both architectures, and the remainder are verified by the
+download tasks that consume them. The recipe passes `26.04` and names its
+output `ubuntu-resolute.sdk`.
 
 ## Phase 3: Rebuild and Hold the Baseline
 
