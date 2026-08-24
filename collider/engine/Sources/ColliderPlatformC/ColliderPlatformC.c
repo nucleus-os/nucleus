@@ -207,9 +207,14 @@ int32_t collider_copy_file_without_acl(const char *source, const char *destinati
 
 int32_t collider_copy_tree_without_acl(const char *source, const char *destination) {
 #if defined(__APPLE__)
+    // COPYFILE_NOFOLLOW recreates a symbolic link rather than copying what it
+    // points at, which is what the Linux path below does and what a staged
+    // tree needs: a package declaring a path as a link has to materialize one.
+    // Without it copyfile also fails outright on a link whose target is
+    // absent, because it tries to open the target.
     return (int32_t)copyfile(
         source, destination, NULL,
-        COPYFILE_DATA | COPYFILE_STAT | COPYFILE_RECURSIVE);
+        COPYFILE_DATA | COPYFILE_STAT | COPYFILE_RECURSIVE | COPYFILE_NOFOLLOW);
 #elif defined(__linux__)
     return collider_copy_entry_linux(source, destination);
 #else
