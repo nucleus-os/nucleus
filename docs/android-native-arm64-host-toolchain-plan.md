@@ -16,6 +16,20 @@ performance detail: two Go host tools have already died under it, `soong_zip`
 on a SIGSEGV and Siso on a SIGTRAP that cancelled twenty-six in-flight actions
 and failed a product build outright, neither with a cause in the tree.
 
+## Relationship to Release
+
+This plan gates no product and no publication. The arm64 Android product builds
+today with the host tools running under translation: run
+`2026-08-22T21-30-45.307Z-39952` compiled, signed, assembled, validated, and
+published `nucleus_arm64` in 144,172 steps with no failure, and both
+architectures' package inputs are produced from those generations.
+
+What it changes is how reliably that lane runs. Translation has already killed
+two host tools with no cause in the tree, and the mitigation until this plan
+lands is to retry rather than diagnose. A person watching a build can retry; an
+unattended run cannot, and this is the longest lane in the graph. That places
+the plan before CI cutover as risk reduction, not as a dependency of it.
+
 ## Current State
 
 Soong already selects arm64 host prebuilts. `prebuiltOS()` in

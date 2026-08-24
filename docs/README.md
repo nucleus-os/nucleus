@@ -54,11 +54,15 @@ reuse.
    both supported architectures have an AOSP product and every native package
    cohort member is produced by the build graph. The arm64 cohort otherwise
    declares an exact `nucleus-android` member the repository cannot produce.
-6. Complete the
-   [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md)
-   so the Android build runs natively on the builder's architecture. Its first
-   phase measures what translation costs without re-executing a build; the
-   remaining phases supply the arm64 host toolchains AOSP does not ship.
+6. Reduce the Android lane's flake risk before cutover with the
+   [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
+   This gates no product and no publication: the arm64 product already builds
+   with its host tools translated. It is sequenced here because translation has
+   killed two host tools outright, the mitigation is retry rather than
+   diagnosis, and the lane is the longest in the graph — which an unattended
+   runner cannot absorb the way a watched build can. Its first phase measures
+   what translation costs without re-executing a build; the remaining phases
+   supply the arm64 host toolchains AOSP does not ship.
 7. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.

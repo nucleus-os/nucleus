@@ -1178,8 +1178,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             + "']\" -Dcpp_link_args=\"['-stdlib=libc++','-fuse-ld=lld','-L"
             + target.containerLibCXXLibraryRoot
             + "']\""
-        let hostBuild = "/build/host"
-        let guestBuild = "/build/guest"
+        // Meson bakes the sysroot into the build options it caches at first
+        // setup, and `--reconfigure` keeps those options while re-reading the
+        // rest. A sysroot that moves therefore produces a build directory
+        // holding the new include paths and the old `--sysroot`, which fails
+        // on the first header it cannot find. Keying the directory to the
+        // sysroot means a toolchain change starts a fresh configuration and
+        // leaves repeat builds against the same toolchain incremental.
+        let toolchainKey = NucleusLinuxABI.sdkDirectoryName
+        let hostBuild = "/build/host-\(toolchainKey)"
+        let guestBuild = "/build/guest-\(toolchainKey)"
         let buildWorkspace = PersistentWorkspaceDeclaration(
             identity: PersistentWorkspaceIdentity(
                 key: "android-gfxstream-intermediates",
