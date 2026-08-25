@@ -90,6 +90,17 @@ current state now names that consumer: an experiment that cannot tell its
 intervention from its confound reports the confound.
 
 ## Phase 2: Mount What the Task Declares
+The derivation itself is settled and measured. `SwiftPackageSourceGraph` names
+every target directory SwiftPM owns and every package manifest, and the native
+compiler configuration returns the vendored include roots its own flags point
+at, so a mount and the include path naming it come from one list. Across a full
+runtime plan that is 66 mounts over 3,756 files, against 248,190 exposed by
+mounting the root. Manifest target paths widen to two components below the root
+and everything else is mounted as given: widening a first-party source
+directory costs 56 files across the package and removes four fifths of the
+mounts, while widening `third-party/gfxstream/host/common/include` would mount
+the whole vendored tree.
+
 Phase 1 measured a graph that failed early. The complete packaging graph is
 larger and runs heavier work concurrently, and it still reaches the ceiling: a
 full `collider package linux-runtime` exhausted the host file table once, in an
@@ -110,9 +121,31 @@ An action that declares an unrestricted read scope keeps the checkout mount and
 records why, because a mount narrower than the declaration would be a
 correctness change rather than a scope change.
 
-Gate: no OCI execution names the checkout root as a mount source unless its
-action declares an unrestricted read scope, and the complete packaging graph
-produces byte-identical task identities.
+Gate: no OCI execution mounts a checkout subtree its task does not declare,
+and the complete packaging graph produces the same outputs. Identities change
+once, because a mount is part of what an execution is.
+
+The gate previously read that no execution names the checkout root as a mount
+source. That is unachievable additively and the reason is structural: a bind
+mount source must be a directory, and `Package.swift` and `Package.resolved`
+are files directly inside the package root, which for this package is the
+checkout root. The root is therefore mounted as a *view* — a directory holding
+copies of those files and an empty directory for every mount nested inside it —
+so what the container sees at the package root is what the package declares.
+
+The view is produced by a task rather than materialized while planning.
+Planning runs in the invoking account before a command re-runs itself as the
+builder, and the build store belongs to the builder, so a planning-time
+materialization fails in one account and leaves state the other cannot remove.
+Both directions were observed.
+
+One unknown decides the task's shape. If the runtime creates a nested bind
+target that its parent does not contain, the view is the file copies alone and
+needs nothing from the package graph. If it does not, the view needs an empty
+directory per nested mount, which means resolving the graph where the task is
+declared — and resolving it outside `swiftPMInvocation` also resolves against
+roots that have no manifest, which is what made the first attempt spend thirty
+minutes in the test suite rather than four.
 
 ## Phase 3: Revalidate the Source a Run Consumed
 
