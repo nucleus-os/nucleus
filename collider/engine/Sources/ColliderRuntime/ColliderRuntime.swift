@@ -232,7 +232,8 @@ public actor ColliderRuntime {
                                 timings: outcome.timings))
                     }
                     return result
-                }),
+                }
+            ).scoped(to: action.requirements),
             observations: ActionObservationRecorder { observation in
                 recordedObservations.withLock {
                     $0.actionStages.append(observation)

@@ -197,6 +197,81 @@ public struct ActionContainerExecutor: Sendable {
     public func execute(_ execution: OCIExecution) async throws -> CommandResult {
         try await runBody(execution)
     }
+
+    /// Holds a container execution to the same declaration its action's
+    /// filesystem access is held to.
+    ///
+    /// A mount is how an action reaches the host from inside a container, so
+    /// what it may mount is what it declared it may read and write. The
+    /// requirements an execution implies are already derived from its mounts;
+    /// scoping asks whether the action that constructed it declared them.
+    /// Where the action *is* the pipeline, its declaration comes from the same
+    /// derivation and the two agree by construction. Where an action writes
+    /// its own requirements and builds executions by hand, this is what keeps
+    /// the two from drifting.
+    package func scoped(to declared: ActionRequirements) -> Self {
+        Self(
+            prepareImage: { preparation in
+                try requireDeclared(
+                    ociImagePreparationActionRequirements(preparation: preparation),
+                    within: declared,
+                    reaching: "image preparation")
+                try await prepareImageBody(preparation)
+            },
+            run: { execution in
+                try requireDeclared(
+                    ociActionRequirements(execution: execution),
+                    within: declared,
+                    reaching: "container execution")
+                return try await runBody(execution)
+            })
+    }
+}
+
+private func requireDeclared(
+    _ implied: ActionRequirements,
+    within declared: ActionRequirements,
+    reaching subject: String
+) throws {
+    for effect in implied.effects {
+        guard
+            actionEffects(
+                declared.effects,
+                permit: effect.access,
+                at: effect.scope.root)
+        else {
+            throw ActionContainerScopeFailure.undeclaredEffect(
+                subject: subject,
+                access: effect.access,
+                path: effect.scope.root)
+        }
+    }
+    for effect in implied.persistentWorkspaceEffects {
+        guard declared.persistentWorkspaceEffects.contains(effect) else {
+            throw ActionContainerScopeFailure.undeclaredPersistentWorkspace(
+                subject: subject,
+                workspace: effect.workspace.identity,
+                target: effect.target)
+        }
+    }
+}
+
+public enum ActionContainerScopeFailure: Error, CustomStringConvertible, Sendable {
+    case undeclaredEffect(
+        subject: String, access: ActionEffectAccess, path: FilePath)
+    case undeclaredPersistentWorkspace(
+        subject: String, workspace: PersistentWorkspaceIdentity, target: String)
+
+    public var description: String {
+        switch self {
+        case .undeclaredEffect(let subject, let access, let path):
+            "\(subject) reaches '\(path)' for \(access.rawValue), which no "
+                + "effect the action declares covers"
+        case .undeclaredPersistentWorkspace(let subject, let workspace, let target):
+            "\(subject) mounts persistent workspace '\(workspace.key)' at "
+                + "'\(target)', which the action does not declare"
+        }
+    }
 }
 
 public struct ActionObservationRecorder: Sendable {
@@ -1135,7 +1210,7 @@ public struct ActionFileSystem: Sendable {
     package func scoped(to effects: [ActionEffect]) -> ActionFileSystem {
         let require: @Sendable (ActionEffectAccess, FilePath) throws -> Void = {
             access, path in
-            guard Self.permits(access, to: path, within: effects) else {
+            guard actionEffects(effects, permit: access, at: path) else {
                 throw ActionFileSystemFailure.undeclaredEffect(
                     access: access,
                     path: path)
@@ -1240,16 +1315,23 @@ public struct ActionFileSystem: Sendable {
             })
     }
 
-    private static func permits(
-        _ requested: ActionEffectAccess,
-        to path: FilePath,
-        within effects: [ActionEffect]
-    ) -> Bool {
-        guard path.isAbsolute else { return false }
-        return effects.contains { effect in
-            guard effect.access.permits(requested) else { return false }
-            return path.isContained(in: effect.scope.root)
-        }
+}
+
+/// Whether a declaration covers one access to one path.
+///
+/// A host filesystem call and a container mount are the same question asked of
+/// the same declaration, so they ask it through one predicate. A disagreement
+/// between them would let an action reach through a container what it may not
+/// reach directly.
+package func actionEffects(
+    _ effects: [ActionEffect],
+    permit requested: ActionEffectAccess,
+    at path: FilePath
+) -> Bool {
+    guard path.isAbsolute else { return false }
+    return effects.contains { effect in
+        guard effect.access.permits(requested) else { return false }
+        return path.isContained(in: effect.scope.root)
     }
 }
 
