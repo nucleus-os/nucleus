@@ -85,12 +85,22 @@ package struct ComponentRegistry {
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
             exact: nucleusIncludeRoots + nucleusGraph.headerSearchRoots
                 + assemblerGraph.headerSearchRoots
-                // Not everything a container reads from the checkout is in the
-                // package graph. The runtime artifact and the shell runtime
-                // generation both assemble the session package's scripts and
-                // units, declaring them as file inputs and as a checkout read
-                // effect, and neither is a Swift target or an include path.
-                + [context.layout.compositorSessionPackage])
+                // Not everything a container reads from the checkout is in
+                // the package graph. These directories hold data a product is
+                // assembled from rather than source it is compiled from: the
+                // session package's scripts, unit, and PAM template, and the
+                // Android container's AppArmor and seccomp policies. Every
+                // action reading them declares it, as file inputs and as a
+                // checkout read effect, so the gap was in what this consulted.
+                //
+                // These two are the whole set. Of the actions across every
+                // recipe that declare a checkout read, the rest either run on
+                // the host, where nothing is mounted, or belong to a lane that
+                // mounts its own component root rather than a package view.
+                + [
+                    context.layout.compositorSessionPackage,
+                    context.layout.androidRuntime.appending("container"),
+                ])
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
