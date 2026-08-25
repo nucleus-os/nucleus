@@ -23,18 +23,36 @@ package struct PackageRootViewRequest: Hashable, Sendable {
     package let files: [FilePath]
     package let nestedDirectories: [FilePath]
 
+    /// Every declared path must sit under `root`, because the view places a
+    /// path at its position relative to that root. A path outside it has no
+    /// such position, and taking one anyway would write the file to whatever
+    /// `relative` happened to produce rather than reporting the mistake. A
+    /// resolved package graph names external dependency manifests alongside
+    /// first-party ones, so this is reachable by ordinary use of the graph
+    /// rather than only by a typo.
     package init(
         identifier: String,
         root: FilePath,
         view: FilePath,
         files: [FilePath],
         nestedDirectories: [FilePath]
-    ) {
+    ) throws {
+        for path in files + nestedDirectories where !path.starts(with: root) {
+            throw PackageRootViewFailure(
+                "package root view \(identifier) declares \(path), "
+                    + "which is not under \(root)")
+        }
         self.identifier = identifier
         self.root = root
         self.view = view
-        self.files = files.sorted { $0.string < $1.string }
-        self.nestedDirectories = nestedDirectories.sorted { $0.string < $1.string }
+        // Sorted and deduplicated because this declares a set: two graphs that
+        // share a package name its manifest twice, and a declared effect may
+        // not be. Canonicalizing here also keeps the identity independent of
+        // how a caller happened to compose the lists.
+        self.files = Set(files).sorted { $0.string < $1.string }
+        self.nestedDirectories = Set(nestedDirectories).sorted {
+            $0.string < $1.string
+        }
     }
 
     /// Each path relative to the root it is declared under. The view mirrors
@@ -69,11 +87,15 @@ struct MaterializePackageRootViewAction: ColliderAction {
         identity = Identity(request: request)
     }
 
+    /// Reading a file is an effect as much as writing one, and this action's
+    /// inputs are files it copies out of the checkout rather than artifacts
+    /// another task produced. Declaring them individually keeps the permitted
+    /// read set equal to the copied set.
     var requirements: ActionRequirements {
         ActionRequirements(
-            effects: [
-                ActionEffect(.readWrite, scope: .output(identity.request.view))
-            ],
+            effects: identity.request.files.map {
+                ActionEffect(.read, scope: .checkout($0))
+            } + [ActionEffect(.readWrite, scope: .output(identity.request.view))],
             executionPlatform: .macOSARM64Native)
     }
 
@@ -116,7 +138,7 @@ struct MaterializePackageRootViewAction: ColliderAction {
     }
 }
 
-private struct PackageRootViewFailure: Error, CustomStringConvertible {
+struct PackageRootViewFailure: Error, CustomStringConvertible {
     let description: String
 
     init(_ description: String) {

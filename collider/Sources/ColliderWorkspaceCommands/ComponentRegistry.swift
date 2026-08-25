@@ -78,6 +78,10 @@ package struct ComponentRegistry {
         ).checkoutIncludeRoots
         let checkoutRoots = checkoutSourceRoots(
             root: context.root,
+            packageRoots: (nucleusGraph.manifestPaths
+                + assemblerGraph.manifestPaths).map {
+                    $0.removingLastComponent()
+                },
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
             exact: nucleusIncludeRoots)
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
@@ -89,12 +93,21 @@ package struct ComponentRegistry {
             environment: recipeEnvironment,
             identityPathMap: context.identityPathMap,
             packageRootViews: [
-                PackageRootViewRequest(
+                try PackageRootViewRequest(
                     identifier: Self.packageRootViewIdentifier,
                     root: context.root,
                     view: packageRootViewRoot.appending(
                         Self.packageRootViewIdentifier),
-                    files: nucleusGraph.manifestPaths + assemblerGraph.manifestPaths
+                    // A resolved graph names every package it contains,
+                    // including external dependencies checked out into the
+                    // build store. Those reach a container through the
+                    // dependency scratch mount rather than the package root,
+                    // so the view carries only the manifests that are part of
+                    // the checkout it projects. `checkoutSourceRoots` applies
+                    // the same cut to directories.
+                    files: (nucleusGraph.manifestPaths
+                        + assemblerGraph.manifestPaths)
+                        .filter { $0.starts(with: context.root) }
                         + [
                             context.root.appending("Package.resolved"),
                             assemblerRoot.appending("Package.resolved"),
@@ -1417,13 +1430,16 @@ package struct ComponentRegistry {
 /// state of the filesystem it was planned against.
 func checkoutSourceRoots(
     root: FilePath,
+    packageRoots: [FilePath],
     widened: [FilePath],
     exact: [FilePath]
 ) -> [FilePath] {
+    let packageRoots = Set(packageRoots)
     let candidates = Set(
-        (widened.map { coalesced($0, under: root) } + exact).filter {
-            $0 != root && $0.starts(with: root)
-        })
+        (widened.map { coalesced($0, under: root, avoiding: packageRoots) }
+            + exact).filter {
+                $0 != root && $0.starts(with: root)
+            })
     return
         candidates
         .filter { candidate in
@@ -1433,14 +1449,34 @@ func checkoutSourceRoots(
 }
 
 /// `path` cut to two components below `root`, or `path` where it is already
-/// that shallow.
-private func coalesced(_ path: FilePath, under root: FilePath) -> FilePath {
+/// that shallow, never stopping on a package root.
+///
+/// Widening rests on a target's siblings being more of the same. That holds
+/// inside a source directory and fails at a package root, which is where
+/// `.build` and `.git` sit. Widening `collider/engine/Sources/ColliderCore` to
+/// `collider/engine` mounted 51,514 files of host SwiftPM output -- the exact
+/// category established as unable to be an input to any build -- so a
+/// candidate landing on a package root takes one more component instead.
+///
+/// Package roots come from the resolved graph's manifests rather than from
+/// probing for build output, so the mount set stays a function of what the
+/// package declares rather than of the filesystem it was planned against.
+private func coalesced(
+    _ path: FilePath,
+    under root: FilePath,
+    avoiding packageRoots: Set<FilePath>
+) -> FilePath {
     guard path.starts(with: root) else { return path }
     let relative = path.string.dropFirst(root.string.count)
         .split(separator: "/")
         .map(String.init)
-    guard relative.count > 2 else { return path }
-    return relative.prefix(2).reduce(root) { $0.appending($1) }
+    var depth = 2
+    while depth < relative.count {
+        let candidate = relative.prefix(depth).reduce(root) { $0.appending($1) }
+        if !packageRoots.contains(candidate) { return candidate }
+        depth += 1
+    }
+    return path
 }
 
 /// The mounts for a package root that is a view, plus the subtrees nested

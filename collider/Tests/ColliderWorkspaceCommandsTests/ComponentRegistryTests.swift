@@ -2734,6 +2734,7 @@ private func artifactInput(
     let root = FilePath("/workspace")
     let roots = checkoutSourceRoots(
         root: root,
+        packageRoots: [root],
         widened: [
             root.appending("core/swift/Sources/NucleusRender"),
             root.appending("core/swift/Sources/NucleusLayers"),
@@ -2763,12 +2764,39 @@ private func artifactInput(
     // twice and makes the result depend on the order the paths arrived in.
     let roots = checkoutSourceRoots(
         root: root,
+        packageRoots: [root],
         widened: [root.appending("core/swift/Sources/A")],
         exact: [
             root.appending("core/swift/Sources/A/Detail"),
             root.appending("core/swift"),
         ])
     #expect(roots.map { $0.string } == ["/workspace/core/swift"])
+}
+
+@Test func derivedCheckoutRootsNeverStopOnAPackageRoot() {
+    let root = FilePath("/workspace")
+    // A package root holds `.build` and `.git` beside its source, so widening
+    // onto one mounts host build output that can never be an input. Widening
+    // `collider/engine/Sources/ColliderCore` to `collider/engine` exposed
+    // 51,514 such files.
+    let roots = checkoutSourceRoots(
+        root: root,
+        packageRoots: [root, root.appending("collider/engine")],
+        widened: [
+            root.appending("collider/engine/Sources/ColliderCore"),
+            root.appending("collider/engine/Tests/ColliderCoreTests"),
+            root.appending("collider/Sources/ColliderCommands"),
+        ],
+        exact: [])
+    let strings = roots.map { $0.string }
+
+    #expect(strings.contains("/workspace/collider/engine/Sources"))
+    #expect(strings.contains("/workspace/collider/engine/Tests"))
+    #expect(!strings.contains("/workspace/collider/engine"))
+
+    // A directory that is not a package root still widens normally, so the
+    // rule costs nothing where the sibling assumption holds.
+    #expect(strings.contains("/workspace/collider/Sources"))
 }
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {
