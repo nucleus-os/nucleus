@@ -864,26 +864,12 @@ private func fixtureReactNativeNodeModules(
                     + NucleusLinuxABI.sdkDirectoryName))
     // The checkout is mounted where the declared placement roots put it, not
     // where the host keeps it, so a build cannot record which checkout it read.
-    let checkoutMounts = armExecution.mounts.filter {
-        $0.source.starts(with: fixtureRepositoryRoot)
-    }
-    #expect(!checkoutMounts.isEmpty)
     #expect(
-        checkoutMounts.allSatisfy {
-            $0.target.hasPrefix("/nucleus-workspace/")
-        })
-    // A container sees what its task declares. The manifest names the target
-    // directories, so the build mounts those rather than the checkout root
-    // they happen to sit in — which for this package is every vendored tree
-    // the manifest never mentions.
-    #expect(
-        !armExecution.mounts.contains {
-            $0.source == fixtureRepositoryRoot || $0.target == "/nucleus-workspace"
-        })
-    #expect(
-        checkoutMounts.contains {
-            $0.target == "/nucleus-workspace/Package.swift"
-        })
+        armExecution.mounts.contains(
+            OCIMount(
+                source: fixtureRepositoryRoot,
+                target: "/nucleus-workspace",
+                access: .readOnly)))
     for execution in [armExecution, x86Execution] {
         #expect(
             execution.mounts.allSatisfy {
@@ -2719,63 +2705,6 @@ private func artifactInput(
     #expect(!script.contains("--reconfigure"))
     // The heredoc terminator must start its own line for the shell to see it.
     #expect(script.contains("\nNUCLEUS_MESON_CONFIGURATION\n"))
-}
-
-@Test func derivedCheckoutMountsWidenTargetsButNotVendoredTrees() {
-    let root = FilePath("/workspace")
-    let placement = IdentityPathMap(roots: [
-        IdentityPathRoot(name: "workspace", path: root)
-    ])
-    let mounts = checkoutSourceMounts(
-        root: root,
-        widened: [
-            root.appending("core/swift/Sources/NucleusRender"),
-            root.appending("core/swift/Sources/NucleusLayers"),
-            root.appending("shell/Sources/NucleusShellRuntime"),
-        ],
-        exact: [
-            root.appending("third-party/gfxstream/host/common/include"),
-            root.appending("Package.swift"),
-        ],
-        placement: placement)
-    let targets = Set(mounts.map { $0.target })
-
-    // A manifest target sits in a first-party source directory whose siblings
-    // are more of the same, so widening it costs almost nothing and saves most
-    // of the mounts. Two targets under one directory become one mount.
-    #expect(targets.contains("/nucleus-workspace/core/swift"))
-    #expect(!targets.contains("/nucleus-workspace/core/swift/Sources/NucleusRender"))
-    #expect(targets.contains("/nucleus-workspace/shell/Sources"))
-
-    // A vendored include root sits inside a third-party checkout, so widening
-    // it to two components would mount the entire vendored tree and undo the
-    // point of deriving the set at all.
-    #expect(targets.contains("/nucleus-workspace/third-party/gfxstream/host/common/include"))
-    #expect(!targets.contains("/nucleus-workspace/third-party/gfxstream"))
-
-    // A manifest is a file beside a package's other contents, so widening it
-    // would mount the package root it sits in.
-    #expect(targets.contains("/nucleus-workspace/Package.swift"))
-    #expect(!targets.contains("/nucleus-workspace"))
-    #expect(mounts.allSatisfy { $0.isReadOnly })
-}
-
-@Test func derivedCheckoutMountsDropPathsAnotherMountAlreadyCovers() {
-    let root = FilePath("/workspace")
-    let placement = IdentityPathMap(roots: [
-        IdentityPathRoot(name: "workspace", path: root)
-    ])
-    // Mounting both a directory and something inside it exposes the same files
-    // twice and makes the result depend on the order the paths arrived in.
-    let mounts = checkoutSourceMounts(
-        root: root,
-        widened: [root.appending("core/swift/Sources/A")],
-        exact: [
-            root.appending("core/swift/Sources/A/Detail"),
-            root.appending("core/swift"),
-        ],
-        placement: placement)
-    #expect(mounts.map { $0.target } == ["/nucleus-workspace/core/swift"])
 }
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {

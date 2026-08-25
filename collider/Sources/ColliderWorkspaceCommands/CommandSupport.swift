@@ -34,14 +34,6 @@ extension WorkspaceContext {
         staticSwiftStandardLibrary: Bool = false,
         target: SwiftBuildTarget? = nil,
         execution: SwiftPMExecution = .host,
-        /// Builds the execution from the manifest-resolved graph, for a caller
-        /// whose container mounts are derived from what the package declares.
-        /// Resolution happens here either way, so a caller that needs the graph
-        /// takes this rather than resolving a second time — which would also
-        /// resolve where this function does not, such as against a fixture root
-        /// with no manifest.
-        executionFromGraph: ((SwiftPackageSourceGraph) -> SwiftPMExecution)? =
-            nil,
         toolchainIdentity: String? = nil,
         scratchRoot: FilePath? = nil,
         swiftExecutable: CommandSpec.Executable = .named("swift")
@@ -66,12 +58,8 @@ extension WorkspaceContext {
             resolvedToolchainIdentity =
                 "host-swift-\(hostSwiftTarget)-\(compilerSelection)"
         }
-        let sourceGraph = try await swiftPackageGraphs.graph(
-            packageRoot: packageRoot,
-            swiftExecutable: graphSwiftPath())
-        let resolvedExecution = executionFromGraph.map { $0(sourceGraph) } ?? execution
         let maximumParallelism =
-            switch resolvedExecution {
+            switch execution {
             case .host: SwiftBuildContext.defaultMaximumParallelism
             case .oci: SwiftBuildContext.concurrentOCIMaximumParallelism
             }
@@ -81,7 +69,7 @@ extension WorkspaceContext {
         // would map a prefix that never appears and would put the host's own
         // directory into the identity through the flag itself.
         let prefixMaps =
-            switch resolvedExecution {
+            switch execution {
             case .host: filePrefixMapFlags
             case .oci: (swift: [String](), clang: [String]())
             }
@@ -92,7 +80,7 @@ extension WorkspaceContext {
         // the host builds serve; a product built in a container is not read
         // that way.
         let productFlags =
-            switch resolvedExecution {
+            switch execution {
             case .host: [String]()
             case .oci: ["-avoid-emit-module-source-info"]
             }
@@ -112,7 +100,7 @@ extension WorkspaceContext {
             toolsets: toolsets,
             staticSwiftStandardLibrary: staticSwiftStandardLibrary,
             maximumParallelism: maximumParallelism,
-            execution: resolvedExecution,
+            execution: execution,
             identityPathMap: identityPathMap)
         let invocation = SwiftPMInvocation(
             context: context,
@@ -131,7 +119,9 @@ extension WorkspaceContext {
             ].filter {
                 FileManager.default.fileExists(atPath: $0.string)
             },
-            sourceGraph: sourceGraph)
+            sourceGraph: try await swiftPackageGraphs.graph(
+                packageRoot: packageRoot,
+                swiftExecutable: graphSwiftPath()))
         let isDefaultContext =
             packageRoot == layout.root
             && configuration == .debug
@@ -145,7 +135,7 @@ extension WorkspaceContext {
             && linkerFlags.isEmpty
             && toolsets.isEmpty
             && !staticSwiftStandardLibrary
-            && resolvedExecution == .host
+            && execution == .host
         if isDefaultContext {
             // Publishing the editor's view of the package build directory is
             // independent of compiler discovery. The selected synthesized
