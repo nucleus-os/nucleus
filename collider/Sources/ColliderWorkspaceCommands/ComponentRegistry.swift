@@ -113,7 +113,18 @@ package struct ComponentRegistry {
                             assemblerRoot.appending("Package.resolved"),
                             context.root.appending(
                                 "swift-sdk/linux-builder-toolset.json"),
-                        ],
+                        ]
+                        // Filtered by existence, unlike the directories: a
+                        // package legitimately has no mirrors, and resolution
+                        // already treats the file's presence as part of what
+                        // it resolved against. Without it a container sees
+                        // `Package.resolved` naming a location the manifest
+                        // does not declare and fetches it.
+                        + [context.root, assemblerRoot]
+                        .map { swiftPMMirrorConfiguration(under: $0) }
+                        .filter {
+                            FileManager.default.fileExists(atPath: $0.string)
+                        },
                     nestedDirectories: checkoutRoots)
             ])
         let androidToolchain = try AndroidToolchainVersions.load(

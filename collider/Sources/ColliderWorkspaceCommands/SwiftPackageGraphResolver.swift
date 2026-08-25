@@ -183,7 +183,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         }
         for path in [
             packageRoot.appending("Package.resolved"),
-            packageRoot.appending(".swiftpm/configuration/mirrors.json"),
+            swiftPMMirrorConfiguration(under: packageRoot),
         ] where FileManager.default.fileExists(atPath: path.string) {
             identityPaths.append(path)
         }
@@ -216,7 +216,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         let cachedPaths = Set(identities.map(\.path))
         for resolutionPath in [
             packageRoot.appending("Package.resolved"),
-            packageRoot.appending(".swiftpm/configuration/mirrors.json"),
+            swiftPMMirrorConfiguration(under: packageRoot),
         ] {
             guard
                 FileManager.default.fileExists(atPath: resolutionPath.string)

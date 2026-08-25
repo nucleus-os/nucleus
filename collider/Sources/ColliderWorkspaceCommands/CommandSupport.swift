@@ -115,7 +115,7 @@ extension WorkspaceContext {
                     ? lock : nil
             }(),
             dependencyConfigurationFiles: [
-                packageRoot.appending(".swiftpm/configuration/mirrors.json")
+                swiftPMMirrorConfiguration(under: packageRoot)
             ].filter {
                 FileManager.default.fileExists(atPath: $0.string)
             },
@@ -249,3 +249,17 @@ private let hostSwiftTarget: String = {
 
     return "\(architecture)-\(operatingSystem)"
 }()
+
+/// Where SwiftPM reads dependency mirrors for a package.
+///
+/// Named once because every consumer has to agree on it. Resolution hands it
+/// to SwiftPM, the graph cache keys on whether it exists, and the package-root
+/// view copies it into what a container sees. A container that cannot see it
+/// resolves a pin's recorded location literally and reaches for the network:
+/// `Package.resolved` records `apple/swift-system` while the manifest declares
+/// the `nucleus-os` fork, and only this file reconciles them. The view first
+/// shipped without it, which is what turned a missing copy into a container
+/// attempting a fetch.
+func swiftPMMirrorConfiguration(under packageRoot: FilePath) -> FilePath {
+    packageRoot.appending(".swiftpm/configuration/mirrors.json")
+}
