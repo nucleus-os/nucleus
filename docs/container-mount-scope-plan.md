@@ -1,6 +1,6 @@
 # Container Mount Scope Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -236,6 +236,12 @@ editing a path a running task declares still does.
 
 Status: complete.
 
+Gate evidence: editing two documents six minutes into a complete `collider
+package linux-runtime` run left it to execute all 114 of its tasks and succeed
+after 2,884 seconds, where the same edit previously ended a run after a minute.
+Editing one Collider target while `collider test collider` executed superseded
+that run, which named the closure that changed.
+
 ### The plan is its own baseline
 
 Planning digests every source closure its plan names in order to decide what is
@@ -261,6 +267,51 @@ cannot drift from them, and an execution that wants more has to say so.
 
 Gate: constructing an execution whose mounts exceed its declared scopes is a
 failure with a test that exercises it.
+
+Status: complete.
+
+Gate evidence: an execution mounting inside its action's declaration reaches
+the runtime and one mounting outside it does not, reading a tree is not writing
+it, and a workspace mounted read-only under a read-write declaration is within
+that declaration while the same workspace at another container path is not. A
+complete `collider package linux-runtime` run then executed 114 tasks with
+container executions across AOSP source materialization, compilation, signing,
+image assembly and validation, both Chromium builds and browser artifact
+assemblies, the Chromium and native builder dependency images, Skia, and the
+whole Linux packaging lane, and no execution exceeded its declaration. The CEF
+artifact actions are not in that graph and were corrected by reading their
+declarations against the executions they construct; Wayland source generation
+declares its pipeline's effects and runs exactly its executions, so it holds by
+construction.
+
+An action's host filesystem access was already scoped to its declared effects
+while its container executions were not, so both now ask one predicate the same
+question. A mount is how an action reaches the host from inside a container,
+and the requirements an execution implies are already derived from its mounts:
+an action that is its pipeline therefore satisfies the boundary by
+construction, and an action that writes its own requirements and builds
+executions by hand has to name what it reaches.
+
+### What a container reached that its action had not said
+
+Four kinds, each declared where it is caused rather than at every site that
+inherits it.
+
+A mounted entrypoint exposes the directory its executable sits in, because a
+bind source must be a directory; eight actions declared the executable. Every
+AOSP product execution mounts the object store the materialized working tree's
+Git metadata points at, and none of the four actions that run one said so. A
+bounded export is mounted read-write rather than write-only. The two
+dependency-image actions mount their whole container context while declaring
+the several files they read out of it.
+
+### A declaration bounds an action rather than describing it
+
+A workspace mounted read-only under a read-write declaration is within its
+declaration, so the check requires the workspace and its container path to
+match and treats access as a ceiling. Composing a declaration from parts can
+also arrive at one effect twice without either part being wrong, which a set
+rejects, so composition uniques.
 
 ## Risk Surface
 
