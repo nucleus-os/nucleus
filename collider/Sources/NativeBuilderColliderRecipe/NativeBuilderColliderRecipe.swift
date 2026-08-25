@@ -9,6 +9,9 @@ package enum NativeBuilderTaskIDs {
         rawValue: "native.swiftpm-regression-test")
     package static let swiftPMOverlayBuild = TaskID(
         rawValue: "native.swiftpm-overlay-build")
+    package static func packageRootView(_ identifier: String) -> TaskID {
+        TaskID(rawValue: "native.package-root-view.\(identifier)")
+    }
     package static let swiftPMOverlayArtifact = TaskID(
         rawValue: "native.swiftpm-overlay-artifact")
     package static let dependencies = TaskID(rawValue: "native.builder-dependencies")
@@ -17,6 +20,10 @@ package enum NativeBuilderTaskIDs {
 package struct NativeBuilderArtifacts: Sendable {
     package let component: ComponentDefinition
     package let configuration: NativeOCIBaseConfiguration
+    /// The package-root view each Swift build lane mounts, by request
+    /// identifier. A build's package root is a projection of what its manifest
+    /// declares rather than the checkout it sits in.
+    package let packageRootViews: [String: ArtifactReference]
 }
 
 public enum NativeBuilderColliderRecipe {
@@ -31,7 +38,8 @@ public enum NativeBuilderColliderRecipe {
         cacheRoot: FilePath,
         ccache: FilePath,
         environment: [String: String],
-        identityPathMap: IdentityPathMap
+        identityPathMap: IdentityPathMap,
+        packageRootViews packageRootViewRequests: [PackageRootViewRequest] = []
     ) throws -> NativeBuilderArtifacts {
         let inputRoot = cacheRoot.appending("inputs")
         let dependencyContext = cacheRoot.appending("dependency-context")
@@ -43,6 +51,18 @@ public enum NativeBuilderColliderRecipe {
             "swift-sdk/source/swift-package-manager")
         let swiftBuildSource = repositoryRoot.appending(
             "swift-sdk/source/swift-build")
+        // The overlay lane compiles pinned SwiftPM against pinned SwiftBuild,
+        // and every task in it declares exactly these two checkouts. Each is a
+        // gitlink whose `.git` is a directory in place rather than a file
+        // pointing into the superproject, so the assembly step's revision and
+        // cleanliness checks resolve inside the subtree and no part of this
+        // lane reaches the checkout root.
+        let overlaySourceMounts = [swiftPMSource, swiftBuildSource].map {
+            OCIMount(
+                source: $0,
+                target: identityPathMap.executionPath($0),
+                access: .readOnly)
+        }
         let manifest = try NativeBuilderInputManifest.load(
             from: sourceContext.appending("native-builder-inputs.json"))
         let overlayManifest = try SwiftPMOverlayInputManifest.load(
@@ -114,11 +134,11 @@ public enum NativeBuilderColliderRecipe {
                         artifactTarget: .linuxARM64,
                         image: dependencyImage,
                         hostname: "nucleus-swiftbuild-regression",
-                        hostWorkingDirectory: repositoryRoot,
+                        hostWorkingDirectory: swiftBuildSource,
                         mounts: [
                             OCIMount(
-                                source: repositoryRoot,
-                                target: identityPathMap.executionPath(repositoryRoot),
+                                source: swiftBuildSource,
+                                target: identityPathMap.executionPath(swiftBuildSource),
                                 access: .readOnly)
                         ],
                         buildWorkspace: PersistentWorkspaceDeclaration(
@@ -178,13 +198,8 @@ public enum NativeBuilderColliderRecipe {
                         artifactTarget: .linuxARM64,
                         image: dependencyImage,
                         hostname: "nucleus-swiftpm-overlay",
-                        hostWorkingDirectory: repositoryRoot,
-                        mounts: [
-                            OCIMount(
-                                source: repositoryRoot,
-                                target: identityPathMap.executionPath(repositoryRoot),
-                                access: .readOnly)
-                        ],
+                        hostWorkingDirectory: swiftPMSource,
+                        mounts: overlaySourceMounts,
                         buildWorkspace: PersistentWorkspaceDeclaration(
                             identity: PersistentWorkspaceIdentity(
                                 key: "nucleus-swiftpm-overlay",
@@ -269,7 +284,7 @@ public enum NativeBuilderColliderRecipe {
             action: try AnyColliderAction(
                 AssembleSwiftPMOverlayAction(
                     image: dependencyImage,
-                    repositoryRoot: repositoryRoot,
+                    sourceMounts: overlaySourceMounts,
                     products: swiftPMInvocation.productsDirectory,
                     outputRoot: overlayRoot,
                     assemblyScript: sourceContext.appending(
@@ -280,6 +295,30 @@ public enum NativeBuilderColliderRecipe {
                     swiftCompilerArchiveSHA256: swiftCompilerArchive.sha256,
                     identityPathMap: identityPathMap,
                     environment: environment)))
+
+        let packageRootViewRoot =
+            packageRootViewRequests.first?.view.removingLastComponent()
+            ?? cacheRoot.appending("package-root-views")
+        var packageRootViewTasks: [TaskDeclaration] = []
+        var packageRootViews: [String: ArtifactReference] = [:]
+        for request in packageRootViewRequests.sorted(by: {
+            $0.identifier < $1.identifier
+        }) {
+            var builder = TaskBuilder(
+                id: NativeBuilderTaskIDs.packageRootView(request.identifier),
+                component: descriptor.id)
+            let view: ArtifactReference = try builder.output(
+                "view",
+                path: request.view,
+                validation: .nonEmptyDirectory)
+            packageRootViews[request.identifier] = view
+            packageRootViewTasks.append(
+                builder.build(
+                    inputs: request.files.map { .file($0) },
+                    locks: [.checkout("native-package-root-view-\(request.identifier)")],
+                    action: try AnyColliderAction(
+                        MaterializePackageRootViewAction(request: request))))
+        }
 
         let configuration = NativeOCIBaseConfiguration(
             image: dependencyImage,
@@ -297,7 +336,7 @@ public enum NativeBuilderColliderRecipe {
                     swiftPMRegressionTask,
                     overlayBuildTask,
                     overlayArtifactTask,
-                ],
+                ] + packageRootViewTasks,
                 entrypoints: [
                     ComponentEntrypoint(
                         id: .bootstrap,
@@ -319,6 +358,14 @@ public enum NativeBuilderColliderRecipe {
                         safetyRoot: cacheRoot.removingLastComponent(),
                         retentionPolicy: .singleWorkingSet),
                     StorageDeclaration(
+                        id: "native-builder-package-root-views",
+                        owner: descriptor.id,
+                        producers: Set(packageRootViewTasks.map { StorageProducer.task($0.id) }),
+                        storageClass: .cache,
+                        root: packageRootViewRoot,
+                        safetyRoot: packageRootViewRoot.removingLastComponent(),
+                        retentionPolicy: .singleWorkingSet),
+                    StorageDeclaration(
                         id: "native-builder-ccache",
                         owner: descriptor.id,
                         producers: [.task(dependencyTask.id)],
@@ -328,7 +375,8 @@ public enum NativeBuilderColliderRecipe {
                         retentionPolicy: .toolManagedLimit(
                             maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 ]),
-            configuration: configuration)
+            configuration: configuration,
+            packageRootViews: packageRootViews)
     }
 }
 
@@ -352,7 +400,7 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
 
     init(
         image: ArtifactReference,
-        repositoryRoot: FilePath,
+        sourceMounts: [OCIMount],
         products: FilePath,
         outputRoot: FilePath,
         assemblyScript: FilePath,
@@ -373,13 +421,9 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
             artifactTarget: .linuxARM64,
             imageID: image.path,
             hostname: "nucleus-swiftpm-overlay-artifact",
-            workingDirectory: identityPathMap.executionPath(repositoryRoot),
-            hostWorkingDirectory: repositoryRoot,
-            mounts: [
-                OCIMount(
-                    source: repositoryRoot,
-                    target: identityPathMap.executionPath(repositoryRoot),
-                    access: .readOnly),
+            workingDirectory: identityPathMap.executionPath(swiftPMSource),
+            hostWorkingDirectory: swiftPMSource,
+            mounts: sourceMounts + [
                 OCIMount(
                     source: products,
                     target: identityPathMap.executionPath(products),

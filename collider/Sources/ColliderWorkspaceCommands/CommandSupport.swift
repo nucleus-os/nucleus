@@ -186,7 +186,7 @@ extension WorkspaceContext {
             .appending(name.string + verificationScratchSuffix)
     }
 
-    fileprivate func graphSwiftPath() throws -> FilePath {
+    func graphSwiftPath() throws -> FilePath {
         let hostEnvironment = taskEnvironment
         if let toolchain = hostEnvironment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
             let candidate = FilePath(toolchain).appending("bin/swift")

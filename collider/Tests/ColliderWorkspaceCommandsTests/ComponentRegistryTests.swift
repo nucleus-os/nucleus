@@ -744,6 +744,13 @@ private func fixtureNativeBuilder(
         "active-sdk",
         path: swiftSDKRoot,
         validation: .symlinkTarget)
+    var viewProducer = TaskBuilder(
+        id: TaskID(rawValue: "native.package-root-view.checkout"),
+        component: ComponentID(rawValue: "native"))
+    let packageRootView: ArtifactReference = try viewProducer.output(
+        "view",
+        path: imageID.removingLastComponent().appending("package-root-views/checkout"),
+        validation: .nonEmptyDirectory)
     return NativeOCIConfiguration(
         base: NativeOCIBaseConfiguration(
             image: image,
@@ -752,7 +759,8 @@ private func fixtureNativeBuilder(
             environment: environment,
             swiftPMOverlayRevision:
                 "5f40ba93598ca18b00c114e6dad28acdeebbbb60"),
-        swiftSDK: swiftSDK)
+        swiftSDK: swiftSDK,
+        packageRootViews: ["checkout": packageRootView])
 }
 
 private func fixtureICULibrary(
@@ -818,12 +826,15 @@ private func fixtureReactNativeNodeModules(
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
 
+    let checkoutRoots = [fixtureRepositoryRoot.appending("core/swift")]
     let arm64 = try await registry.linuxSwiftPMInvocation(
         architecture: .arm64,
-        builder: builder)
+        builder: builder,
+        checkoutRoots: checkoutRoots)
     let amd64 = try await registry.linuxSwiftPMInvocation(
         architecture: .x86_64,
-        builder: builder)
+        builder: builder,
+        checkoutRoots: checkoutRoots)
 
     #expect(arm64.context.maximumParallelism == 12)
     #expect(amd64.context.maximumParallelism == 12)
@@ -850,8 +861,12 @@ private func fixtureReactNativeNodeModules(
             == .path(FilePath("/opt/swift/usr/bin/swift")))
     #expect(armExecution.executableRequirements.isEmpty)
     #expect(x86Execution.executableRequirements.isEmpty)
-    #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay])
-    #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay])
+    // The package-root view is an input artifact, not just a mount: that is
+    // what makes the task producing it run before the build that reads it.
+    let view = try builder.packageRootView(
+        ComponentRegistry.packageRootViewIdentifier)
+    #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay, view])
+    #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay, view])
     #expect(
         NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
             .hasSuffix(
@@ -864,12 +879,20 @@ private func fixtureReactNativeNodeModules(
                     + NucleusLinuxABI.sdkDirectoryName))
     // The checkout is mounted where the declared placement roots put it, not
     // where the host keeps it, so a build cannot record which checkout it read.
+    let checkoutMounts = armExecution.mounts.filter {
+        $0.source.starts(with: fixtureRepositoryRoot)
+    }
+    #expect(!checkoutMounts.isEmpty)
+    #expect(checkoutMounts.allSatisfy { $0.target.hasPrefix("/nucleus-workspace/") })
+    // The package root is a view rather than the checkout: a container sees the
+    // directories the manifest declares, and a root holding every vendored tree
+    // it never mentions is not one of them.
+    let packageRoot = try #require(
+        armExecution.mounts.first { $0.target == "/nucleus-workspace" })
+    #expect(packageRoot.source != fixtureRepositoryRoot)
+    #expect(packageRoot.isReadOnly)
     #expect(
-        armExecution.mounts.contains(
-            OCIMount(
-                source: fixtureRepositoryRoot,
-                target: "/nucleus-workspace",
-                access: .readOnly)))
+        !armExecution.mounts.contains { $0.source == fixtureRepositoryRoot })
     for execution in [armExecution, x86Execution] {
         #expect(
             execution.mounts.allSatisfy {
@@ -2705,6 +2728,47 @@ private func artifactInput(
     #expect(!script.contains("--reconfigure"))
     // The heredoc terminator must start its own line for the shell to see it.
     #expect(script.contains("\nNUCLEUS_MESON_CONFIGURATION\n"))
+}
+
+@Test func derivedCheckoutRootsWidenTargetsButNotVendoredTrees() {
+    let root = FilePath("/workspace")
+    let roots = checkoutSourceRoots(
+        root: root,
+        widened: [
+            root.appending("core/swift/Sources/NucleusRender"),
+            root.appending("core/swift/Sources/NucleusLayers"),
+            root.appending("shell/Sources/NucleusShellRuntime"),
+        ],
+        exact: [root.appending("third-party/gfxstream/host/common/include")])
+    let strings = roots.map { $0.string }
+
+    // A manifest target sits in a first-party source directory whose siblings
+    // are more of the same, so widening it costs almost nothing and removes
+    // most of the mounts. Two targets under one directory become one root.
+    #expect(strings.contains("/workspace/core/swift"))
+    #expect(!strings.contains("/workspace/core/swift/Sources/NucleusRender"))
+    #expect(strings.contains("/workspace/shell/Sources"))
+
+    // A vendored include root sits inside a third-party checkout, so widening
+    // it to two components would mount the entire vendored tree and undo the
+    // point of deriving the set at all.
+    #expect(strings.contains("/workspace/third-party/gfxstream/host/common/include"))
+    #expect(!strings.contains("/workspace/third-party/gfxstream"))
+    #expect(!strings.contains("/workspace"))
+}
+
+@Test func derivedCheckoutRootsDropPathsAnotherAlreadyCovers() {
+    let root = FilePath("/workspace")
+    // Mounting both a directory and something inside it exposes the same files
+    // twice and makes the result depend on the order the paths arrived in.
+    let roots = checkoutSourceRoots(
+        root: root,
+        widened: [root.appending("core/swift/Sources/A")],
+        exact: [
+            root.appending("core/swift/Sources/A/Detail"),
+            root.appending("core/swift"),
+        ])
+    #expect(roots.map { $0.string } == ["/workspace/core/swift"])
 }
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {

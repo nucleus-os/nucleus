@@ -20,9 +20,21 @@ private struct NativeSDKCompilerConfiguration {
     let cFlags: [String]
     let cxxFlags: [String]
     let linkerFlags: [String]
+    /// The checkout subtrees these flags name. A container has to be able to
+    /// see an include path for the flag naming it to mean anything, and the
+    /// two drift the moment they are written down separately.
+    let checkoutIncludeRoots: [FilePath]
 }
 
 package struct ComponentRegistry {
+    /// Names the package-root view every Swift build lane mounts.
+    ///
+    /// One view, not one per lane. What a container reads from the checkout is
+    /// decided by a manifest rather than by a target architecture, and the
+    /// package-input assembly runs two lanes in a single container, where two
+    /// views claiming the same package root would be a conflicting mount.
+    static let packageRootViewIdentifier = "checkout"
+
     package let context: WorkspaceContext
 
     package init(context: WorkspaceContext) {
@@ -47,13 +59,50 @@ package struct ComponentRegistry {
             productProvenanceEnvironment,
             uniquingKeysWith: { _, provenance in provenance })
         let nativeBuilderCache = context.cacheRoot
+        // What each Swift build reads from the checkout, decided once here so
+        // the view a lane mounts and the subtrees mounted inside it are the
+        // same derivation rather than two that must agree.
+        let nucleusGraph = try await context.swiftPackageGraphs.graph(
+            packageRoot: context.root,
+            swiftExecutable: try context.graphSwiftPath())
+        let assemblerRoot = context.root.appending("collider")
+        let assemblerGraph = try await context.swiftPackageGraphs.graph(
+            packageRoot: assemblerRoot,
+            swiftExecutable: try context.graphSwiftPath())
+        let nucleusIncludeRoots = nativeSDKCompilerConfiguration(
+            nativeSDK: context.nativeSDKRoot(for: NativeLinuxTarget(architecture: .arm64)),
+            gfxstreamSDKRoot: context.nativeSDKRoot(
+                for: NativeLinuxTarget(architecture: .arm64)
+            ).appending("android/gfxstream"),
+            placement: context.identityPathMap
+        ).checkoutIncludeRoots
+        let checkoutRoots = checkoutSourceRoots(
+            root: context.root,
+            widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
+            exact: nucleusIncludeRoots)
+        let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
             context: context.root.appending("collider/images/native-builder"),
             cacheRoot: nativeBuilderCache.appending("build-containers/native"),
             ccache: nativeBuilderCache.appending("ccache/native"),
             environment: recipeEnvironment,
-            identityPathMap: context.identityPathMap)
+            identityPathMap: context.identityPathMap,
+            packageRootViews: [
+                PackageRootViewRequest(
+                    identifier: Self.packageRootViewIdentifier,
+                    root: context.root,
+                    view: packageRootViewRoot.appending(
+                        Self.packageRootViewIdentifier),
+                    files: nucleusGraph.manifestPaths + assemblerGraph.manifestPaths
+                        + [
+                            context.root.appending("Package.resolved"),
+                            assemblerRoot.appending("Package.resolved"),
+                            context.root.appending(
+                                "swift-sdk/linux-builder-toolset.json"),
+                        ],
+                    nestedDirectories: checkoutRoots)
+            ])
         let androidToolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
         let targetSDKInputs = try SwiftTargetSDKInputs.load(
@@ -68,35 +117,40 @@ package struct ComponentRegistry {
             reuseActiveGeneration: !forceSwiftSDKGeneration)
         let nativeConfiguration = NativeOCIConfiguration(
             base: nativeBuilder.configuration,
-            swiftSDK: swiftTargetSDK.activeSDK)
+            swiftSDK: swiftTargetSDK.activeSDK,
+            packageRootViews: nativeBuilder.packageRootViews)
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
             .hostDebug: try await context.swiftPMInvocation()
         ]
         for architecture in PlatformArchitecture.allCases {
             buildContexts[.linux(architecture)] = try await linuxSwiftPMInvocation(
                 architecture: architecture,
-                builder: nativeConfiguration)
+                builder: nativeConfiguration,
+                checkoutRoots: checkoutRoots)
         }
         var linuxReleaseContexts: [PlatformArchitecture: SwiftPMInvocation] = [:]
         for architecture in PlatformArchitecture.allCases {
             let invocation = try await linuxSwiftPMInvocation(
                 architecture: architecture,
                 configuration: .release,
-                builder: nativeConfiguration)
+                builder: nativeConfiguration,
+                checkoutRoots: checkoutRoots)
             linuxReleaseContexts[architecture] = invocation
             buildContexts[
                 .linux(architecture, configuration: .release)
             ] = invocation
         }
         let runtimeAssembler = try await linuxAssemblerSwiftPMInvocation(
-            builder: nativeConfiguration)
+            builder: nativeConfiguration,
+            checkoutRoots: checkoutRoots)
         buildContexts[.linuxAssembler] = runtimeAssembler
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
                 try await linuxSwiftPMInvocation(
                     sanitizer: sanitizer.rawValue,
                     linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [],
-                    builder: nativeConfiguration)
+                    builder: nativeConfiguration,
+                    checkoutRoots: checkoutRoots)
         }
         buildContexts[
             .androidARM64(apiLevel: androidToolchain.minimumSDK)
@@ -883,8 +937,11 @@ package struct ComponentRegistry {
         configuration: SwiftBuildConfiguration = .debug,
         sanitizer: String? = nil,
         linkerFlags additionalLinkerFlags: [String] = [],
-        builder: NativeOCIConfiguration
+        builder: NativeOCIConfiguration,
+        checkoutRoots: [FilePath]
     ) async throws -> SwiftPMInvocation {
+        let packageRootView = try builder.packageRootView(
+            ComponentRegistry.packageRootViewIdentifier)
         let root = context.layout.root
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
@@ -899,8 +956,6 @@ package struct ComponentRegistry {
             + architecture.rawValue
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
-        let containerMaskDirectory = try emptyContainerMaskDirectory(
-            under: context.cacheRoot)
         let swiftPMRoot = context.cacheRoot.appending(
             "swiftpm/\(target.identifier)")
         let swiftPMDependencyCache = context.cacheRoot.appending(
@@ -921,19 +976,14 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: resolvedArtifactTarget,
                 image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay],
+                inputArtifacts: [builder.swiftPMOverlay, packageRootView],
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
-                mounts: [
-                    OCIMount(
-                        source: root,
-                        target: placement.executionPath(root),
-                        access: .readOnly)
-                ]
-                    + containerMaskedCheckoutSubtrees(
-                        root: root,
-                        mask: containerMaskDirectory,
-                        placement: placement)
+                mounts: packageRootMounts(
+                    root: root,
+                    view: packageRootView.path,
+                    nested: checkoutRoots,
+                    placement: placement)
                     + [
                         OCIMount(
                             source: nativeSDK,
@@ -1044,8 +1094,11 @@ package struct ComponentRegistry {
     }
 
     private func linuxAssemblerSwiftPMInvocation(
-        builder: NativeOCIConfiguration
+        builder: NativeOCIConfiguration,
+        checkoutRoots: [FilePath]
     ) async throws -> SwiftPMInvocation {
+        let assemblerView = try builder.packageRootView(
+            ComponentRegistry.packageRootViewIdentifier)
         let root = context.layout.root
         let packageRoot = root.appending("collider")
         let scratchRoot = context.cacheRoot.appending(
@@ -1057,19 +1110,20 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: .linuxARM64,
                 image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay],
+                inputArtifacts: [builder.swiftPMOverlay, assemblerView],
                 hostname: "nucleus-linux-assembler",
                 hostWorkingDirectory: packageRoot,
-                mounts: [
-                    OCIMount(
-                        source: root,
-                        target: context.identityPathMap.executionPath(root),
-                        access: .readOnly),
-                    OCIMount(
-                        source: builder.swiftPMOverlay.path,
-                        target: "/swiftpm-overlay",
-                        access: .readOnly),
-                ],
+                mounts: packageRootMounts(
+                    root: root,
+                    view: assemblerView.path,
+                    nested: checkoutRoots,
+                    placement: context.identityPathMap)
+                    + [
+                        OCIMount(
+                            source: builder.swiftPMOverlay.path,
+                            target: "/swiftpm-overlay",
+                            access: .readOnly)
+                    ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
                         key: "collider-swiftpm-tools",
@@ -1219,10 +1273,14 @@ package struct ComponentRegistry {
             rn.appending("lib/rn/support/double-conversion/src"),
             gfxstreamSDKRoot.appending("lib"),
         ]
+        let icuRoots = [icu.appending("common"), icu.appending("i18n")]
         return NativeSDKCompilerConfiguration(
             cFlags: icuIncludeFlags + includeFlags,
             cxxFlags: icuIncludeFlags + includeFlags,
-            linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" })
+            linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" },
+            checkoutIncludeRoots: (icuRoots + includeDirectories).filter {
+                $0.starts(with: root)
+            })
     }
 
     private func swiftTargetSDKGenerationConfiguration(
@@ -1332,41 +1390,77 @@ package struct ComponentRegistry {
 
 }
 
-/// Subtrees of the checkout no Swift build reads, shadowed inside the
-/// container by an empty directory.
+/// The checkout subtrees a Swift package build reads, derived from the paths
+/// its manifest names.
 ///
-/// A bind-mounted host directory is shared with the guest file by file, so what
-/// a container is shown costs host descriptors whether or not it is read. The
-/// package root is the checkout root, so these cannot be excluded by mounting
-/// something narrower; they are covered instead.
+/// A container sees what its task declares. The manifest-resolved graph names
+/// every target directory SwiftPM owns and the compiler configuration names
+/// the vendored include roots its own flags point at, so the set is derived
+/// rather than authored — a target that moves moves its mount with it.
 ///
-/// `swift-sdk/source` is the Swift toolchain source closure, which the
-/// target-SDK graph builds and no product build reads. The `.build` trees are
-/// host SwiftPM output; a container builds into its own workspace.
-func containerMaskedCheckoutSubtrees(
+/// `widened` paths are coalesced to two components below the root and `exact`
+/// paths are taken as given, because the two kinds tolerate widening
+/// differently. A manifest target sits in a first-party source directory whose
+/// siblings are more of the same, so widening `core/swift/Sources/Foo` to
+/// `core/swift` costs 56 files across the whole package and removes four
+/// fifths of the mounts. A vendored include root sits inside a third-party
+/// checkout, so widening `third-party/gfxstream/host/common/include` would
+/// mount the entire vendored tree and undo the point of deriving the set.
+///
+/// A path covered by another in the set is dropped, so nothing is mounted
+/// twice and the result does not depend on the order the paths arrived in.
+///
+/// Deliberately not filtered by what exists: these paths come from the
+/// manifest and from the include list the compiler flags are built from, so
+/// one that is absent is a defect rather than a path to drop. Dropping it
+/// would also make the mount set — and so the task identity — depend on the
+/// state of the filesystem it was planned against.
+func checkoutSourceRoots(
     root: FilePath,
-    mask: FilePath,
+    widened: [FilePath],
+    exact: [FilePath]
+) -> [FilePath] {
+    let candidates = Set(
+        (widened.map { coalesced($0, under: root) } + exact).filter {
+            $0 != root && $0.starts(with: root)
+        })
+    return
+        candidates
+        .filter { candidate in
+            !candidates.contains { $0 != candidate && candidate.starts(with: $0) }
+        }
+        .sorted { $0.string < $1.string }
+}
+
+/// `path` cut to two components below `root`, or `path` where it is already
+/// that shallow.
+private func coalesced(_ path: FilePath, under root: FilePath) -> FilePath {
+    guard path.starts(with: root) else { return path }
+    let relative = path.string.dropFirst(root.string.count)
+        .split(separator: "/")
+        .map(String.init)
+    guard relative.count > 2 else { return path }
+    return relative.prefix(2).reduce(root) { $0.appending($1) }
+}
+
+/// The mounts for a package root that is a view, plus the subtrees nested
+/// inside it.
+func packageRootMounts(
+    root: FilePath,
+    view: FilePath,
+    nested: [FilePath],
     placement: IdentityPathMap
 ) -> [OCIMount] {
     [
-        "swift-sdk/source",
-        ".build",
-        "collider/.build",
-        "collider/engine/.build",
-        "third-party/container/.build",
-    ].map { relative in
         OCIMount(
-            source: mask,
-            target: placement.executionPath(root.appending(relative)),
+            source: view,
+            target: placement.executionPath(root),
             access: .readOnly)
-    }
-}
-
-/// One empty directory, reused as the source of every mask mount.
-func emptyContainerMaskDirectory(under cacheRoot: FilePath) throws -> FilePath {
-    let directory = cacheRoot.appending("container-mask")
-    try FileManager.default.createDirectory(
-        atPath: directory.string,
-        withIntermediateDirectories: true)
-    return directory
+    ]
+        + nested.map {
+            OCIMount(
+                source: $0,
+                target: placement.executionPath($0),
+                access: .readOnly)
+        }
 }

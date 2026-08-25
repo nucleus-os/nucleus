@@ -97,16 +97,40 @@ package struct NativeOCIBaseConfiguration: Sendable {
 /// A native builder equipped with the generated target Swift SDK. Every native
 /// consumer receives the typed activation artifact rather than rediscovering
 /// its publication through a raw cache path.
+package enum NativeOCIConfigurationFailure: Error, CustomStringConvertible {
+    case missingPackageRootView(String)
+
+    package var description: String {
+        switch self {
+        case .missingPackageRootView(let identifier):
+            "no package root view was declared for \(identifier)"
+        }
+    }
+}
+
 package struct NativeOCIConfiguration: Sendable {
     package let base: NativeOCIBaseConfiguration
     package let swiftSDK: ArtifactReference
 
+    package let packageRootViews: [String: ArtifactReference]
+
     package init(
         base: NativeOCIBaseConfiguration,
-        swiftSDK: ArtifactReference
+        swiftSDK: ArtifactReference,
+        packageRootViews: [String: ArtifactReference] = [:]
     ) {
         self.base = base
         self.swiftSDK = swiftSDK
+        self.packageRootViews = packageRootViews
+    }
+
+    /// The package-root view a lane mounts, which must exist: a lane whose
+    /// view was never declared would otherwise silently mount the checkout.
+    package func packageRootView(_ identifier: String) throws -> ArtifactReference {
+        guard let view = packageRootViews[identifier] else {
+            throw NativeOCIConfigurationFailure.missingPackageRootView(identifier)
+        }
+        return view
     }
 
     package var image: ArtifactReference { base.image }
