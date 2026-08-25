@@ -451,6 +451,23 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
                 "NUCLEUS_SWIFT_COMPILER_ARCHIVE_SHA256":
                     swiftCompilerArchiveSHA256,
                 "SOURCE_DATE_EPOCH": String(inputs.sourceDateEpoch),
+                // The assembly step asks git whether each pinned checkout is
+                // at its manifest revision and clean, which nothing else
+                // establishes: source identity detects that the tree changed,
+                // not that it is the revision the overlay claims to be. Both
+                // are host directories bind-mounted read-only, so they are
+                // owned by the developer account while the container runs as
+                // the builder, and git refuses a repository whose owner is not
+                // the caller. The mismatch is structural rather than
+                // incidental, and this is the mechanism git provides for it.
+                // Declared through the environment so the trust lasts exactly
+                // one execution and no global git state is written.
+                "GIT_CONFIG_COUNT": "2",
+                "GIT_CONFIG_KEY_0": "safe.directory",
+                "GIT_CONFIG_VALUE_0": identityPathMap.executionPath(swiftPMSource),
+                "GIT_CONFIG_KEY_1": "safe.directory",
+                "GIT_CONFIG_VALUE_1": identityPathMap.executionPath(
+                    swiftBuildSource),
             ],
             imageEntrypointOverride: entrypoint.containerPath,
             command: ["assemble"],
