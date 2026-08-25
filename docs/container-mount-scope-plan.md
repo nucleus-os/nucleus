@@ -159,6 +159,63 @@ Gate: no OCI execution mounts a checkout subtree its task does not declare,
 and the complete packaging graph produces the same outputs. Identities change
 once, because a mount is part of what an execution is.
 
+Status: complete.
+
+Gate evidence: no mount source in the packaging plan is the checkout root, and
+the only thing mounted at the package root is the view. Exposure is 11,773
+files across 78 mounts, against 248,190 through a single mount. A complete
+`collider package linux-runtime` executed all 83 tasks with none failing, and
+peak host open files reached 51,977 of 491,520 -- ten percent, against
+fifty-seven for a lighter run of the same command before this phase, and
+eighty-nine for the runs that exhausted the table.
+
+### What a container reads that a package graph does not name
+
+Every failure after the derivation itself was a channel through which a
+container reached the checkout without the package graph describing it, each
+one previously satisfied by mounting everything.
+
+Manifest build settings are absent from `swift package describe` entirely, so a
+`headerSearchPath` escaping its own target -- `TracyBridge` reaching
+`swift-tracy/third-party/tracy/public` -- named a directory nothing mounted.
+The resolver reads the manifest dump for them now.
+
+The staged render SDK links to Skia rather than copying it, and the link
+records the path a container sees, so an include path under it names a checkout
+directory while not being written as one. Those paths resolve through the link
+table that creates them. A flag naming the link itself resolves to stated
+subtrees, because the linked root is Skia's whole vendored checkout: 199,180
+files, 186,748 of them a `third_party` tree, against about four thousand that
+root-relative includes reach.
+
+`Package.resolved` records `apple/swift-system` while the manifest declares the
+`nucleus-os` fork, and only `.swiftpm/configuration/mirrors.json` reconciles
+them. A view built from manifests alone omitted it and a container resolved the
+recorded location literally, reaching for the network.
+
+Two directories hold data a product is assembled from rather than source it is
+compiled from: the session package's scripts, unit, and PAM template, and the
+Android container's AppArmor and seccomp policies. Both were already declared
+as file inputs and as checkout read effects; the derivation simply did not
+consult them. Of every action across the recipes declaring a checkout read, the
+rest run on the host or belong to a lane mounting its own component root.
+
+### Coalescing stops before a package root
+
+Widening rests on a target's siblings being more of the same, which holds in a
+source directory and fails at a package root, where `.build` and `.git` sit.
+Widening `collider/engine/Sources/ColliderCore` to `collider/engine` mounted
+51,514 files of host SwiftPM output -- what Phase 1 removed, restored by Phase
+2's own coalescing. Both offending trees arrived through the assembler graph,
+which reaches Collider's engine package and a vendored container dependency.
+Package roots come from the graph's manifests rather than from probing for
+build output, so the mount set stays a function of what the package declares.
+
+The graph cache records manifest settings as a required field, so a cache
+predating that collection fails to decode and is rebuilt. Recording it as
+optional made a correct fix appear to work while the mount set never changed:
+every stale entry decoded cleanly and reported no settings.
+
 ## Phase 3: Revalidate the Source a Run Consumed
 
 A run detects that its source changed underneath it by capturing the whole

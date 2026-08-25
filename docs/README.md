@@ -28,10 +28,13 @@ reuse.
 
 1. Complete the
    [Container mount scope plan](container-mount-scope-plan.md) so a container
-   sees what its task declares. Every Swift build mounts the whole 696k-file
-   checkout today, two thirds of which no build reads, and the host open-file
-   table is exhausted by two concurrent containers. This blocks the packaging
-   graph, so it precedes the phases that depend on it.
+   sees what its task declares. Its first two phases are done: a Swift build
+   now mounts a package-root view and the directories its manifest, settings,
+   and tasks name, 11,773 files rather than the whole checkout, and a complete
+   packaging run peaks at ten percent of the host open-file table where it
+   previously exhausted it. Its remaining phases stop a run being superseded by
+   a change to a path no task read, and make an execution exceeding its
+   declared scope fail to construct.
 2. Complete Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    run the first bounded `collider build all` lane from the clean CI checkout,
