@@ -172,6 +172,23 @@ public struct ExecutionPlan: Sendable {
     }
 }
 
+/// One source closure a plan read, and the identity that closure had when
+/// planning read it.
+///
+/// Planning digests every source input the plan names, so these pairs are the
+/// run's own statement of what source it consumed. Revalidating a run means
+/// re-reading exactly them: a run is superseded by a change to something it
+/// read rather than by a change anywhere in the checkout.
+public struct PlannedSourceClosure: Hashable, Sendable {
+    public let paths: [FilePath]
+    public let digest: ArtifactDigest
+
+    public init(paths: [FilePath], digest: ArtifactDigest) {
+        self.paths = paths
+        self.digest = digest
+    }
+}
+
 public struct ToolIdentitySnapshot: Sendable {
     public let path: FilePath
     public let digest: ArtifactDigest

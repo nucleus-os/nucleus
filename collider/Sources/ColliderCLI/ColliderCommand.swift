@@ -146,6 +146,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 didResize: { try? console.terminalDidResize() },
                 willSuspend: { try? console.terminalWillSuspend() },
                 didResume: { try? console.terminalDidResume() }))
+        let revalidation = sourceRevalidation(environment: environment)
         let application = ColliderApplicationComposition(
             registry: registry,
             run: run,
@@ -158,11 +159,9 @@ public struct ColliderCommand: AsyncParsableCommand {
                 runtime: runtime,
                 console: console,
                 hostPhases: hostPhases,
+                sourceRevalidation: revalidation,
                 ociConfiguration: ociConfiguration),
             signals: signals)
-        let sourceAtStart = try await revalidatedSourceSnapshot(
-            workspace: workspace,
-            environment: environment)
         defer {
             application.signals.cancel()
         }
@@ -193,10 +192,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try await workspaceCommand.run(in: application.workspace)
             }
             await application.runtime.shutdown()
-            try await rejectSupersededSource(
-                sourceAtStart,
-                workspace: workspace,
-                environment: environment)
+            try await rejectSupersededSource(revalidation)
             if let run = application.run {
                 try await application.registry.finish(run, status: .succeeded)
                 await observationTask?.value
@@ -229,14 +225,18 @@ public struct ColliderCommand: AsyncParsableCommand {
             let wasInterrupted = await application.cancellation.wasInterrupted()
             let interruptionSignal =
                 await application.cancellation.receivedInterruptionSignal()
-            let sourceWasSuperseded = await sourceIdentityChanged(
-                sourceAtStart,
-                workspace: workspace,
-                environment: environment)
+            // The success path already revalidated to raise this; asking
+            // again would repeat every Git read it took to answer.
+            let superseded: [FilePath]
+            if let failure = error as? SupersededSourceFailure {
+                superseded = failure.paths
+            } else {
+                superseded = await supersedingSourcePaths(revalidation)
+            }
             let status =
-                sourceWasSuperseded
-                ? .superseded
-                : commandFailureStatus(error, wasInterrupted: wasInterrupted)
+                superseded.isEmpty
+                ? commandFailureStatus(error, wasInterrupted: wasInterrupted)
+                : .superseded
             let contextualFailure = reportedExecutionFailure(
                 error,
                 status: status,
@@ -244,6 +244,17 @@ public struct ColliderCommand: AsyncParsableCommand {
             if let run = application.run, let contextualFailure {
                 try? await application.registry.appendLog(
                     Array("Error: \(contextualFailure)\n".utf8),
+                    in: run)
+            }
+            // A superseded run says which source moved under it. Nothing else
+            // records that, and "superseded" alone leaves the reader to guess
+            // between an edit they made and one they did not.
+            if status == .superseded, let run = application.run {
+                try? await application.registry.appendLog(
+                    Array(
+                        ("Superseded: source this run consumed changed "
+                            + "while it ran\n"
+                            + superseded.map { "  \($0)\n" }.joined()).utf8),
                     in: run)
             }
             if status == .interrupted, let run = application.run {
@@ -381,53 +392,42 @@ func commandFailureStatus(
     return .failed
 }
 
-private struct SupersededSourceFailure: Error {}
+struct SupersededSourceFailure: Error, CustomStringConvertible {
+    let paths: [FilePath]
 
-private func revalidatedSourceSnapshot(
-    workspace: FilePath,
+    var description: String {
+        "source this run consumed changed while it ran: "
+            + paths.map(\.string).joined(separator: ", ")
+    }
+}
+
+/// Collects what each plan reads, or nothing when this invocation does not
+/// revalidate.
+///
+/// A run is superseded by a change to source it consumed. What it consumed is
+/// what its plans read, which planning digests as it freezes each plan, so
+/// there is nothing to collect until a plan exists and nothing to compare for
+/// a command that plans nothing.
+private func sourceRevalidation(
     environment: [String: String]
-) async throws -> ProductArtifactSourceSnapshot? {
+) -> SourceRevalidation? {
     guard environment["NUCLEUS_REVALIDATE_SOURCE"] == "1" else { return nil }
-    return try await ProductArtifactSourceSnapshot.capture(
-        repositoryRoot: workspace,
-        sourceAuthority: .localDevelopment)
+    return SourceRevalidation()
 }
 
-private func sourceIdentityChanged(
-    _ initial: ProductArtifactSourceSnapshot?,
-    workspace: FilePath,
-    environment: [String: String]
-) async -> Bool {
-    guard let initial else { return false }
-    guard
-        let current = try? await revalidatedSourceSnapshot(
-            workspace: workspace,
-            environment: environment)
-    else { return true }
-    return sourceIdentityWasSuperseded(initial, current)
-}
-
-func sourceIdentityWasSuperseded(
-    _ initial: ProductArtifactSourceSnapshot?,
-    _ current: ProductArtifactSourceSnapshot?
-) -> Bool {
-    guard let initial else { return false }
-    guard let current else { return true }
-    return current.closure != initial.closure
+private func supersedingSourcePaths(
+    _ revalidation: SourceRevalidation?
+) async -> [FilePath] {
+    guard let revalidation else { return [] }
+    return await revalidation.supersedingPaths()
 }
 
 private func rejectSupersededSource(
-    _ initial: ProductArtifactSourceSnapshot?,
-    workspace: FilePath,
-    environment: [String: String]
+    _ revalidation: SourceRevalidation?
 ) async throws {
-    guard
-        await sourceIdentityChanged(
-            initial,
-            workspace: workspace,
-            environment: environment)
-    else { return }
-    throw SupersededSourceFailure()
+    let superseded = await supersedingSourcePaths(revalidation)
+    guard !superseded.isEmpty else { return }
+    throw SupersededSourceFailure(paths: superseded)
 }
 
 func recordedExecutionFailure(

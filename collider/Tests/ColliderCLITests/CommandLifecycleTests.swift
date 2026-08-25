@@ -47,29 +47,13 @@ func interruptedCommandsReturnTheConventionalSignalExitStatus() {
 }
 
 @Test
-func changedEffectiveSourceSupersedesTheRun() throws {
-    let provenance = try ProductArtifactProvenance(
-        baseCommit: String(repeating: "a", count: 40),
-        branch: "refs/heads/main",
-        dirtyPaths: [],
-        sourceAuthority: .localDevelopment)
-    let initial = ProductArtifactSourceSnapshot(
-        closure: ArtifactDigest(bytes: [1]),
-        submoduleClosures: [],
-        provenance: provenance)
-    let unchanged = ProductArtifactSourceSnapshot(
-        closure: ArtifactDigest(bytes: [1]),
-        submoduleClosures: [],
-        provenance: provenance)
-    let changed = ProductArtifactSourceSnapshot(
-        closure: ArtifactDigest(bytes: [2]),
-        submoduleClosures: [],
-        provenance: provenance)
-
-    #expect(!sourceIdentityWasSuperseded(initial, unchanged))
-    #expect(sourceIdentityWasSuperseded(initial, changed))
-    #expect(sourceIdentityWasSuperseded(initial, nil))
-    #expect(!sourceIdentityWasSuperseded(nil, changed))
+func aSupersededRunNamesTheSourceThatMoved() {
+    let failure = SupersededSourceFailure(paths: [
+        FilePath("/checkout/core/swift-core"),
+        FilePath("/checkout/react-native/platform"),
+    ])
+    #expect(failure.description.contains("/checkout/core/swift-core"))
+    #expect(failure.description.contains("/checkout/react-native/platform"))
 }
 
 @Test

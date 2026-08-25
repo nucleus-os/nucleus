@@ -39,6 +39,12 @@ package final class PlanningInputProvider: @unchecked Sendable {
         try await digests.digest(sourceCheckoutClosure: paths)
     }
 
+    /// Every source closure planning read, and the identity each had when it
+    /// was read. This is what a run revalidates against.
+    package var plannedSourceClosures: [PlannedSourceClosure] {
+        digests.plannedSourceClosures
+    }
+
     package func semanticToolIdentity(
         _ executable: CommandSpec.Executable,
         environment: [String: String]

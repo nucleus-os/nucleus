@@ -138,6 +138,11 @@ public struct ColliderEngine: Sendable {
                 let hashingDuration = planningInputs.hashingDurationNanoseconds
                 if !options.dryRun {
                     try planningInputs.persistDigestIndex()
+                    // The plan is frozen and nothing it describes has run, so
+                    // these digests are what the run consumed. A dry run
+                    // executes nothing and so has nothing to be superseded.
+                    options.sourceClosureObserver?(
+                        planningInputs.plannedSourceClosures)
                 }
                 return (
                     plan,

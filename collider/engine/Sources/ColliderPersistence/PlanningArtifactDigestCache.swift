@@ -47,6 +47,7 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
     private var trees: [TreeKey: ArtifactDigest] = [:]
     private var sourceCheckouts: [FilePath: ArtifactDigest] = [:]
     private var sourceCheckoutClosures: [[FilePath]: ArtifactDigest] = [:]
+    private var requestedSourceClosures: [[FilePath]: ArtifactDigest] = [:]
     private var persistentStateChanged = false
     private var measurementDepth = 0
     package private(set) var fileMissCount = 0
@@ -136,7 +137,9 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
 
     package func digest(sourceCheckout path: FilePath) async throws -> ArtifactDigest {
         try await measured {
-            try await digestSourceCheckout(path)
+            let digest = try await digestSourceCheckout(path)
+            requestedSourceClosures[[path]] = digest
+            return digest
         }
     }
 
@@ -146,7 +149,6 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
         if let digest = sourceCheckouts[path] { return digest }
         let digest = try await GitSourceCheckoutHasher.digest(
             path,
-            digestFile: { try self.digestFile($0, metadata: $1) },
             digestNestedCheckout: { try await self.digestSourceCheckout($0) })
         sourceCheckouts[path] = digest
         return digest
@@ -157,14 +159,33 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
     ) async throws -> ArtifactDigest {
         try await measured {
             let paths = paths.sorted { $0.string < $1.string }
-            if let digest = sourceCheckoutClosures[paths] { return digest }
-            let digest = try await GitSourceCheckoutHasher.digest(
-                paths,
-                digestFile: { try self.digestFile($0, metadata: $1) },
-                digestNestedCheckout: { try await self.digestSourceCheckout($0) })
-            sourceCheckoutClosures[paths] = digest
+            let digest: ArtifactDigest
+            if let cached = sourceCheckoutClosures[paths] {
+                digest = cached
+            } else {
+                digest = try await GitSourceCheckoutHasher.digest(
+                    paths,
+                    digestNestedCheckout: { try await self.digestSourceCheckout($0) })
+                sourceCheckoutClosures[paths] = digest
+            }
+            requestedSourceClosures[paths] = digest
             return digest
         }
+    }
+
+    /// Every source closure this plan asked for, and what each hashed to.
+    ///
+    /// A nested checkout a closure descends into belongs to the closure that
+    /// named it rather than being a closure of its own, so only what planning
+    /// requested appears here. Revalidating a run means re-reading exactly
+    /// these.
+    package var plannedSourceClosures: [PlannedSourceClosure] {
+        requestedSourceClosures
+            .map { PlannedSourceClosure(paths: $0.key, digest: $0.value) }
+            .sorted {
+                $0.paths.map(\.string)
+                    .lexicographicallyPrecedes($1.paths.map(\.string))
+            }
     }
 
     /// Source capture suspends, so the measured region has an async form. The

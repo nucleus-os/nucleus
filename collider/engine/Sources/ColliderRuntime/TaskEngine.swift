@@ -14,6 +14,11 @@ public struct TaskExecutionOptions: Sendable {
     /// them, for an inspection that needs to read an identity rather than
     /// compare two digests. It observes only.
     public var identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
+    /// Receives the source closures a frozen plan read, and the identity each
+    /// had when planning read it, before anything that plan describes runs. A
+    /// run revalidates against these rather than against the checkout at
+    /// large. It observes only.
+    public var sourceClosureObserver: (@Sendable ([PlannedSourceClosure]) -> Void)?
 
     public init(
         dryRun: Bool = false,
@@ -22,7 +27,8 @@ public struct TaskExecutionOptions: Sendable {
         quiet: Bool = false,
         machineReadable: Bool = false,
         laneLimits: TaskLaneLimits = TaskLaneLimits(),
-        identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil
+        identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
+        sourceClosureObserver: (@Sendable ([PlannedSourceClosure]) -> Void)? = nil
     ) {
         self.dryRun = dryRun
         self.rebuildSelected = rebuildSelected
@@ -31,6 +37,7 @@ public struct TaskExecutionOptions: Sendable {
         self.machineReadable = machineReadable
         self.laneLimits = laneLimits
         self.identityObserver = identityObserver
+        self.sourceClosureObserver = sourceClosureObserver
     }
 }
 

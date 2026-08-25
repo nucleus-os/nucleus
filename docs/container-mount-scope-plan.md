@@ -229,10 +229,29 @@ hours.
 Revalidation names the source closure the plan consumed, which the graph
 already declares through `.sourceCheckout` inputs, so a run is superseded by a
 change to something it read rather than by a change to anything in the
-checkout. The parameter for this exists and is unused.
+checkout.
 
 Gate: editing a path no task declares does not supersede a running build, and
 editing a path a running task declares still does.
+
+Status: complete.
+
+### The plan is its own baseline
+
+Planning digests every source closure its plan names in order to decide what is
+clean, so those digests already are the run's statement of what it read, taken
+at the moment it read it. Revalidation re-reads exactly those closures and
+compares. Nothing is captured before the command begins, which removes a
+whole-repository hash from both ends of every run and removes it entirely from
+commands that execute no graph.
+
+Taking the baseline from planning is more precise than taking it earlier, not
+merely cheaper. A file edited between process start and plan freeze is consumed
+consistently by the plan that read it, and the artifacts are correct for it;
+only a baseline taken before planning called that run superseded.
+
+A superseded run now names the paths that moved. "Superseded" alone left the
+reader to guess between an edit they made and one they did not.
 
 ## Phase 4: Hold the Boundary
 
@@ -260,4 +279,4 @@ remains necessary is answered by the Phase 1 measurement.
 Narrowing what a container may read is a containment property as well as a
 resource one. A Swift build that cannot see the Swift toolchain source or
 another product's build output is a smaller thing to reason about, which is why
-Phase 3 makes the boundary structural rather than conventional.
+Phase 4 makes the boundary structural rather than conventional.

@@ -160,6 +160,10 @@ extension WorkspaceContext {
                 cacheRoot: cacheRoot,
                 hostBuildRoot: hostBuildRoot
             ).rebuildLock)
+        var options = controls.executionOptions
+        if let sourceRevalidation {
+            options.sourceClosureObserver = { sourceRevalidation.record($0) }
+        }
         let report = try await ColliderEngine(runtime: runtime).execute(
             catalog: catalog,
             requests: requests,
@@ -168,7 +172,7 @@ extension WorkspaceContext {
             workflowLocks: [sdkRebuildLock],
             lowerings: [SwiftPMLowering()],
             hostPhases: hostPhases,
-            options: controls.executionOptions)
+            options: options)
         if controls.dryRun {
             try controls.renderDryRun(report, console: console)
         }

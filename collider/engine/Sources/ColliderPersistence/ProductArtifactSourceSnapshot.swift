@@ -37,7 +37,9 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             }
             return relative.string
         }
-        let closure = try await sourceDigest(sourcePaths, observe: observe)
+        let closure = try await SourceClosureIdentity.digest(
+            sourcePaths,
+            observe: observe)
         let submodulePaths = try await submodulePaths(repositoryRoot).filter {
             relative in
             scopes.contains {
@@ -50,8 +52,9 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             submodules.append(
                 ProductArtifactSourceClosure(
                     relativePath: relative,
-                    digest: try await sourceDigest(
-                        repositoryRoot.appending(relative), observe: observe)))
+                    digest: try await SourceClosureIdentity.digest(
+                        [repositoryRoot.appending(relative)],
+                        observe: observe)))
         }
         let head = try await gitText(
             at: repositoryRoot,
@@ -113,28 +116,6 @@ private func isFullGitCommit(_ value: String) -> Bool {
             default: false
             }
         }
-}
-
-private func sourceDigest(
-    _ checkouts: [FilePath],
-    observe: SourceCaptureObserver? = nil
-) async throws -> ArtifactDigest {
-    try await GitSourceCheckoutHasher.digest(
-        checkouts,
-        digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: { try await sourceDigest($0, observe: observe) },
-        observe: observe)
-}
-
-private func sourceDigest(
-    _ checkout: FilePath,
-    observe: SourceCaptureObserver? = nil
-) async throws -> ArtifactDigest {
-    try await GitSourceCheckoutHasher.digest(
-        checkout,
-        digestFile: { path, _ in try ArtifactHasher.digest(file: path) },
-        digestNestedCheckout: { try await sourceDigest($0, observe: observe) },
-        observe: observe)
 }
 
 private func sourcePath(_ candidate: String, isWithin scope: String) -> Bool {

@@ -421,6 +421,67 @@ import Testing
     #expect(sourceDirty.provenance.dirtyPaths == ["Source.swift"])
 }
 
+@Test func onlySourceARunReadSupersedesIt() async throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-revalidation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let read = repository.appendingPathComponent("read")
+    let unread = repository.appendingPathComponent("unread")
+    try FileManager.default.createDirectory(at: read, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: unread, withIntermediateDirectories: true)
+    let consumed = read.appendingPathComponent("Source.swift")
+    let plan = unread.appendingPathComponent("plan.md")
+    try Data("let value = 1\n".utf8).write(to: consumed)
+    try Data("first\n".utf8).write(to: plan)
+    try commitAll(repository)
+
+    let paths = [FilePath(read.path)]
+    let revalidation = SourceRevalidation()
+    revalidation.record([
+        PlannedSourceClosure(
+            paths: paths,
+            digest: try await SourceClosureIdentity.digest(paths))
+    ])
+
+    // A document the plan never named is not something the run consumed.
+    try Data("second\n".utf8).write(to: plan)
+    try Data("untracked\n".utf8).write(
+        to: unread.appendingPathComponent("Untracked.md"))
+    #expect(await revalidation.supersedingPaths().isEmpty)
+
+    // The tree a task declared is.
+    try Data("let value = 2\n".utf8).write(to: consumed)
+    #expect(await revalidation.supersedingPaths() == paths)
+}
+
+@Test func aRunThatPlannedNothingIsNeverSuperseded() async {
+    #expect(await SourceRevalidation().supersedingPaths().isEmpty)
+}
+
+@Test func sourceARunCanNoLongerReadSupersedesIt() async throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-unreadable-source-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let consumed = repository.appendingPathComponent("Source.swift")
+    try Data("let value = 1\n".utf8).write(to: consumed)
+    try commitAll(repository)
+
+    let paths = [FilePath(consumed.path)]
+    let revalidation = SourceRevalidation()
+    revalidation.record([
+        PlannedSourceClosure(
+            paths: paths,
+            digest: try await SourceClosureIdentity.digest(paths))
+    ])
+    #expect(await revalidation.supersedingPaths().isEmpty)
+
+    // A run cannot claim source it can no longer account for.
+    try FileManager.default.removeItem(at: repository.appendingPathComponent(".git"))
+    #expect(await revalidation.supersedingPaths() == paths)
+}
+
 @Test func protectedMainSourceSnapshotRequiresAnExactCleanCheckout() async throws {
     let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-protected-main-source-\(UUID().uuidString)")

@@ -29,20 +29,17 @@ public typealias SourceCaptureObserver = (SourceCaptureProgress) -> Void
 enum GitSourceCheckoutHasher {
     static func digest(
         _ checkout: FilePath,
-        digestFile: (FilePath, Stat) throws -> ArtifactDigest,
         digestNestedCheckout: (FilePath) async throws -> ArtifactDigest,
         observe: SourceCaptureObserver? = nil
     ) async throws -> ArtifactDigest {
         try await digest(
             [checkout],
-            digestFile: digestFile,
             digestNestedCheckout: digestNestedCheckout,
             observe: observe)
     }
 
     static func digest(
         _ checkouts: [FilePath],
-        digestFile: (FilePath, Stat) throws -> ArtifactDigest,
         digestNestedCheckout: (FilePath) async throws -> ArtifactDigest,
         observe: SourceCaptureObserver? = nil
     ) async throws -> ArtifactDigest {

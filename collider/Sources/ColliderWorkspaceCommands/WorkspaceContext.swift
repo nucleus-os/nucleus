@@ -142,6 +142,10 @@ package struct WorkspaceContext: Sendable {
     package let runtime: ColliderRuntime
     package let console: CommandConsole
     package let hostPhases: HostPhaseRecorder
+    /// Collects what every plan this invocation freezes read, so the command
+    /// that owns the invocation can decide whether the source it consumed
+    /// changed while it ran. Absent when this invocation does not revalidate.
+    package let sourceRevalidation: SourceRevalidation?
     private let requestedOCIConfiguration: OCIRuntimeConfiguration?
     /// Follows `producesIntoVerificationScratch`, because which workspaces a
     /// production owns is decided by whether it is verifying.
@@ -159,6 +163,7 @@ package struct WorkspaceContext: Sendable {
         runtime: ColliderRuntime,
         console: CommandConsole = .processDefault,
         hostPhases: HostPhaseRecorder = HostPhaseRecorder(registry: nil, run: nil),
+        sourceRevalidation: SourceRevalidation? = nil,
         ociConfiguration: OCIRuntimeConfiguration? = nil,
         cacheRoot: FilePath? = nil,
         hostBuildRoot requestedHostBuildRoot: FilePath? = nil,
@@ -217,6 +222,7 @@ package struct WorkspaceContext: Sendable {
         self.runtime = runtime
         self.console = console
         self.hostPhases = hostPhases
+        self.sourceRevalidation = sourceRevalidation
         requestedOCIConfiguration = ociConfiguration
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
