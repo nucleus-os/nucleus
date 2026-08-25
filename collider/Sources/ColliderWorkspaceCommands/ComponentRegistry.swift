@@ -84,7 +84,13 @@ package struct ComponentRegistry {
                 },
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
             exact: nucleusIncludeRoots + nucleusGraph.headerSearchRoots
-                + assemblerGraph.headerSearchRoots)
+                + assemblerGraph.headerSearchRoots
+                // Not everything a container reads from the checkout is in the
+                // package graph. The runtime artifact and the shell runtime
+                // generation both assemble the session package's scripts and
+                // units, declaring them as file inputs and as a checkout read
+                // effect, and neither is a Swift target or an include path.
+                + [context.layout.compositorSessionPackage])
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
