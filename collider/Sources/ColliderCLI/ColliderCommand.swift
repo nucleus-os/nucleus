@@ -227,11 +227,11 @@ public struct ColliderCommand: AsyncParsableCommand {
                 await application.cancellation.receivedInterruptionSignal()
             // The success path already revalidated to raise this; asking
             // again would repeat every Git read it took to answer.
-            let superseded: [FilePath]
+            let superseded: [PlannedSourceClosure]
             if let failure = error as? SupersededSourceFailure {
-                superseded = failure.paths
+                superseded = failure.closures
             } else {
-                superseded = await supersedingSourcePaths(revalidation)
+                superseded = await supersedingSourceClosures(revalidation)
             }
             let status =
                 superseded.isEmpty
@@ -252,9 +252,9 @@ public struct ColliderCommand: AsyncParsableCommand {
             if status == .superseded, let run = application.run {
                 try? await application.registry.appendLog(
                     Array(
-                        ("Superseded: source this run consumed changed "
-                            + "while it ran\n"
-                            + superseded.map { "  \($0)\n" }.joined()).utf8),
+                        ("Superseded: "
+                            + SupersededSourceFailure(closures: superseded)
+                                .description).utf8),
                     in: run)
             }
             if status == .interrupted, let run = application.run {
@@ -393,11 +393,20 @@ func commandFailureStatus(
 }
 
 struct SupersededSourceFailure: Error, CustomStringConvertible {
-    let paths: [FilePath]
+    let closures: [PlannedSourceClosure]
 
+    /// A closure is hashed as a whole, so a closure of one path says which
+    /// path changed and a closure of several says only that something in it
+    /// did. Claiming every path in a closure changed would overstate what was
+    /// measured.
     var description: String {
-        "source this run consumed changed while it ran: "
-            + paths.map(\.string).joined(separator: ", ")
+        "source this run consumed changed while it ran\n"
+            + closures.map { closure in
+                let paths = closure.paths.map(\.string).joined(separator: ", ")
+                return closure.paths.count == 1
+                    ? "  changed: \(paths)\n"
+                    : "  changed within: \(paths)\n"
+            }.joined()
     }
 }
 
@@ -415,19 +424,19 @@ private func sourceRevalidation(
     return SourceRevalidation()
 }
 
-private func supersedingSourcePaths(
+private func supersedingSourceClosures(
     _ revalidation: SourceRevalidation?
-) async -> [FilePath] {
+) async -> [PlannedSourceClosure] {
     guard let revalidation else { return [] }
-    return await revalidation.supersedingPaths()
+    return await revalidation.supersedingClosures()
 }
 
 private func rejectSupersededSource(
     _ revalidation: SourceRevalidation?
 ) async throws {
-    let superseded = await supersedingSourcePaths(revalidation)
+    let superseded = await supersedingSourceClosures(revalidation)
     guard !superseded.isEmpty else { return }
-    throw SupersededSourceFailure(paths: superseded)
+    throw SupersededSourceFailure(closures: superseded)
 }
 
 func recordedExecutionFailure(

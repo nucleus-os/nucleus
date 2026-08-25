@@ -48,12 +48,26 @@ func interruptedCommandsReturnTheConventionalSignalExitStatus() {
 
 @Test
 func aSupersededRunNamesTheSourceThatMoved() {
-    let failure = SupersededSourceFailure(paths: [
-        FilePath("/checkout/core/swift-core"),
-        FilePath("/checkout/react-native/platform"),
+    let failure = SupersededSourceFailure(closures: [
+        PlannedSourceClosure(
+            paths: [FilePath("/checkout/core/swift-core")],
+            digest: ArtifactDigest(bytes: [1])),
+        PlannedSourceClosure(
+            paths: [
+                FilePath("/checkout/react-native/platform"),
+                FilePath("/checkout/react-native/native"),
+            ],
+            digest: ArtifactDigest(bytes: [2])),
     ])
-    #expect(failure.description.contains("/checkout/core/swift-core"))
-    #expect(failure.description.contains("/checkout/react-native/platform"))
+
+    // A closure of one path says which path changed. A closure of several
+    // says only that something inside it did, because that is what a whole
+    // closure hashing differently establishes.
+    #expect(failure.description.contains("changed: /checkout/core/swift-core"))
+    #expect(
+        failure.description.contains(
+            "changed within: /checkout/react-native/platform, "
+                + "/checkout/react-native/native"))
 }
 
 @Test

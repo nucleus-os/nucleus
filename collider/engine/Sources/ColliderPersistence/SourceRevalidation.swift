@@ -48,20 +48,24 @@ public final class SourceRevalidation: Sendable {
         }
     }
 
-    /// The paths whose source no longer hashes to what planning read.
+    /// The closures whose source no longer hashes to what planning read.
     ///
     /// Empty when nothing the run consumed has changed, which includes a
     /// command that planned nothing at all. A closure that can no longer be
     /// read is reported as changed, because a run cannot claim source it
     /// cannot account for.
-    public func supersedingPaths() async -> [FilePath] {
-        var superseded: Set<FilePath> = []
+    ///
+    /// Closures rather than paths, because a closure is hashed as a whole:
+    /// what is known is that something inside one changed, not which of its
+    /// paths did.
+    public func supersedingClosures() async -> [PlannedSourceClosure] {
+        var superseded: [PlannedSourceClosure] = []
         for closure in closures.withLock({ $0 }) {
             let current = try? await SourceClosureIdentity.digest(closure.paths)
             if current != closure.digest {
-                superseded.formUnion(closure.paths)
+                superseded.append(closure)
             }
         }
-        return superseded.sorted { $0.string < $1.string }
+        return superseded
     }
 }

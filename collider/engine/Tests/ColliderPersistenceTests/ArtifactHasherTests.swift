@@ -448,15 +448,15 @@ import Testing
     try Data("second\n".utf8).write(to: plan)
     try Data("untracked\n".utf8).write(
         to: unread.appendingPathComponent("Untracked.md"))
-    #expect(await revalidation.supersedingPaths().isEmpty)
+    #expect(await revalidation.supersedingClosures().isEmpty)
 
     // The tree a task declared is.
     try Data("let value = 2\n".utf8).write(to: consumed)
-    #expect(await revalidation.supersedingPaths() == paths)
+    #expect(await revalidation.supersedingClosures().flatMap(\.paths) == paths)
 }
 
 @Test func aRunThatPlannedNothingIsNeverSuperseded() async {
-    #expect(await SourceRevalidation().supersedingPaths().isEmpty)
+    #expect(await SourceRevalidation().supersedingClosures().isEmpty)
 }
 
 @Test func sourceARunCanNoLongerReadSupersedesIt() async throws {
@@ -475,11 +475,11 @@ import Testing
             paths: paths,
             digest: try await SourceClosureIdentity.digest(paths))
     ])
-    #expect(await revalidation.supersedingPaths().isEmpty)
+    #expect(await revalidation.supersedingClosures().isEmpty)
 
     // A run cannot claim source it can no longer account for.
     try FileManager.default.removeItem(at: repository.appendingPathComponent(".git"))
-    #expect(await revalidation.supersedingPaths() == paths)
+    #expect(await revalidation.supersedingClosures().flatMap(\.paths) == paths)
 }
 
 @Test func protectedMainSourceSnapshotRequiresAnExactCleanCheckout() async throws {
