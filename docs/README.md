@@ -55,8 +55,9 @@ reuse.
 5. Complete Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    by expanding the proven build lane into the complete verification graph.
-   The graph lands with the remaining Linux-runtime packaging mounts and proves
-   them through an actual `collider package linux-runtime` execution.
+   The graph proves the Linux-runtime packaging lane through an actual
+   `collider package linux-runtime` execution on protected main, which is also
+   the remaining half of Android architecture parity Phase 5.
 6. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
