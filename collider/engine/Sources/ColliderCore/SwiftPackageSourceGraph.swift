@@ -204,50 +204,6 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         }
     }
 
-    /// Every directory the graph names as a target's source.
-    ///
-    /// `inputs(forProduct:)` answers for one product, which is what provenance
-    /// needs. A build environment is established once and reused across the
-    /// products it builds, so it needs the union: what any product might read
-    /// rather than what one does.
-    public var targetRoots: [FilePath] {
-        switch storage {
-        case .packageWide(let inputs):
-            return inputs.compactMap { input in
-                switch input {
-                case .tree(let path), .sourceCheckout(let path): path
-                case .file, .sourceCheckoutClosure, .value, .string, .environment,
-                    .swiftBuildContext, .tool:
-                    nil
-                }
-            }
-        case .resolved(_, let packages):
-            var roots: Set<FilePath> = []
-            for package in packages {
-                for target in package.targets { roots.insert(target.path) }
-            }
-            return roots.sorted { $0.string < $1.string }
-        }
-    }
-
-    /// The manifest of every package in the graph.
-    ///
-    /// Separate from `targetRoots` because a manifest is a file beside a
-    /// package's other contents rather than a directory of source: a consumer
-    /// widening a target directory must not widen a manifest into the package
-    /// root it sits in.
-    public var manifestPaths: [FilePath] {
-        switch storage {
-        case .packageWide(let inputs):
-            return inputs.compactMap { input in
-                if case .file(let path) = input { path } else { nil }
-            }
-        case .resolved(_, let packages):
-            return packages.map { $0.root.appending("Package.swift") }
-                .sorted { $0.string < $1.string }
-        }
-    }
-
     public var testInputs: [ArtifactInput] {
         switch storage {
         case .packageWide(let inputs):
