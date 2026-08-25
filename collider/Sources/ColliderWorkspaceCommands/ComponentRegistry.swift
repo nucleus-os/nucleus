@@ -1303,9 +1303,10 @@ package struct ComponentRegistry {
             cFlags: icuIncludeFlags + includeFlags,
             cxxFlags: icuIncludeFlags + includeFlags,
             linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" },
-            checkoutIncludeRoots: (icuRoots + includeDirectories).filter {
-                $0.starts(with: root)
-            })
+            checkoutIncludeRoots: checkoutIncludeRoots(
+                of: icuRoots + includeDirectories,
+                root: root,
+                nativeSDK: nativeSDK))
     }
 
     private func swiftTargetSDKGenerationConfiguration(
@@ -1511,4 +1512,40 @@ func packageRootMounts(
                 target: placement.executionPath($0),
                 access: .readOnly)
         }
+}
+
+/// The checkout directories a set of include paths names.
+///
+/// A path under the checkout names itself. A path under one of the render
+/// SDK's include links names a checkout directory too, because that link is a
+/// symlink recording the path a container sees: following
+/// `render/include/skia/src` reaches `core/third-party/skia/src`, which a
+/// filter keeping only paths literally under the checkout root drops. The
+/// container then follows the link to a directory it cannot see, and the
+/// compiler reports a header it was explicitly pointed at as missing.
+///
+/// A path that is exactly a link resolves to that link's stated subtrees
+/// rather than to the directory it points at, because the linked root is
+/// Skia's whole vendored checkout.
+func checkoutIncludeRoots(
+    of includePaths: [FilePath],
+    root: FilePath,
+    nativeSDK: FilePath
+) -> [FilePath] {
+    let links = CoreColliderRecipe.renderSDKCheckoutLinks(
+        root: root.appending("core"),
+        sdkRoot: nativeSDK)
+    return includePaths.flatMap { path -> [FilePath] in
+        if path.starts(with: root) { return [path] }
+        for link in links {
+            if path == link.link { return link.rootRelativeSubtrees }
+            guard path.starts(with: link.link) else { continue }
+            return [
+                path.string.dropFirst(link.link.string.count)
+                    .split(separator: "/")
+                    .reduce(link.checkout) { $0.appending(String($1)) }
+            ]
+        }
+        return []
+    }
 }

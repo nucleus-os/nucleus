@@ -9,6 +9,28 @@ package enum CoreEntrypoints {
     package static let androidVerify = ComponentEntrypointID(rawValue: "android.verify")
 }
 
+/// Where the render SDK's include tree links back into the checkout.
+///
+/// The staged SDK links rather than copies, and each link records the path a
+/// container sees, so an include path under one of these names a checkout
+/// directory even though it is not written as one. A mount set derived only
+/// from paths literally under the checkout root drops them, and the container
+/// then follows a link to a directory it cannot see.
+package struct RenderSDKCheckoutLink: Sendable {
+    /// The link's path inside the staged SDK.
+    package let link: FilePath
+    /// The checkout directory it resolves to.
+    package let checkout: FilePath
+    /// What a container reads when a flag names `link` itself rather than
+    /// something under it.
+    ///
+    /// Stated because the flag names the linked root while the headers under
+    /// it are written relative to that root: Skia asks for
+    /// `include/core/SkFontMgr.h`. Mounting the root to satisfy that would
+    /// expose 199,180 files to reach about three thousand.
+    package let rootRelativeSubtrees: [FilePath]
+}
+
 package enum CoreTaskIDs {
     package static let gnDownload = TaskID(rawValue: "core.gn-download")
     package static let gnInstall = TaskID(rawValue: "core.gn-install")
@@ -567,6 +589,30 @@ public enum CoreColliderRecipe: ColliderComponent {
                         environment: environment)))
     }
 
+    /// The render SDK include links for a checkout and staged SDK pair.
+    ///
+    /// One definition, used both to create the links and to work out which
+    /// checkout directories a container following them has to be able to see.
+    package static func renderSDKCheckoutLinks(
+        root: FilePath,
+        sdkRoot: FilePath
+    ) -> [RenderSDKCheckoutLink] {
+        let render = sdkRoot.appending("render")
+        let skia = root.appending("third-party/skia")
+        return [
+            RenderSDKCheckoutLink(
+                link: render.appending("include/skia"),
+                checkout: skia,
+                rootRelativeSubtrees: [
+                    skia.appending("include"), skia.appending("src"),
+                ]),
+            RenderSDKCheckoutLink(
+                link: render.appending("include/skia-text"),
+                checkout: root.appending("render-cxx/skia"),
+                rootRelativeSubtrees: [root.appending("render-cxx/skia")]),
+        ]
+    }
+
     package static func publishAndroidRenderSDK(
         root: FilePath,
         executionPath: (FilePath) -> String,
@@ -574,10 +620,15 @@ public enum CoreColliderRecipe: ColliderComponent {
         skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
-        let links: [(String, String)] = [
-            ("include/skia", executionPath(root.appending("third-party/skia"))),
-            ("include/skia-text", executionPath(root.appending("render-cxx/skia"))),
-        ]
+        let links: [(String, String)] = renderSDKCheckoutLinks(
+            root: root,
+            sdkRoot: sdkRoot
+        ).map {
+            (
+                String($0.link.string.dropFirst(sdk.string.count + 1)),
+                executionPath($0.checkout)
+            )
+        }
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidNativeSDK,
             component: ComponentID(rawValue: "core"))
@@ -611,10 +662,15 @@ public enum CoreColliderRecipe: ColliderComponent {
         skia: ArtifactReference
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("render")
-        let links: [(String, String)] = [
-            ("include/skia", executionPath(root.appending("third-party/skia"))),
-            ("include/skia-text", executionPath(root.appending("render-cxx/skia"))),
-        ]
+        let links: [(String, String)] = renderSDKCheckoutLinks(
+            root: root,
+            sdkRoot: sdkRoot
+        ).map {
+            (
+                String($0.link.string.dropFirst(sdk.string.count + 1)),
+                executionPath($0.checkout)
+            )
+        }
         var builder = TaskBuilder(
             id: CoreTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "core"))
