@@ -26,8 +26,12 @@ package struct RenderSDKCheckoutLink: Sendable {
     ///
     /// Stated because the flag names the linked root while the headers under
     /// it are written relative to that root: Skia asks for
-    /// `include/core/SkFontMgr.h`. Mounting the root to satisfy that would
-    /// expose 199,180 files to reach about three thousand.
+    /// `include/core/SkFontMgr.h` and `modules/skparagraph/include/Paragraph.h`.
+    /// Mounting the root to satisfy that would expose 199,180 files, 186,748 of
+    /// them a vendored `third_party` tree, to reach about four thousand.
+    ///
+    /// These three are what root-relative includes reach. First-party sources
+    /// name `include` and `modules`; `src` is also named by a flag of its own.
     package let rootRelativeSubtrees: [FilePath]
 }
 
@@ -605,6 +609,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 checkout: skia,
                 rootRelativeSubtrees: [
                     skia.appending("include"), skia.appending("src"),
+                    skia.appending("modules"),
                 ]),
             RenderSDKCheckoutLink(
                 link: render.appending("include/skia-text"),
