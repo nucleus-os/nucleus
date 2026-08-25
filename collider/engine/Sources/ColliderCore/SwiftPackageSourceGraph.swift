@@ -24,19 +24,26 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         public let targetDependencies: [String]
         public let productDependencies: [String]
         public let isTest: Bool
+        /// Directories the manifest tells the compiler to search for this
+        /// target's headers, resolved against the target that declares them.
+        public let headerSearchPaths: [FilePath]
 
         public init(
             name: String,
             path: FilePath,
             targetDependencies: [String] = [],
             productDependencies: [String] = [],
-            isTest: Bool = false
+            isTest: Bool = false,
+            headerSearchPaths: [FilePath] = []
         ) {
             self.name = name
             self.path = path
             self.targetDependencies = targetDependencies.sorted()
             self.productDependencies = productDependencies.sorted()
             self.isTest = isTest
+            self.headerSearchPaths = headerSearchPaths.sorted {
+                $0.string < $1.string
+            }
         }
     }
 
@@ -225,6 +232,30 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             var roots: Set<FilePath> = []
             for package in packages {
                 for target in package.targets { roots.insert(target.path) }
+            }
+            return roots.sorted { $0.string < $1.string }
+        }
+    }
+
+    /// Every directory a target's settings name as a header search path.
+    ///
+    /// Separate from `targetRoots` because such a path may leave the target
+    /// that declares it: `TracyBridge` reaches
+    /// `swift-tracy/third-party/tracy/public`, so a set derived from target
+    /// directories alone omits a directory the compiler is told to read and
+    /// the build fails on a header it was pointed at. Taken exactly rather
+    /// than widened, for the same reason a vendored include root is: the path
+    /// names what it needs inside a tree that is mostly not that.
+    public var headerSearchRoots: [FilePath] {
+        switch storage {
+        case .packageWide:
+            return []
+        case .resolved(_, let packages):
+            var roots: Set<FilePath> = []
+            for package in packages {
+                for target in package.targets {
+                    roots.formUnion(target.headerSearchPaths)
+                }
             }
             return roots.sorted { $0.string < $1.string }
         }

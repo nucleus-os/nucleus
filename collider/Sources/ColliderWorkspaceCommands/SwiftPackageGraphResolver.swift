@@ -69,6 +69,14 @@ package final class SwiftPackageGraphResolver: Sendable {
         let identities: [GraphIdentity]
         let locations: [PackageLocation]
         let packages: [Description]
+        /// Header search paths each package's manifest declares, keyed by
+        /// package path and then target name.
+        ///
+        /// Required rather than optional so a cache written before the
+        /// resolver collected build settings fails to decode and is rebuilt.
+        /// Reading one as though it had recorded no settings is how a target
+        /// that does declare them silently loses the directory it reads.
+        let headerSearchPaths: [String: [String: [String]]]
     }
 
     private let cacheRoot: FilePath
@@ -160,7 +168,8 @@ package final class SwiftPackageGraphResolver: Sendable {
             let graph = try sourceGraph(
                 root: packageRoot,
                 locations: cache.locations,
-                descriptions: cache.packages)
+                descriptions: cache.packages,
+                headerSearchPaths: cache.headerSearchPaths)
             return graph
         }
 
@@ -168,16 +177,22 @@ package final class SwiftPackageGraphResolver: Sendable {
             packageRoot,
             swift: swiftExecutable)
         var described: [Description] = []
+        var headerSearchPaths: [String: [String: [String]]] = [:]
         for location in locations {
-            described.append(
-                try await describe(FilePath(location.path), swift: swiftExecutable))
+            let location = FilePath(location.path)
+            described.append(try await describe(location, swift: swiftExecutable))
+            let declared = try await manifestHeaderSearchPaths(
+                location,
+                swift: swiftExecutable)
+            if !declared.isEmpty { headerSearchPaths[location.string] = declared }
         }
         let descriptions = described.sorted { $0.path < $1.path }
 
         let graph = try sourceGraph(
             root: packageRoot,
             locations: locations,
-            descriptions: descriptions)
+            descriptions: descriptions,
+            headerSearchPaths: headerSearchPaths)
         var identityPaths = descriptions.map {
             FilePath($0.path).appending("Package.swift")
         }
@@ -200,7 +215,8 @@ package final class SwiftPackageGraphResolver: Sendable {
                 resolution: resolutionKey(packageRoot),
                 identities: identities,
                 locations: locations,
-                packages: descriptions))
+                packages: descriptions,
+                headerSearchPaths: headerSearchPaths))
         cacheData.append(0x0a)
         try cacheData.write(
             to: URL(fileURLWithPath: cacheFile.string),
@@ -266,6 +282,33 @@ package final class SwiftPackageGraphResolver: Sendable {
         }.sorted { $0.identity < $1.identity }
     }
 
+    /// The manifest's own view of a package, which is the only place build
+    /// settings appear. `describe` reports structure and omits them.
+    private struct Manifest: Decodable {
+        struct Target: Decodable {
+            struct Setting: Decodable {
+                struct Kind: Decodable {
+                    struct HeaderSearchPath: Decodable {
+                        let path: String
+
+                        enum CodingKeys: String, CodingKey {
+                            case path = "_0"
+                        }
+                    }
+
+                    let headerSearchPath: HeaderSearchPath?
+                }
+
+                let kind: Kind
+            }
+
+            let name: String
+            let settings: [Setting]?
+        }
+
+        let targets: [Target]
+    }
+
     private func describe(
         _ packageRoot: FilePath,
         swift: FilePath
@@ -278,6 +321,33 @@ package final class SwiftPackageGraphResolver: Sendable {
             return try JSONDecoder().decode(Description.self, from: data)
         } catch {
             throw SwiftPackageGraphFailure.invalidDescription(packageRoot, error)
+        }
+    }
+
+    /// Every target's declared header search paths, by target name.
+    ///
+    /// Matched by name rather than by the manifest's own target path, because
+    /// a target that does not state a path takes a default this would have to
+    /// reproduce, while `describe` has already resolved it.
+    private func manifestHeaderSearchPaths(
+        _ packageRoot: FilePath,
+        swift: FilePath
+    ) async throws -> [String: [String]] {
+        let data = try await runSwiftPackage(
+            packageRoot,
+            swift: swift,
+            arguments: ["dump-package"])
+        let manifest: Manifest
+        do {
+            manifest = try JSONDecoder().decode(Manifest.self, from: data)
+        } catch {
+            throw SwiftPackageGraphFailure.invalidDescription(packageRoot, error)
+        }
+        return manifest.targets.reduce(into: [:]) { result, target in
+            let paths = (target.settings ?? []).compactMap {
+                $0.kind.headerSearchPath?.path
+            }
+            if !paths.isEmpty { result[target.name] = paths }
         }
     }
 
@@ -335,7 +405,8 @@ package final class SwiftPackageGraphResolver: Sendable {
     private func sourceGraph(
         root: FilePath,
         locations: [PackageLocation],
-        descriptions: [Description]
+        descriptions: [Description],
+        headerSearchPaths: [String: [String: [String]]]
     ) throws -> SwiftPackageSourceGraph {
         let canonicalRoot = canonicalPath(root)
         let roots = Set(descriptions.map { canonicalPath(FilePath($0.path)) })
@@ -386,15 +457,22 @@ package final class SwiftPackageGraphResolver: Sendable {
                     },
                     targets: description.targets.map { target in
                         let targetPath = FilePath(target.path)
+                        let resolved =
+                            targetPath.isAbsolute
+                            ? canonicalPath(targetPath)
+                            : canonicalPath(
+                                packageRoot.appending(targetPath.components))
                         return SwiftPackageSourceGraph.Target(
                             name: target.name,
-                            path: targetPath.isAbsolute
-                                ? canonicalPath(targetPath)
-                                : canonicalPath(
-                                    packageRoot.appending(targetPath.components)),
+                            path: resolved,
                             targetDependencies: target.targetDependencies ?? [],
                             productDependencies: target.productDependencies ?? [],
-                            isTest: target.type == "test")
+                            isTest: target.type == "test",
+                            headerSearchPaths: (headerSearchPaths[description.path]?[
+                                target.name] ?? []).map {
+                                    canonicalPath(
+                                        resolved.appending(FilePath($0).components))
+                                })
                     })
             })
     }

@@ -83,7 +83,8 @@ package struct ComponentRegistry {
                     $0.removingLastComponent()
                 },
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
-            exact: nucleusIncludeRoots)
+            exact: nucleusIncludeRoots + nucleusGraph.headerSearchRoots
+                + assemblerGraph.headerSearchRoots)
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
