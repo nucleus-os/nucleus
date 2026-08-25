@@ -20,6 +20,10 @@ private struct NativeSDKCompilerConfiguration {
     let cFlags: [String]
     let cxxFlags: [String]
     let linkerFlags: [String]
+    /// The checkout subtrees these flags name. A container has to be able to
+    /// see an include path for the flag naming it to mean anything, and the
+    /// two drift the moment they are written down separately.
+    let checkoutIncludeRoots: [FilePath]
 }
 
 package struct ComponentRegistry {
@@ -899,8 +903,6 @@ package struct ComponentRegistry {
             + architecture.rawValue
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
-        let containerMaskDirectory = try emptyContainerMaskDirectory(
-            under: context.cacheRoot)
         let swiftPMRoot = context.cacheRoot.appending(
             "swiftpm/\(target.identifier)")
         let swiftPMDependencyCache = context.cacheRoot.appending(
@@ -916,109 +918,111 @@ package struct ComponentRegistry {
             nativeSDK: nativeSDK,
             gfxstreamSDKRoot: nativeSDK.appending("android/gfxstream"),
             placement: placement)
-        let execution = SwiftPMExecution.oci(
-            SwiftPMOCIExecution(
-                executionPlatform: .linuxARM64OCI,
-                artifactTarget: resolvedArtifactTarget,
-                image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay],
-                hostname: "nucleus-linux-\(architecture.rawValue)",
-                hostWorkingDirectory: root,
-                mounts: [
-                    OCIMount(
-                        source: root,
-                        target: placement.executionPath(root),
-                        access: .readOnly)
-                ]
-                    + containerMaskedCheckoutSubtrees(
+        let checkoutIncludeRoots = nativeCompiler.checkoutIncludeRoots
+        let execution = { (graph: SwiftPackageSourceGraph) in
+            SwiftPMExecution.oci(
+                SwiftPMOCIExecution(
+                    executionPlatform: .linuxARM64OCI,
+                    artifactTarget: resolvedArtifactTarget,
+                    image: builder.image,
+                    inputArtifacts: [builder.swiftPMOverlay],
+                    hostname: "nucleus-linux-\(architecture.rawValue)",
+                    hostWorkingDirectory: root,
+                    mounts: checkoutSourceMounts(
                         root: root,
-                        mask: containerMaskDirectory,
+                        widened: graph.targetRoots,
+                        exact: graph.manifestPaths + checkoutIncludeRoots + [
+                            root.appending("Package.resolved"),
+                            root.appending("swift-sdk/linux-builder-toolset.json"),
+                        ],
                         placement: placement)
-                    + [
-                        OCIMount(
-                            source: nativeSDK,
-                            target: placement.executionPath(nativeSDK),
-                            access: .readOnly),
-                        // The native SDK's include tree links into the materialized
-                        // JavaScript workspace and the generated sources beside it,
-                        // and those links record the path the container sees, so
-                        // both trees are mounted where the declared roots put them.
-                        OCIMount(
-                            source: ReactNativeColliderRecipe.javaScriptWorkspace(
-                                cacheRoot: context.cacheRoot),
-                            target: placement.executionPath(
-                                ReactNativeColliderRecipe.javaScriptWorkspace(
-                                    cacheRoot: context.cacheRoot)),
-                            access: .readOnly),
-                        OCIMount(
-                            source: ReactNativeColliderRecipe.codegenRoot(
-                                cacheRoot: context.cacheRoot),
-                            target: placement.executionPath(
-                                ReactNativeColliderRecipe.codegenRoot(
-                                    cacheRoot: context.cacheRoot)),
-                            access: .readOnly),
-                        OCIMount(
-                            source: builder.swiftSDKRoot,
-                            target: guestSDKRoot,
-                            access: .readOnly),
-                        OCIMount(
-                            source: builder.swiftPMOverlay.path,
-                            target: "/swiftpm-overlay",
-                            access: .readOnly),
+                        + [
+                            OCIMount(
+                                source: nativeSDK,
+                                target: placement.executionPath(nativeSDK),
+                                access: .readOnly),
+                            // The native SDK's include tree links into the materialized
+                            // JavaScript workspace and the generated sources beside it,
+                            // and those links record the path the container sees, so
+                            // both trees are mounted where the declared roots put them.
+                            OCIMount(
+                                source: ReactNativeColliderRecipe.javaScriptWorkspace(
+                                    cacheRoot: context.cacheRoot),
+                                target: placement.executionPath(
+                                    ReactNativeColliderRecipe.javaScriptWorkspace(
+                                        cacheRoot: context.cacheRoot)),
+                                access: .readOnly),
+                            OCIMount(
+                                source: ReactNativeColliderRecipe.codegenRoot(
+                                    cacheRoot: context.cacheRoot),
+                                target: placement.executionPath(
+                                    ReactNativeColliderRecipe.codegenRoot(
+                                        cacheRoot: context.cacheRoot)),
+                                access: .readOnly),
+                            OCIMount(
+                                source: builder.swiftSDKRoot,
+                                target: guestSDKRoot,
+                                access: .readOnly),
+                            OCIMount(
+                                source: builder.swiftPMOverlay.path,
+                                target: "/swiftpm-overlay",
+                                access: .readOnly),
+                        ],
+                    buildWorkspace: PersistentWorkspaceDeclaration(
+                        identity: PersistentWorkspaceIdentity(
+                            key: "nucleus-swiftpm",
+                            artifactTarget: resolvedArtifactTarget,
+                            role: "build"),
+                        capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+                        filesystem: .ext4,
+                        journal: .writeback64MiB),
+                    compilerCacheWorkspace: PersistentWorkspaceDeclaration(
+                        identity: PersistentWorkspaceIdentity(
+                            key: "nucleus-swiftpm-ccache",
+                            artifactTarget: resolvedArtifactTarget,
+                            role: "compiler-cache"),
+                        capacityBytes: 50 * 1_024 * 1_024 * 1_024,
+                        filesystem: .ext4,
+                        journal: .writeback64MiB,
+                        retentionPolicy: .toolManagedLimit(
+                            maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
+                    hostDependencyCache: swiftPMDependencyCache,
+                    resourceLimits: .parallelBuild,
+                    containerEnvironment: [
+                        "CCACHE_DIR": "/ccache",
+                        "HOME": "/home/nucleus-build",
+                        "NUCLEUS_NATIVE_SDK_ROOT": placement.executionPath(nativeSDK),
+                        "NUCLEUS_GFXSTREAM_GUEST_LIBRARY":
+                            placement.executionPath(
+                                nativeSDK.appending(
+                                    "android/gfxstream/lib/libvulkan_gfxstream.so")),
+                        "NUCLEUS_TARGET_LIBRARY_PATH": [
+                            guestTargetSDK + "/usr/lib/swift/linux",
+                            placement.executionPath(waylandSDK.appending("lib")),
+                            "/lib/\(target.gnuArchitecture)",
+                            "/usr/lib/\(target.gnuArchitecture)",
+                        ].joined(separator: ":"),
+                        "LD_LIBRARY_PATH": [
+                            guestTargetSDK + "/usr/lib/swift/linux",
+                            hostSwiftRuntimeLibraryDirectory,
+                            hostSwiftCompatibilityLibraryDirectory,
+                            placement.executionPath(waylandSDK.appending("lib")),
+                        ].joined(separator: ":"),
+                        "SWIFTPM_CUSTOM_BIN_DIR": hostSwiftBinaryDirectory,
+                        "PATH": "/swiftpm-overlay/usr/bin:"
+                            + hostSwiftBinaryDirectory
+                            + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                        "PKG_CONFIG_PATH":
+                            guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
+                            + ":" + guestTargetSDK + "/usr/share/pkgconfig",
+                        "PKG_CONFIG_SYSROOT_DIR": guestTargetSDK,
+                        "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
+                        "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                     ],
-                buildWorkspace: PersistentWorkspaceDeclaration(
-                    identity: PersistentWorkspaceIdentity(
-                        key: "nucleus-swiftpm",
-                        artifactTarget: resolvedArtifactTarget,
-                        role: "build"),
-                    capacityBytes: 100 * 1_024 * 1_024 * 1_024,
-                    filesystem: .ext4,
-                    journal: .writeback64MiB),
-                compilerCacheWorkspace: PersistentWorkspaceDeclaration(
-                    identity: PersistentWorkspaceIdentity(
-                        key: "nucleus-swiftpm-ccache",
-                        artifactTarget: resolvedArtifactTarget,
-                        role: "compiler-cache"),
-                    capacityBytes: 50 * 1_024 * 1_024 * 1_024,
-                    filesystem: .ext4,
-                    journal: .writeback64MiB,
-                    retentionPolicy: .toolManagedLimit(
-                        maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
-                hostDependencyCache: swiftPMDependencyCache,
-                resourceLimits: .parallelBuild,
-                containerEnvironment: [
-                    "CCACHE_DIR": "/ccache",
-                    "HOME": "/home/nucleus-build",
-                    "NUCLEUS_NATIVE_SDK_ROOT": placement.executionPath(nativeSDK),
-                    "NUCLEUS_GFXSTREAM_GUEST_LIBRARY":
-                        placement.executionPath(
-                            nativeSDK.appending(
-                                "android/gfxstream/lib/libvulkan_gfxstream.so")),
-                    "NUCLEUS_TARGET_LIBRARY_PATH": [
-                        guestTargetSDK + "/usr/lib/swift/linux",
-                        placement.executionPath(waylandSDK.appending("lib")),
-                        "/lib/\(target.gnuArchitecture)",
-                        "/usr/lib/\(target.gnuArchitecture)",
-                    ].joined(separator: ":"),
-                    "LD_LIBRARY_PATH": [
-                        guestTargetSDK + "/usr/lib/swift/linux",
-                        hostSwiftRuntimeLibraryDirectory,
-                        hostSwiftCompatibilityLibraryDirectory,
-                        placement.executionPath(waylandSDK.appending("lib")),
-                    ].joined(separator: ":"),
-                    "SWIFTPM_CUSTOM_BIN_DIR": hostSwiftBinaryDirectory,
-                    "PATH": "/swiftpm-overlay/usr/bin:"
-                        + hostSwiftBinaryDirectory
-                        + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                    "PKG_CONFIG_PATH":
-                        guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
-                        + ":" + guestTargetSDK + "/usr/share/pkgconfig",
-                    "PKG_CONFIG_SYSROOT_DIR": guestTargetSDK,
-                    "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
-                    "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
-                ],
-                environmentProjection: nucleusSwiftPMEnvironmentProjection,
-                swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
+                    environmentProjection: nucleusSwiftPMEnvironmentProjection,
+                    swiftPMExecutable:
+                        "/swiftpm-overlay/usr/bin/swift-package-manager"))
+        }
         return try await context.swiftPMInvocation(
             buildSystem: .swiftbuild,
             configuration: configuration,
@@ -1037,7 +1041,7 @@ package struct ComponentRegistry {
             target: .swiftSDK(
                 name: "nucleus-swift-6.4-linux",
                 targetTriple: resolvedTriple),
-            execution: execution,
+            executionFromGraph: execution,
             toolchainIdentity: toolchainIdentity,
             scratchRoot: swiftPMRoot,
             swiftExecutable: .path("/opt/swift/usr/bin/swift"))
@@ -1052,53 +1056,60 @@ package struct ComponentRegistry {
             "swiftpm-tools/runtime-assembler")
         let swiftPMDependencyCache = context.cacheRoot.appending(
             "swiftpm-user/cache")
-        let execution = SwiftPMExecution.oci(
-            SwiftPMOCIExecution(
-                executionPlatform: .linuxARM64OCI,
-                artifactTarget: .linuxARM64,
-                image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay],
-                hostname: "nucleus-linux-assembler",
-                hostWorkingDirectory: packageRoot,
-                mounts: [
-                    OCIMount(
-                        source: root,
-                        target: context.identityPathMap.executionPath(root),
-                        access: .readOnly),
-                    OCIMount(
-                        source: builder.swiftPMOverlay.path,
-                        target: "/swiftpm-overlay",
-                        access: .readOnly),
+        let assemblerMounts = { (graph: SwiftPackageSourceGraph) in
+            checkoutSourceMounts(
+                root: root,
+                widened: graph.targetRoots,
+                exact: graph.manifestPaths + [
+                    packageRoot.appending("Package.resolved")
                 ],
-                buildWorkspace: PersistentWorkspaceDeclaration(
-                    identity: PersistentWorkspaceIdentity(
-                        key: "collider-swiftpm-tools",
-                        artifactTarget: .linuxARM64,
-                        role: "build"),
-                    capacityBytes: 100 * 1_024 * 1_024 * 1_024,
-                    filesystem: .ext4,
-                    journal: .writeback64MiB),
-                hostDependencyCache: swiftPMDependencyCache,
-                resourceLimits: .build,
-                containerEnvironment: [
-                    "HOME": "/home/nucleus-build",
-                    "LD_LIBRARY_PATH":
-                        "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
-                    "SWIFTPM_CUSTOM_BIN_DIR": "/opt/swift/usr/bin",
-                    "PATH":
-                        "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:"
-                        + "/usr/local/sbin:/usr/local/bin:"
-                        + "/usr/sbin:/usr/bin:/sbin:/bin",
-                ],
-                environmentProjection: nucleusSwiftPMEnvironmentProjection,
-                swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
+                placement: context.identityPathMap)
+        }
+        let execution = { (graph: SwiftPackageSourceGraph) in
+            SwiftPMExecution.oci(
+                SwiftPMOCIExecution(
+                    executionPlatform: .linuxARM64OCI,
+                    artifactTarget: .linuxARM64,
+                    image: builder.image,
+                    inputArtifacts: [builder.swiftPMOverlay],
+                    hostname: "nucleus-linux-assembler",
+                    hostWorkingDirectory: packageRoot,
+                    mounts: assemblerMounts(graph) + [
+                        OCIMount(
+                            source: builder.swiftPMOverlay.path,
+                            target: "/swiftpm-overlay",
+                            access: .readOnly)
+                    ],
+                    buildWorkspace: PersistentWorkspaceDeclaration(
+                        identity: PersistentWorkspaceIdentity(
+                            key: "collider-swiftpm-tools",
+                            artifactTarget: .linuxARM64,
+                            role: "build"),
+                        capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+                        filesystem: .ext4,
+                        journal: .writeback64MiB),
+                    hostDependencyCache: swiftPMDependencyCache,
+                    resourceLimits: .build,
+                    containerEnvironment: [
+                        "HOME": "/home/nucleus-build",
+                        "LD_LIBRARY_PATH":
+                            "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
+                        "SWIFTPM_CUSTOM_BIN_DIR": "/opt/swift/usr/bin",
+                        "PATH":
+                            "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:"
+                            + "/usr/local/sbin:/usr/local/bin:"
+                            + "/usr/sbin:/usr/bin:/sbin:/bin",
+                    ],
+                    environmentProjection: nucleusSwiftPMEnvironmentProjection,
+                    swiftPMExecutable: "/swiftpm-overlay/usr/bin/swift-package-manager"))
+        }
         return try await context.swiftPMInvocation(
             packageRoot: packageRoot,
             configuration: .release,
             debugInformationFormat: SwiftDebugInformationFormat.none,
             swiftFlags: ["-use-ld=lld"],
             target: .host(identity: "aarch64-unknown-linux-gnu"),
-            execution: execution,
+            executionFromGraph: execution,
             toolchainIdentity: "nucleus-linux-builder-swiftpm-overlay-"
                 + builder.swiftPMOverlayRevision,
             scratchRoot: scratchRoot,
@@ -1219,10 +1230,14 @@ package struct ComponentRegistry {
             rn.appending("lib/rn/support/double-conversion/src"),
             gfxstreamSDKRoot.appending("lib"),
         ]
+        let icuRoots = [icu.appending("common"), icu.appending("i18n")]
         return NativeSDKCompilerConfiguration(
             cFlags: icuIncludeFlags + includeFlags,
             cxxFlags: icuIncludeFlags + includeFlags,
-            linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" })
+            linkerFlags: libraryDirectories.map { "-L\(executionPath($0))" },
+            checkoutIncludeRoots: (icuRoots + includeDirectories).filter {
+                $0.starts(with: root)
+            })
     }
 
     private func swiftTargetSDKGenerationConfiguration(
@@ -1332,41 +1347,62 @@ package struct ComponentRegistry {
 
 }
 
-/// Subtrees of the checkout no Swift build reads, shadowed inside the
-/// container by an empty directory.
+/// The mounts a Swift package build needs, from the paths its manifest names.
 ///
-/// A bind-mounted host directory is shared with the guest file by file, so what
-/// a container is shown costs host descriptors whether or not it is read. The
-/// package root is the checkout root, so these cannot be excluded by mounting
-/// something narrower; they are covered instead.
+/// A container sees what its task declares. The manifest-resolved graph names
+/// every target directory SwiftPM owns and the compiler configuration names the
+/// vendored include roots its own flags point at, so the set is derived rather
+/// than authored — a target that moves moves its mount with it.
 ///
-/// `swift-sdk/source` is the Swift toolchain source closure, which the
-/// target-SDK graph builds and no product build reads. The `.build` trees are
-/// host SwiftPM output; a container builds into its own workspace.
-func containerMaskedCheckoutSubtrees(
+/// Mounting the package root instead is what this replaces. For a package
+/// rooted at a repository checkout that exposes every vendored tree the
+/// manifest never names: 248,190 files to read the 2,551 the graph accounts
+/// for, paid in host file descriptors by every concurrent container.
+///
+/// `widened` paths are coalesced to two components below the root and `exact`
+/// paths are mounted as given, because the two kinds tolerate widening
+/// differently. A manifest target sits in a first-party source directory whose
+/// siblings are more of the same, so widening `core/swift/Sources/Foo` to
+/// `core/swift` costs 56 files across the whole package and saves four fifths
+/// of the mounts. A vendored include root sits inside a third-party checkout,
+/// so widening `third-party/gfxstream/host/common/include` would mount the
+/// entire vendored tree and undo the point of deriving the set at all.
+func checkoutSourceMounts(
     root: FilePath,
-    mask: FilePath,
+    widened: [FilePath],
+    exact: [FilePath],
     placement: IdentityPathMap
 ) -> [OCIMount] {
-    [
-        "swift-sdk/source",
-        ".build",
-        "collider/.build",
-        "collider/engine/.build",
-        "third-party/container/.build",
-    ].map { relative in
-        OCIMount(
-            source: mask,
-            target: placement.executionPath(root.appending(relative)),
-            access: .readOnly)
-    }
+    // Deliberately not filtered by what exists: these paths come from the
+    // manifest and from the include list the compiler flags are built from, so
+    // one that is absent is a defect rather than a path to drop. Dropping it
+    // would also make the mount set — and so the task identity — depend on the
+    // state of the filesystem it was planned against.
+    let candidates = Set(
+        (widened.map { coalesced($0, under: root) } + exact).filter {
+            $0 != root && $0.starts(with: root)
+        })
+    return
+        candidates
+        .filter { candidate in
+            !candidates.contains { $0 != candidate && candidate.starts(with: $0) }
+        }
+        .sorted { $0.string < $1.string }
+        .map {
+            OCIMount(
+                source: $0,
+                target: placement.executionPath($0),
+                access: .readOnly)
+        }
 }
 
-/// One empty directory, reused as the source of every mask mount.
-func emptyContainerMaskDirectory(under cacheRoot: FilePath) throws -> FilePath {
-    let directory = cacheRoot.appending("container-mask")
-    try FileManager.default.createDirectory(
-        atPath: directory.string,
-        withIntermediateDirectories: true)
-    return directory
+/// `path` cut to two components below `root`, or `path` where it is already
+/// that shallow.
+private func coalesced(_ path: FilePath, under root: FilePath) -> FilePath {
+    guard path.starts(with: root) else { return path }
+    let relative = path.string.dropFirst(root.string.count)
+        .split(separator: "/")
+        .map(String.init)
+    guard relative.count > 2 else { return path }
+    return relative.prefix(2).reduce(root) { $0.appending($1) }
 }
