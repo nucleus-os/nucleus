@@ -247,7 +247,17 @@ private func requireDeclared(
         }
     }
     for effect in implied.persistentWorkspaceEffects {
-        guard declared.persistentWorkspaceEffects.contains(effect) else {
+        // A declaration bounds what an action may do, so mounting a workspace
+        // read-only where read-write was declared is within it. The workspace
+        // and where it appears must match exactly: those are what the action
+        // said it would mount, not how much of it.
+        guard
+            declared.persistentWorkspaceEffects.contains(where: {
+                $0.workspace == effect.workspace
+                    && $0.target == effect.target
+                    && ($0.access == effect.access || $0.access == .readWrite)
+            })
+        else {
             throw ActionContainerScopeFailure.undeclaredPersistentWorkspace(
                 subject: subject,
                 workspace: effect.workspace.identity,
@@ -586,6 +596,19 @@ public struct ActionPersistentWorkspaceEffect: Hashable, Sendable {
         self.workspace = workspace
         self.target = target
         self.access = access
+    }
+}
+
+extension Array where Element == ActionEffect {
+    /// The same effects with each named once.
+    ///
+    /// A declaration is a set, and stating one effect twice is rejected as a
+    /// mistake. Composing a declaration from parts — what a shared execution
+    /// builder reaches, plus what this action adds — can arrive at the same
+    /// effect twice without either part being wrong, so composition uniques.
+    public func uniqued() -> [ActionEffect] {
+        var seen: Set<ActionEffect> = []
+        return filter { seen.insert($0).inserted }
     }
 }
 

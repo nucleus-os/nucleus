@@ -236,20 +236,21 @@ struct MaterializeAOSPSourceAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: [
-                ActionEffect(.read, scope: .input(launcherDirectory)),
-                ActionEffect(.read, scope: .input(materialization.sourceInputs)),
-                ActionEffect(.read, scope: .input(sourceLockDirectory)),
-                ActionEffect(.read, scope: .input(toolingDirectory)),
-                ActionEffect(
-                    .read,
-                    scope: .input(materialization.entrypoint.image.path)),
-                ActionEffect(
-                    .read,
-                    scope: .input(materialization.entrypoint.executable)),
-                ActionEffect(.write, scope: .output(export)),
-            ],
+        // The entrypoint executable is one of the tools, so its mount names a
+        // directory this already reaches under another target.
+        let effects = [
+            ActionEffect(.read, scope: .input(launcherDirectory)),
+            ActionEffect(.read, scope: .input(materialization.sourceInputs)),
+            ActionEffect(.read, scope: .input(sourceLockDirectory)),
+            ActionEffect(.read, scope: .input(toolingDirectory)),
+            ActionEffect(
+                .read,
+                scope: .input(materialization.entrypoint.image.path)),
+            materialization.entrypoint.effect,
+            ActionEffect(.readWrite, scope: .output(export)),
+        ].uniqued()
+        return ActionRequirements(
+            effects: effects,
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
                     workspace: materialization.sourceWorkspace,

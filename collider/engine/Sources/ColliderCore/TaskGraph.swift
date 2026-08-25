@@ -203,6 +203,16 @@ public struct OCIMountedEntrypoint: Hashable, Sendable {
 
     public var input: ArtifactInput { .file(executable) }
 
+    /// What an action declaring this entrypoint reaches.
+    ///
+    /// The identity input is the executable, because that file is what selects
+    /// the entrypoint. The mount is its directory, because a bind source must
+    /// be a directory, so an action that mounts this entrypoint sees whatever
+    /// its producer left beside it and declares that rather than the file.
+    public var effect: ActionEffect {
+        ActionEffect(.read, scope: .input(mount.source))
+    }
+
     public var containerPath: String {
         FilePath(containerDirectory).appending(
             executable.lastComponent!.string

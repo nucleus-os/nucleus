@@ -175,7 +175,7 @@ private func cefArtifactRequirements(
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
-            ActionEffect(.read, scope: .input(assembly.entrypoint.executable)),
+            assembly.entrypoint.effect,
             ActionEffect(
                 publicationAccess,
                 scope: publicationAccess == .read

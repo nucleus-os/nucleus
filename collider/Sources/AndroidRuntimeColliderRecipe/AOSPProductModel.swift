@@ -176,6 +176,21 @@ struct AOSPProductBuild: Hashable, Sendable {
     var assembledDeviceSource: FilePath {
         artifactRoot.appending("product-input")
     }
+
+    /// What every execution the shared builder produces reaches on the host,
+    /// whichever entrypoint it selects.
+    ///
+    /// One function builds them all, so one definition says what they reach:
+    /// the entrypoint image, the directory the entrypoint executable is
+    /// mounted from, and the object store the working tree's Git metadata
+    /// points at.
+    func hostEffects(entrypoint: OCIMountedEntrypoint) -> [ActionEffect] {
+        [
+            ActionEffect(.read, scope: .input(entrypoint.image.path)),
+            entrypoint.effect,
+            ActionEffect(.read, scope: .input(sourceInputs)),
+        ]
+    }
 }
 
 func aospProductDefinitionDigest(

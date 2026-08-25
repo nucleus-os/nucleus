@@ -41,7 +41,7 @@ package struct BuildChromiumProductAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .input(build.sourceRoot)),
                 ActionEffect(.read, scope: .input(build.entrypoint.image.path)),
-                ActionEffect(.read, scope: .input(build.entrypoint.executable)),
+                build.entrypoint.effect,
                 ActionEffect(.readWrite, scope: .scratch(build.inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildManifest)),
             ],

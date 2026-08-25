@@ -550,33 +550,10 @@ private struct PrepareNativeBuilderDependencyImageAction: ColliderAction {
     var requirements: ActionRequirements {
         ActionRequirements(
             effects: [
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("Dependencies.Containerfile"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(sourceContext.appending("entrypoint.sh"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("Resolver.Containerfile"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("apt-extract-packages.txt"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("apt-install-packages.txt"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("native-builder-inputs.json"))),
-                ActionEffect(
-                    .read,
-                    scope: .input(
-                        sourceContext.appending("resolve-apt-packages.sh"))),
+                // The resolver mounts this context whole and both image
+                // preparations build from it, so the directory is what this
+                // reaches rather than the files it reads out of it.
+                ActionEffect(.read, scope: .input(sourceContext)),
                 ActionEffect(.readWrite, scope: .scratch(inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(generatedContext)),
                 ActionEffect(

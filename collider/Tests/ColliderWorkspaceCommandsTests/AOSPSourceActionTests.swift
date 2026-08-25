@@ -300,9 +300,11 @@ import Testing
             syncJobs: 4,
             environment: [:]))
 
+    // The container mounts this as a bounded export, which it both reads and
+    // writes, so that is what the action declares.
     #expect(
         action.requirements.effects.contains(
-            ActionEffect(.write, scope: .output(export))))
+            ActionEffect(.readWrite, scope: .output(export))))
     #expect(
         action.requirements.effects.contains(
             ActionEffect(

@@ -39,15 +39,9 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            effects: [
-                ActionEffect(
-                    .read,
-                    scope: .input(build.artifactEntrypoint.image.path)),
-                ActionEffect(
-                    .read,
-                    scope: .input(build.artifactEntrypoint.executable)),
-                ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-            ],
+            effects: (build.hostEffects(entrypoint: build.artifactEntrypoint) + [
+                ActionEffect(.readWrite, scope: .scratch(build.artifactRoot))
+            ]).uniqued(),
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
                     workspace: build.sourceWorkspace,

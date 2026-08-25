@@ -46,16 +46,10 @@ struct SignAOSPProductAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            effects: [
-                ActionEffect(
-                    .read,
-                    scope: .input(build.artifactEntrypoint.image.path)),
-                ActionEffect(
-                    .read,
-                    scope: .input(build.artifactEntrypoint.executable)),
+            effects: (build.hostEffects(entrypoint: build.artifactEntrypoint) + [
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-            ],
+            ]).uniqued(),
             persistentWorkspaceEffects: [
                 ActionPersistentWorkspaceEffect(
                     workspace: build.sourceWorkspace,

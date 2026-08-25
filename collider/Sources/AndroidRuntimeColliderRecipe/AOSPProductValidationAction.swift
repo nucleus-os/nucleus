@@ -75,22 +75,15 @@ struct ValidateAOSPProductAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        var effects = [
-            ActionEffect(.read, scope: .input(build.deviceSource)),
-            ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(
-                .read,
-                scope: .input(build.artifactEntrypoint.image.path)),
-            ActionEffect(
-                .read,
-                scope: .input(build.artifactEntrypoint.executable)),
-            ActionEffect(.read, scope: .input(build.signingIdentity)),
-            ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-        ]
-        for overlay in build.sourceOverlays {
-            let effect = ActionEffect(.read, scope: .input(overlay.source))
-            if !effects.contains(effect) { effects.append(effect) }
-        }
+        let effects =
+            (build.hostEffects(entrypoint: build.artifactEntrypoint) + [
+                ActionEffect(.read, scope: .input(build.deviceSource)),
+                ActionEffect(.read, scope: .input(build.sourceProvenance)),
+                ActionEffect(.read, scope: .input(build.signingIdentity)),
+                ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
+            ] + build.sourceOverlays.map {
+                ActionEffect(.read, scope: .input($0.source))
+            }).uniqued()
         return ActionRequirements(
             effects: effects,
             persistentWorkspaceEffects: [

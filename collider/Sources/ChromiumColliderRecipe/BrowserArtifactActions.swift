@@ -142,7 +142,7 @@ private func browserArtifactRequirements(
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
-            ActionEffect(.read, scope: .input(assembly.entrypoint.executable)),
+            assembly.entrypoint.effect,
             ActionEffect(.read, scope: .input(assembly.launcher)),
             ActionEffect(.read, scope: .input(assembly.desktopTemplate)),
             ActionEffect(

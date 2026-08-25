@@ -59,9 +59,60 @@ import Testing
     #expect(ran.withLock { $0 })
 }
 
+@Test func aWorkspaceDeclarationBoundsHowMuchOfItIsMounted() async throws {
+    let workspace = fixtureWorkspace()
+    let declared = ActionRequirements(
+        effects: [ActionEffect(.read, scope: .input(FilePath("/inputs/image-id")))],
+        persistentWorkspaceEffects: [
+            ActionPersistentWorkspaceEffect(
+                workspace: workspace,
+                target: "/src",
+                access: .readWrite)
+        ],
+        lane: .oci,
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64)
+    let containers = ActionContainerExecutor(
+        run: { _ in CommandResult(status: 0) }
+    ).scoped(to: declared)
+
+    // Mounting less of a workspace than was declared stays within the
+    // declaration. Mounting it somewhere else does not.
+    try await containers.run(
+        fixtureExecution(
+            attaching: [
+                OCIPersistentWorkspaceMount(
+                    workspace: workspace,
+                    target: "/src",
+                    access: .readOnly)
+            ]))
+    await #expect(throws: ActionContainerScopeFailure.self) {
+        try await containers.run(
+            fixtureExecution(
+                attaching: [
+                    OCIPersistentWorkspaceMount(
+                        workspace: workspace,
+                        target: "/elsewhere",
+                        access: .readOnly)
+                ]))
+    }
+}
+
+private func fixtureWorkspace() -> PersistentWorkspaceDeclaration {
+    PersistentWorkspaceDeclaration(
+        identity: PersistentWorkspaceIdentity(
+            key: "container-scope-fixture",
+            artifactTarget: .linuxARM64,
+            role: "source"),
+        capacityBytes: 64 * 1_024 * 1_024 * 1_024,
+        filesystem: .ext4,
+        journal: .writeback64MiB)
+}
+
 private func fixtureExecution(
     mounting readOnly: [FilePath] = [],
-    exporting boundedExports: [FilePath] = []
+    exporting boundedExports: [FilePath] = [],
+    attaching workspaces: [OCIPersistentWorkspaceMount] = []
 ) -> OCIExecution {
     OCIExecution(
         executionPlatform: .linuxARM64OCI,
@@ -76,6 +127,7 @@ private func fixtureExecution(
             + boundedExports.map {
                 OCIMount(boundedExport: $0, target: "/exports")
             },
+        persistentWorkspaceMounts: workspaces,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

@@ -48,17 +48,14 @@ struct CompileAOSPProductAction: ColliderAction {
     var identity: Identity { Identity(build: build) }
 
     var requirements: ActionRequirements {
-        var effects = [
-            ActionEffect(.read, scope: .input(build.deviceSource)),
-            ActionEffect(.read, scope: .input(build.sourceProvenance)),
-            ActionEffect(.read, scope: .input(build.buildEntrypoint.image.path)),
-            ActionEffect(.read, scope: .input(build.buildEntrypoint.executable)),
-            ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-        ]
-        for overlay in build.sourceOverlays {
-            let effect = ActionEffect(.read, scope: .input(overlay.source))
-            if !effects.contains(effect) { effects.append(effect) }
-        }
+        let effects =
+            (build.hostEffects(entrypoint: build.buildEntrypoint) + [
+                ActionEffect(.read, scope: .input(build.deviceSource)),
+                ActionEffect(.read, scope: .input(build.sourceProvenance)),
+                ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
+            ] + build.sourceOverlays.map {
+                ActionEffect(.read, scope: .input($0.source))
+            }).uniqued()
         return ActionRequirements(
             effects: effects,
             persistentWorkspaceEffects: [
