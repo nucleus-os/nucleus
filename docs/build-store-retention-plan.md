@@ -179,13 +179,27 @@ that followed reported 32 clean and 3 executed against 32 clean and 3 executed
 before the prune, the three being tasks declared to run every time, so no
 removed context cost a re-execution.
 
-## Phase 4: Bound Context Count at Creation
+## Phase 4: Bound Context Count Without an Explicit Prune
 
 Collection after the fact leaves the ceiling set by how often someone prunes.
 A context costs five to eight gigabytes and an ordinary day of identity-changing
 work mints several, so the bound belongs in the policy rather than in an
-operator's habit. Identity-context retention carries a retained count, and the
-producer collects beyond it when it creates a context.
+operator's habit. Identity-context retention carries a retained count, and a run
+brings each context root within it before executing.
+
+The bound is applied where both halves of the answer are already known. Planning
+resolves every task's scratch path, which is how the reachable set is computed
+today, and the storage declarations carry the count. The action that creates a
+context knows neither: it sees one scratch path and no catalog, so locating the
+bound there would thread component storage through the action layer to answer a
+question planning has already answered. Enforcement therefore runs once per run
+against the same collection the earlier phases made correct.
+
+A root is brought within its bound per run rather than per context, so one run
+minting several contexts can exceed the count until the next begins. That is the
+right trade: the growth this bounds accumulates across weeks, not within a run,
+and an eviction racing a build that is still using its scratch directory would
+be a far worse failure than a temporary overshoot.
 
 Retention is by reachability first and recency second: contexts a current
 identity reaches are never candidates, and the bound applies to the remainder.
@@ -194,7 +208,25 @@ This keeps a bounded root from evicting state the next build would have reused.
 Gate: a sequence of identity-changing builds without an explicit prune leaves
 each context root at or below its declared count; no build in the sequence
 re-executes a task whose context a previous build in the sequence created and
-the bound did not evict.
+the bound did not evict; a run whose reachable contexts alone exceed the count
+evicts none of them.
+
+Status: active, and deliberately not wired. The bound and its retention order
+are implemented and tested, and nothing calls them, because reachability is
+computed from one checkout while the build store is shared with another. Each
+checkout's host build contexts are permanently unreachable to the other: a
+prune from the authoritative checkout selects the contexts a protected-main CI
+run used minutes earlier, and that run spent thirty-two minutes in one task
+rebuilding what a previous prune had taken. A per-run bound turns that from
+something an operator chooses into what every build does, in both directions.
+
+The divergence itself belongs to the
+[placement-independent build plan](placement-independent-build-plan.md), whose
+Phase 1 records it, and its cause is not yet established: either lowered SwiftPM
+identities still divide on checkout, or the reachable set does not enumerate
+the lowered tasks it should, which would be this plan's defect rather than that
+one's. This phase completes when a bound cannot evict a context another checkout
+sharing the store still reaches.
 
 ## Phase 5: Bring the Image Store Under Declaration
 

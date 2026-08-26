@@ -164,6 +164,14 @@ extension WorkspaceContext {
         if let sourceRevalidation {
             options.sourceClosureObserver = { sourceRevalidation.record($0) }
         }
+        // Bounding identity contexts per run is written and tested but not
+        // wired here, because reachability is computed from one checkout while
+        // the build store is shared with another. Each checkout's contexts are
+        // permanently unreachable to the other, so a per-run bound would have
+        // them evict each other's incremental state on every build. An explicit
+        // prune already costs the other checkout a full rebuild; doing it
+        // automatically would make that the steady state. This is wired once
+        // reachability spans every checkout sharing the store.
         let report = try await ColliderEngine(runtime: runtime).execute(
             catalog: catalog,
             requests: requests,

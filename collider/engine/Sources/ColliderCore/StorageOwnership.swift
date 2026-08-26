@@ -39,7 +39,9 @@ public enum StorageRetentionPolicy: Codable, Hashable, Sendable {
     case explicitClean
     case singleWorkingSet
     case keepActiveAndRollback(count: UInt32)
-    case taskIdentityContexts(ContextLocation)
+    /// Contexts a current identity reaches are always retained; the count
+    /// bounds how many of the remainder survive, newest first.
+    case taskIdentityContexts(ContextLocation, retaining: UInt32)
     case toolManagedLimit(maximumBytes: UInt64)
     case boundedHistory(maximumEntries: UInt32)
 

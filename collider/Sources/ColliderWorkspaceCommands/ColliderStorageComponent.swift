@@ -33,7 +33,8 @@ enum ColliderStorageComponent {
                     root: context.hostBuildRoot.appending("swiftpm"),
                     safetyRoot: context.hostBuildRoot,
                     retentionPolicy: .taskIdentityContexts(
-                        .init(intermediateLevels: 1, naming: .artifactDigestDirectory))),
+                        .init(intermediateLevels: 1, naming: .artifactDigestDirectory),
+                        retaining: 4)),
                 StorageDeclaration(
                     id: "swift-package-graphs",
                     owner: owner,
@@ -117,7 +118,8 @@ enum ColliderStorageComponent {
                     // Contexts sit under a target and a sanitizer, as
                     // `linux-arm64/unsanitized/sha256-…`.
                     retentionPolicy: .taskIdentityContexts(
-                        .init(intermediateLevels: 2, naming: .artifactDigestDirectory))),
+                        .init(intermediateLevels: 2, naming: .artifactDigestDirectory),
+                        retaining: 4)),
                 StorageDeclaration(
                     id: "swiftpm-tool-host-boundaries",
                     owner: owner,
@@ -128,7 +130,8 @@ enum ColliderStorageComponent {
                     // Contexts sit under a tool and a sanitizer, as
                     // `runtime-assembler/unsanitized/sha256-…`.
                     retentionPolicy: .taskIdentityContexts(
-                        .init(intermediateLevels: 2, naming: .artifactDigestDirectory))),
+                        .init(intermediateLevels: 2, naming: .artifactDigestDirectory),
+                        retaining: 4)),
                 StorageDeclaration(
                     id: "android-sdk",
                     owner: owner,

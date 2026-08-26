@@ -1140,7 +1140,8 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
                         root: swiftPMRoot,
                         safetyRoot: context.hostBuildRoot,
                         retentionPolicy: .taskIdentityContexts(
-                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory)))
+                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory),
+                            retaining: 0))
                 ])
         ],
         publicEntrypoints: [])
@@ -1188,7 +1189,8 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
                         root: swiftPMRoot,
                         safetyRoot: context.hostBuildRoot,
                         retentionPolicy: .taskIdentityContexts(
-                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory)))
+                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory),
+                            retaining: 0))
                 ])
         ],
         publicEntrypoints: [])
@@ -1197,6 +1199,115 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
         try await RepositoryCache(context: context, catalog: catalog).prune(dryRun: true)
     }
     #expect(FileManager.default.fileExists(atPath: stranded.string))
+}
+
+/// Builds a context root holding one reachable context and several stale ones
+/// with decreasing modification dates, so "newest first" is deterministic.
+private func identityContextFixture(
+    workspace: URL,
+    retaining: UInt32,
+    staleCount: Int
+) throws -> (
+    context: WorkspaceContext, catalog: ComponentCatalog, active: FilePath,
+    stale: [FilePath]
+) {
+    let context = repositoryContext(root: workspace, runtime: ColliderRuntime())
+    let group = context.hostBuildRoot.appending("swiftpm").appending("unsanitized")
+    let active = group.appending("sha256-" + String(repeating: "a", count: 64))
+    var stale: [FilePath] = []
+    for index in 0..<staleCount {
+        let suffix = String(index, radix: 16)
+        stale.append(
+            group.appending(
+                "sha256-" + String(repeating: "b", count: 64 - suffix.count) + suffix))
+    }
+    for (offset, path) in ([active] + stale).enumerated() {
+        try FileManager.default.createDirectory(
+            atPath: path.string, withIntermediateDirectories: true)
+        try Data("payload".utf8).write(
+            to: URL(fileURLWithPath: path.appending("payload").string))
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 2_000_000 - Double(offset * 60))],
+            ofItemAtPath: path.string)
+    }
+    let owner = ComponentID(rawValue: "fixture")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.build"),
+        component: owner,
+        swiftProducts: [
+            SwiftProductRequirement(
+                package: "fixture",
+                product: "fixture",
+                packageRoot: FilePath(workspace.path),
+                invocation: SwiftPMInvocation(
+                    context: SwiftBuildContext(
+                        packageRoot: FilePath(workspace.path),
+                        configuration: .debug,
+                        target: .host(identity: "fixture"),
+                        toolchainIdentity: "fixture"),
+                    scratchPath: active),
+                inputs: [],
+                environment: [:])
+        ])
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: owner, canonicalName: "fixture", directoryName: "fixture"),
+                tasks: [task],
+                entrypoints: [],
+                storage: [
+                    StorageDeclaration(
+                        id: "fixture-swiftpm-contexts",
+                        owner: owner,
+                        producers: [.runtime("swiftpm")],
+                        storageClass: .incremental,
+                        root: context.hostBuildRoot.appending("swiftpm"),
+                        safetyRoot: context.hostBuildRoot,
+                        retentionPolicy: .taskIdentityContexts(
+                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory),
+                            retaining: retaining))
+                ])
+        ],
+        publicEntrypoints: [])
+    return (context, catalog, active, stale)
+}
+
+@Test func boundingKeepsTheRetainedCountOfUnreachableContexts() async throws {
+    let workspace = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        .appendingPathComponent("collider-context-bound-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let fixture = try identityContextFixture(
+        workspace: workspace, retaining: 2, staleCount: 5)
+
+    try RepositoryCache(context: fixture.context, catalog: fixture.catalog)
+        .boundIdentityContexts()
+
+    // The reachable context survives regardless of age.
+    #expect(FileManager.default.fileExists(atPath: fixture.active.string))
+    // Two newest stale contexts survive; the older three do not.
+    let surviving = fixture.stale.filter {
+        FileManager.default.fileExists(atPath: $0.string)
+    }
+    #expect(surviving == Array(fixture.stale.prefix(2)))
+}
+
+@Test func boundingNeverEvictsAContextATaskStillReaches() async throws {
+    let workspace = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        .appendingPathComponent("collider-context-reach-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    // A count of zero would evict everything the bound applies to; the
+    // reachable context is not something it applies to.
+    let fixture = try identityContextFixture(
+        workspace: workspace, retaining: 0, staleCount: 2)
+
+    try RepositoryCache(context: fixture.context, catalog: fixture.catalog)
+        .boundIdentityContexts()
+
+    #expect(FileManager.default.fileExists(atPath: fixture.active.string))
+    for stale in fixture.stale {
+        #expect(!FileManager.default.fileExists(atPath: stale.string))
+    }
 }
 
 @Test func repositoryStatusToleratesConcurrentGenerationPruning() async throws {

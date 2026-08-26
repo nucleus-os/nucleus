@@ -803,10 +803,42 @@ struct RepositoryCache {
         return usage
     }
 
+    /// Bring every identity-context root within its declared count.
+    ///
+    /// A context costs gigabytes and every identity-changing edit mints
+    /// another, so a root left to an explicit prune grows for as long as nobody
+    /// runs one. This is that bound, applied where planning has already
+    /// resolved both halves of the answer: which contexts a current identity
+    /// reaches, and how many of the rest a declaration keeps.
+    ///
+    /// Reachability outranks the count. A context a planned task will read is
+    /// never a candidate however old it is, so the bound only ever applies to
+    /// contexts nothing in this run can reach.
+    ///
+    /// A refusal here is not a build failure. The context stays, the run
+    /// proceeds, and an explicit prune is where a caller asks to be told.
+    func boundIdentityContexts() throws {
+        for declaration in storageDeclarations {
+            guard
+                case .taskIdentityContexts(let location, let retaining) =
+                    declaration.retentionPolicy
+            else { continue }
+            let unreachable = try obsoleteTaskIdentityContexts(
+                in: declaration, at: location)
+            guard unreachable.count > Int(retaining) else { continue }
+            for url in unreachable.sorted(by: newestFirst).dropFirst(Int(retaining)) {
+                try? removeDeclaredTarget(url, from: declaration)
+            }
+        }
+    }
+
     private func pruneTargets(
         for declaration: StorageDeclaration
     ) throws -> [URL] {
-        if case .taskIdentityContexts(let location) = declaration.retentionPolicy {
+        // An explicit prune collects every unreachable context. The retained
+        // count bounds what a run leaves behind, not what an operator asking
+        // for collection gets.
+        if case .taskIdentityContexts(let location, _) = declaration.retentionPolicy {
             return try obsoleteTaskIdentityContexts(in: declaration, at: location)
         }
         if case .boundedHistory(let maximumEntries) = declaration.retentionPolicy {

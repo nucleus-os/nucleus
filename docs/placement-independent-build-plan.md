@@ -60,9 +60,32 @@ the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
 moving either checkout.
 
-Status: the checkout half is complete. No task identity in the graph contains
-the checkout, so the CI checkout and the authoritative checkout name one
-identity for one revision. Every remaining host path in an identity is under
+Status: the checkout half is complete for declared task identities, and the
+shared build store contradicts that for lowered SwiftPM ones. No declared task
+identity in the graph contains the checkout, so the CI checkout and the
+authoritative checkout name one identity for one revision.
+
+The store says otherwise about the identities SwiftPM lowering produces. The
+authoritative checkout's test lanes use the host build contexts
+`sha256-2add9db2…` and `sha256-e1a92bf0…`; a protected-main CI run of the same
+revision used `sha256-dceca288…` and `sha256-7aad46c9…`, recreating both from
+nothing and spending thirty-two minutes compiling in a single task before its
+first assertion. Collection computed from the authoritative checkout's catalog
+selects the pair CI had used minutes earlier, reproducibly, so an explicit prune
+from the developer's checkout destroys the CI checkout's incremental state and
+each rebuild restores it for the other to destroy again.
+
+Which of two causes this is remains open, and they need different fixes. Either
+lowered identities still divide on checkout, which is this phase's subject, or
+the reachable set does not enumerate the lowered tasks it should, which is the
+build store retention plan's. Distinguishing them requires the lowered
+identities a plan resolves, and planning `test all` from the interactive account
+fails on a verification lock it may not write, so this is recorded as the
+measurement it is rather than attributed.
+
+Until it is resolved, no collection may run automatically. An explicit prune
+costing the other checkout a rebuild is a choice someone made; the same eviction
+on every build would be the steady state. Every remaining host path in an identity is under
 the store, which both accounts share, so none of them divides this host's warm
 state; they divide only reproduction on a second machine. They are of three
 kinds: the host task environment, where a host path is what a host command
