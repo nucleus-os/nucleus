@@ -216,10 +216,24 @@ struct PruneResult: Codable, Equatable, Sendable {
     /// complete set of orphans.
     let persistentWorkspacesUnavailable: String?
     let appleContainerImages: [OCIImageRetentionRecord]
+    /// Why the image store could not be read, when it could not be. Absent
+    /// means `appleContainerImages` is the complete selection rather than what
+    /// survived a question nothing answered.
+    let appleContainerImagesUnavailable: String?
     let selectedAllocatedBytes: UInt64
     let recoveredBytes: UInt64?
-    let appleContainerImageReclaimedBytes: UInt64
+    /// Bytes returned by collecting stored image content no live image reaches.
+    /// Absent on a plan, which performs no collection, and distinct from a
+    /// collection that returned nothing.
+    let appleContainerCollectedBytes: UInt64?
     let dryRun: Bool
+}
+
+/// What pruning did about the image store.
+private struct ImagePruneOutcome {
+    var selected: [OCIImageRetentionRecord] = []
+    var unavailable: String?
+    var collectedBytes: UInt64?
 }
 
 private struct OCIImageFamily {
@@ -494,8 +508,7 @@ struct RepositoryCache {
         }
         var targetRecords: [StorageRemovalTarget]
         var workspaceRecords: [PersistentWorkspaceRemovalTarget]
-        var selectedImages: [OCIImageRetentionRecord]
-        var imageReclaimedBytes: UInt64
+        var images: ImagePruneOutcome
         var removalFailures: [StorageRemovalFailure] = []
         let availableBefore = hostFilesystemStatus()?.availableBytes
 
@@ -503,13 +516,11 @@ struct RepositoryCache {
             targetRecords = try resolvedPruneTargets(pruneDeclarations).records
             workspaceRecords = try await persistentWorkspaceTargets(
                 matching: orphanedWorkspaceIdentities)
-            if let images = try? await context.runtime.ociImages() {
-                selectedImages = containerImageRetention(images: images)
-                    .filter { $0.state == "reclaimable" }
-            } else {
-                selectedImages = []
-            }
-            imageReclaimedBytes = 0
+            // Collection is left without a figure rather than reported as
+            // zero. What it would return is a property of the runtime's own
+            // reachability over content this command never enumerates, so the
+            // honest plan states that it runs.
+            images = await reclaimableImages()
         } else {
             var locks = Set<TaskLock>()
             for declaration in pruneDeclarations {
@@ -524,10 +535,7 @@ struct RepositoryCache {
             for task in catalog.tasks where task.action?.imagePreparations.isEmpty == false {
                 locks.formUnion(task.locks)
             }
-            (
-                targetRecords, workspaceRecords, selectedImages, imageReclaimedBytes,
-                removalFailures
-            ) =
+            (targetRecords, workspaceRecords, images, removalFailures) =
                 try await context.runtime.withTaskLocks(
                     locks,
                     stateRoot: context.taskStateRoot,
@@ -554,25 +562,27 @@ struct RepositoryCache {
                         try await context.runtime.deleteOCIPersistentWorkspace(
                             named: workspace.name)
                     }
-                    let selectedImages: [OCIImageRetentionRecord]
-                    if let images = try? await context.runtime.ociImages() {
-                        selectedImages = containerImageRetention(images: images)
-                            .filter { $0.state == "reclaimable" }
-                    } else {
-                        selectedImages = []
+                    var images = await reclaimableImages()
+                    if !images.selected.isEmpty {
+                        try await context.runtime.deleteOCIImages(
+                            references: images.selected.map(\.reference))
                     }
-                    let imageReclaimedBytes =
-                        if selectedImages.isEmpty {
-                            UInt64(0)
-                        } else {
-                            try await context.runtime.deleteOCIImages(
-                                references: selectedImages.map(\.reference))
-                        }
+                    // Unconditionally, and after any deletion. Content is
+                    // orphaned by rebuilding an image, not by pruning one:
+                    // every rebuild replaces the reference its layers and
+                    // unpacked filesystem belonged to and leaves them reachable
+                    // from nothing. A store therefore accumulates collectable
+                    // bytes across runs that select no image at all, and gating
+                    // collection on a non-empty selection is what let that
+                    // accumulation run to the size of the images themselves.
+                    if images.unavailable == nil {
+                        images.collectedBytes =
+                            try await context.runtime.collectOrphanedOCIImageContent()
+                    }
                     return (
                         resolved.records,
                         workspaces,
-                        selectedImages,
-                        imageReclaimedBytes,
+                        images,
                         failures
                     )
                 }
@@ -597,10 +607,11 @@ struct RepositoryCache {
                 targets: targetRecords,
                 persistentWorkspaces: workspaceRecords,
                 persistentWorkspacesUnavailable: workspacesUnavailable,
-                appleContainerImages: selectedImages,
+                appleContainerImages: images.selected,
+                appleContainerImagesUnavailable: images.unavailable,
                 selectedAllocatedBytes: selectedAllocatedBytes,
                 recoveredBytes: dryRun ? nil : recoveredBytes(since: availableBefore),
-                appleContainerImageReclaimedBytes: imageReclaimedBytes,
+                appleContainerCollectedBytes: images.collectedBytes,
                 dryRun: dryRun))
         guard removalFailures.isEmpty else {
             throw StorageRemovalFailures(failures: removalFailures)
@@ -1159,6 +1170,25 @@ struct RepositoryCache {
         }
     }
 
+    /// Selects the images no declared identity reaches, or says why the store
+    /// could not be read.
+    ///
+    /// The image store answers only in the builder's session, so an inspection
+    /// run from the developer account cannot reach it. That is a result worth
+    /// reporting rather than an empty selection: a store nothing enumerated
+    /// and a store holding nothing collectable are the same output otherwise,
+    /// and only one of them means the report is complete.
+    private func reclaimableImages() async -> ImagePruneOutcome {
+        do {
+            let images = try await context.runtime.ociImages()
+            return ImagePruneOutcome(
+                selected: containerImageRetention(images: images)
+                    .filter { $0.state == "reclaimable" })
+        } catch {
+            return ImagePruneOutcome(unavailable: "\(error)")
+        }
+    }
+
     func containerImageRetention(
         images: [OCIImageState]
     ) -> [OCIImageRetentionRecord] {
@@ -1513,10 +1543,15 @@ struct RepositoryCache {
             result.persistentWorkspacesUnavailable == nil
             ? "\(result.persistentWorkspaces.count) orphaned workspace(s)"
             : "orphaned workspaces not evaluated"
+        let imageSummary =
+            result.appleContainerImagesUnavailable == nil
+            ? "\(result.appleContainerImages.count) unreachable image(s)"
+            : "images not evaluated"
         var lines = [
             "cache prune: \(action) \(result.removedRuns.count) run(s), "
                 + "\(result.targets.count) declared storage target(s), "
                 + workspaceSummary + ", "
+                + imageSummary + ", "
                 + "\(formatted(result.selectedAllocatedBytes)) selected allocation"
         ]
         if let reason = result.persistentWorkspacesUnavailable {
@@ -1536,10 +1571,13 @@ struct RepositoryCache {
         for image in result.appleContainerImages {
             lines.append("  apple-container-image: \(image.reference)")
         }
-        if result.appleContainerImageReclaimedBytes > 0 {
+        if let reason = result.appleContainerImagesUnavailable {
+            lines.append("  apple-container images unavailable: \(reason)")
+        } else if let collected = result.appleContainerCollectedBytes {
             lines.append(
-                "  Apple Container reclaimed "
-                    + formatted(result.appleContainerImageReclaimedBytes))
+                "  \(formatted(collected)) collected from orphaned image content")
+        } else {
+            lines.append("  orphaned image content is collected on execution")
         }
         try context.console.report(result, text: lines.joined(separator: "\n"))
     }

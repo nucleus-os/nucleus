@@ -389,8 +389,10 @@ import Testing
             == "fixture-network")
     #expect(try await runtime.ociRuntimeDiskUsage().reclaimableBytes == 6)
     #expect(try await runtime.ociImages().isEmpty)
-    #expect(try await runtime.deleteOCIImages(references: ["fixture"]) == 0)
+    try await runtime.deleteOCIImages(references: ["fixture"])
     #expect(await backend.pruned)
+    #expect(try await runtime.collectOrphanedOCIImageContent() == 8_192)
+    #expect(await backend.collected)
 }
 
 @Test func externalCatalogPlansExecutesAndRecordsHostAndOCIWork() async throws {
@@ -912,6 +914,7 @@ private actor RecordingOCIBackend: OCIRuntimeBackend {
     private(set) var preparation: OCIImagePreparation?
     private(set) var request: OCIRuntimeExecutionRequest?
     private(set) var pruned = false
+    private(set) var collected = false
 
     func prepareImage(_ preparation: OCIImagePreparation) async throws -> String {
         self.preparation = preparation
@@ -963,9 +966,13 @@ private actor RecordingOCIBackend: OCIRuntimeBackend {
         []
     }
 
-    func deleteImages(references: [String]) async throws -> UInt64 {
+    func deleteImages(references: [String]) async throws {
         #expect(references == ["fixture"])
         pruned = true
-        return 0
+    }
+
+    func collectOrphanedImageContent() async throws -> UInt64 {
+        collected = true
+        return 8_192
     }
 }

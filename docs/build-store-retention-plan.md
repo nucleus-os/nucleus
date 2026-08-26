@@ -47,8 +47,21 @@ never grows" is also the policy applied when growth was never considered.
 
 The container store reports 454.4 GiB of images, of which 436.6 GiB are
 runtime-unattached, against four active and two retained images, seven unknown,
-and zero reclaimable. No declaration covers it, so no policy bounds it and
-nothing classifies what is there.
+and zero reclaimable. That figure is not held by images. It is `content` plus
+`snapshots`, and reading both directly off the store shows 57 of 69 unpacked
+filesystems and 614 of 720 blobs reachable from no live image: roughly 300 GiB
+and 104 GiB respectively. The runtime already collects exactly that, through
+`cleanUpOrphanedBlobs`, which keeps one snapshot per live image manifest and
+sweeps the rest. Collider reaches that call only inside image deletion, and
+deletes only images classified reclaimable, of which there have been none. The
+largest accumulation in the store is held open by a conditional rather than by a
+missing policy.
+
+Classification is separately wrong in the dangerous direction. Of the seven
+images no declaration names, three are live: the init image every container
+boots, the builder shim every image build runs, and the digest-pinned base of
+all four Containerfiles. `unknown` is what currently protects them, and the
+runtime's own deletion path refuses them by name.
 
 AOSP exists three times: a host source-input cache of 73.4 GiB, a materialized
 guest source workspace of 106.5 GiB, and an output workspace of 142.7 GiB. That
@@ -61,6 +74,11 @@ Reclamation cannot be previewed from the account that owns the checkout.
 because listing requires the container service, which runs in the builder's
 launchd domain, and `collider cache prune` reports orphaned workspaces as not
 evaluated for the same reason. The operations work; their previews do not.
+
+The same gap reached the image store silently, because the prune result had
+nowhere to carry the failure: an unreadable store rendered as no images rather
+than as an unanswered question, which is how a store this size stayed invisible
+to every inspection run from the developer account.
 
 ## Phase 1: Locate Contexts From the Declaration
 
@@ -228,37 +246,76 @@ the lowered tasks it should, which would be this plan's defect rather than that
 one's. This phase completes when a bound cannot evict a context another checkout
 sharing the store still reaches.
 
-## Phase 5: Bring the Image Store Under Declaration
+## Phase 5: Collect Orphaned Image Content, and Name the Images That Stay
 
-The image store is declared storage with a retention policy, like every other
-root. Every image the runtime holds classifies as reachable from a declared
-image identity or as collectable. Unknown stops being a terminal classification:
-an image the catalog cannot place is collectable, because an image no
-declaration names is not an input to anything the graph can plan.
+Collection of unreferenced image content runs whenever the store is pruned,
+independent of whether any image was selected for deletion. Content is orphaned
+by rebuilding an image rather than by removing one: a rebuild replaces the
+reference its layers and unpacked filesystem belonged to and leaves them
+reachable from nothing. A store whose every image is current is therefore the
+store with the most to collect, and is exactly the store a selection-gated
+collection never reaches.
 
-Reachability comes from the same declarations that build the images, so an image
-is retained exactly while some task can request it. Removing the rest returns
-the largest single accumulation in the store.
+Classification then stops treating an unnameable image as collectable. An image
+the component catalog cannot place is not thereby unreferenced: the runtime
+requires its own init and builder images to boot a container and to build an
+image at all, and every first-party image is built `FROM` a digest-pinned base
+that the catalog names in a Containerfile rather than in a declaration.
+Reachability is drawn from three sources -- the declared image families, the
+container system configuration that names the two infrastructure images, and the
+base each Containerfile pins. An image none of the three names remains
+`unknown`, and `unknown` remains a refusal to collect, because the failure it
+represents is a catalog that cannot account for what the store holds.
 
-Gate: every image reports as reachable or collectable and none reports unknown;
-a prune removes exactly the unreachable images; the complete build and packaging
-graphs then execute without rebuilding a retained image.
+What that leaves collectable as a whole image is narrow and correct: superseded
+generations beyond the declared rollback count, and superseded versions of the
+infrastructure and base images, which the current configuration no longer names.
+The bytes come from collection, not from deletion.
 
-## Phase 6: Evaluate Workspaces and Preview Reclamation Without the Service
+Gate: a prune that selects no image still collects orphaned content and reports
+what it returned; a prune whose selection is empty because the store could not be
+read says so instead of reporting an empty selection; the live init, builder, and
+base images are never selected; the complete build and packaging graphs then
+execute without rebuilding a retained image or re-pulling a base.
+
+Status: active. Collection is separated from deletion and runs unconditionally,
+and an unreadable image store is reported rather than rendered as nothing to do.
+`deleteImages` no longer performs collection as a side effect; `prune` deletes
+what it selected, then collects, and reports the two separately. A plan states
+that collection runs and states no size, because what it would return is a
+property of the runtime's reachability over content this command does not
+enumerate -- which Phase 6 changes.
+
+The classification half is pending. It lands with the third reachability source,
+which reads the base pin out of each declared Containerfile, and with the
+container system configuration already loaded at the classification site.
+
+## Phase 6: Answer Inspection From the Store, Not the Service
 
 Inspection stays in the invoking account, and an inspection that cannot answer
-from that account is not inspection. Workspace enumeration and reclamation
-preview read state the container service holds, which the developer account
-cannot reach.
+from that account is not inspection. Workspace enumeration, reclamation preview,
+and image classification all read state the container service holds, which the
+developer account cannot reach.
 
-Collider records what it needs from workspace state where the reading group can
-read it, so enumeration and preview answer from the store rather than from the
-service. The service remains the only thing that mutates a workspace.
+Every one of those answers is already on disk, under the build store, readable by
+the group that owns it. Persistent workspace identity, capacity, and allocation
+are in each volume's own entity record and image file. Whether a workspace is
+active is in the mount list of each container record, which is the same fact the
+service computes. The image store's references, index digests, manifests, and
+unpacked filesystems are in its state record, blob store, and snapshot
+directories. Collider reads these directly, and the service remains the only
+thing that mutates any of them.
 
-Gate: `collider cache reclaim --dry-run` and `collider cache prune --dry-run`
-report complete results from the interactive account, including orphaned
-workspaces; both report the same targets the builder identity reports; neither
-starts a container.
+Reading them directly is also what lets a plan state a size. Once reachability
+over blobs and snapshots is computed here, a dry run reports what collection
+would return rather than reporting that collection runs.
+
+Gate: `collider cache reclaim --dry-run`, `collider cache prune --dry-run`, and
+`collider cache status` report complete results from the interactive account,
+including orphaned workspaces, image classification, and the allocation
+collection would return; all three report what the builder identity reports;
+none starts a container; the group-readability every one of these reads depends
+on is asserted by provisioning rather than assumed.
 
 ## Phase 7: Declare Residency for Materialized Source
 

@@ -241,7 +241,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         return states
     }
 
-    public func deleteImages(references: [String]) async throws -> UInt64 {
+    public func deleteImages(references: [String]) async throws {
         try validateRunner()
         let activeReferences = Set(
             try await ContainerClient().list().map(\.configuration.image.reference))
@@ -254,6 +254,10 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
                 reference: reference,
                 garbageCollect: false)
         }
+    }
+
+    public func collectOrphanedImageContent() async throws -> UInt64 {
+        try validateRunner()
         let (_, reclaimedBytes) = try await ClientImage.cleanUpOrphanedBlobs()
         return reclaimedBytes
     }

@@ -123,8 +123,12 @@ public actor ColliderRuntime {
         try await ociBackend.images()
     }
 
-    public func deleteOCIImages(references: [String]) async throws -> UInt64 {
+    public func deleteOCIImages(references: [String]) async throws {
         try await ociBackend.deleteImages(references: references)
+    }
+
+    public func collectOrphanedOCIImageContent() async throws -> UInt64 {
+        try await ociBackend.collectOrphanedImageContent()
     }
 
     public func ociPersistentWorkspaces() async throws

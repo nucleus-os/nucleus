@@ -90,13 +90,18 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     private var imageStates: [OCIImageState]
     private var deletedNames: [String] = []
     private var deletedImageReferences: [String] = []
+    private var collectionCount = 0
+
+    private let imageListingFailure: String?
 
     init(
         workspaces: [OCIPersistentWorkspaceState],
-        images: [OCIImageState] = []
+        images: [OCIImageState] = [],
+        imageListingFailure: String? = nil
     ) {
         self.workspaces = workspaces
         imageStates = images
+        self.imageListingFailure = imageListingFailure
     }
 
     func prepareImage(_: OCIImagePreparation) async throws -> String {
@@ -153,12 +158,19 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     }
 
     func images() async throws -> [OCIImageState] {
-        imageStates
+        if let imageListingFailure {
+            throw WorkspaceFailure.message(imageListingFailure)
+        }
+        return imageStates
     }
 
-    func deleteImages(references: [String]) async throws -> UInt64 {
+    func deleteImages(references: [String]) async throws {
         deletedImageReferences.append(contentsOf: references)
         imageStates.removeAll { references.contains($0.reference) }
+    }
+
+    func collectOrphanedImageContent() async throws -> UInt64 {
+        collectionCount += 1
         return 4_096
     }
 
@@ -172,6 +184,7 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
 
     func deletions() -> [String] { deletedNames }
     func imageDeletions() -> [String] { deletedImageReferences }
+    func collections() -> Int { collectionCount }
 }
 
 private struct ImageFixtureAction: ColliderAction {
@@ -543,6 +556,110 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
     #expect(await backend.imageDeletions().isEmpty)
     try await repository.prune(dryRun: false)
     #expect(Set(await backend.imageDeletions()) == [obsolete, dangling])
+}
+
+/// A catalog declaring one image family whose active digest is `a` repeated.
+private func imageFixtureCatalog(root: URL) throws -> ComponentCatalog {
+    let context = root.appendingPathComponent("context", isDirectory: true)
+    try FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
+    let imageID = root.appendingPathComponent("image-id")
+    try Data(
+        "localhost/fixture\nsha256:\(String(repeating: "a", count: 64))\n".utf8
+    ).write(to: imageID)
+    let componentID = ComponentID(rawValue: "fixture")
+    return ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: componentID,
+                    canonicalName: componentID.rawValue,
+                    directoryName: componentID.rawValue),
+                tasks: [
+                    TaskDeclaration(
+                        id: TaskID(rawValue: "fixture.image"),
+                        component: componentID,
+                        action: try AnyColliderAction(
+                            ImageFixtureAction(
+                                preparation: OCIImagePreparation(
+                                    executionPlatform: .linuxARM64OCI,
+                                    context: FilePath(context.path),
+                                    containerFile: FilePath(
+                                        context.appendingPathComponent("Containerfile").path),
+                                    imageID: FilePath(imageID.path),
+                                    imageName: "localhost/fixture",
+                                    rollbackGenerationCount: 1,
+                                    environment: [:]))))
+                ],
+                entrypoints: [])
+        ],
+        publicEntrypoints: [])
+}
+
+/// Content is orphaned by rebuilding an image, not by pruning one: a rebuild
+/// replaces the reference its layers and unpacked filesystem belonged to and
+/// leaves them reachable from nothing. Collection that only runs when some
+/// image was selected therefore never runs on the store that needs it most,
+/// which is a store whose every image is current.
+@Test func pruningCollectsOrphanedImageContentWithNoImageToDelete() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-image-collection-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let catalog = try imageFixtureCatalog(root: root)
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [],
+        images: [
+            OCIImageState(
+                reference: "localhost/fixture:latest",
+                repository: "localhost/fixture",
+                tag: "latest",
+                digest: "sha256:" + String(repeating: "a", count: 64),
+                creationDate: Date(timeIntervalSince1970: 1_000),
+                active: false)
+        ])
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: catalog)
+
+    try await repository.prune(dryRun: false)
+    #expect(await backend.imageDeletions().isEmpty)
+    #expect(await backend.collections() == 1)
+}
+
+/// A store nothing enumerated and a store holding nothing collectable are the
+/// same empty selection. Only one of them means the report is complete, so the
+/// reason the question went unanswered reaches the result.
+@Test func pruningReportsAnImageStoreItCouldNotRead() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-image-unavailable-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let catalog = try imageFixtureCatalog(root: root)
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [],
+        imageListingFailure: "image store did not answer")
+    let output = StorageConsoleCapture()
+    let console = CommandConsole(
+        format: .text,
+        progress: .never,
+        standardOutputIsTerminal: false,
+        standardErrorIsTerminal: false,
+        standardOutput: output.write,
+        standardError: output.write)
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend),
+            console: console),
+        catalog: catalog)
+
+    try await repository.prune(dryRun: false)
+    #expect(output.text.contains("images not evaluated"))
+    #expect(output.text.contains("image store did not answer"))
+    // Nothing was enumerated, so nothing may be collected against it either.
+    #expect(await backend.collections() == 0)
 }
 
 /// Reclamation trims declared workspaces in place. It removes nothing, so an

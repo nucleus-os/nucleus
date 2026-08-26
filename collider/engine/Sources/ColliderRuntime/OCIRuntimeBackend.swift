@@ -178,7 +178,17 @@ public protocol OCIRuntimeBackend: Sendable {
         configuration: OCIRuntimeConfiguration
     ) async throws -> OCIRuntimeDiskUsage
     func images() async throws -> [OCIImageState]
-    func deleteImages(references: [String]) async throws -> UInt64
+    func deleteImages(references: [String]) async throws
+    /// Collects stored image content no live image reaches.
+    ///
+    /// Separate from deletion because the two answer different questions.
+    /// Deleting a reference removes a name; it frees nothing on its own, since
+    /// the layers and unpacked filesystems behind it may still be reached from
+    /// another name. Collection is what returns bytes, and what it returns is
+    /// unrelated to whether this run deleted anything: content is orphaned by
+    /// every image rebuild, which replaces the reference a snapshot belonged to
+    /// and leaves the snapshot itself unreferenced.
+    func collectOrphanedImageContent() async throws -> UInt64
     func persistentWorkspaces(
         configuration: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState]
@@ -230,7 +240,11 @@ extension OCIRuntimeBackend {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
-    public func deleteImages(references _: [String]) async throws -> UInt64 {
+    public func deleteImages(references _: [String]) async throws {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func collectOrphanedImageContent() async throws -> UInt64 {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
