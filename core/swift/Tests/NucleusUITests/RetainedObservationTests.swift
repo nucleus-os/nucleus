@@ -62,9 +62,34 @@ private final class ObservationUpdateLatch {
 /// Release lifecycle gate. Live-token and exactly-once teardown counts are
 /// structural invariants, not wall-clock thresholds.
 struct NucleusFoundationLifecycleStressTests {
-    private func settleObservationBoundary() async {
-        // Observation's Sendable callback first re-enters the main actor; the
-        // token then yields once to coalesce all writes from the current turn.
+    /// Waits until an observation has produced the effect a check is about to
+    /// assert.
+    ///
+    /// The hops between a write and its observed update are not a constant a
+    /// test can count: the Sendable callback re-enters the main actor and the
+    /// token yields once more to coalesce a turn's writes, and how many turns
+    /// that takes depends on what else the cooperative pool is running.
+    /// Waiting on the effect returns as soon as it lands and bounds the wait
+    /// rather than reading a half-drained boundary.
+    private func settleObservationBoundary(
+        until isSettled: @MainActor () -> Bool,
+        within timeout: Duration = .seconds(5)
+    ) async {
+        let deadline = ContinuousClock().now.advanced(by: timeout)
+        while !isSettled() {
+            guard ContinuousClock().now < deadline else { return }
+            await Task.yield()
+        }
+    }
+
+    /// Yields enough turns for a pending update to arrive, for a check that
+    /// asserts none is coming.
+    ///
+    /// A check like that cannot be waited into correctness: an update that has
+    /// not happened yet and one that will never happen look the same, so this
+    /// bounds the window instead of proving a negative. It is also why such a
+    /// check never fails early, and why only the waits above could flake.
+    private func drainPendingObservationUpdates() async {
         for _ in 0..<4 {
             await Task.yield()
         }
@@ -95,7 +120,7 @@ struct NucleusFoundationLifecycleStressTests {
         model.primary = 1
         model.primary = 2
         model.primary = 3
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: { updates == 2 })
 
         #expect(updates == 2)
         #expect(view.frame.origin.x == 3)
@@ -120,15 +145,17 @@ struct NucleusFoundationLifecycleStressTests {
         #expect(updates == 1)
 
         model.usesPrimary = false
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: { updates == 2 })
         #expect(updates == 2)
 
+        // Primary is no longer read, so no update is coming and none can be
+        // waited for.
         model.primary = 90
-        await settleObservationBoundary()
+        await drainPendingObservationUpdates()
         #expect(updates == 2)
 
         model.secondary = 40
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: { updates == 3 })
         #expect(updates == 3)
         #expect(view.alphaValue == 0.4)
     }
@@ -158,13 +185,17 @@ struct NucleusFoundationLifecycleStressTests {
         model!.primary = 1
         child!.removeFromSuperview()
         #expect(token?.isCancelled == true)
-        await settleObservationBoundary()
+        // The token is cancelled, so the queued update must not arrive.
+        await drainPendingObservationUpdates()
         #expect(updates == 1)
 
         model = nil
         child = nil
         token = nil
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: {
+            weakModel == nil && weakChild == nil
+                && RetainedObservationToken.liveCount == baseline
+        })
         #expect(weakModel == nil)
         #expect(weakChild == nil)
         #expect(RetainedObservationToken.liveCount == baseline)
@@ -226,7 +257,7 @@ struct NucleusFoundationLifecycleStressTests {
         #expect(outcomes == [.completed])
 
         model.alpha = 0.25
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: { view.alphaValue == 0.25 })
         #expect(view.alphaValue == 0.25)
         #expect(outcomes == [.completed])
 
@@ -239,7 +270,7 @@ struct NucleusFoundationLifecycleStressTests {
             } == true)
 
         model.alpha = 0.5
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: { view.alphaValue == 0.5 })
         token.cancel()
         _ = try publisher.publish(roots: [view])
         #expect(outcomes == [.completed, .completed])
@@ -310,7 +341,9 @@ struct NucleusFoundationLifecycleStressTests {
         // Fire the model once so Observation also drains any one-shot,
         // weak-token callbacks registered before cancellation.
         model.primary = 1
-        await settleObservationBoundary()
+        await settleObservationBoundary(until: {
+            RetainedObservationToken.liveCount == baseline
+        })
         #expect(RetainedObservationToken.liveCount == baseline)
         #expect(parent.subviews.isEmpty)
     }

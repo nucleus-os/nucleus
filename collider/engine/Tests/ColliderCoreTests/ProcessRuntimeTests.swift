@@ -121,20 +121,30 @@ import Testing
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let marker = directory.appendingPathComponent("terminated")
+    let ready = directory.appendingPathComponent("ready")
     let runtime = ColliderRuntime()
+    // The timeout has to outlast starting a shell, not merely exceed it. A
+    // window sized to a quiet machine is spent on process startup on a busy
+    // one, and the signal then arrives before the trap exists, so the child
+    // dies to the default action and the teardown under test never runs.
     let result = try await runtime.execute(
         CommandSpec(
             executable: .named("sh"),
             arguments: [
                 "-c",
-                "trap 'printf terminated > \"$1\"; exit 0' TERM; while :; do sleep 0.05; done",
-                "sh", marker.path,
+                "trap 'printf terminated > \"$1\"; exit 0' TERM; "
+                    + "printf ready > \"$2\"; "
+                    + "while :; do sleep 0.05; done",
+                "sh", marker.path, ready.path,
             ],
             workingDirectory: FilePath(directory.path),
             environment: ["PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"],
             output: .captured(limit: 1_024),
-            timeoutNanoseconds: 1_000_000_000))
+            timeoutNanoseconds: 5_000_000_000))
     #expect(result.timedOut)
+    // Readiness is written after the trap is installed, so it separates a
+    // child that could service the signal from one that never got that far.
+    #expect(FileManager.default.fileExists(atPath: ready.path))
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
