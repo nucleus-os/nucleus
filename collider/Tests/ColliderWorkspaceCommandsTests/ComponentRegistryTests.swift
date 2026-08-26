@@ -2807,11 +2807,18 @@ private func artifactInput(
     // both read against this one directory, and only folly is separately
     // named by a flag of its own.
     let underRoot = roots(rn.string)
-    #expect(underRoot.contains("/workspace/react-native/third-party/folly"))
+    #expect(underRoot.contains("/workspace/react-native/third-party/folly/folly"))
     #expect(
         underRoot.contains(
             "/workspace/react-native/third-party/double-conversion/src"))
-    #expect(underRoot.contains("/workspace/react-native/third-party/hermes"))
+
+    // Each link states what an include reaches rather than its linked root.
+    // Hermes vendors 7,704 files of `external` alone that nothing includes.
+    #expect(underRoot.contains("/workspace/react-native/third-party/hermes/API"))
+    #expect(
+        underRoot.contains("/workspace/react-native/third-party/hermes/include"))
+    #expect(!underRoot.contains("/workspace/react-native/third-party/hermes"))
+    #expect(!underRoot.contains("/workspace/react-native/third-party/folly"))
 
     // Links that resolve into the cache are not checkout roots at all.
     #expect(!underRoot.contains { $0.hasPrefix("/cache") })

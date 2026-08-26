@@ -18,12 +18,12 @@ public struct StagedSDKCheckoutLink: Sendable {
     /// something under it.
     ///
     /// Stated separately because a flag names the linked root while the
-    /// headers under it are written relative to that root, and satisfying that
-    /// by mounting the root is only sometimes proportionate. Skia's root is
-    /// 199,180 files, 186,748 of them a vendored `third_party` tree, to reach
-    /// about four thousand; a React Native dependency's root is small enough
-    /// that naming it whole costs less than guessing which parts of it a
-    /// header reaches.
+    /// headers under it are written relative to that root, and a vendored root
+    /// is mostly not headers. Skia's is 199,180 files, 186,748 of them a
+    /// `third_party` tree, to reach about four thousand; Hermes vendors 7,704
+    /// files of `external` and 3,499 more of tests, tools, and benchmarks to
+    /// reach 536. Naming a root whole is right only where it is small enough
+    /// that establishing which part is read would cost more than mounting it.
     public let rootRelativeSubtrees: [FilePath]
 
     public init(

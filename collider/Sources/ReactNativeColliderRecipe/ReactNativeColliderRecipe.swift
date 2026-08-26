@@ -879,31 +879,44 @@ public enum ReactNativeColliderRecipe {
     ///
     /// One definition, used both to create the links and to work out which
     /// checkout directories a container following them has to be able to see.
-    /// Each root is small enough to name whole: together they are about
-    /// fifteen thousand files, most of them Hermes, against the cost of
-    /// establishing which subtree each header reaches.
+    /// Each states what a root-relative include reaches rather than its whole
+    /// linked root: Hermes vendors 7,704 files of `external` and 3,499 more of
+    /// tests, tools, and benchmarks that no include names, against 536 in the
+    /// three subtrees flags do name.
     package static func nativeSDKCheckoutLinks(
         root: FilePath,
         sdkRoot: FilePath
     ) -> [StagedSDKCheckoutLink] {
         let sdk = sdkRoot.appending("rn")
-        return [
-            ("include/hermes", "third-party/hermes"),
-            ("include/folly", "third-party/folly"),
-            ("include/glog", "third-party/glog"),
-            ("include/fmt", "third-party/fmt"),
-            ("include/fast_float", "third-party/fast_float"),
-            ("include/double-conversion", "third-party/double-conversion/src"),
+        let links: [(name: String, checkout: String, reached: [String])] = [
+            ("include/hermes", "third-party/hermes", ["API", "public", "include"]),
+            ("include/folly", "third-party/folly", ["folly"]),
+            ("include/glog", "third-party/glog", ["src"]),
+            ("include/fmt", "third-party/fmt", ["include"]),
+            ("include/fast_float", "third-party/fast_float", ["include"]),
+            ("include/double-conversion", "third-party/double-conversion/src", []),
             (
                 "include/react-cxx-platform",
-                "third-party/react-native/packages/react-native/ReactCxxPlatform"
+                "third-party/react-native/packages/react-native/ReactCxxPlatform",
+                []
             ),
-            ("include/react-bridge", "swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
-            ("include/react-runtime", "swift/Sources/NucleusReactRuntime/cxx"),
-        ].map {
-            StagedSDKCheckoutLink(
-                link: sdk.appending($0.0),
-                checkout: root.appending($0.1))
+            (
+                "include/react-bridge",
+                "swiftpm/cmodules/NucleusReactRuntimeCxxBridge",
+                []
+            ),
+            ("include/react-runtime", "swift/Sources/NucleusReactRuntime/cxx", []),
+        ]
+        return links.map { link in
+            let checkout = root.appending(link.checkout)
+            return StagedSDKCheckoutLink(
+                link: sdk.appending(link.name),
+                checkout: checkout,
+                // An empty list is a root small enough to name whole, which is
+                // cheaper than establishing which part of it is read.
+                rootRelativeSubtrees: link.reached.isEmpty
+                    ? [checkout]
+                    : link.reached.map { checkout.appending($0) })
         }
     }
 

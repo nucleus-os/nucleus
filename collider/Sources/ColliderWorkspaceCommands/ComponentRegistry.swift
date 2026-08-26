@@ -76,31 +76,48 @@ package struct ComponentRegistry {
             ).appending("android/gfxstream"),
             placement: context.identityPathMap
         ).checkoutIncludeRoots
+        // Both derivations share their package roots so that coalescing stops
+        // at the same places and the assembler set stays a superset of the
+        // Nucleus one, which is what lets one view hold both.
+        let packageRoots =
+            (nucleusGraph.manifestPaths
+            + assemblerGraph.manifestPaths).map {
+                $0.removingLastComponent()
+            }
+        let sharedExactRoots =
+            nucleusIncludeRoots + nucleusGraph.headerSearchRoots
+            // Not everything a container reads from the checkout is in
+            // the package graph. These directories hold data a product is
+            // assembled from rather than source it is compiled from: the
+            // session package's scripts, unit, and PAM template, and the
+            // Android container's AppArmor and seccomp policies. Every
+            // action reading them declares it, as file inputs and as a
+            // checkout read effect, so the gap was in what this consulted.
+            //
+            // These two are the whole set. Of the actions across every
+            // recipe that declare a checkout read, the rest either run on
+            // the host, where nothing is mounted, or belong to a lane that
+            // mounts its own component root rather than a package view.
+            + [
+                context.layout.compositorSessionPackage,
+                context.layout.androidRuntime.appending("container"),
+            ]
+        // What a Nucleus build reads. Collider's own source is not among it:
+        // the assembler is the only product compiled from that package, and a
+        // Nucleus product build that mounted it would be invalidated by every
+        // change to the build tool.
         let checkoutRoots = checkoutSourceRoots(
             root: context.root,
-            packageRoots: (nucleusGraph.manifestPaths
-                + assemblerGraph.manifestPaths).map {
-                    $0.removingLastComponent()
-                },
+            packageRoots: packageRoots,
+            widened: nucleusGraph.targetRoots,
+            exact: sharedExactRoots)
+        // The assembler compiles Collider's source and the Nucleus packages it
+        // depends on, so it reads both.
+        let assemblerCheckoutRoots = checkoutSourceRoots(
+            root: context.root,
+            packageRoots: packageRoots,
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
-            exact: nucleusIncludeRoots + nucleusGraph.headerSearchRoots
-                + assemblerGraph.headerSearchRoots
-                // Not everything a container reads from the checkout is in
-                // the package graph. These directories hold data a product is
-                // assembled from rather than source it is compiled from: the
-                // session package's scripts, unit, and PAM template, and the
-                // Android container's AppArmor and seccomp policies. Every
-                // action reading them declares it, as file inputs and as a
-                // checkout read effect, so the gap was in what this consulted.
-                //
-                // These two are the whole set. Of the actions across every
-                // recipe that declare a checkout read, the rest either run on
-                // the host, where nothing is mounted, or belong to a lane that
-                // mounts its own component root rather than a package view.
-                + [
-                    context.layout.compositorSessionPackage,
-                    context.layout.androidRuntime.appending("container"),
-                ])
+            exact: sharedExactRoots + assemblerGraph.headerSearchRoots)
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
@@ -142,7 +159,7 @@ package struct ComponentRegistry {
                         .filter {
                             FileManager.default.fileExists(atPath: $0.string)
                         },
-                    nestedDirectories: checkoutRoots)
+                    nestedDirectories: assemblerCheckoutRoots)
             ])
         let androidToolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
@@ -183,7 +200,7 @@ package struct ComponentRegistry {
         }
         let runtimeAssembler = try await linuxAssemblerSwiftPMInvocation(
             builder: nativeConfiguration,
-            checkoutRoots: checkoutRoots)
+            checkoutRoots: assemblerCheckoutRoots)
         buildContexts[.linuxAssembler] = runtimeAssembler
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =

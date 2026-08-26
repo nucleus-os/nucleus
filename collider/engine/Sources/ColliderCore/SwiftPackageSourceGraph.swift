@@ -217,6 +217,9 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
     /// needs. A build environment is established once and reused across the
     /// products it builds, so it needs the union: what any product might read
     /// rather than what one does.
+    ///
+    /// The union stops at a dependency's tests, which no product and no test
+    /// of this package compiles.
     public var targetRoots: [FilePath] {
         switch storage {
         case .packageWide(let inputs):
@@ -228,10 +231,16 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
                     nil
                 }
             }
-        case .resolved(_, let packages):
+        case .resolved(let root, let packages):
             var roots: Set<FilePath> = []
             for package in packages {
-                for target in package.targets { roots.insert(target.path) }
+                for target in package.targets {
+                    // A package manager builds only the root package's tests,
+                    // so a dependency's test target is source that nothing in
+                    // this graph ever compiles.
+                    if target.isTest && package.root != root { continue }
+                    roots.insert(target.path)
+                }
             }
             return roots.sorted { $0.string < $1.string }
         }
