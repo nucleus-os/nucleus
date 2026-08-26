@@ -1548,20 +1548,35 @@ func checkoutIncludeRoots(
     root: FilePath,
     nativeSDK: FilePath
 ) -> [FilePath] {
-    let links = CoreColliderRecipe.renderSDKCheckoutLinks(
-        root: root.appending("core"),
-        sdkRoot: nativeSDK)
+    // Every staged SDK that links back into the checkout, because a flag
+    // naming one SDK's link tree is the same problem as naming another's.
+    let links =
+        CoreColliderRecipe.renderSDKCheckoutLinks(
+            root: root.appending("core"),
+            sdkRoot: nativeSDK)
+        + ReactNativeColliderRecipe.nativeSDKCheckoutLinks(
+            root: root.appending("react-native"),
+            sdkRoot: nativeSDK)
     return includePaths.flatMap { path -> [FilePath] in
         if path.starts(with: root) { return [path] }
+        var reached: [FilePath] = []
         for link in links {
-            if path == link.link { return link.rootRelativeSubtrees }
-            guard path.starts(with: link.link) else { continue }
-            return [
-                path.string.dropFirst(link.link.string.count)
-                    .split(separator: "/")
-                    .reduce(link.checkout) { $0.appending(String($1)) }
-            ]
+            if path == link.link {
+                reached += link.rootRelativeSubtrees
+            } else if path.starts(with: link.link) {
+                // A flag naming something under a link resolves through it.
+                reached.append(
+                    path.string.dropFirst(link.link.string.count)
+                        .split(separator: "/")
+                        .reduce(link.checkout) { $0.appending(String($1)) })
+            } else if link.link.starts(with: path) {
+                // A flag naming the directory the links sit in reaches every
+                // one of them, because the include that resolves through a
+                // link never names the link: `<folly/dynamic.h>` against the
+                // staged SDK's include root is how folly is read at all.
+                reached += link.rootRelativeSubtrees
+            }
         }
-        return []
+        return reached
     }
 }

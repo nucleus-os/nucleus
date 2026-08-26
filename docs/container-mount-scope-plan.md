@@ -180,13 +180,22 @@ Manifest build settings are absent from `swift package describe` entirely, so a
 `swift-tracy/third-party/tracy/public` -- named a directory nothing mounted.
 The resolver reads the manifest dump for them now.
 
-The staged render SDK links to Skia rather than copying it, and the link
+A staged native SDK links to source rather than copying it, and the link
 records the path a container sees, so an include path under it names a checkout
 directory while not being written as one. Those paths resolve through the link
-table that creates them. A flag naming the link itself resolves to stated
-subtrees, because the linked root is Skia's whole vendored checkout: 199,180
-files, 186,748 of them a `third_party` tree, against about four thousand that
-root-relative includes reach.
+table that creates them, for every SDK that stages such links: the render SDK's
+two into Skia, and the React Native SDK's nine into Hermes, folly, glog, fmt,
+fast_float, double-conversion, ReactCxxPlatform, and two first-party bridges.
+
+An include path relates to those links three ways, and only naming one of them
+is a link. A path under a link resolves through it. A path naming a link
+resolves to that link's stated subtrees, which for Skia is what keeps its
+199,180-file vendored checkout -- 186,748 of them a `third_party` tree -- from
+being mounted to reach about four thousand. A path naming the directory the
+links sit in reaches every one of them, because an include that resolves
+through a link never names the link: `<folly/dynamic.h>` and
+`<double-conversion/double-conversion.h>` are both read against the React
+Native SDK's include root, and only folly is separately named by a flag.
 
 `Package.resolved` records `apple/swift-system` while the manifest declares the
 `nucleus-os` fork, and only `.swiftpm/configuration/mirrors.json` reconciles

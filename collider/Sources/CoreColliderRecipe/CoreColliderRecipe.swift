@@ -9,32 +9,6 @@ package enum CoreEntrypoints {
     package static let androidVerify = ComponentEntrypointID(rawValue: "android.verify")
 }
 
-/// Where the render SDK's include tree links back into the checkout.
-///
-/// The staged SDK links rather than copies, and each link records the path a
-/// container sees, so an include path under one of these names a checkout
-/// directory even though it is not written as one. A mount set derived only
-/// from paths literally under the checkout root drops them, and the container
-/// then follows a link to a directory it cannot see.
-package struct RenderSDKCheckoutLink: Sendable {
-    /// The link's path inside the staged SDK.
-    package let link: FilePath
-    /// The checkout directory it resolves to.
-    package let checkout: FilePath
-    /// What a container reads when a flag names `link` itself rather than
-    /// something under it.
-    ///
-    /// Stated because the flag names the linked root while the headers under
-    /// it are written relative to that root: Skia asks for
-    /// `include/core/SkFontMgr.h` and `modules/skparagraph/include/Paragraph.h`.
-    /// Mounting the root to satisfy that would expose 199,180 files, 186,748 of
-    /// them a vendored `third_party` tree, to reach about four thousand.
-    ///
-    /// These three are what root-relative includes reach. First-party sources
-    /// name `include` and `modules`; `src` is also named by a flag of its own.
-    package let rootRelativeSubtrees: [FilePath]
-}
-
 package enum CoreTaskIDs {
     package static let gnDownload = TaskID(rawValue: "core.gn-download")
     package static let gnInstall = TaskID(rawValue: "core.gn-install")
@@ -600,18 +574,18 @@ public enum CoreColliderRecipe: ColliderComponent {
     package static func renderSDKCheckoutLinks(
         root: FilePath,
         sdkRoot: FilePath
-    ) -> [RenderSDKCheckoutLink] {
+    ) -> [StagedSDKCheckoutLink] {
         let render = sdkRoot.appending("render")
         let skia = root.appending("third-party/skia")
         return [
-            RenderSDKCheckoutLink(
+            StagedSDKCheckoutLink(
                 link: render.appending("include/skia"),
                 checkout: skia,
                 rootRelativeSubtrees: [
                     skia.appending("include"), skia.appending("src"),
                     skia.appending("modules"),
                 ]),
-            RenderSDKCheckoutLink(
+            StagedSDKCheckoutLink(
                 link: render.appending("include/skia-text"),
                 checkout: root.appending("render-cxx/skia"),
                 rootRelativeSubtrees: [root.appending("render-cxx/skia")]),

@@ -875,6 +875,38 @@ public enum ReactNativeColliderRecipe {
         return CxxRuntimeArtifacts(task: task, outputs: outputArtifacts)
     }
 
+    /// The React Native SDK include links for a checkout and staged SDK pair.
+    ///
+    /// One definition, used both to create the links and to work out which
+    /// checkout directories a container following them has to be able to see.
+    /// Each root is small enough to name whole: together they are about
+    /// fifteen thousand files, most of them Hermes, against the cost of
+    /// establishing which subtree each header reaches.
+    package static func nativeSDKCheckoutLinks(
+        root: FilePath,
+        sdkRoot: FilePath
+    ) -> [StagedSDKCheckoutLink] {
+        let sdk = sdkRoot.appending("rn")
+        return [
+            ("include/hermes", "third-party/hermes"),
+            ("include/folly", "third-party/folly"),
+            ("include/glog", "third-party/glog"),
+            ("include/fmt", "third-party/fmt"),
+            ("include/fast_float", "third-party/fast_float"),
+            ("include/double-conversion", "third-party/double-conversion/src"),
+            (
+                "include/react-cxx-platform",
+                "third-party/react-native/packages/react-native/ReactCxxPlatform"
+            ),
+            ("include/react-bridge", "swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
+            ("include/react-runtime", "swift/Sources/NucleusReactRuntime/cxx"),
+        ].map {
+            StagedSDKCheckoutLink(
+                link: sdk.appending($0.0),
+                checkout: root.appending($0.1))
+        }
+    }
+
     package static func publishNativeSDK(
         root: FilePath,
         executionPath: (FilePath) -> String,
@@ -890,60 +922,39 @@ public enum ReactNativeColliderRecipe {
     ) throws -> NativeSDKArtifacts {
         let sdk = sdkRoot.appending("rn")
         let boostHeaders = sdk.appending("include/boost")
-        let hostLinks: [(String, FilePath)] = [
-            ("include/hermes", root.appending("third-party/hermes")),
-            ("include/folly", root.appending("third-party/folly")),
-            ("include/glog", root.appending("third-party/glog")),
-            (
-                "include/glog-gen",
-                sdk.appending("lib/rn/runtime/glog")
-            ),
-            (
-                "include/rn-codegen",
-                nodeModules.appending("react-native/React/FBReactNativeSpec")
-            ),
-            ("include/fmt", root.appending("third-party/fmt")),
-            ("include/fast_float", root.appending("third-party/fast_float")),
-            (
-                "include/double-conversion",
-                root.appending("third-party/double-conversion/src")
-            ),
-            (
-                "include/react-native",
-                nodeModules.appending("react-native")
-            ),
-            (
-                "include/react-native-worklets",
-                nodeModules.appending("react-native-worklets/Common/cpp")
-            ),
-            (
-                "include/react-native-reanimated",
-                nodeModules.appending("react-native-reanimated/Common/cpp")
-            ),
-            (
-                "include/react-native-reanimated-native-view",
-                nodeModules.appending("react-native-reanimated/Common/NativeView")
-            ),
-            (
-                "include/rn-library-codegen",
-                codegen.appending("android/app/build/generated/source/codegen/jni")
-            ),
-            (
-                "include/react-cxx-platform",
-                root.appending(
-                    "third-party/react-native/packages/react-native/ReactCxxPlatform")
-            ),
-            (
-                "include/react-bridge",
-                root.appending(
-                    "swiftpm/cmodules/NucleusReactRuntimeCxxBridge")
-            ),
-            (
-                "include/react-runtime",
-                root.appending(
-                    "swift/Sources/NucleusReactRuntime/cxx")
-            ),
-        ]
+        let hostLinks: [(String, FilePath)] =
+            nativeSDKCheckoutLinks(root: root, sdkRoot: sdkRoot).map {
+                (String($0.link.string.dropFirst(sdk.string.count + 1)), $0.checkout)
+            } + [
+                (
+                    "include/glog-gen",
+                    sdk.appending("lib/rn/runtime/glog")
+                ),
+                (
+                    "include/rn-codegen",
+                    nodeModules.appending("react-native/React/FBReactNativeSpec")
+                ),
+                (
+                    "include/react-native",
+                    nodeModules.appending("react-native")
+                ),
+                (
+                    "include/react-native-worklets",
+                    nodeModules.appending("react-native-worklets/Common/cpp")
+                ),
+                (
+                    "include/react-native-reanimated",
+                    nodeModules.appending("react-native-reanimated/Common/cpp")
+                ),
+                (
+                    "include/react-native-reanimated-native-view",
+                    nodeModules.appending("react-native-reanimated/Common/NativeView")
+                ),
+                (
+                    "include/rn-library-codegen",
+                    codegen.appending("android/app/build/generated/source/codegen/jni")
+                ),
+            ]
         // Read only inside containers, where the checkout and the cache are
         // mounted at their canonical locations, so a link naming this host's
         // paths resolves where it is written and dangles where it is used.

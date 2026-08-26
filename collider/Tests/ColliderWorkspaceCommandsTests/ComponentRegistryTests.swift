@@ -2773,6 +2773,50 @@ private func artifactInput(
     #expect(roots.map { $0.string } == ["/workspace/core/swift"])
 }
 
+@Test func stagedSDKIncludePathsResolveToWhatTheyRead() {
+    let root = FilePath("/workspace")
+    let sdk = FilePath("/cache/native-sdks/linux-arm64")
+    let rn = sdk.appending("rn/include")
+
+    func roots(_ include: String) -> [String] {
+        checkoutIncludeRoots(
+            of: [FilePath(include)],
+            root: root,
+            nativeSDK: sdk
+        ).map { $0.string }
+    }
+
+    // A path already under the checkout is what it says it is.
+    #expect(
+        roots("/workspace/core/render-cxx/skia/include")
+            == ["/workspace/core/render-cxx/skia/include"])
+
+    // A path under a staged link resolves through it.
+    #expect(
+        roots(rn.appending("hermes/API").string)
+            == ["/workspace/react-native/third-party/hermes/API"])
+
+    // A path naming a link resolves to the subtrees that link states.
+    #expect(
+        roots(sdk.appending("render/include/skia-text").string)
+            == ["/workspace/core/render-cxx/skia"])
+
+    // A path naming the directory the links sit in reaches every one of them.
+    // An include resolving through a link never names the link:
+    // `<folly/dynamic.h>` and `<double-conversion/double-conversion.h>` are
+    // both read against this one directory, and only folly is separately
+    // named by a flag of its own.
+    let underRoot = roots(rn.string)
+    #expect(underRoot.contains("/workspace/react-native/third-party/folly"))
+    #expect(
+        underRoot.contains(
+            "/workspace/react-native/third-party/double-conversion/src"))
+    #expect(underRoot.contains("/workspace/react-native/third-party/hermes"))
+
+    // Links that resolve into the cache are not checkout roots at all.
+    #expect(!underRoot.contains { $0.hasPrefix("/cache") })
+}
+
 @Test func derivedCheckoutRootsNeverStopOnAPackageRoot() {
     let root = FilePath("/workspace")
     // A package root holds `.build` and `.git` beside its source, so widening

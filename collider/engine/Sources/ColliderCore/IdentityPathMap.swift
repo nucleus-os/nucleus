@@ -1,5 +1,51 @@
 import SystemPackage
 
+/// Where a staged native SDK's include tree links back into the checkout.
+///
+/// A staged SDK links to source rather than copying it, and each link records
+/// the path its consumer sees rather than the path that wrote it. An include
+/// path under one of these therefore names a checkout directory without being
+/// written as one, so a mount set derived only from paths literally under the
+/// checkout root drops it and the container follows the link to a directory it
+/// cannot see. Every SDK that stages such links states them once, in the same
+/// table that creates them.
+public struct StagedSDKCheckoutLink: Sendable {
+    /// The link's path inside the staged SDK.
+    public let link: FilePath
+    /// The checkout directory it resolves to.
+    public let checkout: FilePath
+    /// What a container reads when a flag names `link` itself rather than
+    /// something under it.
+    ///
+    /// Stated separately because a flag names the linked root while the
+    /// headers under it are written relative to that root, and satisfying that
+    /// by mounting the root is only sometimes proportionate. Skia's root is
+    /// 199,180 files, 186,748 of them a vendored `third_party` tree, to reach
+    /// about four thousand; a React Native dependency's root is small enough
+    /// that naming it whole costs less than guessing which parts of it a
+    /// header reaches.
+    public let rootRelativeSubtrees: [FilePath]
+
+    public init(
+        link: FilePath,
+        checkout: FilePath,
+        rootRelativeSubtrees: [FilePath]
+    ) {
+        self.link = link
+        self.checkout = checkout
+        self.rootRelativeSubtrees = rootRelativeSubtrees
+    }
+
+    /// The whole linked directory, for a link whose root is small enough that
+    /// naming it entirely is cheaper than establishing which parts are read.
+    public init(link: FilePath, checkout: FilePath) {
+        self.init(
+            link: link,
+            checkout: checkout,
+            rootRelativeSubtrees: [checkout])
+    }
+}
+
 public struct IdentityPathRoot: Hashable, Sendable {
     public let name: String
     public let path: FilePath
