@@ -1823,13 +1823,14 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
         try context.files.createDirectory(expandedHostPayload)
         try await run(
             executable: .path(FilePath("/usr/bin/ditto")),
-            arguments: ["-x", hostPayload.string, expandedHostPayload.string],
+            arguments: ["--noacl", "-x", hostPayload.string, expandedHostPayload.string],
             workingDirectory: candidate,
             context: context)
         try context.files.createDirectory(hostToolchain)
         try await run(
             executable: .path(FilePath("/usr/bin/ditto")),
             arguments: [
+                "--noacl",
                 expandedHostPayload.appending("usr").string,
                 hostToolchain.appending("usr").string,
             ],
@@ -1875,6 +1876,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
+                    "--noacl",
                     generatedTargetRoot.string,
                     finalTargetRoot.string,
                 ],
@@ -1883,6 +1885,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
+                    "--noacl",
                     generatedTripleRoot.appending("toolset.json").string,
                     finalTripleRoot.appending("toolset.json").string,
                 ],
@@ -1891,14 +1894,22 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
+                    "--noacl",
                     target.runtimeInstall.appending("usr").string,
                     finalTargetRoot.appending("usr").string,
                 ],
                 workingDirectory: candidate,
                 context: context)
+            // `ditto` preserves ACLs, and these `.pc` files come from the
+            // checkout, which carries an inheritable entry denying the builder
+            // write and delete. Copied intact, that entry follows the bytes
+            // into the store and leaves the builder unable to collect its own
+            // staged copy: what a file may do is a property of where it now
+            // lives, not of where it was read from.
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
+                    "--noacl",
                     pkgConfigDirectory.string,
                     finalTargetRoot.appending("usr/share/pkgconfig").string,
                 ],

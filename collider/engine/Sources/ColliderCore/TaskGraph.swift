@@ -55,7 +55,7 @@ public struct PathPostcondition: Hashable, Sendable {
     }
 }
 
-public struct DirectoryNamePattern: RawRepresentable, Hashable, Sendable {
+public struct DirectoryNamePattern: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
 
     public init(rawValue: String) {

@@ -14,12 +14,32 @@ public enum StorageClass: String, Codable, Hashable, Sendable {
     case runRecord
 }
 
+/// Where a root's identity contexts sit beneath it, and what one is named.
+///
+/// Collection has to address a context rather than search for it. A walk of
+/// however many levels happened to suit the first root that needed one reaches
+/// that root's layout and reports nothing for a root nesting its contexts
+/// deeper -- not an error, just an empty result that looks like a clean store.
+/// The layout is therefore stated by the declaration that owns it.
+public struct ContextLocation: Codable, Hashable, Sendable {
+    /// Directory levels between the root and a context. Contexts written as
+    /// `unsanitized/sha256-…` sit one level down; contexts written as
+    /// `linux-arm64/unsanitized/sha256-…` sit two.
+    public let intermediateLevels: UInt32
+    public let naming: DirectoryNamePattern
+
+    public init(intermediateLevels: UInt32, naming: DirectoryNamePattern) {
+        self.intermediateLevels = intermediateLevels
+        self.naming = naming
+    }
+}
+
 public enum StorageRetentionPolicy: Codable, Hashable, Sendable {
     case protected
     case explicitClean
     case singleWorkingSet
     case keepActiveAndRollback(count: UInt32)
-    case taskIdentityContexts
+    case taskIdentityContexts(ContextLocation)
     case toolManagedLimit(maximumBytes: UInt64)
     case boundedHistory(maximumEntries: UInt32)
 
@@ -209,11 +229,17 @@ public enum StorageCatalog {
                             + declaration.id)
                 }
             case .taskIdentityContexts:
+                // Retention states how entries are keyed; the class states what
+                // the bytes are. Both reconstructible classes are keyed this
+                // way in practice: build output under an identity is
+                // incremental, and the dependency closure that output was
+                // compiled against is a cache under the same identity.
                 guard
                     declaration.storageClass == .incremental
+                        || declaration.storageClass == .cache
                 else {
                     throw StorageCatalogFailure.invalid(
-                        "task identity retention requires incremental storage: "
+                        "task identity retention requires incremental or cache storage: "
                             + declaration.id)
                 }
             case .singleWorkingSet:

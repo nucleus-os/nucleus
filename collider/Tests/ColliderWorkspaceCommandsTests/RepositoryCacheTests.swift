@@ -1139,7 +1139,8 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
                         storageClass: .incremental,
                         root: swiftPMRoot,
                         safetyRoot: context.hostBuildRoot,
-                        retentionPolicy: .taskIdentityContexts)
+                        retentionPolicy: .taskIdentityContexts(
+                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory)))
                 ])
         ],
         publicEntrypoints: [])
@@ -1149,6 +1150,53 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
     #expect(FileManager.default.fileExists(atPath: active.string))
     #expect(!FileManager.default.fileExists(atPath: obsolete.string))
     #expect(FileManager.default.fileExists(atPath: unrelated.string))
+}
+
+@Test func repositoryPruneRejectsContextsNestedDeeperThanDeclared() async throws {
+    let workspace = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        .appendingPathComponent(
+            "collider-swiftpm-nesting-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let context = repositoryContext(root: workspace, runtime: ColliderRuntime())
+    let swiftPMRoot = context.hostBuildRoot.appending("swiftpm")
+    // Contexts written as `<target>/<sanitizer>/sha256-…` sit two levels below
+    // the root while the declaration below names one.
+    let stranded = swiftPMRoot.appending("linux-arm64").appending("unsanitized")
+        .appending("sha256-" + String(repeating: "c", count: 64))
+    try FileManager.default.createDirectory(
+        atPath: stranded.string,
+        withIntermediateDirectories: true)
+    try Data("payload".utf8).write(
+        to: URL(fileURLWithPath: stranded.appending("payload").string))
+
+    let owner = ComponentID(rawValue: "fixture")
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: owner,
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [],
+                entrypoints: [],
+                storage: [
+                    StorageDeclaration(
+                        id: "fixture-swiftpm-contexts",
+                        owner: owner,
+                        producers: [.runtime("swiftpm")],
+                        storageClass: .incremental,
+                        root: swiftPMRoot,
+                        safetyRoot: context.hostBuildRoot,
+                        retentionPolicy: .taskIdentityContexts(
+                            .init(intermediateLevels: 1, naming: .artifactDigestDirectory)))
+                ])
+        ],
+        publicEntrypoints: [])
+
+    await #expect(throws: StorageCatalogFailure.self) {
+        try await RepositoryCache(context: context, catalog: catalog).prune(dryRun: true)
+    }
+    #expect(FileManager.default.fileExists(atPath: stranded.string))
 }
 
 @Test func repositoryStatusToleratesConcurrentGenerationPruning() async throws {

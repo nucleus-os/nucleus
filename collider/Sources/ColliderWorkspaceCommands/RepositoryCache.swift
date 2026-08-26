@@ -15,6 +15,40 @@ struct StorageStatusRecord: Codable, Equatable {
     let state: String
 }
 
+/// One selected target that would not be removed, and the path that refused.
+struct StorageRemovalFailure: Error, Sendable {
+    let declaration: String
+    let target: FilePath
+    let offendingPath: FilePath
+    let underlying: any Error
+
+    var description: String {
+        var line = "\(declaration): \(target)"
+        if offendingPath != target {
+            line += "\n    refused at: \(offendingPath)"
+        }
+        if let attributes = try? FileManager.default.attributesOfItem(
+            atPath: offendingPath.string),
+            let mode = attributes[.posixPermissions] as? NSNumber,
+            let owner = attributes[.ownerAccountName] as? String
+        {
+            line += "\n    mode \(String(mode.intValue, radix: 8)) owner \(owner)"
+        }
+        return line + "\n    \(underlying)"
+    }
+}
+
+/// Every target a prune could not remove, raised once the rest are collected.
+struct StorageRemovalFailures: Error, CustomStringConvertible, Sendable {
+    let failures: [StorageRemovalFailure]
+
+    var description: String {
+        "\(failures.count) selected storage target(s) could not be removed; "
+            + "every other target was collected\n"
+            + failures.map { "  " + $0.description }.joined(separator: "\n")
+    }
+}
+
 private struct StorageStatusReport: Codable {
     let hostFilesystem: HostFilesystemStatusRecord?
     let totals: StorageTotalsRecord
@@ -462,6 +496,7 @@ struct RepositoryCache {
         var workspaceRecords: [PersistentWorkspaceRemovalTarget]
         var selectedImages: [OCIImageRetentionRecord]
         var imageReclaimedBytes: UInt64
+        var removalFailures: [StorageRemovalFailure] = []
         let availableBefore = hostFilesystemStatus()?.availableBytes
 
         if dryRun {
@@ -489,16 +524,27 @@ struct RepositoryCache {
             for task in catalog.tasks where task.action?.imagePreparations.isEmpty == false {
                 locks.formUnion(task.locks)
             }
-            (targetRecords, workspaceRecords, selectedImages, imageReclaimedBytes) =
+            (
+                targetRecords, workspaceRecords, selectedImages, imageReclaimedBytes,
+                removalFailures
+            ) =
                 try await context.runtime.withTaskLocks(
                     locks,
                     stateRoot: context.taskStateRoot,
                     purpose: "declared storage pruning"
                 ) {
                     let resolved = try resolvedPruneTargets(pruneDeclarations)
+                    // One target that will not go must not hold the rest of the
+                    // store hostage. Every other target is collected, and what
+                    // refused is carried to the end of the run and reported.
+                    var failures: [StorageRemovalFailure] = []
                     for (declaration, urls) in resolved.targets {
                         for url in urls {
-                            try removeDeclaredTarget(url, from: declaration)
+                            do {
+                                try removeDeclaredTarget(url, from: declaration)
+                            } catch let failure as StorageRemovalFailure {
+                                failures.append(failure)
+                            }
                         }
                     }
                     let workspaces = try await persistentWorkspaceTargets(
@@ -526,11 +572,16 @@ struct RepositoryCache {
                         resolved.records,
                         workspaces,
                         selectedImages,
-                        imageReclaimedBytes
+                        imageReclaimedBytes,
+                        failures
                     )
                 }
             try await registry.remove(reclaimableRuns)
         }
+        // A target that refused was not reclaimed, so it does not belong in the
+        // record of what this run recovered.
+        let failedPaths = Set(removalFailures.map(\.target.string))
+        targetRecords.removeAll { failedPaths.contains($0.path) }
         let declaredReclaimableBytes = targetRecords.reduce(UInt64(0)) {
             $0 &+ $1.allocatedBytes
         }
@@ -551,6 +602,9 @@ struct RepositoryCache {
                 recoveredBytes: dryRun ? nil : recoveredBytes(since: availableBefore),
                 appleContainerImageReclaimedBytes: imageReclaimedBytes,
                 dryRun: dryRun))
+        guard removalFailures.isEmpty else {
+            throw StorageRemovalFailures(failures: removalFailures)
+        }
     }
 
     private func validateStorageDeclarations() throws {
@@ -752,8 +806,8 @@ struct RepositoryCache {
     private func pruneTargets(
         for declaration: StorageDeclaration
     ) throws -> [URL] {
-        if case .taskIdentityContexts = declaration.retentionPolicy {
-            return try obsoleteTaskIdentityContexts(in: declaration)
+        if case .taskIdentityContexts(let location) = declaration.retentionPolicy {
+            return try obsoleteTaskIdentityContexts(in: declaration, at: location)
         }
         if case .boundedHistory(let maximumEntries) = declaration.retentionPolicy {
             guard declaration.storageClass != .runRecord else { return [] }
@@ -812,7 +866,8 @@ struct RepositoryCache {
     }
 
     private func obsoleteTaskIdentityContexts(
-        in declaration: StorageDeclaration
+        in declaration: StorageDeclaration,
+        at location: ContextLocation
     ) throws -> [URL] {
         let root = resolvedFilesystemPath(declaration.root)
         let rootURL = URL(fileURLWithPath: root.string, isDirectory: true)
@@ -824,16 +879,46 @@ struct RepositoryCache {
                     .map { resolvedFilesystemPath($0.scratchPath) }
                     .filter { $0.isContained(in: root) }
             })
-        let firstLevel = try realDirectories(in: rootURL)
-        var candidates = try matching(firstLevel, pattern: .artifactDigestDirectory)
-        for directory in firstLevel {
-            candidates += try matching(
-                realDirectories(in: directory),
-                pattern: .artifactDigestDirectory)
+        var enclosing = [rootURL]
+        for _ in 0..<location.intermediateLevels {
+            enclosing = try enclosing.flatMap { try realDirectories(in: $0) }
+        }
+        let candidates = try enclosing.flatMap {
+            try matching(realDirectories(in: $0), pattern: location.naming)
+        }
+        if candidates.isEmpty {
+            try requireNoContextsOutside(location, under: rootURL, of: declaration)
         }
         return candidates.filter {
             !active.contains(resolvedFilesystemPath(FilePath($0.path)))
         }.sorted { $0.path < $1.path }
+    }
+
+    /// A declaration whose contexts sit at a depth it does not name collects
+    /// nothing and says so as though the root were clean, which is how one such
+    /// root reached 156 GiB. An empty result is only trustworthy when the root
+    /// really holds no contexts, so prove that before returning it.
+    private func requireNoContextsOutside(
+        _ location: ContextLocation,
+        under rootURL: URL,
+        of declaration: StorageDeclaration
+    ) throws {
+        var frontier = [rootURL]
+        var depth: UInt32 = 0
+        while !frontier.isEmpty, depth <= location.intermediateLevels + 2 {
+            let found = try frontier.flatMap {
+                try matching(realDirectories(in: $0), pattern: location.naming)
+            }
+            if let example = found.first, depth != location.intermediateLevels {
+                throw StorageCatalogFailure.invalid(
+                    "\(declaration.id) declares its contexts beneath "
+                        + "\(location.intermediateLevels) intermediate level(s) of "
+                        + "\(declaration.root), but one sits beneath \(depth): "
+                        + example.path)
+            }
+            frontier = try frontier.flatMap { try realDirectories(in: $0) }
+            depth += 1
+        }
     }
 
     private func resolvedPruneTargets(
@@ -930,7 +1015,71 @@ struct RepositoryCache {
             throw StorageCatalogFailure.invalid(
                 "refusing to prune outside declared storage: \(declaration.id), \(path)")
         }
-        try FileManager.default.removeItem(atPath: path.string)
+        do {
+            try FileManager.default.removeItem(atPath: path.string)
+        } catch {
+            // The fast path failed. Descend to learn which entry refuses and
+            // why, and take the tree down as far as it will go on the way.
+            let offending = firstUnremovableDescendant(of: path)
+            if offending == nil,
+                (try? FileManager.default.removeItem(atPath: path.string)) != nil
+            {
+                return
+            }
+            throw StorageRemovalFailure(
+                declaration: declaration.id,
+                target: path,
+                offendingPath: offending?.path ?? path,
+                underlying: offending?.error ?? error)
+        }
+    }
+
+    /// The path a removal actually refused, found by removing the tree entry by
+    /// entry rather than by predicting which entry would refuse.
+    ///
+    /// `FileManager` reports the item the caller named, so a tree of thousands
+    /// of entries yields one error naming its root and nothing about which
+    /// descendant refused. Inspecting modes to guess the culprit answers a
+    /// different question than the kernel does -- it found nothing on a tree
+    /// that reliably refuses -- so this descends and reports the entry whose
+    /// own removal failed, with the error that removal returned.
+    ///
+    /// Deepest first, so a directory is only reached once its contents are
+    /// gone. Entries removed before the failure stay removed: the whole tree
+    /// was already selected for collection.
+    private func firstUnremovableDescendant(
+        of path: FilePath
+    ) -> (path: FilePath, error: any Error)? {
+        let manager = FileManager.default
+        guard
+            let walker = manager.enumerator(
+                at: URL(fileURLWithPath: path.string),
+                includingPropertiesForKeys: nil)
+        else { return nil }
+        let entries = (walker.allObjects.compactMap { $0 as? URL })
+            .sorted { $0.pathComponents.count > $1.pathComponents.count }
+        var first: (path: FilePath, error: any Error)?
+        var refused = 0
+        for entry in entries {
+            do {
+                try manager.removeItem(at: entry)
+            } catch {
+                // Keep going. Stopping at the first refusal leaves everything
+                // that would have gone, and reports one path when the useful
+                // fact is how many refuse and whether they share a shape.
+                refused += 1
+                if first == nil { first = (FilePath(entry.path), error) }
+            }
+        }
+        if let first, refused > 1 {
+            return (
+                first.path,
+                StorageCatalogFailure.invalid(
+                    "\(refused) entries refused; first: \(first.path): \(first.error)")
+            )
+        }
+        // Every descendant went; the target itself is what refuses.
+        return first
     }
 
     private func resolvedFilesystemPath(_ path: FilePath) -> FilePath {
