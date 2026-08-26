@@ -162,8 +162,10 @@ once, because a mount is part of what an execution is.
 Status: complete.
 
 Gate evidence: no mount source in the packaging plan is the checkout root, and
-the only thing mounted at the package root is the view. Exposure is 11,773
-files across 78 mounts, against 248,190 through a single mount. A complete
+the only thing mounted at the package root is the view. Exposure is 10,245
+files across 78 mounts, against 248,529 through a single mount. The assembler
+lane adds four roots -- Collider's engine package and the vendored container
+dependency -- and reaches 10,818. A complete
 `collider package linux-runtime` executed all 83 tasks with none failing, and
 peak host open files reached 51,977 of 491,520 -- ten percent, against
 fifty-seven for a lighter run of the same command before this phase, and

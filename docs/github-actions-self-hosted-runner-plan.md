@@ -530,8 +530,9 @@ account can read its private keys.
 
 Commissioning provisions the store: the reading group, the four roots with the
 setgid bit that keeps every object the builder creates in the group the
-developer reads, the log root the developer also writes, the signing subtree
-only the builder reads, and the developer's password-free path to the launcher.
+developer reads, the log root the developer reads without writing, the
+signing subtree only the builder reads, and the developer's password-free
+path to the launcher.
 
 Two groups keep those facts separate. `nucleus-builder` remains the builder's
 primary group and gates the runner registration credentials.
