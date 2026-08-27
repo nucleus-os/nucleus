@@ -97,15 +97,21 @@ reuse.
 12. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish and qualify the nightly native update lifecycle.
-13. Complete Phase 9 of the
+13. Complete the
+    [Collider architecture simplification plan](collider-architecture-simplification-plan.md)
+    after the nightly lifecycle fixes the build, packaging, qualification, and
+    publication contracts. Decompose catalog construction, storage policy,
+    package assembly, recipe ownership, and command execution policy before
+    adding new development-host execution surfaces.
+14. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
    product-artifact contract.
-14. Complete Phases 2 through 6 of
+15. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-15. Complete Phases 3 through 10 of the
+16. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
@@ -129,13 +135,13 @@ dependency order:
 Step 8 executes these qualification plans after their corresponding
 implementation inputs are available:
 
-16. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
-17. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
-18. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
-19. [Android application integration](android-application-integration-plan.md)
-20. [Android container security](android-container-security-qualification-plan.md)
-21. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
-22. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+17. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
+18. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
+19. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
+20. [Android application integration](android-application-integration-plan.md)
+21. [Android container security](android-container-security-qualification-plan.md)
+22. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
+23. [Nucleus Browser](nucleus-browser-qualification-plan.md)
 
 Step 9 consumes the completed Android application-integration and
 container-security gates before accepting Android architecture parity Phase 6;
