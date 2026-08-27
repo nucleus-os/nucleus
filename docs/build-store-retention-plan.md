@@ -309,9 +309,21 @@ the next image build expects it. A record that is merely recorded also stops
 counting as an image's active reference: treating a stopped container as active
 is what let one abandoned record pin its image permanently.
 
-One gate clause is outstanding: that the complete build and packaging graphs
-execute after a prune without rebuilding a retained image or re-pulling a base.
-That requires a prune that actually collects, which has not yet run.
+Gate evidence: the first prune to reach collection returned 411.9 GiB, of which
+407.1 GiB was image content no live image reached, against a predicted 404 GiB
+from reading the store directly. The content store fell from 116 GiB across 720
+blobs to 12 GiB across 88, and unpacked snapshots from 339 GiB across 70
+directories to 36 GiB across 9. Exactly four images were selected, all
+superseded: one base and three previous runtime versions. The nine that remain
+are the live set, including the init image, the builder shim, and the pinned
+base that the phase's earlier premise would have deleted. The abandoned
+container record went with them, returning a further 13 GiB. The build graph
+then executed against that store with `native.builder-dependencies` reporting
+`localClean` and no image rebuilt or base re-pulled.
+
+One gate clause remains unexercised rather than unmet: the packaging graph has
+not run since the prune, so the Chromium image family's retention is argued from
+its classification rather than from a build that consumed it.
 
 ## Phase 6: Answer Inspection From the Store, Not the Service
 
