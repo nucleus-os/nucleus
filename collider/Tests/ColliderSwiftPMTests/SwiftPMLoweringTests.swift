@@ -702,7 +702,7 @@ private func executeWithSwiftPM(
         ])
 
     let observed = Mutex<[TaskID: [UInt8]]>([:])
-    _ = try await executeWithSwiftPM(
+    let report = try await executeWithSwiftPM(
         graph: try TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path),
@@ -714,6 +714,14 @@ private func executeWithSwiftPM(
     let seen = observed.withLock { $0 }
     let lowered = seen.keys.filter { $0.rawValue.hasPrefix("swift.package.test.") }
     #expect(lowered.count == 1)
+    // The plan carries them too, so a run records what it encoded and a second
+    // machine can be compared against without being read.
+    let recorded = report.plan.filter { $0.identityComponents != nil }
+    #expect(recorded.map(\.task) == Array(lowered))
+    #expect(
+        report.plan.contains {
+            $0.task.rawValue == "fixture.tests" && $0.identityComponents == nil
+        })
     // The bytes have to be the ones the name was derived from, not a
     // placeholder: decoding them must yield the components that were encoded.
     let bytes = try #require(lowered.first.flatMap { seen[$0] })

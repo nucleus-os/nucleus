@@ -117,13 +117,18 @@ The divergence is confirmed a third way in the meantime. The authoritative
 checkout lowers the Collider packages to `swift.package.test.sha256:2150fdb5…`
 and `…c337c2fc…`; a protected-main run of the same revision contains neither.
 
-Two further defects surfaced while establishing this, both about inspection
-reaching for permission it does not need. `collider test --dry-run` takes the
-exclusive workspace verification lock although a plan mutates nothing, so
-planning a test graph is impossible from the account that owns the checkout
-without crossing identities. And identity bytes are still absent from the run
-record, which is the one place a second checkout's encoding could be compared
-against this one's without reading that checkout at all.
+A run now records the components of every task a lowering produced, and
+`collider runs show --explain-identity` reads them back. Only lowered tasks
+carry them, because only those cannot be recovered by planning the revision
+again: a lowering expands what assessment found unclean, so a task whose outputs
+are valid is never constructed a second time. This is what makes the comparison
+possible without either checkout reading the other -- both write into one store,
+and the next protected-main run records what its own checkout encoded.
+
+One further defect surfaced while establishing this, about inspection reaching
+for permission it does not need: `collider test --dry-run` takes the exclusive
+workspace verification lock although a plan mutates nothing, so planning a test
+graph from the account that owns the checkout requires crossing identities.
 
 Until it is resolved, no collection may run automatically. An explicit prune
 costing the other checkout a rebuild is a choice someone made; the same eviction

@@ -27,8 +27,19 @@ struct Runs: AsyncParsableCommand {
         @OptionGroup var outputOptions: CommandOutputOptions
         @Argument(help: "Run identifier, or latest.") var runID: String?
 
+        @Option(
+            name: .customLong("explain-identity"),
+            help: ArgumentHelp(
+                "Print the recorded identity components of tasks whose name "
+                    + "contains this text. Only tasks a lowering produced carry "
+                    + "them, because those are the identities no later planning "
+                    + "reconstructs."))
+        var explainIdentity: String?
+
         mutating func run(in context: WorkspaceContext) async throws {
-            try await RepositoryState(context: context).showRun(runID)
+            try await RepositoryState(context: context).showRun(
+                runID,
+                explainIdentity: explainIdentity)
         }
     }
 }

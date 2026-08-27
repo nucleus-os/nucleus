@@ -96,7 +96,40 @@ struct RepositoryState {
         try context.console.report(RunListReport(runs: entries), text: text)
     }
 
-    func showRun(_ requested: String?) async throws {
+    /// The identity components a run recorded for the tasks a lowering made.
+    ///
+    /// Only those carry components, because only those cannot be recovered by
+    /// planning the same revision again: a lowering expands what assessment
+    /// found unclean, so a task whose outputs are now valid is never built a
+    /// second time and its encoding would otherwise be unrecoverable.
+    private func identityLines(
+        tasks: [String: RunTaskRecord],
+        matching selection: String
+    ) -> [String] {
+        let matched =
+            tasks
+            .filter { $0.key.contains(selection) }
+            .sorted { $0.key < $1.key }
+        var recorded: [String] = []
+        for (task, record) in matched {
+            guard let components = record.plan.identityComponents else { continue }
+            recorded.append("identity  \(task)")
+            guard let nodes = IdentityTrace.decode(components) else {
+                recorded.append("  <identity components are not decodable>")
+                continue
+            }
+            recorded += IdentityTrace.render(nodes, indent: 1)
+        }
+        guard !recorded.isEmpty else {
+            return [
+                "identity  no recorded task contains \"\(selection)\"; only "
+                    + "lowered tasks record components"
+            ]
+        }
+        return recorded
+    }
+
+    func showRun(_ requested: String?, explainIdentity: String? = nil) async throws {
         let snapshot = try await resolve(requested)
         let observed = try await registry.reducedEvents(in: snapshot)
         let progress = try await registry.progressSnapshot(in: snapshot)
@@ -113,6 +146,11 @@ struct RepositoryState {
                 lines.append(
                     "task: \(task)\t\(taskState(record))\t\(record.plan.explanation)")
             }
+        }
+        if let explainIdentity {
+            lines += identityLines(
+                tasks: snapshot.manifest.tasks ?? [:],
+                matching: explainIdentity)
         }
         if !snapshot.manifest.activeArtifacts.isEmpty {
             for (name, digest) in snapshot.manifest.activeArtifacts.sorted(by: {

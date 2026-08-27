@@ -45,6 +45,16 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let attribution: String?
     public let durationWorkload: TaskDurationWorkload?
     public let durationEstimate: TaskDurationEstimate?
+    /// The identity components of a task no later planning can recover.
+    ///
+    /// A logical task's identity can always be recomputed by planning the same
+    /// revision again. A lowered one cannot: a lowering expands only what
+    /// assessment found unclean, so once its outputs are valid the task that
+    /// named a directory is never constructed again, and the encoding behind
+    /// that name is gone. Recording it is what lets two machines, or two
+    /// checkouts sharing one store, compare what they each encoded without
+    /// either being able to read the other.
+    public let identityComponents: [UInt8]?
 
     public init(
         task: TaskID,
@@ -57,7 +67,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         logicalOwners: [TaskID] = [],
         attribution: String? = nil,
         durationWorkload: TaskDurationWorkload? = nil,
-        durationEstimate: TaskDurationEstimate? = nil
+        durationEstimate: TaskDurationEstimate? = nil,
+        identityComponents: [UInt8]? = nil
     ) {
         self.task = task
         self.identity = identity
@@ -70,6 +81,7 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.attribution = attribution
         self.durationWorkload = durationWorkload
         self.durationEstimate = durationEstimate
+        self.identityComponents = identityComponents
     }
 }
 

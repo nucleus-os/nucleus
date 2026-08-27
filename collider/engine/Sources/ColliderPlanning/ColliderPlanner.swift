@@ -158,7 +158,9 @@ public struct ColliderPlanner {
                         TaskDurationEstimate(
                             workload: workload,
                             durationNanoseconds: $0)
-                    }))
+                    },
+                    identityComponents: lowered.identityBytes.isEmpty
+                        ? nil : lowered.identityBytes))
         }
         return ExecutionPlan(
             declaredTasks: ordered,
