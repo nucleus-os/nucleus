@@ -11,13 +11,21 @@ Architecture and contract documents describe the current system. An implementati
 - [Collider architecture](collider-architecture.md)
 - [NucleusUI API contract](nucleus-ui-api-contract.md)
 - [NucleusUI graphics contract](nucleus-ui-graphics-contract.md)
-- [Core and compositor documentation](../core/docs/README.md)
-- [Shell architecture](../shell/docs/shell-architecture.md)
-- [Direct scanout](../compositor/compositor-core/docs/direct-scanout.md)
-- [Render benchmarking](../compositor/docs/render-benchmarking.md)
+- [Application runtime](app-runtime-roadmap.md)
+- [UI authoring model](ui-authoring-model.md)
+- [Bounds-origin model](bounds-origin-model.md)
+- [Image loading](image-file-loading.md)
+- [Configuration system](compositor-configuration-system.md)
+- [Session contract](nucleus-session-contract.md)
+- [Shell-agnostic compositor boundary](shell-agnostic-compositor-architecture.md)
+- [Shell architecture](shell-architecture.md)
+- [Direct scanout](direct-scanout.md)
+- [Render benchmarking](render-benchmarking.md)
+- [DRM color debugging](drm-color-debugging.md)
+- [Accessibility](accessibility-architecture.md)
 - [Collider build storage](collider-build-storage-architecture.md)
 - [NucleusStorage volume](nucleus-storage-volume.md)
-- [Swift Wayland architecture](../swift-wayland/ARCHITECTURE.md)
+- [Swift Wayland architecture](swift-wayland-architecture.md)
 
 ## Active execution plans
 
@@ -98,8 +106,21 @@ reuse.
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
 
-Component implementation plans continue in the dependency order in
-[core/docs/README.md](../core/docs/README.md).
+### Component implementation plans
+
+After the product and host foundations above, execute these component plans in
+dependency order:
+
+1. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
+2. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
+3. [Android render stack](android-render-stack-plan.md)
+4. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
+5. [Native shell completion](native-shell-completion-plan.md)
+6. [Screen capture and recording](screen_recording_plan.md)
+7. [View pixel alignment](view-pixel-alignment-plan.md)
+8. [Glyph dilation](text-glyph-dilation-plan.md)
+
+### Qualification sequence
 
 Step 9 executes these qualification plans after their corresponding
 implementation inputs are available:
@@ -149,6 +170,14 @@ implementation inputs are available:
   collections and a deque, moved every residual manual lock onto
   standard-library `Mutex`, and replaced the Collider progress side task with
   one explicitly terminating merged sequence.
+- [Bar-first shell work](bar-first-port-order.md) is superseded by the native
+  shell completion plan.
+- [AppKit API completion](appkit-api-plan.md) is complete; real-IME and
+  lock-screen interaction remains an explicit user qualification handoff.
+- [Wayland protocol coverage](wayland_protocol_coverage_plan.md) is complete for
+  current consumers; future protocols require a named product consumer.
+- [Trackpad gestures](compositor-trackpad-gestures.md) are complete.
+- [RN animation backend](rn-animation-backend-plan.md) is complete.
 
 ## Deferred product plans
 
@@ -158,4 +187,9 @@ implementation inputs are available:
 ## Research and qualification
 
 - [Apple Silicon virtualization](apple-silicon-virtualization-target-plan.md) defines the macOS 27+ target and its prerequisite investigations. It is not part of the current implementation sequence.
+- [Linux kernel leverage](linux-kernel-leverage.md)
+- [RN TurboModule inventory](rn-turbomodule-inventory.md)
+- [Nvidia DRM observations](drm-scanout-nvidia.md)
+- [Compositor hardware qualification](compositor-followups.md)
+- [WWDC26 Swift what's new transcript](wwdc26-swift-whatsnew.txt)
 - [Chromium/CEF](../chromium/README.md), [CEF](../cef/README.md), and [Android runtime](../android-runtime/README.md) contain component qualification commands and current runtime contracts.

@@ -59,7 +59,7 @@ engine bring-up client is not the intended final Nucleus product architecture. R
 dependent on upstream hierarchy churn while leaving NucleusUI outside the browser.
 
 The next step is to replace the product shell while preserving the engine that now works. The
-existing `core/docs/appkit-api-plan.md` makes `NucleusUI` the AppKit-like authoring front door. The
+existing `docs/appkit-api-plan.md` makes `NucleusUI` the AppKit-like authoring front door. The
 browser becomes its second demanding production client after the native shell: the shell proves
 desktop controls and services, while the browser proves hosted content, dense navigation,
 transient UI, accessibility, text input, drag and drop, and high-frequency window composition.
@@ -447,8 +447,8 @@ Every phase adds behavioral coverage at the owning layer:
 
 - `chromium/README.md` remains authoritative for Chromium engine configuration,
   Graphite/Dawn/Vulkan, Ozone Wayland presentation, GPU selection, sandboxing, and hardware video.
-- `core/docs/appkit-api-plan.md` remains authoritative for the public NucleusUI authoring contract.
-- `shell/docs/native-shell-completion-plan.md` remains authoritative for the native desktop shell.
+- `docs/appkit-api-plan.md` remains authoritative for the public NucleusUI authoring contract.
+- `docs/native-shell-completion-plan.md` remains authoritative for the native desktop shell.
 - This document owns the browser product shell, Chromium-to-Swift boundary, hosted page surface,
   and removal of Chromium Views from the shipped Nucleus Browser UI.
 

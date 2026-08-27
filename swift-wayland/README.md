@@ -5,7 +5,7 @@ Root-package **Wayland protocol bindings**, generated from the vendored protocol
 they do not run protocol generation themselves.
 
 Generated dispatch isolation, handler binding, and resource ownership are
-defined by [Swift Wayland Architecture](ARCHITECTURE.md).
+defined by [Swift Wayland Architecture](../docs/swift-wayland-architecture.md).
 
 Unlike [`swift-vulkan`](../swift-vulkan) (a fixed API generated
 once and shipped), Wayland is a *menu* of protocols consumed in one of two modes. This package

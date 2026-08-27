@@ -13,7 +13,7 @@ client failure, and passes behavioral wire tests.
 Capture protocols and portal publication belong to
 [`screen_recording_plan.md`](screen_recording_plan.md). Generated dispatch
 isolation, handler binding, and resource ownership follow
-[Swift Wayland Architecture](../../swift-wayland/ARCHITECTURE.md).
+[Swift Wayland Architecture](swift-wayland-architecture.md).
 
 ## Current registered surface
 

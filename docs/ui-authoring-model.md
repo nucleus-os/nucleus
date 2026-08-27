@@ -111,7 +111,7 @@ express the easier problem.
 ## Phases
 
 Phases 1 and 2 are complete. Phases 3 through 6 are superseded by
-[`../../shell/docs/native-shell-completion-plan.md`](../../shell/docs/native-shell-completion-plan.md),
+[`native-shell-completion-plan.md`](native-shell-completion-plan.md),
 which orders any remaining controls and product surfaces around the native
 shell services that consume them.
 

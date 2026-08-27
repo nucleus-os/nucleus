@@ -1,6 +1,6 @@
 # Bar-first port order
 
-Status: superseded by [`../../shell/docs/native-shell-completion-plan.md`](../../shell/docs/native-shell-completion-plan.md).
+Status: superseded by [`native-shell-completion-plan.md`](native-shell-completion-plan.md).
 
 **Invariant: the next thing to build is the first thing a user sees. Every phase below
 either puts a working bar on screen or is required by one that does — and the toolkit

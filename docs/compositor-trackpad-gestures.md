@@ -78,7 +78,7 @@ cancel the active sequence exactly once.
 
 Register the global only after its complete state machine and wire tests exist.
 Keep resource ownership on the generated typed handler-box path defined by
-[Swift Wayland Architecture](../../swift-wayland/ARCHITECTURE.md).
+[Swift Wayland Architecture](swift-wayland-architecture.md).
 
 Gate: behavioral wire tests cover binding, begin/update/end, cancellation,
 focus transfer, multi-device seats, malformed requests, client destruction, and
