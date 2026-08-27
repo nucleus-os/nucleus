@@ -280,7 +280,7 @@ while a running one and the runtime's builder are not; the complete build and
 packaging graphs then execute without rebuilding a retained image or re-pulling
 a base.
 
-Status: active. Collection is separated from deletion and runs unconditionally,
+Status: complete. Collection is separated from deletion and runs unconditionally,
 and an unreadable image store is reported rather than rendered as nothing to do.
 `deleteImages` no longer performs collection as a side effect; `prune` deletes
 what it selected, then collects, and reports the two separately. A plan states
@@ -321,9 +321,10 @@ container record went with them, returning a further 13 GiB. The build graph
 then executed against that store with `native.builder-dependencies` reporting
 `localClean` and no image rebuilt or base re-pulled.
 
-One gate clause remains unexercised rather than unmet: the packaging graph has
-not run since the prune, so the Chromium image family's retention is argued from
-its classification rather than from a build that consumed it.
+The packaging graph then ran against the same store with both image families
+reporting `localClean`, `browser.builder-dependencies` alongside
+`native.builder-dependencies`, so the Chromium family's retention is established
+by a graph that consumed it rather than argued from its classification.
 
 ## Phase 6: Answer Inspection From the Store, Not the Service
 
