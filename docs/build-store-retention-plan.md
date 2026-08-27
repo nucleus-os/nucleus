@@ -229,22 +229,25 @@ re-executes a task whose context a previous build in the sequence created and
 the bound did not evict; a run whose reachable contexts alone exceed the count
 evicts none of them.
 
-Status: active, and deliberately not wired. The bound and its retention order
-are implemented and tested, and nothing calls them, because reachability is
-computed from one checkout while the build store is shared with another. Each
-checkout's host build contexts are permanently unreachable to the other: a
-prune from the authoritative checkout selects the contexts a protected-main CI
-run used minutes earlier, and that run spent thirty-two minutes in one task
-rebuilding what a previous prune had taken. A per-run bound turns that from
-something an operator chooses into what every build does, in both directions.
+Status: complete. A run brings each context root within its declared count
+before executing, so the ceiling is the policy rather than how often someone
+prunes.
 
-The divergence itself belongs to the
+Wiring it waited on the divergence that made it unsafe. Two checkouts sharing
+the store lowered one revision to two identities, so each checkout's contexts
+were permanently unreachable to the other and a per-run bound would have had
+them evict each other on every build. That belonged to the
 [placement-independent build plan](placement-independent-build-plan.md), whose
-Phase 1 records it, and its cause is not yet established: either lowered SwiftPM
-identities still divide on checkout, or the reachable set does not enumerate
-the lowered tasks it should, which would be this plan's defect rather than that
-one's. This phase completes when a bound cannot evict a context another checkout
-sharing the store still reaches.
+Phase 1 found and fixed it: the placement-mapping flags were emitted in the
+order the identity path map sorts its roots, which is a property of path
+lengths and therefore of where a checkout sits. The values had always
+canonicalized; the sequence had not.
+
+Gate evidence: a protected-main run following the fix reused the authoritative
+checkout's contexts rather than creating its own, leaving the two it had used
+untouched and dead. Reachability outranks the count, so a context a planned task
+will read is never a candidate however old it is, and the bound applies
+newest-first to the remainder.
 
 ## Phase 5: Bring the Container Store Under Collection
 

@@ -164,14 +164,27 @@ extension WorkspaceContext {
         if let sourceRevalidation {
             options.sourceClosureObserver = { sourceRevalidation.record($0) }
         }
-        // Bounding identity contexts per run is written and tested but not
-        // wired here, because reachability is computed from one checkout while
-        // the build store is shared with another. Each checkout's contexts are
-        // permanently unreachable to the other, so a per-run bound would have
-        // them evict each other's incremental state on every build. An explicit
-        // prune already costs the other checkout a full rebuild; doing it
-        // automatically would make that the steady state. This is wired once
-        // reachability spans every checkout sharing the store.
+        if !controls.dryRun {
+            // Before executing, so a run never trims a directory it is about to
+            // write into, and per run rather than per context, because the
+            // growth this bounds accumulates across weeks while an eviction
+            // racing a live scratch directory would be a far worse failure.
+            //
+            // This could not be wired while two checkouts sharing the store
+            // lowered one revision to two identities: each checkout's contexts
+            // were permanently unreachable to the other, so a bound would have
+            // had them evict each other on every build. They resolve the same
+            // context for the same work now, so a bound computed here reaches
+            // only what no checkout claims.
+            //
+            // A failure here is a declaration that cannot describe its own
+            // storage, which is worth stopping for: the same fault would make
+            // an explicit prune silently collect nothing.
+            try RepositoryCache(
+                context: self,
+                catalog: catalog
+            ).boundIdentityContexts()
+        }
         let report = try await ColliderEngine(runtime: runtime).execute(
             catalog: catalog,
             requests: requests,
