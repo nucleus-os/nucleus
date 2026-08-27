@@ -127,6 +127,43 @@ release. Architecture-neutral integration and enrollment packages are `all` or
 `noarch`; runtime, browser, and Android payloads are published for arm64 and
 x86_64.
 
+## Version Contract
+
+Published nightly cohorts use one canonical version with the grammar
+`YYYY.MM.DD.N`. The date is the UTC date on which the version is reserved. `N`
+is a positive, unpadded decimal sequence that starts at `1` each UTC day and
+increases for every reservation on that date. The complete cohort shares the
+exact version. A second cohort reserved on 2026-08-27 is therefore
+`2026.08.27.2`, regardless of when its qualification or publication finishes.
+
+The protected nightly orchestration atomically reserves the next unused version
+and binds it to one exact verified `main` revision and package-input cohort
+before final version-bearing package assembly. It persists that immutable
+binding before any final artifact is created. Retries reuse the reservation;
+failed or abandoned reservations remain consumed, so gaps are valid and a
+version is never reassigned. The allocator, not a runner clock, commit timestamp,
+workflow attempt number, GitHub run number, or package backend, determines the
+date and sequence.
+
+Ordinary local and protected-main verification cohorts retain the
+content-derived `0.0.0-dev.<digest>` version and cannot enter nightly signing or
+publication. Nightly finalization wraps the exact already-qualified payload
+trees in the reserved public version, then reruns package and repository
+qualification over the final bytes. A source revision or digest does not appear
+in the public version; the release index binds the version to the full revision,
+input manifests, payload digests, package digests, and qualification records.
+
+Package-family mappings preserve canonical ordering:
+
+- Debian uses `YYYY.MM.DD.N` as the package version;
+- RPM uses `YYYY.MM.DD.N` as `Version` and `1` as `Release`; and
+- Arch uses `YYYY.MM.DD.N` as `pkgver` and `1` as `pkgrel`.
+
+The release index, package metadata, immutable asset names, repository paths,
+snapshot metadata, provenance, and GitHub release tag all carry the reserved
+canonical version. Backend release counters remain `1`; a packaging correction
+reserves a new canonical nightly version and produces a new immutable cohort.
+
 ## Repository Contract
 
 The authoritative repository origin is `https://packages.nucleus-os.org`.
@@ -344,9 +381,18 @@ cohorts, qualified install, upgrade, downgrade, removal, reinstallation, and
 final removal for every package, retained Android persistent state, and
 completed product-store retention.
 
-## Phase 5: Assemble Signed Repository Snapshots
+## Phase 5: Finalize Versioned Cohorts and Assemble Signed Repository Snapshots
 
-Add deterministic repository assembly after native package production. Produce:
+Add protected nightly finalization after content-derived native package
+production and qualification. Select one exact successfully verified `main`
+revision, atomically reserve its `YYYY.MM.DD.N` version, and persist the binding
+before producing version-bearing artifacts. Repackage only the exact qualified
+payload trees and declared integration metadata; do not compile source or
+substitute an input. Qualify the final versioned package bytes through every
+package lifecycle gate before repository assembly.
+
+Add deterministic repository assembly over that immutable versioned package
+set. Produce:
 
 - APT `Packages`, `Release`, and `InRelease` metadata;
 - RPM `repodata` plus package and metadata signatures;
@@ -355,9 +401,11 @@ Add deterministic repository assembly after native package production. Produce:
 - a machine-readable release index tying every file to the source, toolchain,
   architecture artifact, package cohort, and nightly publication state.
 
-Repository assembly accepts explicit signing identities and an immutable package
-set. It performs no upload and no source or package download. Unsigned local test
-snapshots are a distinct test fixture and cannot satisfy a release gate.
+Repository assembly accepts the persisted version reservation, explicit signing
+identities, and an immutable package set. It performs no upload and no source or
+package download. The signing job can read the reservation and final package
+artifacts but cannot allocate a version or publish externally. Unsigned local
+test snapshots are a distinct test fixture and cannot satisfy a release gate.
 
 Use the same repository signing identity and metadata path for
 `nucleus-android` as every other native package. Do not introduce an Android-only
@@ -369,10 +417,14 @@ from the public half of the explicit signing identity. They carry repository
 configuration, the active public key, and the key-transition contract and are
 themselves members of the signed snapshot.
 
-Gate: each package manager resolves and verifies the complete signed cohort from
-a local copy of the generated snapshot; independently repeated assembly over the
-same package set and signing inputs produces the same release index and
-repository contents; and assembly performs no network access or publication.
+Gate: concurrent reservations produce unique monotonically ordered versions;
+same-reservation retries reproduce the same version and never consume a new
+sequence; abandoned reservations are never reused; every package manager orders
+same-day and next-day versions correctly; each package manager resolves and
+verifies the complete signed cohort from a local copy of the generated snapshot;
+independently repeated assembly over the same reservation, package set, and
+signing inputs produces the same release index and repository contents; and
+finalization performs no compilation, network access, or publication.
 
 ## Phase 6: Remove Collider Product Installation
 
@@ -398,7 +450,9 @@ Protected publication consumes only trusted-`main` package bundles and
 digest-bound qualification records accepted by the self-hosted CI contract. It
 rejects PR-owned, missing, stale, translated, wrong-platform, or
 wrong-capability evidence and performs no compilation, package assembly, or
-artifact substitution.
+artifact substitution. It accepts only a finalized cohort whose immutable
+version reservation names the same revision and inputs. Publication cannot
+allocate, renumber, or replace that version.
 
 Before the hard object-store cutover, release automation creates one draft
 GitHub Release for the versioned cohort, uploads every package object, verifies
@@ -434,7 +488,8 @@ Fedora/RHEL-family, and Arch-family systems through the nightly repository
 package or documented trust bootstrap. Qualify on arm64 and x86_64:
 
 1. clean repository enrollment and installation;
-2. ordinary package-manager upgrade to a newer complete cohort;
+2. ordinary package-manager upgrade between two same-day cohorts and from the
+   final retained cohort of one UTC day to the first cohort of the next;
 3. interrupted download and interrupted transaction recovery;
 4. explicit downgrade to a retained prior cohort;
 5. signing-key transition through an earlier keyring update;
@@ -442,6 +497,11 @@ package or documented trust bootstrap. Qualify on arm64 and x86_64:
    preservation;
 7. removal without deleting user-authored or persistent product state; and
 8. reinstallation after removal.
+
+Qualification also proves that retries preserve the reserved version, gaps from
+abandoned reservations do not break package-manager ordering, the release index
+resolves every public version to one exact revision and digest set, and neither
+the nightly publisher nor a runner clock can choose or mutate version identity.
 
 No active workflow creates beta or stable metadata, enrollment, credentials, or
 publication state. Nucleus OS images carry the nightly repository configuration

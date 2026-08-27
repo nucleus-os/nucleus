@@ -57,8 +57,9 @@ reuse.
    this packaging gate.
 4. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
-   to assemble signed repository snapshots offline and remove Collider's
-   remaining product-installation commands.
+   to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
+   the exact version-bearing cohorts, assemble signed repository snapshots
+   offline, and remove Collider's remaining product-installation commands.
 5. Complete Phases 6 through 8 of the
    [build store retention plan](build-store-retention-plan.md). Phases 1 through
    5 already bound SwiftPM identity contexts on every run and brought the

@@ -18,6 +18,10 @@ otherwise changes a package cohort. A new channel becomes visible only through
 an atomic metadata pointer written after every referenced object and signature
 has been verified remotely.
 
+Promotion preserves the nightly cohort's canonical `YYYY.MM.DD.N` version
+exactly. A channel name, promotion date, promotion order, and support tier never
+enter package version identity, and promotion never reserves another version.
+
 ## Activation gate
 
 Activate this plan only after the nightly update lifecycle is complete and the

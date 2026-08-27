@@ -222,17 +222,22 @@ recovery operation.
 
 ## CI Event and Trust Contract
 
-The repository has three supported remote event classes:
+The repository has four supported remote event classes:
 
 1. A push to `refs/heads/main` verifies that exact commit and produces qualified
    but unpublished artifacts.
 2. An owner-authorized manual invocation reruns an exact commit already present
    on protected `main`, using the same workflow, builder identity, commands, and
    cache.
-3. An explicitly authorized delivery operation consumes successful artifacts
-   and qualification records from an exact verified `main` commit and performs
-   signing and nightly repository publication without compiling
-   source.
+3. An owner-authorized nightly-finalization operation selects an exact
+   successfully verified protected-`main` revision, consumes its immutable
+   `YYYY.MM.DD.N` reservation, produces and qualifies the final version-bearing
+   package cohort, and signs its repository snapshot without compiling source
+   or publishing externally.
+4. An explicitly authorized delivery operation consumes the successful final
+   artifacts and qualification records for that reservation and publishes them
+   without compiling source, assembling packages, signing, or changing the
+   version.
 
 Every other event class is unsupported. The repository subscribes to no branch
 push or pull-request event. A reusable or manually dispatched entrypoint
@@ -253,8 +258,11 @@ GitHub token is the only workflow credential visible to a build, and its
 authority is limited to reading the exact repository revision and reporting the
 current run.
 
-Publication uses mutually exclusive protected identities. The release signer
-receives only the constrained signing subkey and no network publication
+Nightly version reservation, signing, and publication use mutually exclusive
+protected identities. The reservation authority can atomically allocate and
+persist a version-to-revision binding but cannot build, sign, or publish. The
+release signer receives only the constrained signing subkey, finalized inputs,
+and immutable reservation and has no version-allocation or network publication
 credential. The GitHub release-object publisher receives `contents:write`; the
 repository-metadata publisher receives Object Read & Write access only to the
 metadata R2 bucket; the contributor-input publisher receives `packages:write`;
@@ -940,8 +948,13 @@ All invocation sources produce the same task identities and artifact coordinates
 for the same effective source, configuration, and semantic inputs. A local debug
 build can reuse configuration-independent state from release and warms the
 debug-specific state later consumed by a matching CI lane. A local release build
-of the same source warms the release-specific state directly. Delivery consumes
-successful qualified `main` artifacts without rebuilding them.
+of the same source warms the release-specific state directly. Ordinary local
+and protected-main verification packaging uses the content-derived
+`0.0.0-dev.<digest>` version. Nightly finalization consumes successful qualified
+`main` payload artifacts and a reservation bound to that exact revision,
+produces the public `YYYY.MM.DD.N` package bytes without source compilation, and
+qualifies those final bytes. Delivery consumes the resulting signed artifacts
+without rebuilding, resigning, or renumbering them.
 
 Gate: automated and local planning of identical effective source and
 configuration produces the same task identities, cache hits, and artifact
@@ -949,8 +962,10 @@ identities; debug and release select distinct configuration-specific products
 while sharing configuration-independent prerequisites; only the complete
 protected-`main` graph can request release qualification; every qualifier
 resolves its exact immutable input from the local product store without source
-or producer-cache access; no build path publishes externally or signs; and
-delivery performs no compilation or package assembly.
+or producer-cache access; no build path publishes externally or signs; nightly
+finalization accepts only an immutable reservation bound to the same exact
+revision and inputs; and delivery performs no compilation, package assembly,
+signing, or version allocation.
 
 ## Phase 7: Cut Over Main CI/CD
 
@@ -971,15 +986,19 @@ valid persistent state. GitHub manual reruns and locally initiated branch,
 dirty, debug, and release builds join the same machine admission and cache
 domain without becoming CI events.
 
-Delivery accepts only the exact artifacts and qualification records from a
-successful supported `main` run. A branch artifact, pull-request artifact,
-locally dirty artifact, or failed/superseded run cannot enter signing or
-publication.
+Nightly finalization accepts only exact artifacts and qualification records from
+a successful supported `main` run plus an immutable version reservation bound
+to that revision. It produces the final signed, version-bearing cohort without
+source compilation or external publication. Delivery accepts only that exact
+finalized cohort. A branch artifact, pull-request artifact, locally dirty
+artifact, failed or superseded run, missing reservation, or mismatched binding
+cannot enter signing or publication.
 
 Gate: a `main` push and authorized `main` rerun execute the complete graph on
 the M2 Ultra with warm-state reuse; branch and pull-request activity schedules
 no build; a deliberately misrouted invocation fails before checkout; and only a
-successful exact-`main` artifact cohort can reach delivery.
+successful exact-`main` artifact cohort can receive a nightly reservation, reach
+finalization, and then reach delivery without changing its reserved version.
 
 ## Phase 8: Complete Acceptance
 
@@ -992,6 +1011,13 @@ merge revisions, foreign repositories, and modified workflow callers. Prove
 that local source executes only after interactive initiation and that only exact
 protected `main` revisions reach automated checkout, release qualification, or
 delivery.
+
+Reserve multiple nightly versions on one UTC date, cross a UTC date boundary,
+retry the same reservation, abandon one reservation, and race concurrent
+reservation requests. Prove `YYYY.MM.DD.N` remains unique and monotonically
+ordered, retries are idempotent, abandoned values are never reused, package
+families agree on ordering, and finalization and delivery reject every
+revision-to-version mismatch.
 
 Run one declared cold reconstruction to prove reproducibility. Then run the
 complete graph warm through automated and manual paths in both orderings. Prove
