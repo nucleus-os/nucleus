@@ -30,7 +30,7 @@ package final class IdentityExplanationCollector: Sendable {
         let collected = encoded.withLock { $0 }
         guard !collected.isEmpty else {
             guard let selection else { return [] }
-            return ["identity  no planned task contains \"\(selection)\""]
+            return ["identity  no planned or lowered task contains \"\(selection)\""]
         }
         var lines: [String] = []
         for task in collected.keys.sorted(by: { $0.rawValue < $1.rawValue }) {

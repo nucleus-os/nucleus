@@ -19,17 +19,28 @@ public struct LoweredExecutionTask: Sendable {
     public let attribution: String
     public let logicalOwners: Set<TaskID>
     public let prerequisites: Set<TaskID>
+    /// The bytes this task's name was derived from.
+    ///
+    /// Returned rather than reported, because a lowering is required to be
+    /// deterministic and free of side effects and observing is neither its
+    /// concern nor its permission. Planning already holds the observer, and a
+    /// lowered task is the one kind planning never encoded itself, so without
+    /// this the identity behind a lowered name can only be inferred. Empty
+    /// where a lowering derives a name some other way.
+    public let identityBytes: [UInt8]
 
     public init(
         task: TaskDeclaration,
         attribution: String,
         logicalOwners: Set<TaskID>,
-        prerequisites: Set<TaskID>
+        prerequisites: Set<TaskID>,
+        identityBytes: [UInt8] = []
     ) {
         self.task = task
         self.attribution = attribution
         self.logicalOwners = logicalOwners
         self.prerequisites = prerequisites
+        self.identityBytes = identityBytes
     }
 }
 

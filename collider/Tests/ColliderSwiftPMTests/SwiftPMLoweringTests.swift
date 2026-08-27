@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderEngine
 import ColliderRuntime
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -657,6 +658,69 @@ private func executeWithSwiftPM(
 /// way, and it joins the test task's identity so the narrow run can never mark
 /// the unfiltered task clean. Without the second half, running one test would
 /// record the whole component as verified.
+/// A lowered task's identity has to be explainable, because it is the only kind
+/// planning never encoded and the only kind that names a SwiftPM context
+/// directory on disk. Without this, the two contexts one package occupies when
+/// two checkouts share a build store can be observed but not accounted for.
+@Test func loweredTaskIdentitiesReachTheIdentityObserver() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-lowered-identity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let swift = tools.appendingPathComponent("swift")
+    try Data(
+        "#!/bin/sh\nset -eu\n\(fakeSwiftBinPathResponse)\nmkdir -p '\(scratch.path)'\n".utf8
+    ).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.tests"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftTests: [
+            SwiftTestRequirement(
+                package: "fixture",
+                testProduct: "FixtureTests",
+                packageRoot: packageRoot,
+                invocation: invocation,
+                inputs: [],
+                environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
+        ])
+
+    let observed = Mutex<[TaskID: [UInt8]]>([:])
+    _ = try await executeWithSwiftPM(
+        graph: try TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path),
+        options: TaskExecutionOptions(
+            identityObserver: { id, bytes in
+                observed.withLock { $0[id] = bytes }
+            }))
+
+    let seen = observed.withLock { $0 }
+    let lowered = seen.keys.filter { $0.rawValue.hasPrefix("swift.package.test.") }
+    #expect(lowered.count == 1)
+    // The bytes have to be the ones the name was derived from, not a
+    // placeholder: decoding them must yield the components that were encoded.
+    let bytes = try #require(lowered.first.flatMap { seen[$0] })
+    #expect(!bytes.isEmpty)
+    #expect(IdentityTrace.decode(bytes) != nil)
+}
+
 @Test func aFilteredTestRunIsADistinctTaskFromTheUnfilteredOne() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-swift-test-command-filter-\(UUID().uuidString)")

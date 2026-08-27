@@ -68,7 +68,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let invocation =
             products.first?.requirement.invocation
             ?? tests.first?.requirement.invocation
-        let materialization: TaskDeclaration?
+        let materialization: LoweredTask?
         if let invocation,
             case .oci = invocation.context.execution,
             invocation.dependencyLock != nil
@@ -79,17 +79,18 @@ public struct SwiftPMLowering: TaskPlanLowering {
         } else {
             materialization = nil
         }
-        let dependencyPrerequisites = Set(materialization.map { [$0.id] } ?? [])
+        let dependencyPrerequisites = Set(materialization.map { [$0.task.id] } ?? [])
         var lowered: [LoweredExecutionTask] = []
         if let materialization {
             let logicalOwners = products.map(\.owner) + tests.map(\.owner)
             lowered.append(
                 LoweredExecutionTask(
-                    task: materialization.addingLocks(
+                    task: materialization.task.addingLocks(
                         logicalOwnerLocks(owners: logicalOwners)),
                     attribution: "host:swift-package-dependencies",
                     logicalOwners: Set(logicalOwners.map(\.id)),
-                    prerequisites: []))
+                    prerequisites: [],
+                    identityBytes: materialization.identityBytes))
         }
         if !products.isEmpty {
             lowered.append(
@@ -135,10 +136,9 @@ public struct SwiftPMLowering: TaskPlanLowering {
         return try grouped.keys.sorted().map { product in
             let group = grouped[product] ?? []
             let owners = group.map(\.owner)
+            let lowered = try buildTask(group.map(\.requirement), owners: owners)
             return LoweredExecutionTask(
-                task: try buildTask(
-                    group.map(\.requirement),
-                    owners: owners),
+                task: lowered.task,
                 attribution: attribution(
                     group.map { ($0.owner, $0.requirement.qualifiedProduct) }),
                 logicalOwners: Set(owners.map(\.id)),
@@ -147,7 +147,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     context: context,
                     tasksByID: tasksByID,
                     logicalOwners: contextOwners
-                ).union(additionalPrerequisites))
+                ).union(additionalPrerequisites),
+                identityBytes: lowered.identityBytes)
         }
     }
 
@@ -158,10 +159,9 @@ public struct SwiftPMLowering: TaskPlanLowering {
         additionalPrerequisites: Set<TaskID>
     ) throws -> LoweredExecutionTask {
         let owners = tests.map(\.owner)
+        let lowered = try testTask(tests.map(\.requirement), owners: owners)
         return LoweredExecutionTask(
-            task: try testTask(
-                tests.map(\.requirement),
-                owners: owners),
+            task: lowered.task,
             attribution: attribution(
                 tests.map { ($0.owner, $0.requirement.qualifiedProduct) }),
             logicalOwners: Set(owners.map(\.id)),
@@ -170,7 +170,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 context: context,
                 tasksByID: tasksByID,
                 logicalOwners: Set(owners.map(\.id))
-            ).union(additionalPrerequisites))
+            ).union(additionalPrerequisites),
+            identityBytes: lowered.identityBytes)
     }
 
     private func dependencyEnvironment(
@@ -189,7 +190,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
     private func dependencyMaterializationTask(
         invocation: SwiftPMInvocation,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) throws -> LoweredTask {
         guard case .oci(let execution) = invocation.context.execution,
             let lock = invocation.dependencyLock
         else {
@@ -197,7 +198,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
         let marker = invocation.scratchPath.appending(
             ".collider/dependencies-resolved")
-        let taskID = physicalTaskID(
+        let identity = physicalTaskID(
             role: "dependencies",
             context: invocation.context,
             products: [],
@@ -219,35 +220,37 @@ public struct SwiftPMLowering: TaskPlanLowering {
             ],
             workingDirectory: invocation.context.packageRoot,
             environment: hostEnvironment)
-        return TaskBuilder(
-            id: taskID,
-            component: ComponentID(rawValue: "swift-package")
-        ).build(
-            inputs: [
-                .file(invocation.context.packageRoot.appending("Package.swift")),
-                .file(lock),
-                .tool(.named("swift")),
-            ] + invocation.dependencyConfigurationFiles.map(ArtifactInput.file),
-            postconditions: [
-                PathPostcondition(path: marker, validation: .regularFile)
-            ],
-            locks: [
-                invocation.lock,
-                .shared(
-                    execution.hostDependencyCache.appending(
-                        ".collider.lock")),
-            ],
-            assessmentPolicy: .incremental,
-            durationEstimationMode: invocation.context.configuration.rawValue,
-            action: try AnyColliderAction(
-                SwiftPMDependencyMaterializationAction(
-                    command: command,
-                    packageRoot: invocation.context.packageRoot,
-                    scratchPath: invocation.scratchPath,
-                    dependencyCache: execution.hostDependencyCache,
-                    lock: lock,
-                    dependencyConfigurationFiles: invocation.dependencyConfigurationFiles,
-                    marker: marker)))
+        return LoweredTask(
+            task: TaskBuilder(
+                id: identity.id,
+                component: ComponentID(rawValue: "swift-package")
+            ).build(
+                inputs: [
+                    .file(invocation.context.packageRoot.appending("Package.swift")),
+                    .file(lock),
+                    .tool(.named("swift")),
+                ] + invocation.dependencyConfigurationFiles.map(ArtifactInput.file),
+                postconditions: [
+                    PathPostcondition(path: marker, validation: .regularFile)
+                ],
+                locks: [
+                    invocation.lock,
+                    .shared(
+                        execution.hostDependencyCache.appending(
+                            ".collider.lock")),
+                ],
+                assessmentPolicy: .incremental,
+                durationEstimationMode: invocation.context.configuration.rawValue,
+                action: try AnyColliderAction(
+                    SwiftPMDependencyMaterializationAction(
+                        command: command,
+                        packageRoot: invocation.context.packageRoot,
+                        scratchPath: invocation.scratchPath,
+                        dependencyCache: execution.hostDependencyCache,
+                        lock: lock,
+                        dependencyConfigurationFiles: invocation.dependencyConfigurationFiles,
+                        marker: marker))),
+            identityBytes: identity.bytes)
     }
 
     private func attribution(
@@ -334,7 +337,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
     private func buildTask(
         _ requirements: [SwiftProductRequirement],
         owners: [TaskDeclaration]
-    ) throws -> TaskDeclaration {
+    ) throws -> LoweredTask {
         guard let first = requirements.first,
             requirements.allSatisfy({
                 $0.invocation == first.invocation
@@ -364,7 +367,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let prebuildTargets = Array(
             Set(requirements.flatMap(\.prebuildTargets))
         ).sorted()
-        let taskID = physicalTaskID(
+        let identity = physicalTaskID(
             role: "build",
             context: first.invocation.context,
             products: products,
@@ -376,34 +379,36 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
         let buildArguments = ["build", "--product", requestedProduct]
         var builder = TaskBuilder(
-            id: taskID,
+            id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
         consumeSwiftExecutable(first.invocation, into: &builder)
         consumeOwnerReferences(owners, into: &builder)
         if case .oci(let configuration) = first.invocation.context.execution {
             builder.consume(configuration.image)
         }
-        return builder.build(
-            inputs: inputs,
-            postconditions: [first.invocation.postcondition]
-                + uniqued(requirements.flatMap(\.expectedOutputs)),
-            locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
-            assessmentPolicy: assessmentPolicy(for: first.invocation),
-            durationEstimationMode: first.invocation.context.configuration.rawValue,
-            action: try swiftPMAction(
-                invocation: first.invocation,
-                environment: first.environment,
-                arguments: prebuildTargets.map {
-                    ["build", "--target", $0]
-                } + [buildArguments])
-        )
-        .addingDependencies(owners.flatMap(\.dependencies))
+        return LoweredTask(
+            task: builder.build(
+                inputs: inputs,
+                postconditions: [first.invocation.postcondition]
+                    + uniqued(requirements.flatMap(\.expectedOutputs)),
+                locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
+                assessmentPolicy: assessmentPolicy(for: first.invocation),
+                durationEstimationMode: first.invocation.context.configuration.rawValue,
+                action: try swiftPMAction(
+                    invocation: first.invocation,
+                    environment: first.environment,
+                    arguments: prebuildTargets.map {
+                        ["build", "--target", $0]
+                    } + [buildArguments])
+            )
+            .addingDependencies(owners.flatMap(\.dependencies)),
+            identityBytes: identity.bytes)
     }
 
     private func testTask(
         _ requirements: [SwiftTestRequirement],
         owners: [TaskDeclaration]
-    ) throws -> TaskDeclaration {
+    ) throws -> LoweredTask {
         guard let first = requirements.first,
             requirements.allSatisfy({
                 $0.invocation == first.invocation
@@ -437,33 +442,35 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
         let testArguments =
             first.arguments + (testFilter.map { ["--filter", $0] } ?? [])
-        let taskID = physicalTaskID(
+        let identity = physicalTaskID(
             role: "test",
             context: first.invocation.context,
             products: testProducts,
             prebuildTargets: [],
             arguments: testArguments)
         var builder = TaskBuilder(
-            id: taskID,
+            id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
         consumeSwiftExecutable(first.invocation, into: &builder)
         consumeOwnerReferences(owners, into: &builder)
         if case .oci(let configuration) = first.invocation.context.execution {
             builder.consume(configuration.image)
         }
-        return builder.build(
-            inputs: inputs,
-            postconditions: [first.invocation.postcondition]
-                + uniqued(requirements.flatMap(\.expectedBuildOutputs)),
-            locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
-            assessmentPolicy: assessmentPolicy(for: first.invocation),
-            durationEstimationMode: first.invocation.context.configuration.rawValue,
-            action: try swiftPMAction(
-                invocation: first.invocation,
-                environment: environment,
-                arguments: [["test"] + testArguments])
-        )
-        .addingDependencies(owners.flatMap(\.dependencies))
+        return LoweredTask(
+            task: builder.build(
+                inputs: inputs,
+                postconditions: [first.invocation.postcondition]
+                    + uniqued(requirements.flatMap(\.expectedBuildOutputs)),
+                locks: [first.invocation.lock] + logicalOwnerLocks(owners: owners),
+                assessmentPolicy: assessmentPolicy(for: first.invocation),
+                durationEstimationMode: first.invocation.context.configuration.rawValue,
+                action: try swiftPMAction(
+                    invocation: first.invocation,
+                    environment: environment,
+                    arguments: [["test"] + testArguments])
+            )
+            .addingDependencies(owners.flatMap(\.dependencies)),
+            identityBytes: identity.bytes)
     }
 
     private func consumeOwnerReferences(
@@ -579,13 +586,32 @@ public struct SwiftPMLowering: TaskPlanLowering {
     /// name built from the raw string gives one invocation two names across
     /// two checkouts, and a second checkout then finds no recorded state to
     /// compare against rather than finding state that disagrees.
+    /// A lowered task's name and the bytes it was derived from.
+    ///
+    /// The bytes travel with the name because nothing else can recover them.
+    /// A lowered task is created after planning has finished, so the identity
+    /// explanation planning collects never sees one, and the directory a
+    /// SwiftPM context occupies is named for exactly this digest. Carrying them
+    /// out is what lets the identity behind that name be read rather than
+    /// inferred.
+    struct PhysicalTaskIdentity {
+        let id: TaskID
+        let bytes: [UInt8]
+    }
+
+    /// A lowered task beside the identity bytes its name was derived from.
+    struct LoweredTask {
+        let task: TaskDeclaration
+        let identityBytes: [UInt8]
+    }
+
     private func physicalTaskID(
         role: String,
         context: SwiftBuildContext,
         products: [String],
         prebuildTargets: [String],
         arguments: [String] = []
-    ) -> TaskID {
+    ) -> PhysicalTaskIdentity {
         var encoder = IdentityEncoder(identityPathMap: context.identityPathMap)
         encoder.append(bytes: context.identityBytes)
         for product in products {
@@ -597,8 +623,10 @@ public struct SwiftPMLowering: TaskPlanLowering {
         for argument in arguments {
             encoder.append(argument: argument)
         }
-        return TaskID(
-            rawValue: "swift.package.\(role).\(ArtifactDigest.sha256(encoder.bytes))")
+        return PhysicalTaskIdentity(
+            id: TaskID(
+                rawValue: "swift.package.\(role).\(ArtifactDigest.sha256(encoder.bytes))"),
+            bytes: encoder.bytes)
     }
 
     private func uniqued<Value: Hashable>(_ values: [Value]) -> [Value] {

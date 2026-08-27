@@ -96,13 +96,34 @@ resolves through the map. Compiler flags reach identity through
 a root followed by `=` is now a boundary, so the prefix-mapping flags no longer
 carry a checkout into identity as the note below still claims.
 
-What blocks naming it is that the identities are unobservable. A context
-directory is named for a lowered SwiftPM task, lowering runs after planning, and
-`--explain-identity` reports only planned tasks: asking it about
-`swift.package` answers `no planned task contains "swift.package"`. The tool
-built to explain identity cannot explain the identities that name these
-directories. Making lowered identities explainable is what this phase does
-next, and the cause is one command away once it does.
+Lowered identities are now observable. A lowering returns the bytes its task's
+name was derived from rather than reporting them, because a lowering is required
+to be deterministic and free of side effects; planning already holds the observer
+and reports what it is handed. Reading one requires forcing the tasks dirty,
+since a lowering only expands what assessment found unclean, and a store whose
+tasks are all valid lowers nothing at all.
+
+The trace narrows the cause to one component. Every path in a lowered SwiftPM
+identity resolves through the map -- the package root, both prefix-mapping
+flags, and the compiler flag lists -- leaving `toolchainIdentity` as the single
+opaque value, and it is opaque because it is a digest of the compiler's absolute
+path taken before any canonicalizer can reach it. The compiler resolves from
+`xcrun --find swiftc` rather than from the checkout, so that alone does not
+explain two checkouts disagreeing, and what the other checkout encodes cannot be
+read from here: the launcher admits only the authoritative checkout, and the
+runner work tree is unreadable from the developer account.
+
+The divergence is confirmed a third way in the meantime. The authoritative
+checkout lowers the Collider packages to `swift.package.test.sha256:2150fdb5…`
+and `…c337c2fc…`; a protected-main run of the same revision contains neither.
+
+Two further defects surfaced while establishing this, both about inspection
+reaching for permission it does not need. `collider test --dry-run` takes the
+exclusive workspace verification lock although a plan mutates nothing, so
+planning a test graph is impossible from the account that owns the checkout
+without crossing identities. And identity bytes are still absent from the run
+record, which is the one place a second checkout's encoding could be compared
+against this one's without reading that checkout at all.
 
 Until it is resolved, no collection may run automatically. An explicit prune
 costing the other checkout a rebuild is a choice someone made; the same eviction

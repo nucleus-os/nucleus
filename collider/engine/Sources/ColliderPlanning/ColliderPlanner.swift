@@ -91,6 +91,13 @@ public struct ColliderPlanner {
                 isClean: $0.1.isClean)
         }
         let lowered = try lowerings.flatMap { try $0.lower(assessed) }
+        // A lowered task is created after every logical identity has been
+        // encoded, so planning never observed one. Reporting them here is what
+        // lets a name that only lowering produces be explained at all, and the
+        // SwiftPM context directories are named for exactly these digests.
+        for entry in lowered where !entry.identityBytes.isEmpty {
+            services.observeIdentity?(entry.task.id, entry.identityBytes)
+        }
         _ = try TaskGraph(ordered + lowered.map(\.task))
         let loweredOwners = Set(lowered.flatMap(\.logicalOwners))
         let missingLowering = assessed.compactMap { assessed -> TaskID? in
