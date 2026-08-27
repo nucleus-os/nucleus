@@ -17,10 +17,11 @@
 1. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
 2. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
 3. [Android render stack](android-render-stack-plan.md)
-4. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
-5. [Screen capture and recording](screen_recording_plan.md)
-6. [View pixel alignment](view-pixel-alignment-plan.md)
-7. [Glyph dilation](text-glyph-dilation-plan.md)
+4. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
+5. [Native shell completion](../../shell/docs/native-shell-completion-plan.md)
+6. [Screen capture and recording](screen_recording_plan.md)
+7. [View pixel alignment](view-pixel-alignment-plan.md)
+8. [Glyph dilation](text-glyph-dilation-plan.md)
 
 ## Superseded and completed plans
 
