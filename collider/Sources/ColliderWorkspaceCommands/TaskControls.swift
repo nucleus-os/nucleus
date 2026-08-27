@@ -16,6 +16,10 @@ package struct TaskControls: Sendable {
     var verbose = false
     var quiet = false
     var format: ConsoleOutputFormat = .text
+    /// Restricts test invocations to matching test names. A filtered run is a
+    /// different task from the unfiltered one, so it verifies what it names and
+    /// leaves the full gate outstanding.
+    package var testFilter: String?
     let identityExplanations: IdentityExplanationCollector
 
     package init(
@@ -24,13 +28,15 @@ package struct TaskControls: Sendable {
         verbose: Bool = false,
         quiet: Bool = false,
         format: ConsoleOutputFormat = .text,
-        explainIdentity: String? = nil
+        explainIdentity: String? = nil,
+        testFilter: String? = nil
     ) {
         self.dryRun = dryRun
         self.rebuild = rebuild
         self.verbose = verbose
         self.quiet = quiet
         self.format = format
+        self.testFilter = testFilter
         identityExplanations = IdentityExplanationCollector(
             selection: explainIdentity)
     }

@@ -88,6 +88,21 @@ while [[ $# -gt 0 ]]; do
       options+=("$1" "$2")
       shift 2
       ;;
+    --filter)
+      expect_value "$@"
+      # A test name pattern narrows which already-declared tests run and can
+      # never name anything the graph does not already contain, so the risk this
+      # grant guards against is not what the value selects but what it could
+      # become. It becomes one argument to a test invocation and nothing else:
+      # never a path, never a command word, never a shell word. The pattern
+      # therefore admits regular-expression syntax while excluding whitespace
+      # and every shell metacharacter. A dollar sign is left out because an
+      # unquoted one here is parameter expansion rather than a class member.
+      [[ "$2" =~ ^[0-9A-Za-z._/|()?:^*+-]{1,128}$ ]] \
+        || { echo "error: --filter is not a test name pattern" >&2; exit 64; }
+      options+=("$1" "$2")
+      shift 2
+      ;;
     -*)
       echo "error: option is not admitted through this launcher: $1" >&2
       exit 64

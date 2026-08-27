@@ -29,13 +29,14 @@ private func executeWithSwiftPM(
     graph: TaskGraph,
     selected: [TaskID],
     stateRoot: FilePath,
+    testFilter: String? = nil,
     options: TaskExecutionOptions = TaskExecutionOptions()
 ) async throws -> TaskExecutionReport {
     try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: graph,
         selected: selected,
         stateRoot: stateRoot,
-        lowerings: [SwiftPMLowering()],
+        lowerings: [SwiftPMLowering(testFilter: testFilter)],
         options: options)
 }
 
@@ -648,6 +649,93 @@ private func executeWithSwiftPM(
     #expect(commands.count == 2)
     #expect(commands.contains { $0.contains("--filter FirstSuite") })
     #expect(commands.contains { $0.contains("--filter SecondSuite") })
+}
+
+/// A filtered run verifies what it names and leaves the full gate outstanding.
+///
+/// The filter reaches SwiftPM so the tests run against the same build either
+/// way, and it joins the test task's identity so the narrow run can never mark
+/// the unfiltered task clean. Without the second half, running one test would
+/// record the whole component as verified.
+@Test func aFilteredTestRunIsADistinctTaskFromTheUnfilteredOne() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-test-command-filter-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let arguments = directory.appendingPathComponent("arguments")
+    let swift = tools.appendingPathComponent("swift")
+    try Data(
+        "#!/bin/sh\nset -eu\n\(fakeSwiftBinPathResponse)\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
+            .utf8
+    ).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.tests"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftTests: [
+            SwiftTestRequirement(
+                package: "fixture",
+                testProduct: "FixtureTests",
+                packageRoot: packageRoot,
+                invocation: invocation,
+                inputs: [],
+                environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
+        ])
+    let graph = try TaskGraph([task])
+
+    let unfilteredState = FilePath(
+        directory.appendingPathComponent("state-unfiltered").path)
+    let unfiltered = try await executeWithSwiftPM(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: unfilteredState)
+    let filtered = try await executeWithSwiftPM(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state-filtered").path),
+        testFilter: "OneSuite")
+
+    let commands = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+    #expect(commands.contains { $0.contains("--filter OneSuite") })
+    #expect(commands.contains { $0.contains("test ") && !$0.contains("--filter") })
+
+    // The logical task keeps its declared name either way; it is the lowered
+    // SwiftPM invocation that has to differ, because that is what carries the
+    // recorded result.
+    func loweredTests(_ report: TaskExecutionReport) -> Set<String> {
+        Set(
+            report.plan.map(\.task.rawValue)
+                .filter { $0.hasPrefix("swift.package.test.") })
+    }
+    #expect(!loweredTests(unfiltered).isEmpty)
+    #expect(loweredTests(unfiltered).isDisjoint(with: loweredTests(filtered)))
+
+    // The decisive part: replaying the filtered result against the state the
+    // unfiltered run wrote must still leave the unfiltered task to do.
+    let replayed = try await executeWithSwiftPM(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: unfilteredState,
+        testFilter: "OneSuite")
+    #expect(replayed.plan.contains { !$0.isClean })
 }
 
 @Test func synthesizedSwiftBuildRunsDeclaredHeaderTargetBeforeTheRootBuild() async throws {

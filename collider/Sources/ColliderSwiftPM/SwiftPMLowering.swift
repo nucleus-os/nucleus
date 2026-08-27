@@ -2,7 +2,21 @@ import ColliderCore
 import SystemPackage
 
 public struct SwiftPMLowering: TaskPlanLowering {
-    public init() {}
+    /// Restricts every test invocation this lowering produces to the tests
+    /// whose names match.
+    ///
+    /// The filter joins the test task's arguments, which already participate in
+    /// that task's identity, so a filtered run is a different task from the
+    /// unfiltered one and can never record it as satisfied. It reaches SwiftPM
+    /// rather than the graph, so the build the tests run against is the same
+    /// one either way and no filtered run mints a scratch context of its own.
+    /// A test product no name matches is not an error: SwiftPM warns and
+    /// succeeds, which is what lets one filter cross several test products.
+    private let testFilter: String?
+
+    public init(testFilter: String? = nil) {
+        self.testFilter = testFilter
+    }
 
     public func lower(
         _ assessed: [AssessedTaskDeclaration]
@@ -421,12 +435,14 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 inputs.append(input)
             }
         }
+        let testArguments =
+            first.arguments + (testFilter.map { ["--filter", $0] } ?? [])
         let taskID = physicalTaskID(
             role: "test",
             context: first.invocation.context,
             products: testProducts,
             prebuildTargets: [],
-            arguments: first.arguments)
+            arguments: testArguments)
         var builder = TaskBuilder(
             id: taskID,
             component: ComponentID(rawValue: "swift-package"))
@@ -445,7 +461,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             action: try swiftPMAction(
                 invocation: first.invocation,
                 environment: environment,
-                arguments: [["test"] + first.arguments])
+                arguments: [["test"] + testArguments])
         )
         .addingDependencies(owners.flatMap(\.dependencies))
     }

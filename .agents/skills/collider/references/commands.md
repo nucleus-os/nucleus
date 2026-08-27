@@ -98,7 +98,7 @@ Arguments and options:
 
 ## `collider test`
 
-Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [<component>] [--version] [--help]`
+Usage: `collider test [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [<component>] [--filter <filter>] [--version] [--help]`
 
 Arguments and options:
 
@@ -115,6 +115,7 @@ Arguments and options:
 - `--as-builder` — Plan as the identity that executes builds, without executing.
 - `--verify-reproduction` — Produce beside the retained result and report whether it reproduces.
 - `<component>` — all, runtime, collider, android, browser, loader, gpu-headless, gpu-drm, or a component name.
+- `--filter` `<filter>` — Run only the tests whose names match this pattern. A filtered run is a distinct task from the unfiltered one, so it never records the component's full test task as satisfied.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

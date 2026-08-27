@@ -178,7 +178,7 @@ extension WorkspaceContext {
             stateRoot: stateRoot,
             identityPathMap: identityPathMap,
             workflowLocks: [sdkRebuildLock],
-            lowerings: [SwiftPMLowering()],
+            lowerings: [SwiftPMLowering(testFilter: controls.testFilter)],
             hostPhases: hostPhases,
             options: options)
         if controls.dryRun {

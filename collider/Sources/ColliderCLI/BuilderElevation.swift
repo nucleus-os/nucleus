@@ -26,7 +26,7 @@ enum BuilderElevation {
     /// An option outside this list is not silently dropped: the invocation is
     /// refused, because running a build that quietly ignored `--rebuild` would
     /// answer a question the operator did not ask.
-    private static let admittedOptions: [String: Bool] = [
+    static let admittedOptions: [String: Bool] = [
         "--rebuild": false,
         "--dry-run": false,
         "--as-builder": false,
@@ -41,6 +41,7 @@ enum BuilderElevation {
         "--progress": true,
         "--progress-format": true,
         "--run-id": true,
+        "--filter": true,
     ]
 
     /// Whether this account executes builds directly.

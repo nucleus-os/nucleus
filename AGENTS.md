@@ -19,6 +19,29 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 - The user may edit concurrently. Never revert changes without explicit permission, even if they break builds.
 - When asked to commit or push, do it on the current branch (including `main`). Create a new branch only when the user explicitly asks for one; do not branch off `main` by default.
 - Run build and test verification through the installed `collider` command. Its workspace launcher derives the host environment and refreshes the release Collider executable whenever the current Git/toolchain source fingerprint changes. Do not source `tools/host-env.sh` manually or invoke `collider/.build/.../collider` directly. On a host with a machine build store, a command that executes a task graph re-runs itself as `nucleus-builder` through the root launcher and says so on standard error; inspection and dry runs stay in the invoking account. Do not invoke `nucleus-builder-run` by hand, and do not add an operation to its grammar to reach one: Collider decides what must cross.
+- Protected `main` CI is the verification sweep, and it runs the full build and
+  test graph on every pushed revision. Local verification exists to shorten the
+  feedback loop on uncommitted work, not to reproduce that sweep, so scope it to
+  what changed, then push and read the CI result rather than running a component
+  gate CI runs anyway. A local run also takes the single host execution
+  admission, so a redundant one delays the CI run it duplicates. State plainly
+  which tests the local run covered and what is left to CI.
+- Which local runner depends on what the test needs, not on preference. A test
+  of Collider's own host Swift code needs neither the task graph nor the build
+  store, so iterate on it with `swift test --package-path collider --filter
+  <pattern>`; going through Collider there rebuilds the release executable and
+  crosses to the builder identity to exercise code that requires neither. This
+  is the one place a Swift package's own tests run outside Collider, and it is
+  not an exception to running builds through the `collider` command: it runs the
+  package's tests, never the built Collider executable, and it produces nothing
+  the build store retains. Every other test needs the graph -- Linux lanes
+  executing in containers, `gpu-headless`, `gpu-drm`, `loader`, `android`,
+  `browser`, release gates, and anything consuming a Swift SDK, native SDK, or
+  image the graph produces -- and runs as `collider test <selection> --filter
+  <pattern>`.
+- A filtered test run is a distinct task from the unfiltered one, so it never
+  records the full gate as satisfied, and a test product no name matches warns
+  rather than failing, so one filter may cross several products.
 - Format touched Swift files with the pinned toolchain's `swift-format`; the root `.swift-format` is the repository-wide formatting contract. Do not combine an unrelated repository-wide reformat with functional work.
 - Do not write tests that inspect source-code shape or declaration presence/absence, such as `@hasDecl` assertions for APIs that should not exist. Test behavior and runtime contracts instead.
 - Avoid full cache wipes (`rm -rf .build`) except as a last resort after source/build causes are ruled out, or if disk space is full.
