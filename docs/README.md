@@ -34,30 +34,33 @@ qualification, packaging, CI, signing, publication, and distribution establish
 the contracts that development deployment and independent contributor hosts
 reuse.
 
-1. Complete Phases 4 and 5 of the
+1. Complete the remaining gates in Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
-   run the first bounded `collider build all` lane from the clean CI checkout,
-   prove that it reuses the authoritative checkout's warm state, close the
-   remaining cross-account and build-store gates, and enforce the source,
-   account, credential, network, and recovery boundaries.
-2. Bound what the build store retains with the
-   [build store retention plan](build-store-retention-plan.md). The store holds
-   1.4 TiB against a 1.8 TiB disk, and its two largest accumulations are
-   reachable by no collection path: 176.8 GiB of SwiftPM identity contexts held
-   under a policy promising one working set, and 436.6 GiB of images no
-   declaration covers. It precedes the lanes that consume the most storage.
+   the protected-main host-contract, provenance, build, and test lanes already
+   run successfully. Prove the corrected local-to-automated and
+   automated-to-local warm-state reuse, close the remaining dirty-tree and
+   mutation-supersession checks, and enforce the account, credential, network,
+   and recovery boundaries.
+2. Complete Phases 6 through 8 of the
+   [build store retention plan](build-store-retention-plan.md). Phases 1 through
+   5 already bound SwiftPM identity contexts on every run and brought the
+   container store under collection; the first collecting prune returned 411.9
+   GiB. Make interactive inspection read the store directly, declare residency
+   for every materialized source root, and report recorded allocation without
+   recursively walking the store.
 3. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-4. Complete Phases 1 through 5 of the
-   [Android architecture parity plan](android-architecture-parity-plan.md) so
-   both supported architectures have an AOSP product and every native package
-   cohort member is produced by the build graph. The arm64 cohort otherwise
-   declares an exact `nucleus-android` member the repository cannot produce.
-5. Reduce the Android lane's flake risk before cutover with the
+4. Complete the remaining half of Phase 5 and then Phase 6 of the
+   [Android architecture parity plan](android-architecture-parity-plan.md).
+   Phases 1 through 4 already produce both AOSP products and both complete
+   six-member native package cohorts from graph-owned inputs. Run
+   `collider package linux-runtime` in protected-main verification, then qualify
+   the arm64 guest on physical arm64 hardware.
+5. Complete Phases 1 through 5 of the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    This gates no product and no publication: the arm64 product already builds
    with its host tools translated. It is sequenced here because translation has
@@ -66,10 +69,11 @@ reuse.
    runner cannot absorb the way a watched build can. Its first phase measures
    what translation costs without re-executing a build; the remaining phases
    supply the arm64 host toolchains AOSP does not ship.
-6. Complete Phases 6 and 7 of the
+6. Complete the remaining work in Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-   by expanding the proven build lane into the complete verification graph.
-   The graph proves the Linux-runtime packaging lane through an actual
+   by expanding the operational host-contract, provenance, build, and test lanes
+   into the complete packaging and qualification graph. The graph proves the
+   Linux-runtime packaging lane through an actual
    `collider package linux-runtime` execution on protected main, which is also
    the remaining half of Android architecture parity Phase 5.
 7. Complete Phases 5 and 6 of the
