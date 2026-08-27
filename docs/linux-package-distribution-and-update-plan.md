@@ -130,35 +130,39 @@ x86_64.
 ## Repository Contract
 
 The authoritative repository origin is `https://packages.nucleus-os.org`.
-Stable, beta, and nightly are separate, explicit channels. Their enrollment
-packages conflict so one machine cannot unintentionally follow more than one.
-Nightly is the normal package-managed channel for development machines; it is
-not a substitute for deploying an uncommitted development generation.
+Nightly is the only repository channel. Its enrollment package configures one
+machine for the nightly repository, and ordinary package-manager operations keep
+that machine current. Nightly packages remain qualified, signed, immutable
+cohorts; the channel name does not weaken any production artifact, security, or
+rollback gate. Nightly is not a substitute for deploying an uncommitted
+development generation. Beta and stable channels, enrollment packages, channel
+objects, promotion operations, and support promises are deferred to the
+[multi-channel release promotion plan](multi-channel-release-promotion-plan.md).
 
 The origin is a narrowly scoped Cloudflare Worker with
 [read-only R2 bindings](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
 to a repository-metadata R2 bucket and a future package-object R2 bucket. The Worker
 serves immutable signed repository snapshots from the metadata bucket. It
-routes stable package-object paths by the release index: initially with an HTTPS
+routes immutable package-object paths by the release index: initially with an HTTPS
 redirect to a versioned asset in an immutable GitHub Release, and after the
 object-store cutover by streaming the content-addressed R2 object. It performs
 no signing, publication, package selection, or mutation.
 
-Channel state is one small R2 object per package family, channel, and
-architecture. It names an immutable repository snapshot by digest. Publication
-uploads and verifies the complete snapshot before replacing that channel object
-with one atomic write. The Worker reads channel state through its R2 binding
+Nightly state is one small R2 object per package family and architecture. It
+names an immutable repository snapshot by digest. Publication uploads and
+verifies the complete snapshot before replacing that nightly object with one
+atomic write. The Worker reads nightly state through its R2 binding
 without edge caching. Immutable snapshot responses use cache keys containing
 the snapshot digest and may be cached indefinitely. A client therefore observes
 one complete old or new snapshot, never a partially uploaded directory or a
-stale cached channel mapping.
+stale cached nightly mapping.
 
 Package asset names include package family, version, and architecture and are
 never reused. The GitHub release tag identifies the immutable Nucleus version
-and build, never a mutable channel, so promotion can reference the same assets.
-A release is created as a draft, receives the complete cohort, passes digest and
-size verification, and is published only after every asset is present.
-Publication locks the assets and associated tag.
+and build, never the mutable nightly pointer. A release is created as a draft,
+receives the complete cohort, passes digest and size verification, and is
+published only after every asset is present. Publication locks the assets and
+associated tag.
 
 Each natural native package is one release asset and must be smaller than 2
 GiB. Assembly warns at 1.75 GiB and publication rejects an asset at or above 2
@@ -170,16 +174,17 @@ hard package-object cutover. That complete cohort and every subsequent cohort
 stores all package objects in the dedicated R2 object bucket under
 content-addressed, write-once keys. Earlier cohorts remain in their immutable
 GitHub Releases. The origin paths, repository signatures, package signatures,
-release-index digests, channel model, and package-manager configuration do not
-change. The R2 publisher refuses to overwrite an existing digest key; signature
+release-index digests, nightly-state model, and package-manager configuration do
+not change. The R2 publisher refuses to overwrite an existing digest key; signature
 and digest verification turn any storage substitution into a loud failure.
 
-Repository paths are family-, channel-, and architecture-aware:
+Repository paths are family- and architecture-aware beneath the one nightly
+channel:
 
 ```text
-packages.nucleus-os.org/apt/<channel>/
-packages.nucleus-os.org/rpm/<channel>/
-packages.nucleus-os.org/arch/<channel>/$arch/
+packages.nucleus-os.org/apt/nightly/
+packages.nucleus-os.org/rpm/nightly/
+packages.nucleus-os.org/arch/nightly/$arch/
 ```
 
 ## Publication Backend Matrix
@@ -188,7 +193,7 @@ packages.nucleus-os.org/arch/<channel>/$arch/
 |---|---|---|
 | Package and repository signatures | Protected signing environment | Release signer only |
 | Repository HTTP origin | Cloudflare Worker at `packages.nucleus-os.org` | Infrastructure deployment only |
-| Signed APT, RPM, and pacman snapshots and channel objects | Repository-metadata R2 bucket | Repository-metadata publisher only |
+| Signed APT, RPM, and pacman snapshots and nightly state objects | Repository-metadata R2 bucket | Repository-metadata publisher only |
 | Package objects before object-store cutover | Immutable GitHub Releases | GitHub release-object publisher only |
 | Package objects from the cutover cohort onward | Package-object R2 bucket | R2 package-object publisher only |
 | Contributor builder images and declared build inputs | GHCR OCI artifacts | Contributor-input publisher only |
@@ -348,7 +353,7 @@ Add deterministic repository assembly after native package production. Produce:
 - pacman database, files database, package signatures, and database signature;
 - enrollment packages, public key material, checksums, and provenance; and
 - a machine-readable release index tying every file to the source, toolchain,
-  architecture artifact, package cohort, and channel.
+  architecture artifact, package cohort, and nightly publication state.
 
 Repository assembly accepts explicit signing identities and an immutable package
 set. It performs no upload and no source or package download. Unsigned local test
@@ -404,28 +409,28 @@ the package-object R2 bucket.
 
 The repository-metadata publisher uploads the complete signed snapshot beneath
 its digest in the metadata R2 bucket, reads it back for verification, and writes
-the family/channel/architecture channel object last. That final atomic object
-write is the visibility point. The publisher has no package-object or Worker
-deployment credential. A published package version is never replaced.
+the family/architecture nightly object last. That final atomic object write is
+the visibility point. The publisher has no package-object or Worker deployment
+credential. A published package version is never replaced.
 
 Retain prior cohorts needed for supported rollback. Prune nightly snapshots and
 package objects only after they leave the bounded rollback retention set and no
-retained channel snapshot references them. Before object-store cutover, pruning
+retained nightly snapshot references them. Before object-store cutover, pruning
 deletes the whole eligible nightly GitHub Release; it never edits an immutable
 release or removes an individual asset. After cutover, a separate retention
 identity removes unreferenced immutable snapshot prefixes and content-addressed
-R2 objects. Stable and retained rollback cohorts are not prunable.
+R2 objects. Retained rollback cohorts are not prunable.
 
 Gate: an interruption before package-object publication exposes no cohort; an
-interruption before the final channel-object write leaves the previous snapshot
-active; a completed channel write cannot reference a missing or unverified
+interruption before the final nightly-object write leaves the previous snapshot
+active; a completed nightly write cannot reference a missing or unverified
 package object; and the Worker origin serves the exact qualified cohort named by
 the trusted release index.
 
-## Phase 8: Publish and Qualify Native Update Lifecycles
+## Phase 8: Publish and Qualify the Nightly Update Lifecycle
 
-Publish nightly repository snapshots first, then beta. Enroll clean Debian/Ubuntu,
-Fedora/RHEL-family, and Arch-family systems through their native repository
+Publish only nightly repository snapshots. Enroll clean Debian/Ubuntu,
+Fedora/RHEL-family, and Arch-family systems through the nightly repository
 package or documented trust bootstrap. Qualify on arm64 and x86_64:
 
 1. clean repository enrollment and installation;
@@ -438,16 +443,14 @@ package or documented trust bootstrap. Qualify on arm64 and x86_64:
 7. removal without deleting user-authored or persistent product state; and
 8. reinstallation after removal.
 
-Promote exact qualified package cohorts from nightly to beta and from beta to
-stable without rebuilding or copying package payloads. Promotion publishes new
-channel metadata that references the same immutable GitHub release assets and
-package-object digests.
-Nucleus OS images carry their selected repository configuration and keyring at
-image creation, so their first update uses the ordinary package manager without
-a bootstrap step.
+No active workflow creates beta or stable metadata, enrollment, credentials, or
+publication state. Nucleus OS images carry the nightly repository configuration
+and keyring at image creation, so their first update uses the ordinary package
+manager without a bootstrap step.
 
-Gate: an enrolled system remains current through ordinary `apt upgrade`, `dnf
-upgrade`, or `pacman -Syu`; no Nucleus updater or Collider command participates.
+Gate: a nightly-enrolled system remains current through ordinary `apt upgrade`,
+`dnf upgrade`, or `pacman -Syu`; no Nucleus updater or Collider command
+participates, and the publication surface contains no beta or stable channel.
 
 ## Phase 9: Add Non-Installed Remote Development Generations
 

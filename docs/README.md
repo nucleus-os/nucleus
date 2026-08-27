@@ -95,7 +95,7 @@ reuse.
    against the native package, repository, and qualification pipeline.
 12. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
-   to publish and qualify native update lifecycles.
+   to publish and qualify the nightly native update lifecycle.
 13. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
@@ -191,6 +191,7 @@ that physical arm64 result.
 
 - [Collider ratatui TUI](collider-ratatui-tui-plan.md)
 - [Browser custom UI](nucleus-browser-custom-ui-plan.md)
+- [Multi-channel release promotion](multi-channel-release-promotion-plan.md)
 
 ## Research and qualification
 

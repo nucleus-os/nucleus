@@ -231,7 +231,7 @@ The repository has three supported remote event classes:
    cache.
 3. An explicitly authorized delivery operation consumes successful artifacts
    and qualification records from an exact verified `main` commit and performs
-   signing, repository publication, and channel promotion without compiling
+   signing and nightly repository publication without compiling
    source.
 
 Every other event class is unsupported. The repository subscribes to no branch
