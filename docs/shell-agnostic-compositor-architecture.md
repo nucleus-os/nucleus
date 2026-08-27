@@ -40,7 +40,7 @@ model projects: `zwlr_foreign_toplevel_management_v1` (taskbar / window list), `
 (workspaces), `wlr-screencopy` (screenshots / recording / blur), `ext_session_lock_v1` (lock
 screen), and `data-control` (clipboard history). Lock-screen password entry
 (`zwp_virtual_keyboard_v1` / `zwp_text_input_v3`) is still pending — see
-`docs/wayland_protocol_coverage_plan.md` for the authoritative protocol status.
+`docs/wayland-protocol-coverage-plan.md` for the authoritative protocol status.
 
 ## The shell process
 

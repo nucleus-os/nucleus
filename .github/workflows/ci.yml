@@ -110,6 +110,8 @@ jobs:
         run: collider doctor ci-macos-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
+      - name: Verify documentation layout
+        run: python3 tools/check-documentation-layout.py
       - name: Build the catalog
         run: collider build all
       - name: Test the catalog

@@ -68,8 +68,25 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 - When writing plans, use strict sequential phase order. Do not describe phases as parallel.
 - Plans must avoid git/PR/commit/branch/release mechanics. Use technical ordering language like "lands with", "happens alongside", and "as part of phase N".
 - Plan voice is direct and unambiguous. Write the ideal solution without hedging between options.
-- When writing a new doc or plan under `docs/`, just write it. Do not read other docs or study formatting conventions first; use the structure these directives already specify (state invariant first, strict sequential phases, direct voice) and a `kebab-case.md` filename.
-- The plan inventories in `docs/README.md` and component documentation indexes are authoritative. Add every new plan to its owning inventory and keep execution order there rather than duplicating it across plans.
+- Root `docs/` is the only location for repository-owned architecture, contract,
+  plan, research, qualification, and transcript documents. Do not create a
+  component-level `docs/` directory, component documentation index, or standalone
+  `ARCHITECTURE.md`. Package entry-point `README.md` files, `AGENTS.md`, generated
+  skills and their references, and vendored documentation remain beside the
+  systems that consume them.
+- When writing a new document or plan, write it directly under root `docs/`. Do
+  not read other documents or study formatting conventions first; use the
+  structure these directives already specify (state invariant first, strict
+  sequential phases, direct voice) and a globally unique `kebab-case.md`
+  filename.
+- `docs/README.md` is the sole authoritative documentation and plan inventory.
+  Add every new document to it and keep execution order there rather than
+  duplicating it across plans. Moving or renaming a document updates every
+  repository reference in the same change.
+- Run `python3 tools/check-documentation-layout.py` after changing documentation.
+  The check rejects nested documentation trees, misplaced architecture
+  documents, duplicate or non-kebab-case document names, and broken relative
+  Markdown links.
 - Update a plan in the same change that starts, completes, supersedes, removes, or materially changes one of its phases. Every plan states one lifecycle status: `active`, `deferred`, `complete`, or `superseded by <document>`. A phase without an explicit status is pending in the declared sequence; set `Status: active`, `Status: complete`, or `Status: superseded by <document>` as its lifecycle changes.
 - A completed phase records the achieved state and concise gate evidence. Do not maintain chronological progress journals, duplicate command transcripts, or stale checklists.
 - Remove a completed or superseded plan from the active execution order immediately. Keep completed plans under the owning inventory's architecture-consolidation section until their durable invariants move into architecture or contract documentation, then delete the plan. A superseded plan identifies its replacement and leaves the active inventory.

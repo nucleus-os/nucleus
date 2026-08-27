@@ -116,7 +116,7 @@ dependency order:
 3. [Android render stack](android-render-stack-plan.md)
 4. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
 5. [Native shell completion](native-shell-completion-plan.md)
-6. [Screen capture and recording](screen_recording_plan.md)
+6. [Screen capture and recording](screen-recording-plan.md)
 7. [View pixel alignment](view-pixel-alignment-plan.md)
 8. [Glyph dilation](text-glyph-dilation-plan.md)
 
@@ -174,7 +174,7 @@ implementation inputs are available:
   shell completion plan.
 - [AppKit API completion](appkit-api-plan.md) is complete; real-IME and
   lock-screen interaction remains an explicit user qualification handoff.
-- [Wayland protocol coverage](wayland_protocol_coverage_plan.md) is complete for
+- [Wayland protocol coverage](wayland-protocol-coverage-plan.md) is complete for
   current consumers; future protocols require a named product consumer.
 - [Trackpad gestures](compositor-trackpad-gestures.md) are complete.
 - [RN animation backend](rn-animation-backend-plan.md) is complete.
