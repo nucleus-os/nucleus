@@ -152,11 +152,21 @@ landed, which the container never resolves; and the interim prefix-mapping
 flags, which now apply to host compilation alone.
 
 Phase 3 begins here rather than waiting. A container is given the canonical
-location, so mapping its recorded paths maps a prefix that never appears, and
-the mapping flag carries the host's own directory into the identity because a
-root followed by `=` is not a path boundary to canonicalize. Removing it from
-container compilation took the graph from fifteen host paths in identities to
-nine. Host compilation keeps it until Phase 2.
+location, so mapping its recorded paths maps a prefix that never appears.
+Removing it from container compilation took the graph from fifteen host paths in
+identities to nine. Host compilation keeps it until Phase 2.
+
+The remainder is now asserted rather than counted by hand. Every string in every
+planned and lowered identity is scanned for a prefix only this host owns, and
+each one found must live under the store both accounts share. `/usr/local` is
+not treated as such a prefix: it exists inside the Linux images, where it is the
+container's own and carries no placement, and this host's package prefix is
+`/opt/homebrew`. What remains under the store is dominated by two roots the map
+does not declare -- the package-graph scratch under `state/build`, and the
+product artifact tree under `state/artifacts` -- with the signing identity path
+behind them. Declaring the store's state root would canonicalize all of them at
+once and invalidate every identity in the store, so it is a deliberate act
+rather than a cleanup.
 
 ## Phase 2: Bind macOS Execution Canonically
 

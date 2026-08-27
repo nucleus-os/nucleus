@@ -3122,6 +3122,153 @@ private func artifactInput(
     #expect(names(tied.swift) == ["cache", "workspace"])
 }
 
+/// Placement independence is an equality between two placements, not the
+/// absence of a declared root in one.
+///
+/// The declared-identity test above asserts the absence: encoding rejects a
+/// declared root it finds. A shared build store disagreed with it anyway,
+/// because the identity that divided contained no root at all. The
+/// placement-mapping flags canonicalized correctly in both checkouts and were
+/// emitted in two orders, so two encodings that each passed the absence check
+/// were still not equal. An absence cannot see that; only comparing two
+/// placements can.
+/// Every string in every identity resolves to a placement-independent value.
+///
+/// The declared-identity test rejects a *declared* root, which is the leak that
+/// divides two checkouts on one machine. This is the wider property: an
+/// absolute host path that no declared root covers divides two machines, and
+/// nothing rejects it. Reporting them together is what turns a count in a plan
+/// into a list that can be worked through.
+@Test func noTaskIdentityCarriesAnUnmappedHostPath() async throws {
+    let context = WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: [:],
+        runtime: ColliderRuntime())
+    let catalog = try await ComponentRegistry(context: context)
+        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+    let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
+    let map = context.identityPathMap
+    // The store both accounts share. The plan's claim is that every host path
+    // still reaching an identity lives under it, so none of them divides this
+    // host's warm state and they divide only a second machine. Asserting that
+    // is what keeps the remainder from growing while it is worked through.
+    let store = context.cacheRoot.removingLastComponent().string
+    // Prefixes only this host owns. `/usr/local` is deliberately absent: it
+    // exists inside the Linux images too, where it is the container's own and
+    // carries no placement, and this host's package prefix is `/opt/homebrew`.
+    let hostOwnedRoots = [
+        "/Library/", "/Users/", "/private/", "/var/", "/Applications/",
+        "/opt/homebrew/",
+    ]
+    let fixtureToolRoot = "/fixture/"
+    let leaked = Mutex<[String: Set<String>]>([:])
+    func scan(_ task: TaskID, _ nodes: [IdentityTrace.Node]) {
+        for node in nodes {
+            switch node {
+            case .string(let value), .path(let value), .enumeration(let value):
+                // A container-internal path is placement-independent by
+                // construction, so the question is only whether a path this
+                // host owns survived. A search-path value is a list, so its
+                // elements are judged one at a time rather than as one string.
+                for element in map.canonicalize(value).split(separator: ":") {
+                    let candidate = String(element)
+                    guard hostOwnedRoots.contains(where: candidate.hasPrefix),
+                        !candidate.hasPrefix(fixtureToolRoot)
+                    else { continue }
+                    leaked.withLock {
+                        _ = $0[task.rawValue, default: []].insert(candidate)
+                    }
+                }
+            case .nested(let children), .record(let children):
+                scan(task, children)
+            case .optional(let children):
+                if let children { scan(task, children) }
+            case .sequence(let groups):
+                for group in groups { scan(task, group) }
+            case .bytes, .integer, .boolean:
+                continue
+            }
+        }
+    }
+    let services = TaskPlanningServices(
+        identityPathMap: map,
+        digestBytes: { ArtifactDigest.sha256(Data($0)) },
+        digestFile: { _ in digest },
+        digestTree: { _ in digest },
+        digestSourceCheckout: { _ in digest },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+        },
+        taskState: { _ in .missing },
+        validateOutputs: { _ in },
+        observeIdentity: { task, bytes in
+            guard let nodes = IdentityTrace.decode(bytes) else { return }
+            scan(task, nodes)
+        })
+
+    let planner = ColliderPlanner()
+    let requests = try catalog.publicEntrypoints.map {
+        (request: $0, roots: Set(try planner.selectedTasks(in: catalog, requests: [$0])))
+    }.sorted { $0.roots.count > $1.roots.count }
+    var covered: Set<TaskID> = []
+    for entry in requests where !entry.roots.isSubset(of: covered) {
+        _ = try await planner.plan(
+            catalog: catalog,
+            requests: [entry.request],
+            rebuildSelected: false,
+            lowerings: [SwiftPMLowering()],
+            services: services)
+        covered.formUnion(entry.roots)
+    }
+
+    let found = leaked.withLock { $0 }
+    let outside = found.mapValues { paths in
+        paths.filter { !$0.hasPrefix(store) }
+    }.filter { !$0.value.isEmpty }
+    let report = outside.keys.sorted().flatMap { task in
+        ["\(task)"] + (outside[task] ?? []).sorted().map { "    \($0)" }
+    }
+    #expect(outside.isEmpty, Comment(rawValue: report.joined(separator: "\n")))
+}
+
+@Test func oneBuildContextHasOneIdentityFromTwoPlacements() {
+    func identity(workspace: String, cache: String) -> [UInt8] {
+        let context = WorkspaceContext(
+            root: FilePath(workspace),
+            environment: [:],
+            runtime: ColliderRuntime(),
+            cacheRoot: FilePath(cache))
+        let flags = context.filePrefixMapFlags
+        return SwiftBuildContext(
+            packageRoot: FilePath(workspace).appending("collider"),
+            configuration: .debug,
+            target: .host(identity: "aarch64-macos"),
+            toolchainIdentity: "fixture-toolchain",
+            swiftFlags: flags.swift,
+            cFlags: flags.clang,
+            cxxFlags: flags.clang,
+            identityPathMap: context.identityPathMap
+        ).identityBytes
+    }
+
+    // The authoritative checkout, whose workspace and cache paths are the same
+    // length, so the map's sort ties and breaks by name.
+    let authoritative = identity(
+        workspace: "/Library/Nucleus/checkout",
+        cache: "/Library/Nucleus/Collider")
+    // A runner work tree, whose workspace path is far longer, so it does not.
+    let runner = identity(
+        workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
+        cache: "/Library/Nucleus/Collider")
+    // And a placement that shares neither property with either.
+    let elsewhere = identity(
+        workspace: "/opt/n",
+        cache: "/var/tmp/collider-store")
+
+    #expect(authoritative == runner)
+    #expect(authoritative == elsewhere)
+}
+
 @Test func everyDeclaredTaskIdentityIsPlacementIndependent() async throws {
     let context = WorkspaceContext(
         root: fixtureRepositoryRoot,
