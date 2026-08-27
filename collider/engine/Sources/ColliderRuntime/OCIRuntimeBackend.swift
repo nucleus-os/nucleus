@@ -101,6 +101,22 @@ public struct OCIImageState: Codable, Equatable, Sendable {
     }
 }
 
+/// The images a container runtime requires to function at all.
+///
+/// Not catalog storage. Nothing the task graph declares produces these, and no
+/// component names them, but a runtime with no init image boots no container
+/// and a runtime with no builder image builds no image. They are keyed by
+/// repository so a store holding several versions can be told which one this
+/// runtime is configured to use, and the reference parsing that separates the
+/// two happens where the runtime's own parser lives.
+public struct OCIInfrastructureImages: Codable, Equatable, Sendable {
+    public let currentByRepository: [String: String]
+
+    public init(currentByRepository: [String: String]) {
+        self.currentByRepository = currentByRepository
+    }
+}
+
 public struct OCIPersistentWorkspaceState: Codable, Equatable, Sendable {
     public let name: String
     public let identity: PersistentWorkspaceIdentity
@@ -189,6 +205,7 @@ public protocol OCIRuntimeBackend: Sendable {
     /// every image rebuild, which replaces the reference a snapshot belonged to
     /// and leaves the snapshot itself unreferenced.
     func collectOrphanedImageContent() async throws -> UInt64
+    func infrastructureImages() async throws -> OCIInfrastructureImages
     func persistentWorkspaces(
         configuration: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState]
@@ -245,6 +262,10 @@ extension OCIRuntimeBackend {
     }
 
     public func collectOrphanedImageContent() async throws -> UInt64 {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func infrastructureImages() async throws -> OCIInfrastructureImages {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 

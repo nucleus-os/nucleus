@@ -405,7 +405,9 @@ struct RepositoryCache {
             timeout: observationTimeout
         ) {
             let images = try await context.runtime.ociImages()
-            return containerImageRetention(images: images)
+            return containerImageRetention(
+                images: images,
+                infrastructure: try await context.runtime.ociInfrastructureImages())
         }
         async let persistentWorkspaces = boundedObservation(
             "Apple Container persistent workspaces",
@@ -1181,17 +1183,71 @@ struct RepositoryCache {
     private func reclaimableImages() async -> ImagePruneOutcome {
         do {
             let images = try await context.runtime.ociImages()
+            let infrastructure = try await context.runtime.ociInfrastructureImages()
             return ImagePruneOutcome(
-                selected: containerImageRetention(images: images)
-                    .filter { $0.state == "reclaimable" })
+                selected: containerImageRetention(
+                    images: images,
+                    infrastructure: infrastructure
+                ).filter { $0.state == "reclaimable" })
         } catch {
             return ImagePruneOutcome(unavailable: "\(error)")
         }
     }
 
+    /// The base image each declared preparation builds `FROM`.
+    ///
+    /// A base is reachable and the catalog names it, but it names it in a
+    /// Containerfile rather than in a storage declaration, so nothing that
+    /// reads declarations alone can see it. Removing one is recoverable only by
+    /// a registry pull, which is a host action a container can never perform,
+    /// so a base that a preparation still selects is retained like any other
+    /// reachable input.
+    ///
+    /// Matching is by digest. Every first-party Containerfile pins its base by
+    /// digest, and a pull stores the result under repository and digest with
+    /// the tag dropped, so the tag written in the `FROM` line never appears in
+    /// the store and only the digest identifies the same bytes in both places.
+    private func declaredBaseImages() -> (repositories: Set<String>, digests: Set<String>) {
+        var repositories: Set<String> = []
+        var digests: Set<String> = []
+        for preparation in catalog.imagePreparations {
+            guard
+                let contents = try? String(
+                    contentsOfFile: preparation.containerFile.string,
+                    encoding: .utf8)
+            else { continue }
+            for line in contents.split(whereSeparator: \.isNewline) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix("FROM ") else { continue }
+                guard
+                    let reference = trimmed.dropFirst("FROM ".count)
+                        .split(separator: " ").first
+                else { continue }
+                let parts = reference.split(separator: "@", maxSplits: 1)
+                guard let name = parts.first else { continue }
+                // A tag may or may not be present, and a registry host may
+                // carry a port, so only a colon after the final path separator
+                // is a tag separator.
+                let repository: Substring
+                if let colon = name.lastIndex(of: ":"),
+                    !name[colon...].contains(where: { $0 == "/" })
+                {
+                    repository = name[name.startIndex..<colon]
+                } else {
+                    repository = name
+                }
+                repositories.insert(String(repository))
+                if parts.count == 2 { digests.insert(String(parts[1])) }
+            }
+        }
+        return (repositories, digests)
+    }
+
     func containerImageRetention(
-        images: [OCIImageState]
+        images: [OCIImageState],
+        infrastructure: OCIInfrastructureImages
     ) -> [OCIImageRetentionRecord] {
+        let base = declaredBaseImages()
         var families: [String: OCIImageFamily] = [:]
         for preparation in catalog.imagePreparations {
             var family =
@@ -1209,7 +1265,20 @@ struct RepositoryCache {
         var states: [String: String] = [:]
         for image in images {
             guard let family = families[image.repository] else {
-                states[image.reference] = "unknown"
+                // An image in a repository the catalog or the runtime names, at
+                // a version neither selects, is superseded rather than
+                // unaccountable. That is what makes the previous runtime
+                // version and the previous base collectable while the current
+                // ones are never candidates.
+                if let current = infrastructure.currentByRepository[image.repository] {
+                    states[image.reference] =
+                        image.reference == current ? "infrastructure" : "reclaimable"
+                } else if base.repositories.contains(image.repository) {
+                    states[image.reference] =
+                        base.digests.contains(image.digest) ? "base" : "reclaimable"
+                } else {
+                    states[image.reference] = "unknown"
+                }
                 continue
             }
             if image.active || image.tag == "latest"
@@ -1449,8 +1518,16 @@ struct RepositoryCache {
             lines.append(
                 "apple-container-images: \(counts["active", default: 0]) active, "
                     + "\(counts["retained", default: 0]) retained, "
+                    + "\(counts["infrastructure", default: 0]) infrastructure, "
+                    + "\(counts["base", default: 0]) base, "
                     + "\(counts["reclaimable", default: 0]) reclaimable, "
                     + "\(counts["unknown", default: 0]) unknown")
+            for image in images where image.state == "unknown" {
+                // An image nothing accounts for is not collected, and is not
+                // silently retained either: the catalog failing to explain what
+                // the store holds is the finding.
+                lines.append("  unknown \(image.reference)")
+            }
             for image in images where image.state == "reclaimable" {
                 lines.append("  reclaimable \(image.reference)")
             }

@@ -93,15 +93,19 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     private var collectionCount = 0
 
     private let imageListingFailure: String?
+    private let infrastructure: OCIInfrastructureImages
 
     init(
         workspaces: [OCIPersistentWorkspaceState],
         images: [OCIImageState] = [],
-        imageListingFailure: String? = nil
+        imageListingFailure: String? = nil,
+        infrastructure: OCIInfrastructureImages = OCIInfrastructureImages(
+            currentByRepository: [:])
     ) {
         self.workspaces = workspaces
         imageStates = images
         self.imageListingFailure = imageListingFailure
+        self.infrastructure = infrastructure
     }
 
     func prepareImage(_: OCIImagePreparation) async throws -> String {
@@ -172,6 +176,10 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     func collectOrphanedImageContent() async throws -> UInt64 {
         collectionCount += 1
         return 4_096
+    }
+
+    func infrastructureImages() async throws -> OCIInfrastructureImages {
+        infrastructure
     }
 
     func deletePersistentWorkspace(
@@ -543,7 +551,9 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
             components: [component],
             publicEntrypoints: []))
 
-    let retention = repository.containerImageRetention(images: try await backend.images())
+    let retention = repository.containerImageRetention(
+        images: try await backend.images(),
+        infrastructure: OCIInfrastructureImages(currentByRepository: [:]))
     #expect(
         Set(retention.filter { $0.state == "reclaimable" }.map(\.reference)) == [
             obsolete, dangling,
@@ -562,6 +572,12 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
 private func imageFixtureCatalog(root: URL) throws -> ComponentCatalog {
     let context = root.appendingPathComponent("context", isDirectory: true)
     try FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
+    try Data(
+        """
+        FROM docker.io/library/ubuntu:26.04@sha256:\(String(repeating: "b", count: 64))
+        RUN true
+        """.utf8
+    ).write(to: context.appendingPathComponent("Containerfile"))
     let imageID = root.appendingPathComponent("image-id")
     try Data(
         "localhost/fixture\nsha256:\(String(repeating: "a", count: 64))\n".utf8
@@ -593,6 +609,85 @@ private func imageFixtureCatalog(root: URL) throws -> ComponentCatalog {
                 entrypoints: [])
         ],
         publicEntrypoints: [])
+}
+
+/// Reachability has three sources, and only the catalog is one of them. The
+/// runtime requires its own init and builder images to boot a container or
+/// build an image at all, and every first-party image is built `FROM` a base
+/// the catalog pins in a Containerfile rather than in a declaration. Treating
+/// what the component catalog alone cannot place as collectable would delete
+/// the runtime out from under itself.
+@Test func imageRetentionKeepsTheRuntimeAndTheBaseItBuildsFrom() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-image-sources-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let catalog = try imageFixtureCatalog(root: root)
+    let vminit = "ghcr.io/apple/containerization/vminit"
+    let ubuntu = "docker.io/library/ubuntu"
+    func image(
+        _ reference: String,
+        repository: String,
+        tag: String?,
+        digestCharacter: Character
+    ) -> OCIImageState {
+        OCIImageState(
+            reference: reference,
+            repository: repository,
+            tag: tag,
+            digest: "sha256:" + String(repeating: digestCharacter, count: 64),
+            creationDate: Date(timeIntervalSince1970: 1_000),
+            active: false)
+    }
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [],
+        images: [
+            image(
+                "localhost/fixture:latest",
+                repository: "localhost/fixture",
+                tag: "latest",
+                digestCharacter: "a"),
+            image(vminit + ":0.40.2", repository: vminit, tag: "0.40.2", digestCharacter: "d"),
+            image(vminit + ":0.33.3", repository: vminit, tag: "0.33.3", digestCharacter: "e"),
+            image(
+                ubuntu + "@sha256:" + String(repeating: "b", count: 64),
+                repository: ubuntu,
+                tag: nil,
+                digestCharacter: "b"),
+            image(ubuntu + ":24.04", repository: ubuntu, tag: "24.04", digestCharacter: "c"),
+            image(
+                "localhost/foreign@sha256:" + String(repeating: "1", count: 64),
+                repository: "localhost/foreign",
+                tag: nil,
+                digestCharacter: "1"),
+        ],
+        infrastructure: OCIInfrastructureImages(
+            currentByRepository: [vminit: vminit + ":0.40.2"]))
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: catalog)
+
+    let retention = repository.containerImageRetention(
+        images: try await backend.images(),
+        infrastructure: try await backend.infrastructureImages())
+    let state = Dictionary(
+        uniqueKeysWithValues: retention.map { ($0.reference, $0.state) })
+    #expect(state[vminit + ":0.40.2"] == "infrastructure")
+    #expect(state[ubuntu + "@sha256:" + String(repeating: "b", count: 64)] == "base")
+    #expect(state["localhost/fixture:latest"] == "active")
+    // A version of a repository the catalog or the runtime names, that neither
+    // selects, is superseded rather than unaccountable.
+    #expect(state[vminit + ":0.33.3"] == "reclaimable")
+    #expect(state[ubuntu + ":24.04"] == "reclaimable")
+    // Nothing accounts for this one, so it is reported rather than collected.
+    #expect(
+        state["localhost/foreign@sha256:" + String(repeating: "1", count: 64)] == "unknown")
+
+    try await repository.prune(dryRun: false)
+    #expect(
+        Set(await backend.imageDeletions()) == [vminit + ":0.33.3", ubuntu + ":24.04"])
 }
 
 /// Content is orphaned by rebuilding an image, not by pruning one: a rebuild

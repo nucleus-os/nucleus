@@ -131,6 +131,10 @@ public actor ColliderRuntime {
         try await ociBackend.collectOrphanedImageContent()
     }
 
+    public func ociInfrastructureImages() async throws -> OCIInfrastructureImages {
+        try await ociBackend.infrastructureImages()
+    }
+
     public func ociPersistentWorkspaces() async throws
         -> [OCIPersistentWorkspaceState]
     {

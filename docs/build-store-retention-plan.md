@@ -286,9 +286,20 @@ that collection runs and states no size, because what it would return is a
 property of the runtime's reachability over content this command does not
 enumerate -- which Phase 6 changes.
 
-The classification half is pending. It lands with the third reachability source,
-which reads the base pin out of each declared Containerfile, and with the
-container system configuration already loaded at the classification site.
+Classification now draws on all three sources. The runtime reports the builder
+and init images its configuration names, keyed by repository so a store holding
+several versions can be told which one is current; the base each declared
+Containerfile pins is matched by digest, because a pull stores a digest-pinned
+base under repository and digest and drops the tag the `FROM` line carried. An
+image in a repository one of the three names, at a version none of them selects,
+is superseded rather than unaccountable, which is what makes the previous
+runtime versions and the previous base collectable while the current ones are
+never candidates. An image no source names remains `unknown`, is never
+collected, and is now listed by reference in the status report.
+
+One gate clause is outstanding: that the complete build and packaging graphs
+execute after a prune without rebuilding a retained image or re-pulling a base.
+That requires a prune that actually collects, which has not yet run.
 
 ## Phase 6: Answer Inspection From the Store, Not the Service
 

@@ -262,6 +262,17 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         return reclaimedBytes
     }
 
+    public func infrastructureImages() async throws -> OCIInfrastructureImages {
+        try validateRunner()
+        let configuration = try await Application.loadContainerSystemConfig()
+        var current: [String: String] = [:]
+        for reference in [configuration.build.image, configuration.vminit.image] {
+            let parsed = try ContainerizationOCI.Reference.parse(reference)
+            current[parsed.name] = reference
+        }
+        return OCIInfrastructureImages(currentByRepository: current)
+    }
+
     public func persistentWorkspaces(
         configuration: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState] {
