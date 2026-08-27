@@ -221,8 +221,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
     public func images() async throws -> [OCIImageState] {
         try validateRunner()
         let configuration = try await Application.loadContainerSystemConfig()
-        let activeReferences = Set(
-            try await ContainerClient().list().map(\.configuration.image.reference))
+        let activeReferences = try await runningImageReferences()
         var states: [OCIImageState] = []
         for image in try await ClientImage.list() {
             let reference = try ContainerizationOCI.Reference.parse(image.reference)
@@ -243,8 +242,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
 
     public func deleteImages(references: [String]) async throws {
         try validateRunner()
-        let activeReferences = Set(
-            try await ContainerClient().list().map(\.configuration.image.reference))
+        let activeReferences = try await runningImageReferences()
         for reference in references {
             try Task.checkCancellation()
             guard !activeReferences.contains(reference) else {
@@ -260,6 +258,37 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
         try validateRunner()
         let (_, reclaimedBytes) = try await ClientImage.cleanUpOrphanedBlobs()
         return reclaimedBytes
+    }
+
+    /// The images containers are actually running from.
+    ///
+    /// A record that is not running holds no image in use, and treating one as
+    /// active makes a leftover record pin its image against collection forever.
+    /// Stopping is included because a container on its way down is still one.
+    private func runningImageReferences() async throws -> Set<String> {
+        Set(
+            try await ContainerClient().list()
+                .filter { $0.status == .running || $0.status == .stopping }
+                .map(\.configuration.image.reference))
+    }
+
+    public func containers() async throws -> [OCIContainerState] {
+        try validateRunner()
+        return try await ContainerClient().list().map { snapshot in
+            OCIContainerState(
+                name: snapshot.id,
+                imageReference: snapshot.configuration.image.reference,
+                running: snapshot.status == .running || snapshot.status == .stopping,
+                infrastructure: snapshot.id == Builder.builderContainerId)
+        }
+    }
+
+    public func deleteContainer(named name: String) async throws {
+        try validateRunner()
+        try await AppleContainerCleanup(
+            client: ContainerClient(),
+            name: name
+        ).deleteAndVerify()
     }
 
     public func infrastructureImages() async throws -> OCIInfrastructureImages {

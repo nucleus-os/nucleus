@@ -75,13 +75,34 @@ selects the pair CI had used minutes earlier, reproducibly, so an explicit prune
 from the developer's checkout destroys the CI checkout's incremental state and
 each rebuild restores it for the other to destroy again.
 
-Which of two causes this is remains open, and they need different fixes. Either
-lowered identities still divide on checkout, which is this phase's subject, or
-the reachable set does not enumerate the lowered tasks it should, which is the
-build store retention plan's. Distinguishing them requires the lowered
-identities a plan resolves, and planning `test all` from the interactive account
-fails on a verification lock it may not write, so this is recorded as the
-measurement it is rather than attributed.
+Which of two causes this is no longer remains open. Reading the contexts
+themselves settles it: the four hold two packages built from two checkouts.
+
+| context | package | checkout |
+| --- | --- | --- |
+| `2add9db2` | `collider-cli` | authoritative |
+| `e1a92bf0` | `engine` | authoritative |
+| `dceca288` | `collider-cli` | runner work tree |
+| `7aad46c9` | `engine` | runner work tree |
+
+The same package at two locations produces two contexts, so lowered identities
+divide on checkout and this phase owns the defect. The reachable set enumerates
+what it should; there is simply more than one identity for one package.
+
+The mechanism is not yet named, and the candidates this phase already records
+are eliminated. The recorded toolchain is the same in both. `packageRoot`
+resolves through the map. Compiler flags reach identity through
+`append(argument:)`, which canonicalizes any declared root inside a string, and
+a root followed by `=` is now a boundary, so the prefix-mapping flags no longer
+carry a checkout into identity as the note below still claims.
+
+What blocks naming it is that the identities are unobservable. A context
+directory is named for a lowered SwiftPM task, lowering runs after planning, and
+`--explain-identity` reports only planned tasks: asking it about
+`swift.package` answers `no planned task contains "swift.package"`. The tool
+built to explain identity cannot explain the identities that name these
+directories. Making lowered identities explainable is what this phase does
+next, and the cause is one command away once it does.
 
 Until it is resolved, no collection may run automatically. An explicit prune
 costing the other checkout a rebuild is a choice someone made; the same eviction

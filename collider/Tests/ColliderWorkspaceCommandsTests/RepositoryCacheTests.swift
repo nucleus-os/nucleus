@@ -91,6 +91,8 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     private var deletedNames: [String] = []
     private var deletedImageReferences: [String] = []
     private var collectionCount = 0
+    private var containerStates: [OCIContainerState]
+    private var deletedContainers: [String] = []
 
     private let imageListingFailure: String?
     private let infrastructure: OCIInfrastructureImages
@@ -100,12 +102,14 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
         images: [OCIImageState] = [],
         imageListingFailure: String? = nil,
         infrastructure: OCIInfrastructureImages = OCIInfrastructureImages(
-            currentByRepository: [:])
+            currentByRepository: [:]),
+        containers: [OCIContainerState] = []
     ) {
         self.workspaces = workspaces
         imageStates = images
         self.imageListingFailure = imageListingFailure
         self.infrastructure = infrastructure
+        containerStates = containers
     }
 
     func prepareImage(_: OCIImagePreparation) async throws -> String {
@@ -181,6 +185,17 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     func infrastructureImages() async throws -> OCIInfrastructureImages {
         infrastructure
     }
+
+    func containers() async throws -> [OCIContainerState] {
+        containerStates
+    }
+
+    func deleteContainer(named name: String) async throws {
+        deletedContainers.append(name)
+        containerStates.removeAll { $0.name == name }
+    }
+
+    func containerDeletions() -> [String] { deletedContainers }
 
     func deletePersistentWorkspace(
         named name: String,
@@ -609,6 +624,50 @@ private func imageFixtureCatalog(root: URL) throws -> ComponentCatalog {
                 entrypoints: [])
         ],
         publicEntrypoints: [])
+}
+
+/// A container record outlives the process that ran it, and Collider deletes its
+/// own on completion, cancellation, and failure alike, so one that is not
+/// running belongs to an execution none of those paths reached. It is not inert:
+/// it holds an unpacked root filesystem and names an image, and while it exists
+/// that image can never be collected. The runtime's own builder container is
+/// excluded because the next image build expects it.
+@Test func pruningRemovesContainerRecordsNoExecutionOwns() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-container-records-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let catalog = try imageFixtureCatalog(root: root)
+    let backend = RecordingPersistentWorkspaceBackend(
+        workspaces: [],
+        containers: [
+            OCIContainerState(
+                name: "stale-overlay",
+                imageReference: "localhost/fixture:latest",
+                running: false,
+                infrastructure: false),
+            OCIContainerState(
+                name: "in-flight",
+                imageReference: "localhost/fixture:latest",
+                running: true,
+                infrastructure: false),
+            OCIContainerState(
+                name: "buildkit",
+                imageReference: "ghcr.io/apple/container-builder-shim/builder:0.13.1",
+                running: false,
+                infrastructure: true),
+        ])
+    let repository = RepositoryCache(
+        context: repositoryContext(
+            root: root,
+            runtime: workspaceRuntime(root: root, backend: backend)),
+        catalog: catalog)
+
+    try await repository.prune(dryRun: true)
+    #expect(await backend.containerDeletions().isEmpty)
+
+    try await repository.prune(dryRun: false)
+    #expect(await backend.containerDeletions() == ["stale-overlay"])
 }
 
 /// Reachability has three sources, and only the catalog is one of them. The

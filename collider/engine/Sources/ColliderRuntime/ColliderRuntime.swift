@@ -135,6 +135,14 @@ public actor ColliderRuntime {
         try await ociBackend.infrastructureImages()
     }
 
+    public func ociContainers() async throws -> [OCIContainerState] {
+        try await ociBackend.containers()
+    }
+
+    public func deleteOCIContainer(named name: String) async throws {
+        try await ociBackend.deleteContainer(named: name)
+    }
+
     public func ociPersistentWorkspaces() async throws
         -> [OCIPersistentWorkspaceState]
     {

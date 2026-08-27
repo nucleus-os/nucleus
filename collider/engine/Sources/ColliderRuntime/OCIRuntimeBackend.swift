@@ -117,6 +117,33 @@ public struct OCIInfrastructureImages: Codable, Equatable, Sendable {
     }
 }
 
+/// A container record the runtime holds.
+///
+/// A record outlives the process that ran it. Collider deletes its own on
+/// completion, cancellation, and failure alike, so one that remains belongs to
+/// an execution none of those paths reached, and it is not inert: it holds an
+/// unpacked root filesystem and it names an image, which keeps that image from
+/// ever being collected.
+public struct OCIContainerState: Codable, Equatable, Sendable {
+    public let name: String
+    public let imageReference: String
+    public let running: Bool
+    /// Whether the runtime owns this container rather than the task graph.
+    public let infrastructure: Bool
+
+    public init(
+        name: String,
+        imageReference: String,
+        running: Bool,
+        infrastructure: Bool
+    ) {
+        self.name = name
+        self.imageReference = imageReference
+        self.running = running
+        self.infrastructure = infrastructure
+    }
+}
+
 public struct OCIPersistentWorkspaceState: Codable, Equatable, Sendable {
     public let name: String
     public let identity: PersistentWorkspaceIdentity
@@ -206,6 +233,8 @@ public protocol OCIRuntimeBackend: Sendable {
     /// and leaves the snapshot itself unreferenced.
     func collectOrphanedImageContent() async throws -> UInt64
     func infrastructureImages() async throws -> OCIInfrastructureImages
+    func containers() async throws -> [OCIContainerState]
+    func deleteContainer(named name: String) async throws
     func persistentWorkspaces(
         configuration: OCIRuntimeConfiguration
     ) async throws -> [OCIPersistentWorkspaceState]
@@ -266,6 +295,14 @@ extension OCIRuntimeBackend {
     }
 
     public func infrastructureImages() async throws -> OCIInfrastructureImages {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func containers() async throws -> [OCIContainerState] {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    public func deleteContainer(named _: String) async throws {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 

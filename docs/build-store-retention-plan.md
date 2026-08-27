@@ -246,7 +246,7 @@ the lowered tasks it should, which would be this plan's defect rather than that
 one's. This phase completes when a bound cannot evict a context another checkout
 sharing the store still reaches.
 
-## Phase 5: Collect Orphaned Image Content, and Name the Images That Stay
+## Phase 5: Bring the Container Store Under Collection
 
 Collection of unreferenced image content runs whenever the store is pruned,
 independent of whether any image was selected for deletion. Content is orphaned
@@ -275,8 +275,10 @@ The bytes come from collection, not from deletion.
 Gate: a prune that selects no image still collects orphaned content and reports
 what it returned; a prune whose selection is empty because the store could not be
 read says so instead of reporting an empty selection; the live init, builder, and
-base images are never selected; the complete build and packaging graphs then
-execute without rebuilding a retained image or re-pulling a base.
+base images are never selected; a container record no execution owns is removed
+while a running one and the runtime's builder are not; the complete build and
+packaging graphs then execute without rebuilding a retained image or re-pulling
+a base.
 
 Status: active. Collection is separated from deletion and runs unconditionally,
 and an unreadable image store is reported rather than rendered as nothing to do.
@@ -296,6 +298,16 @@ is superseded rather than unaccountable, which is what makes the previous
 runtime versions and the previous base collectable while the current ones are
 never candidates. An image no source names remains `unknown`, is never
 collected, and is now listed by reference in the status report.
+
+Container records are collected on the same pass, before images, because a
+record names an image and holds it against collection for as long as it exists.
+Collider deletes its own container on completion, cancellation, and failure
+alike, so a record that is not running belongs to an execution none of those
+paths reached; it holds an unpacked root filesystem and nothing reclaims it. The
+runtime's own builder container is excluded, because the runtime creates it and
+the next image build expects it. A record that is merely recorded also stops
+counting as an image's active reference: treating a stopped container as active
+is what let one abandoned record pin its image permanently.
 
 One gate clause is outstanding: that the complete build and packaging graphs
 execute after a prune without rebuilding a retained image or re-pulling a base.

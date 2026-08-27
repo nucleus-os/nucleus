@@ -216,6 +216,10 @@ struct PruneResult: Codable, Equatable, Sendable {
     /// complete set of orphans.
     let persistentWorkspacesUnavailable: String?
     let appleContainerImages: [OCIImageRetentionRecord]
+    /// Container records removed because no execution owns them.
+    let appleContainers: [String]
+    /// Why the container records could not be read, when they could not be.
+    let appleContainersUnavailable: String?
     /// Why the image store could not be read, when it could not be. Absent
     /// means `appleContainerImages` is the complete selection rather than what
     /// survived a question nothing answered.
@@ -234,6 +238,12 @@ private struct ImagePruneOutcome {
     var selected: [OCIImageRetentionRecord] = []
     var unavailable: String?
     var collectedBytes: UInt64?
+}
+
+/// What pruning did about container records.
+private struct ContainerPruneOutcome {
+    var selected: [String] = []
+    var unavailable: String?
 }
 
 private struct OCIImageFamily {
@@ -511,6 +521,7 @@ struct RepositoryCache {
         var targetRecords: [StorageRemovalTarget]
         var workspaceRecords: [PersistentWorkspaceRemovalTarget]
         var images: ImagePruneOutcome
+        var containers: ContainerPruneOutcome
         var removalFailures: [StorageRemovalFailure] = []
         let availableBefore = hostFilesystemStatus()?.availableBytes
 
@@ -523,6 +534,7 @@ struct RepositoryCache {
             // reachability over content this command never enumerates, so the
             // honest plan states that it runs.
             images = await reclaimableImages()
+            containers = await reclaimableContainers()
         } else {
             var locks = Set<TaskLock>()
             for declaration in pruneDeclarations {
@@ -537,7 +549,7 @@ struct RepositoryCache {
             for task in catalog.tasks where task.action?.imagePreparations.isEmpty == false {
                 locks.formUnion(task.locks)
             }
-            (targetRecords, workspaceRecords, images, removalFailures) =
+            (targetRecords, workspaceRecords, images, containers, removalFailures) =
                 try await context.runtime.withTaskLocks(
                     locks,
                     stateRoot: context.taskStateRoot,
@@ -564,6 +576,12 @@ struct RepositoryCache {
                         try await context.runtime.deleteOCIPersistentWorkspace(
                             named: workspace.name)
                     }
+                    // Before images, because a container record names an
+                    // image and holds it active for as long as it exists.
+                    let containers = await reclaimableContainers()
+                    for name in containers.selected {
+                        try await context.runtime.deleteOCIContainer(named: name)
+                    }
                     var images = await reclaimableImages()
                     if !images.selected.isEmpty {
                         try await context.runtime.deleteOCIImages(
@@ -585,6 +603,7 @@ struct RepositoryCache {
                         resolved.records,
                         workspaces,
                         images,
+                        containers,
                         failures
                     )
                 }
@@ -610,6 +629,8 @@ struct RepositoryCache {
                 persistentWorkspaces: workspaceRecords,
                 persistentWorkspacesUnavailable: workspacesUnavailable,
                 appleContainerImages: images.selected,
+                appleContainers: containers.selected,
+                appleContainersUnavailable: containers.unavailable,
                 appleContainerImagesUnavailable: images.unavailable,
                 selectedAllocatedBytes: selectedAllocatedBytes,
                 recoveredBytes: dryRun ? nil : recoveredBytes(since: availableBefore),
@@ -1180,6 +1201,28 @@ struct RepositoryCache {
     /// reporting rather than an empty selection: a store nothing enumerated
     /// and a store holding nothing collectable are the same output otherwise,
     /// and only one of them means the report is complete.
+    /// Container records no execution owns.
+    ///
+    /// Collider deletes its own container on completion, cancellation, and
+    /// failure alike, so a record that is not running belongs to an execution
+    /// none of those paths reached. It is not inert: it holds an unpacked root
+    /// filesystem, and while it exists it names an image the store must keep.
+    /// The runtime's own builder container is excluded, because the runtime
+    /// creates it and the next image build expects it.
+    private func reclaimableContainers() async -> ContainerPruneOutcome {
+        do {
+            let containers = try await context.runtime.ociContainers()
+            return ContainerPruneOutcome(
+                selected:
+                    containers
+                    .filter { !$0.running && !$0.infrastructure }
+                    .map(\.name)
+                    .sorted())
+        } catch {
+            return ContainerPruneOutcome(unavailable: "\(error)")
+        }
+    }
+
     private func reclaimableImages() async -> ImagePruneOutcome {
         do {
             let images = try await context.runtime.ociImages()
@@ -1647,6 +1690,12 @@ struct RepositoryCache {
         }
         for image in result.appleContainerImages {
             lines.append("  apple-container-image: \(image.reference)")
+        }
+        for name in result.appleContainers {
+            lines.append("  apple-container: \(name)")
+        }
+        if let reason = result.appleContainersUnavailable {
+            lines.append("  apple-container records unavailable: \(reason)")
         }
         if let reason = result.appleContainerImagesUnavailable {
             lines.append("  apple-container images unavailable: \(reason)")
