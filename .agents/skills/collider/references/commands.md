@@ -483,7 +483,7 @@ Arguments and options:
 
 ## `collider runs show`
 
-Usage: `collider runs show [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--version] [--help]`
+Usage: `collider runs show [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [<run-id>] [--explain-identity <explain-identity>] [--version] [--help]`
 
 Arguments and options:
 
@@ -492,6 +492,7 @@ Arguments and options:
 - `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
 - `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
 - `<run-id>` — Run identifier, or latest.
+- `--explain-identity` `<explain-identity>` — Print the recorded identity components of tasks whose name contains this text. Only tasks a lowering produced carry them, because those are the identities no later planning reconstructs.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 
