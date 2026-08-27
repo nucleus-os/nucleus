@@ -271,7 +271,16 @@ package struct WorkspaceContext: Sendable {
     package var filePrefixMapFlags: (swift: [String], clang: [String]) {
         var swift: [String] = []
         var clang: [String] = []
-        for root in identityPathMap.roots {
+        // Emitted in name order rather than in the map's own order. The map
+        // sorts by path length, descending, so a nested root is canonicalized
+        // before the root that contains it -- a property of the paths
+        // themselves, and therefore of where this checkout happens to sit.
+        // Where the workspace and cache paths are the same length the sort ties
+        // and breaks by name; where the workspace is longer it does not. Each
+        // flag's value canonicalizes, so no placement survives in what is
+        // emitted, but the sequence would carry it: the same revision in two
+        // checkouts produced the same flags in two orders, and two identities.
+        for root in identityPathMap.roots.sorted(by: { $0.name < $1.name }) {
             let mapping = "\(root.path.string)=\(Self.mappedPrefix(for: root))"
             swift += ["-file-prefix-map", mapping]
             clang.append("-ffile-prefix-map=\(mapping)")

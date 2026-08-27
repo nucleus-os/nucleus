@@ -60,10 +60,11 @@ the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
 moving either checkout.
 
-Status: the checkout half is complete for declared task identities, and the
-shared build store contradicts that for lowered SwiftPM ones. No declared task
-identity in the graph contains the checkout, so the CI checkout and the
-authoritative checkout name one identity for one revision.
+Status: complete for the checkout half. No declared task identity in the graph
+contains the checkout, and the lowered SwiftPM identities that contradicted that
+in a shared build store now agree as well. What follows records how that was
+established, because the evidence took three forms and the cause was none of the
+things the values suggested.
 
 The store says otherwise about the identities SwiftPM lowering produces. The
 authoritative checkout's test lanes use the host build contexts
@@ -89,12 +90,22 @@ The same package at two locations produces two contexts, so lowered identities
 divide on checkout and this phase owns the defect. The reachable set enumerates
 what it should; there is simply more than one identity for one package.
 
-The mechanism is not yet named, and the candidates this phase already records
-are eliminated. The recorded toolchain is the same in both. `packageRoot`
-resolves through the map. Compiler flags reach identity through
-`append(argument:)`, which canonicalizes any declared root inside a string, and
-a root followed by `=` is now a boundary, so the prefix-mapping flags no longer
-carry a checkout into identity as the note below still claims.
+The mechanism is the order of the prefix-mapping flags rather than any value in
+them. The identity path map sorts its roots by path length, descending, so that
+a nested root is canonicalized before the root containing it; that order is
+therefore a property of where a checkout sits. `filePrefixMapFlags` iterated the
+map's own order and emitted the flags in it, and those flags are part of a
+SwiftPM identity. The authoritative checkout's workspace and cache paths are
+both twenty-five characters, so the sort ties and breaks by name and the cache
+mapping is emitted first; the runner work tree's workspace path is
+ninety-three, so it does not tie and the workspace mapping is emitted first.
+Every value canonicalized correctly in both, which is why the values had been
+checked and cleared: the sequence carried the placement instead.
+
+The flags are now emitted in name order while canonicalization keeps its
+length-descending sort, which it needs. The authoritative checkout already
+emitted cache first, so its identities are unchanged and only the runner work
+tree converges onto them, at the cost of one rebuild.
 
 Lowered identities are now observable. A lowering returns the bytes its task's
 name was derived from rather than reporting them, because a lowering is required

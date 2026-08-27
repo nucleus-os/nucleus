@@ -3084,6 +3084,44 @@ private func artifactInput(
 /// command arguments and stay green, because only the lanes someone runs are
 /// ever encoded. The packaging and qualification lanes reached exactly that
 /// state.
+/// The prefix-mapping flags are placement, and their order must not be.
+///
+/// The identity path map sorts its roots by path length so a nested root is
+/// canonicalized before the root containing it, which makes the order a
+/// property of where a checkout sits. Emitting the flags in that order put the
+/// sequence into identity even though every value canonicalized: one checkout
+/// whose workspace and cache paths are the same length ties and breaks by name,
+/// another whose workspace path is longer does not, and the same revision
+/// lowered to two different SwiftPM identities in one shared build store.
+@Test func prefixMappingFlagOrderDoesNotFollowCheckoutPathLength() {
+    func flags(workspace: String, cache: String) -> (swift: [String], clang: [String]) {
+        WorkspaceContext(
+            root: FilePath(workspace),
+            environment: [:],
+            runtime: ColliderRuntime(),
+            cacheRoot: FilePath(cache)
+        ).filePrefixMapFlags
+    }
+    // Equal-length paths, so the map's own sort ties and breaks by name.
+    let tied = flags(
+        workspace: "/Library/Nucleus/checkout",
+        cache: "/Library/Nucleus/Collider")
+    // A workspace path far longer than the cache, so the sort does not tie.
+    let untied = flags(
+        workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
+        cache: "/Library/Nucleus/Collider")
+
+    func names(_ values: [String]) -> [String] {
+        values.compactMap { value in
+            guard let range = value.range(of: "=/nucleus-") else { return nil }
+            return String(value[range.upperBound...])
+        }
+    }
+    #expect(names(tied.swift) == names(untied.swift))
+    #expect(names(tied.clang) == names(untied.clang))
+    #expect(names(tied.swift) == ["cache", "workspace"])
+}
+
 @Test func everyDeclaredTaskIdentityIsPlacementIndependent() async throws {
     let context = WorkspaceContext(
         root: fixtureRepositoryRoot,
