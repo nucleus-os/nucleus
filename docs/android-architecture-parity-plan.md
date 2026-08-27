@@ -255,6 +255,11 @@ which no run has done.
 
 ## Phase 6: Qualify the arm64 Guest on Hardware
 
+Activation gate: protected-main verification has completed Phase 5, the native
+arm64 host-toolchain plan has removed translated Android host execution, and the
+Android application-integration and container-security plans have completed
+their agent-runnable gates.
+
 The arm64 image boots under the rootless LXC runtime on arm64 Linux hardware and
 satisfies the gates already defined by the Android container security and
 Android application integration plans. Cross-architecture inspection and

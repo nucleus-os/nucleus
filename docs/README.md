@@ -41,52 +41,51 @@ reuse.
    automated-to-local warm-state reuse, close the remaining dirty-tree and
    mutation-supersession checks, and enforce the account, credential, network,
    and recovery boundaries.
-2. Complete Phases 6 through 8 of the
-   [build store retention plan](build-store-retention-plan.md). Phases 1 through
-   5 already bound SwiftPM identity contexts on every run and brought the
-   container store under collection; the first collecting prune returned 411.9
-   GiB. Make interactive inspection read the store directly, declare residency
-   for every materialized source root, and report recorded allocation without
-   recursively walking the store.
-3. Complete the product-execution portions of the
+2. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-4. Complete the remaining half of Phase 5 and then Phase 6 of the
-   [Android architecture parity plan](android-architecture-parity-plan.md).
-   Phases 1 through 4 already produce both AOSP products and both complete
-   six-member native package cohorts from graph-owned inputs. Run
-   `collider package linux-runtime` in protected-main verification, then qualify
-   the arm64 guest on physical arm64 hardware.
-5. Complete Phases 1 through 5 of the
-   [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
-   This gates no product and no publication: the arm64 product already builds
-   with its host tools translated. It is sequenced here because translation has
-   killed two host tools outright, the mitigation is retry rather than
-   diagnosis, and the lane is the longest in the graph — which an unattended
-   runner cannot absorb the way a watched build can. Its first phase measures
-   what translation costs without re-executing a build; the remaining phases
-   supply the arm64 host toolchains AOSP does not ship.
-6. Complete the remaining work in Phases 6 and 7 of the
+3. Extend Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
-   by expanding the operational host-contract, provenance, build, and test lanes
-   into the complete packaging and qualification graph. The graph proves the
-   Linux-runtime packaging lane through an actual
-   `collider package linux-runtime` execution on protected main, which is also
-   the remaining half of Android architecture parity Phase 5.
-7. Complete Phases 5 and 6 of the
+   through protected-main Linux-runtime packaging. An actual
+   `collider package linux-runtime` execution closes the remaining half of Phase
+   5 of the [Android architecture parity plan](android-architecture-parity-plan.md):
+   both AOSP products and both complete six-member native package cohorts already
+   come from graph-owned inputs. Physical Android qualification remains outside
+   this packaging gate.
+4. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to assemble signed repository snapshots offline and remove Collider's
    remaining product-installation commands.
-8. Complete Phases 6 and 7 of the
+5. Complete Phases 6 through 8 of the
+   [build store retention plan](build-store-retention-plan.md). Phases 1 through
+   5 already bound SwiftPM identity contexts on every run and brought the
+   container store under collection; the first collecting prune returned 411.9
+   GiB. Make interactive inspection read the store directly, declare residency
+   for every materialized source root, and report recorded allocation before the
+   long-running qualification matrices begin.
+6. Complete Phases 1 through 5 of the
+   [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
+   Protected-main packaging does not wait for this reliability work. Measure the
+   translated host workload against the existing generations, then supply the
+   missing native host toolchains and prove both products without translation
+   before unattended Android qualification can be accepted.
+7. Complete Phase 6 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
-   using the exact native package cohorts: first qualify one unchanged artifact
-   across distributions, then qualify both architectures on physical hardware.
-9. Complete the remaining qualification plans in the order listed below. Their
+   using the signed local repository snapshots: qualify each unchanged artifact
+   digest across the declared distribution matrix without rebuilding it.
+8. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
-   the package cohorts before CI cutover.
+   the package cohorts, and complete the qualification portion of the
+   protected-main verification graph.
+9. Complete Phase 7 of the
+   [Linux distribution portability plan](linux-distribution-portability-plan.md)
+   on physical arm64 and x86_64 hardware. After the Android application and
+   container-security gates are complete, execute Phase 6 of the
+   [Android architecture parity plan](android-architecture-parity-plan.md) on
+   physical arm64 hardware as part of the same hardware-qualification stage.
 10. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
@@ -126,7 +125,7 @@ dependency order:
 
 ### Qualification sequence
 
-Step 9 executes these qualification plans after their corresponding
+Step 8 executes these qualification plans after their corresponding
 implementation inputs are available:
 
 16. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
@@ -136,6 +135,11 @@ implementation inputs are available:
 20. [Android container security](android-container-security-qualification-plan.md)
 21. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
 22. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+
+Step 9 consumes the completed Android application-integration and
+container-security gates before accepting Android architecture parity Phase 6;
+cross-architecture inspection and translated execution never substitute for
+that physical arm64 result.
 
 ## Completed architecture consolidation
 

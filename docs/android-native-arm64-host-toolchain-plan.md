@@ -27,8 +27,12 @@ architectures' package inputs are produced from those generations.
 What it changes is how reliably that lane runs. Translation has already killed
 two host tools with no cause in the tree, and the mitigation until this plan
 lands is to retry rather than diagnose. A person watching a build can retry; an
-unattended run cannot, and this is the longest lane in the graph. That places
-the plan before CI cutover as risk reduction, not as a dependency of it.
+unattended run cannot, and this is the longest lane in the graph. Protected-main
+package assembly therefore runs first with the translated toolchain and proves
+the product graph independently of this work. Phase 1 then measures the existing
+generations, and Phases 2 through 5 land before unattended Android qualification
+is accepted. The plan reduces qualification risk without becoming a product,
+package, signing, or publication dependency.
 
 ## Current State
 
