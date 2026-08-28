@@ -69,6 +69,13 @@ enum BenchmarkColliderRecipe: ColliderComponent {
             let executable = swiftPM.executable(product)
             let output = context.logRoot.appending(
                 "benchmarks/\(outputDirectory)")
+            // The benchmark writes its results itself, so it is told where the
+            // container reaches them and that directory is bound there. Naming
+            // the host path instead described a location the container has no
+            // mount for, so the results were written into its own filesystem
+            // and went away with it, while the task still declared the host
+            // directory as an output nobody had filled.
+            let containerOutput = context.identityPathMap.executionPath(output)
             var builder = TaskBuilder(
                 id: TaskID(rawValue: "benchmark.\(outputDirectory)"),
                 component: descriptor.id)
@@ -100,11 +107,16 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                             execution: swiftPM.ociExecutableExecution(
                                 executable: executable,
                                 arguments: [
-                                    "--output", output.string, "--iterations", "3",
+                                    "--output", containerOutput, "--iterations", "3",
                                 ],
                                 workingDirectory: context.repositoryRoot,
                                 placement: context.identityPathMap,
-                                environment: environment))))
+                                environment: environment
+                            ).mounting([
+                                OCIMount(
+                                    boundedExport: output,
+                                    target: containerOutput)
+                            ]))))
         }
         return try ComponentDefinition(
             descriptor: descriptor,

@@ -460,6 +460,35 @@ public struct OCIExecution: Hashable, Sendable {
         self.environment = environment
         self.output = output
     }
+
+    /// The same execution with further mounts.
+    ///
+    /// A build context knows nothing about an individual action's outputs, so
+    /// an action that produces into a directory has to say where that directory
+    /// crosses after the execution is built. Rebuilding the whole value to add
+    /// one mount is how a field gets dropped silently in the copy.
+    public func mounting(_ additional: [OCIMount]) -> OCIExecution {
+        OCIExecution(
+            executionPlatform: executionPlatform,
+            artifactTarget: artifactTarget,
+            imageID: imageID,
+            hostname: hostname,
+            workingDirectory: workingDirectory,
+            hostWorkingDirectory: hostWorkingDirectory,
+            mounts: mounts + additional,
+            persistentWorkspaceMounts: persistentWorkspaceMounts,
+            userPolicy: userPolicy,
+            capabilityPolicy: capabilityPolicy,
+            privilegePolicy: privilegePolicy,
+            processFilesystemPolicy: processFilesystemPolicy,
+            executableRequirements: executableRequirements,
+            resourceLimits: resourceLimits,
+            containerEnvironment: containerEnvironment,
+            imageEntrypointOverride: imageEntrypointOverride,
+            command: command,
+            environment: environment,
+            output: output)
+    }
 }
 
 public enum TaskLock: Hashable, Sendable {
