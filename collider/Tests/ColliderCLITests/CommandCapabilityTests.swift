@@ -10,6 +10,7 @@ private let taskControlledLeaves: [[String]] = [
     ["bootstrap"],
     ["build"],
     ["test"],
+    ["verify", "all"],
     ["check", "sanitizers"],
     ["check", "address-sanitizer"],
     ["check", "undefined-behavior-sanitizer"],

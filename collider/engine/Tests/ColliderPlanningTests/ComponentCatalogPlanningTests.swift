@@ -1,5 +1,7 @@
 import ColliderCore
 import ColliderPlanning
+import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -51,6 +53,63 @@ private func catalogComponent(
         entrypoints: entrypoints ?? [
             ComponentEntrypoint(id: .build, roots: Set(tasks.map(\.id)))
         ])
+}
+
+@Test func planningSessionReusesDeclaredIdentitiesAcrossRequests() async throws {
+    let shared = catalogTask(
+        TaskID(rawValue: "core.shared"),
+        inputs: [.file(FilePath("/fixture/shared"))])
+    let build = catalogTask(
+        TaskID(rawValue: "core.build"),
+        dependencies: [shared.id],
+        inputs: [.file(FilePath("/fixture/build"))])
+    let test = catalogTask(
+        TaskID(rawValue: "core.test"),
+        dependencies: [shared.id],
+        inputs: [.file(FilePath("/fixture/test"))])
+    let component = try catalogComponent(
+        tasks: [shared, build, test],
+        entrypoints: [
+            ComponentEntrypoint(id: .build, roots: [build.id]),
+            ComponentEntrypoint(id: .testDefault, roots: [test.id]),
+        ])
+    let buildRequest = catalogRequest("core", .build)
+    let testRequest = catalogRequest("core", .testDefault)
+    let catalog = ComponentCatalog(
+        components: [component],
+        publicEntrypoints: [buildRequest, testRequest])
+    let reads = Mutex(0)
+    let observations = Mutex<[TaskID]>([])
+    let digest = ArtifactDigest(bytes: Array(repeating: 1, count: 32))
+    let services = TaskPlanningServices(
+        digestBytes: { ArtifactDigest.sha256(Data($0)) },
+        digestFile: { _ in
+            reads.withLock { $0 += 1 }
+            return digest
+        },
+        digestTree: { _ in digest },
+        digestSourceCheckout: { _ in digest },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+        },
+        taskState: { _ in .missing },
+        validateOutputs: { _ in },
+        observeIdentity: { task, _ in
+            observations.withLock { $0.append(task) }
+        })
+    var session = try ColliderPlanningSession(catalog: catalog, services: services)
+
+    _ = try await session.plan(
+        requests: [buildRequest],
+        rebuildSelected: false,
+        lowerings: [])
+    _ = try await session.plan(
+        requests: [testRequest],
+        rebuildSelected: false,
+        lowerings: [])
+
+    #expect(reads.withLock { $0 } == 3)
+    #expect(observations.withLock { $0 }.count(where: { $0 == shared.id }) == 2)
 }
 
 @Test func plannerIndexesCatalogAliasesGroupsAndRoutes() throws {

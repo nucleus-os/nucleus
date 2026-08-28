@@ -347,6 +347,20 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         scratchPath.appending(".collider/products")
     }
 
+    public var testResultsDirectory: FilePath {
+        switch context.execution {
+        case .host: scratchPath.appending(".collider/test-results")
+        case .oci: productsDirectory.appending("test-results")
+        }
+    }
+
+    public var executionTestResultsDirectory: FilePath {
+        switch context.execution {
+        case .host: testResultsDirectory
+        case .oci: FilePath("/swiftpm-products/test-results")
+        }
+    }
+
     public var executionScratchPath: FilePath {
         guard case .oci(let configuration) = context.execution,
             configuration.buildWorkspace != nil

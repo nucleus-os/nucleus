@@ -18,13 +18,13 @@ public struct ColliderPlanner {
         lowerings: [any TaskPlanLowering],
         services: TaskPlanningServices
     ) async throws -> ExecutionPlan {
-        let index = try ComponentCatalogIndex(catalog)
-        return try await plan(
-            graph: TaskGraph(index.tasks),
-            selected: index.roots(for: requests),
-            rebuildSelected: rebuildSelected,
-            lowerings: lowerings,
+        var session = try ColliderPlanningSession(
+            catalog: catalog,
             services: services)
+        return try await session.plan(
+            requests: requests,
+            rebuildSelected: rebuildSelected,
+            lowerings: lowerings)
     }
 
     public func plan(
@@ -34,7 +34,27 @@ public struct ColliderPlanner {
         lowerings: [any TaskPlanLowering],
         services: TaskPlanningServices
     ) async throws -> ExecutionPlan {
-        try validateCompleteGraph(graph.declarations)
+        var identityCache: [TaskID: TaskIdentitySnapshot] = [:]
+        return try await plan(
+            graph: graph,
+            selected: selected,
+            rebuildSelected: rebuildSelected,
+            lowerings: lowerings,
+            services: services,
+            identityCache: &identityCache,
+            validateGraph: true)
+    }
+
+    func plan(
+        graph: TaskGraph,
+        selected: [TaskID],
+        rebuildSelected: Bool,
+        lowerings: [any TaskPlanLowering],
+        services: TaskPlanningServices,
+        identityCache: inout [TaskID: TaskIdentitySnapshot],
+        validateGraph: Bool
+    ) async throws -> ExecutionPlan {
+        if validateGraph { try validateCompleteGraph(graph.declarations) }
         let ordered = try graph.orderedTasks(selecting: selected)
         let explicitlySelected = Set(selected)
         let identityBuilder = TaskIdentityBuilder()
@@ -48,10 +68,18 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let identity = try await identityBuilder.build(
-                of: task,
-                dependencies: dependencyIdentities,
-                services: services)
+            let snapshot: TaskIdentitySnapshot
+            if let cached = identityCache[task.id] {
+                snapshot = cached
+                services.observeIdentity?(task.id, cached.bytes)
+            } else {
+                snapshot = try await identityBuilder.build(
+                    of: task,
+                    dependencies: dependencyIdentities,
+                    services: services)
+                identityCache[task.id] = snapshot
+            }
+            let identity = snapshot.digest
             identities[task.id] = identity
             let assessment =
                 rebuildSelected && explicitlySelected.contains(task.id)
@@ -126,7 +154,8 @@ public struct ColliderPlanner {
             let identity = try await identityBuilder.build(
                 of: lowered.task,
                 dependencies: dependencyIdentities,
-                services: services)
+                services: services
+            ).digest
             let assessment = assessment(
                 of: lowered.task,
                 identity: identity,
@@ -301,7 +330,7 @@ public struct ColliderPlanner {
         return claims.values.sorted { $0.canonicalKey < $1.canonicalKey }
     }
 
-    private func validateCompleteGraph(_ tasks: [TaskDeclaration]) throws {
+    func validateCompleteGraph(_ tasks: [TaskDeclaration]) throws {
         var outputs = GraphOutputPathIndex()
         var outputOrdinal = 0
         for task in tasks {
@@ -372,6 +401,43 @@ public struct ColliderPlanner {
         }
     }
 
+}
+
+public struct ColliderPlanningSession {
+    public let preparedCatalog: PreparedComponentCatalog
+    private let services: TaskPlanningServices
+    private var identityCache: [TaskID: TaskIdentitySnapshot] = [:]
+
+    public init(
+        catalog: ComponentCatalog,
+        services: TaskPlanningServices
+    ) throws {
+        preparedCatalog = try PreparedComponentCatalog(catalog)
+        self.services = services
+    }
+
+    public init(
+        preparedCatalog: PreparedComponentCatalog,
+        services: TaskPlanningServices
+    ) {
+        self.preparedCatalog = preparedCatalog
+        self.services = services
+    }
+
+    public mutating func plan(
+        requests: [ComponentEntrypointRequest],
+        rebuildSelected: Bool,
+        lowerings: [any TaskPlanLowering]
+    ) async throws -> ExecutionPlan {
+        try await ColliderPlanner().plan(
+            graph: preparedCatalog.graph,
+            selected: preparedCatalog.selectedTasks(for: requests),
+            rebuildSelected: rebuildSelected,
+            lowerings: lowerings,
+            services: services,
+            identityCache: &identityCache,
+            validateGraph: false)
+    }
 }
 
 public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {

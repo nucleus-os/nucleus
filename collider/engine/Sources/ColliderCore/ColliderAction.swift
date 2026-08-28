@@ -285,16 +285,23 @@ public enum ActionContainerScopeFailure: Error, CustomStringConvertible, Sendabl
 }
 
 public struct ActionObservationRecorder: Sendable {
-    private let recordBody: @Sendable (ActionStageObservation) -> Void
+    private let recordStageBody: @Sendable (ActionStageObservation) -> Void
+    private let recordTestCasesBody: @Sendable ([TestCaseObservation]) -> Void
 
     public init(
-        record: @escaping @Sendable (ActionStageObservation) -> Void = { _ in }
+        record: @escaping @Sendable (ActionStageObservation) -> Void = { _ in },
+        recordTestCases: @escaping @Sendable ([TestCaseObservation]) -> Void = { _ in }
     ) {
-        recordBody = record
+        recordStageBody = record
+        recordTestCasesBody = recordTestCases
     }
 
     public func record(_ observation: ActionStageObservation) {
-        recordBody(observation)
+        recordStageBody(observation)
+    }
+
+    public func record(testCases: [TestCaseObservation]) {
+        recordTestCasesBody(testCases)
     }
 }
 

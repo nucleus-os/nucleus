@@ -19,6 +19,7 @@ Subcommands:
 - `bootstrap`
 - `build`
 - `test`
+- `verify`
 - `check`
 - `generate`: Regenerate a component's generated sources into the build store.
 - `adopt`: Adopt generated sources from the build store into the checkout.
@@ -116,6 +117,28 @@ Arguments and options:
 - `--verify-reproduction` — Produce beside the retained result and report whether it reproduces.
 - `<component>` — all, runtime, collider, android, browser, loader, gpu-headless, gpu-drm, or a component name.
 - `--filter` `<filter>` — Run only the tests whose names match this pattern. A filtered run is a distinct task from the unfiltered one, so it never records the component's full test task as satisfied.
+- `--version` — Show the version.
+- `-h`, `--help` — Show help information.
+
+## `collider verify`
+
+Usage: `collider verify [--format <format>] [--color <color>] [--progress <progress>] [--progress-format <progress-format>] [--dry-run] [--rebuild] [--verbose] [--quiet] [--run-id <run-id>] [--explain-identity <explain-identity>] [--as-builder] [--verify-reproduction] [<component>] [--version] [--help]`
+
+Arguments and options:
+
+- `--format` `<format>` — Output format.; values: `text`, `json`; default: `text`
+- `--color` `<color>` — Color policy for human output.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress` `<progress>` — Progress rendering policy.; values: `auto`, `always`, `never`; default: `auto`
+- `--progress-format` `<progress-format>` — Progress stream format.; values: `human`, `json`
+- `--dry-run` — Print the resolved task graph without executing it.
+- `--rebuild` — Rebuild the selected tasks while reusing clean prerequisites.
+- `--verbose` — Print each leaf command before executing it.
+- `--quiet` — Keep task output in the durable run log without streaming it.
+- `--run-id` `<run-id>` — Resume an interrupted run.
+- `--explain-identity` `<explain-identity>` — Print the identity components of tasks whose name contains this text.
+- `--as-builder` — Plan as the identity that executes builds, without executing.
+- `--verify-reproduction` — Produce beside the retained result and report whether it reproduces.
+- `<component>` — all, runtime, or a runtime component name.
 - `--version` — Show the version.
 - `-h`, `--help` — Show help information.
 

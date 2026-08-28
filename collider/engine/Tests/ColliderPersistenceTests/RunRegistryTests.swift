@@ -599,6 +599,13 @@ private enum ObservationFixtureFailure: Error {
                         durationNanoseconds: 6,
                         inputByteCount: 7,
                         outputByteCount: 8)
+                ],
+                testCases: [
+                    TestCaseObservation(
+                        suite: "FixtureTests",
+                        name: "fixturePasses",
+                        durationNanoseconds: 9,
+                        outcome: .passed)
                 ]))
     ]
     manifest.resumedAt = ["2026-07-22T00:00:00.5Z"]
@@ -647,6 +654,14 @@ private enum ObservationFixtureFailure: Error {
                 durationNanoseconds: 6,
                 inputByteCount: 7,
                 outputByteCount: 8)
+        ])
+    #expect(
+        decodedTask.observations?.testCases == [
+            TestCaseObservation(
+                suite: "FixtureTests",
+                name: "fixturePasses",
+                durationNanoseconds: 9,
+                outcome: .passed)
         ])
     #expect(decoded.resumedAt == manifest.resumedAt)
     #expect(decoded.resumeCount == manifest.resumeCount)

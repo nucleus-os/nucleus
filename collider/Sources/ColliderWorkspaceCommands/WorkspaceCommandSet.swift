@@ -6,6 +6,7 @@ package enum WorkspaceCommandSet {
         Bootstrap.self,
         Build.self,
         Test.self,
+        Verify.self,
         Check.self,
         Generate.self,
         Adopt.self,

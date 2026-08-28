@@ -467,7 +467,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 action: try swiftPMAction(
                     invocation: first.invocation,
                     environment: environment,
-                    arguments: [["test"] + testArguments])
+                    arguments: [["test"] + testArguments],
+                    recordsTestResults: true)
             )
             .addingDependencies(owners.flatMap(\.dependencies)),
             identityBytes: identity.bytes)
@@ -507,7 +508,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
     private func swiftPMAction(
         invocation: SwiftPMInvocation,
         environment: [String: String],
-        arguments: [[String]]
+        arguments: [[String]],
+        recordsTestResults: Bool = false
     ) throws -> AnyColliderAction {
         let processes: [SwiftPMProcess]
         switch invocation.context.execution {
@@ -516,25 +518,51 @@ public struct SwiftPMLowering: TaskPlanLowering {
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
             hostEnvironment.removeValue(
                 forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
-            processes = arguments.map { arguments in
-                SwiftPMProcess(
+            processes = arguments.enumerated().map { index, arguments in
+                let results =
+                    recordsTestResults
+                    ? invocation.testResultsDirectory.appending("swift-test-\(index).xml")
+                    : nil
+                let executionResults =
+                    recordsTestResults
+                    ? invocation.executionTestResultsDirectory
+                        .appending("swift-test-\(index).xml")
+                    : nil
+                return SwiftPMProcess(
                     stageName: SwiftPMAction.stageName(arguments: arguments),
                     execution: .host(
                         invocation.command(
-                            arguments: arguments,
+                            arguments: arguments
+                                + (executionResults.map {
+                                    ["--xunit-output", $0.string]
+                                } ?? []),
                             workingDirectory: invocation.context.packageRoot,
-                            environment: hostEnvironment)))
+                            environment: hostEnvironment)),
+                    testResults: results)
             }
         case .oci:
-            processes = try arguments.map { arguments in
-                SwiftPMProcess(
+            processes = try arguments.enumerated().map { index, arguments in
+                let results =
+                    recordsTestResults
+                    ? invocation.testResultsDirectory.appending("swift-test-\(index).xml")
+                    : nil
+                let executionResults =
+                    recordsTestResults
+                    ? invocation.executionTestResultsDirectory
+                        .appending("swift-test-\(index).xml")
+                    : nil
+                return SwiftPMProcess(
                     stageName: SwiftPMAction.stageName(arguments: arguments),
                     execution: .oci(
                         try invocation.ociExecution(
-                            arguments: arguments,
+                            arguments: arguments
+                                + (executionResults.map {
+                                    ["--xunit-output", $0.string]
+                                } ?? []),
                             workingDirectory: FilePath(
                                 invocation.executionPackageRoot),
-                            environment: environment)))
+                            environment: environment)),
+                    testResults: results)
             }
         }
         let binPathQuery: SwiftPMProcess
@@ -551,7 +579,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         arguments: ["build", "--show-bin-path"],
                         workingDirectory: invocation.context.packageRoot,
                         environment: hostEnvironment,
-                        output: .captured(limit: 64 * 1_024))))
+                        output: .captured(limit: 64 * 1_024))),
+                testResults: nil)
         case .oci:
             binPathQuery = SwiftPMProcess(
                 stageName: "swift-package.products-publication",
@@ -560,7 +589,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         arguments: ["build", "--show-bin-path"],
                         workingDirectory: FilePath(invocation.executionPackageRoot),
                         environment: environment,
-                        output: .captured(limit: 64 * 1_024))))
+                        output: .captured(limit: 64 * 1_024))),
+                testResults: nil)
         }
         return try AnyColliderAction(
             SwiftPMAction(
@@ -654,6 +684,7 @@ private enum SwiftPMProcessExecution: Hashable, Sendable {
 private struct SwiftPMProcess: Hashable, Sendable {
     let stageName: String
     let execution: SwiftPMProcessExecution
+    let testResults: FilePath?
 }
 
 private struct SwiftPMAction: ColliderAction {
@@ -751,6 +782,10 @@ private struct SwiftPMAction: ColliderAction {
             try context.files.remove(productsDirectory)
             try context.files.createDirectory(productsDirectory)
         }
+        for results in identity.processes.compactMap(\.testResults) {
+            try context.files.createDirectory(results.removingLastComponent())
+            try context.files.remove(results)
+        }
         for (index, process) in identity.processes.enumerated() {
             try context.cancellation.check()
             let start = ContinuousClock.now
@@ -769,6 +804,13 @@ private struct SwiftPMAction: ColliderAction {
                     outputByteCount: 0))
             guard result.succeeded else {
                 throw result.executionFailure(reason: "Swift package command failed")
+            }
+            if let results = process.testResults,
+                try context.files.metadata(for: results) != nil
+            {
+                context.observations.record(
+                    testCases: try SwiftXUnitResults.decode(
+                        context.files.read(results)))
             }
             if index == identity.processes.indices.last {
                 try publishProductsDirectory(

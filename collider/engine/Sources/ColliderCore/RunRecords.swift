@@ -114,25 +114,55 @@ public struct ActionStageObservation: Codable, Hashable, Sendable {
     }
 }
 
+public struct TestCaseObservation: Codable, Hashable, Sendable {
+    public enum Outcome: String, Codable, Hashable, Sendable {
+        case passed
+        case failed
+        case skipped
+    }
+
+    public let suite: String?
+    public let name: String
+    public let durationNanoseconds: UInt64
+    public let outcome: Outcome
+
+    public init(
+        suite: String?,
+        name: String,
+        durationNanoseconds: UInt64,
+        outcome: Outcome
+    ) {
+        precondition(!name.isEmpty)
+        self.suite = suite
+        self.name = name
+        self.durationNanoseconds = durationNanoseconds
+        self.outcome = outcome
+    }
+}
+
 public struct TaskExecutionObservations: Codable, Hashable, Sendable {
     public var containerExecutions: [OCIExecutionObservation]
     public var actionStages: [ActionStageObservation]
+    public var testCases: [TestCaseObservation]
 
     public init(
         containerExecutions: [OCIExecutionObservation] = [],
-        actionStages: [ActionStageObservation] = []
+        actionStages: [ActionStageObservation] = [],
+        testCases: [TestCaseObservation] = []
     ) {
         self.containerExecutions = containerExecutions
         self.actionStages = actionStages
+        self.testCases = testCases
     }
 
     public var isEmpty: Bool {
-        containerExecutions.isEmpty && actionStages.isEmpty
+        containerExecutions.isEmpty && actionStages.isEmpty && testCases.isEmpty
     }
 
     private enum CodingKeys: String, CodingKey {
         case containerExecutions
         case actionStages
+        case testCases
     }
 
     public init(from decoder: any Decoder) throws {
@@ -147,6 +177,11 @@ public struct TaskExecutionObservations: Codable, Hashable, Sendable {
                 [ActionStageObservation].self,
                 forKey: .actionStages
             ) ?? []
+        testCases =
+            try container.decodeIfPresent(
+                [TestCaseObservation].self,
+                forKey: .testCases
+            ) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -154,6 +189,9 @@ public struct TaskExecutionObservations: Codable, Hashable, Sendable {
         try container.encode(containerExecutions, forKey: .containerExecutions)
         if !actionStages.isEmpty {
             try container.encode(actionStages, forKey: .actionStages)
+        }
+        if !testCases.isEmpty {
+            try container.encode(testCases, forKey: .testCases)
         }
     }
 }

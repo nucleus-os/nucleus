@@ -48,19 +48,26 @@ private let fixtureRepositoryRoot = FilePath(
 /// Builds the fixture catalog once for the whole suite. Constructing it now
 /// suspends, so tests share the in-flight construction rather than a lock held
 /// across it.
+private struct FixtureWorkspace: Sendable {
+    let context: WorkspaceContext
+    let catalog: ComponentCatalog
+}
+
 private actor SharedFixtureCatalog {
     static let shared = SharedFixtureCatalog()
-    private var construction: Task<ComponentCatalog, any Error>?
+    private var construction: Task<FixtureWorkspace, any Error>?
 
-    func catalog() async throws -> ComponentCatalog {
+    func workspace() async throws -> FixtureWorkspace {
         if let construction { return try await construction.value }
         let construction = Task {
-            try await ComponentRegistry(
-                context: WorkspaceContext(
-                    root: fixtureRepositoryRoot,
-                    environment: [:],
-                    runtime: ColliderRuntime())
-            ).componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+            let context = WorkspaceContext(
+                root: fixtureRepositoryRoot,
+                environment: [:],
+                runtime: ColliderRuntime())
+            return FixtureWorkspace(
+                context: context,
+                catalog: try await ComponentRegistry(context: context)
+                    .componentCatalog(hostAugmentation: HostCatalogAugmentation.none))
         }
         self.construction = construction
         do {
@@ -73,7 +80,7 @@ private actor SharedFixtureCatalog {
 }
 
 private func sharedFixtureCatalog() async throws -> ComponentCatalog {
-    try await SharedFixtureCatalog.shared.catalog()
+    try await SharedFixtureCatalog.shared.workspace().catalog
 }
 
 /// The placement map that catalog resolves through, so an assertion about a
@@ -3168,13 +3175,10 @@ private func artifactInput(
 /// absolute host path that no declared root covers divides two machines, and
 /// nothing rejects it. Reporting them together is what turns a count in a plan
 /// into a list that can be worked through.
-@Test func noTaskIdentityCarriesAnUnmappedHostPath() async throws {
-    let context = WorkspaceContext(
-        root: fixtureRepositoryRoot,
-        environment: [:],
-        runtime: ColliderRuntime())
-    let catalog = try await ComponentRegistry(context: context)
-        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+@Test func everyTaskIdentityIsPlacementIndependent() async throws {
+    let workspace = try await SharedFixtureCatalog.shared.workspace()
+    let context = workspace.context
+    let catalog = workspace.catalog
     let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
     let map = context.identityPathMap
     // Every root this workspace resolves through is declared, so a path this
@@ -3235,18 +3239,21 @@ private func artifactInput(
             scan(task, nodes)
         })
 
-    let planner = ColliderPlanner()
+    var session = try ColliderPlanningSession(
+        catalog: catalog,
+        services: services)
     let requests = try catalog.publicEntrypoints.map {
-        (request: $0, roots: Set(try planner.selectedTasks(in: catalog, requests: [$0])))
+        (
+            request: $0,
+            roots: Set(try session.preparedCatalog.selectedTasks(for: [$0]))
+        )
     }.sorted { $0.roots.count > $1.roots.count }
     var covered: Set<TaskID> = []
     for entry in requests where !entry.roots.isSubset(of: covered) {
-        _ = try await planner.plan(
-            catalog: catalog,
+        _ = try await session.plan(
             requests: [entry.request],
             rebuildSelected: false,
-            lowerings: [SwiftPMLowering()],
-            services: services)
+            lowerings: [SwiftPMLowering()])
         covered.formUnion(entry.roots)
     }
 
@@ -3294,50 +3301,6 @@ private func artifactInput(
 
     #expect(authoritative == runner)
     #expect(authoritative == elsewhere)
-}
-
-@Test func everyDeclaredTaskIdentityIsPlacementIndependent() async throws {
-    let context = WorkspaceContext(
-        root: fixtureRepositoryRoot,
-        environment: [:],
-        runtime: ColliderRuntime())
-    let catalog = try await ComponentRegistry(context: context)
-        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
-    let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
-    let services = TaskPlanningServices(
-        identityPathMap: context.identityPathMap,
-        digestBytes: { ArtifactDigest.sha256(Data($0)) },
-        digestFile: { _ in digest },
-        digestTree: { _ in digest },
-        digestSourceCheckout: { _ in digest },
-        semanticToolIdentity: { _, _ in
-            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
-        },
-        taskState: { _ in .missing },
-        validateOutputs: { _ in })
-
-    // Identity encoding rejects a declared root it finds, so planning is the
-    // assertion. Each publicly reachable request is planned on its own, the
-    // way an invocation selects one, because Swift product lowering groups
-    // requirements by build context and selecting every lane at once mixes
-    // contexts no single invocation combines.
-    let planner = ColliderPlanner()
-    let requests = try catalog.publicEntrypoints.map {
-        (request: $0, roots: Set(try planner.selectedTasks(in: catalog, requests: [$0])))
-    }.sorted { $0.roots.count > $1.roots.count }
-    // Most spellings select tasks a broader spelling already selects, and a
-    // request whose roots are covered adds no task, because a plan is the
-    // dependency closure of its roots.
-    var covered: Set<TaskID> = []
-    for entry in requests where !entry.roots.isSubset(of: covered) {
-        _ = try await planner.plan(
-            catalog: catalog,
-            requests: [entry.request],
-            rebuildSelected: false,
-            lowerings: [SwiftPMLowering()],
-            services: services)
-        covered.formUnion(entry.roots)
-    }
 }
 
 @Test func swiftPackageResolutionIsFiledUnderOnePlacementIndependentName() {

@@ -225,7 +225,8 @@ public actor RunRegistry {
         guard !observations.isEmpty else { return }
         let scrubbed = TaskExecutionObservations(
             containerExecutions: observations.containerExecutions,
-            actionStages: observations.actionStages)
+            actionStages: observations.actionStages,
+            testCases: observations.testCases)
         try updateManifest(run) {
             guard var record = $0.tasks?[task.rawValue] else {
                 throw RunRegistryFailure.unplannedTaskMetadata(task)

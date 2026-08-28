@@ -18,15 +18,18 @@ private struct ParallelismProbeIdentity: ColliderActionIdentity {
 private actor ParallelismProbe {
     private var active = 0
     private var maximumActive = 0
+    private var started: [String] = []
 
-    func exercise() async {
+    func exercise(name: String, duration: Duration = .milliseconds(100)) async {
+        started.append(name)
         active += 1
         maximumActive = max(maximumActive, active)
-        try? await Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: duration)
         active -= 1
     }
 
     func maximum() -> Int { maximumActive }
+    func startOrder() -> [String] { started }
 }
 
 private struct ParallelismProbeAction: ColliderAction {
@@ -38,6 +41,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let publicationClaim: FilePath?
     let persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect]
     let lane: TaskExecutionLane
+    let duration: Duration
 
     init(
         identity: ParallelismProbeIdentity,
@@ -45,7 +49,8 @@ private struct ParallelismProbeAction: ColliderAction {
         output: FilePath,
         publicationClaim: FilePath? = nil,
         persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect] = [],
-        lane: TaskExecutionLane = .lightweight
+        lane: TaskExecutionLane = .lightweight,
+        duration: Duration = .milliseconds(100)
     ) {
         self.identity = identity
         self.probe = probe
@@ -53,6 +58,7 @@ private struct ParallelismProbeAction: ColliderAction {
         self.publicationClaim = publicationClaim
         self.persistentWorkspaceEffects = persistentWorkspaceEffects
         self.lane = lane
+        self.duration = duration
     }
 
     var requirements: ActionRequirements {
@@ -71,7 +77,7 @@ private struct ParallelismProbeAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        await probe.exercise()
+        await probe.exercise(name: identity.name, duration: duration)
         try context.files.write(Array(identity.name.utf8), to: output)
     }
 }
@@ -445,6 +451,101 @@ private struct FailAfterWriteAction: ColliderAction {
             laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
 
     #expect(await probe.maximum() == 2)
+}
+
+@Test func schedulerDrainsForTheHighestPriorityHostExclusiveCriticalPath() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-exclusive-critical-path-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let probe = ParallelismProbe()
+
+    func task(
+        _ name: String,
+        lane: TaskExecutionLane,
+        dependencies: [TaskID] = [],
+        duration: Duration
+    ) throws -> TaskDeclaration {
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.critical-path.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            dependencies: dependencies,
+            outputs: [
+                OutputDeclaration(
+                    path: root.appending(name),
+                    validation: .regularFile)
+            ],
+            assessmentPolicy: .always,
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: root.appending(name),
+                    lane: lane,
+                    duration: duration)))
+    }
+
+    let prerequisite = try task(
+        "prerequisite",
+        lane: .lightweight,
+        duration: .milliseconds(30))
+    let exclusive = try task(
+        "exclusive",
+        lane: .hostExclusive,
+        dependencies: [prerequisite.id],
+        duration: .milliseconds(30))
+    let long = try task(
+        "long",
+        lane: .lightweight,
+        duration: .milliseconds(120))
+    let queued = try task(
+        "queued",
+        lane: .lightweight,
+        duration: .milliseconds(30))
+    let tasks = [prerequisite, exclusive, long, queued]
+    let coordinates = TaskExecutionCoordinates(
+        runner: .current,
+        execution: .macOSARM64Native,
+        backend: .native,
+        artifact: nil)
+    let estimates: [TaskID: UInt64] = [
+        prerequisite.id: 50,
+        exclusive.id: 1_000,
+        long.id: 900,
+        queued.id: 10,
+    ]
+    let estimatePlan = tasks.map { task in
+        let lane = task.action?.requirements.lane ?? .lightweight
+        let workload = TaskDurationWorkload(
+            task: task.id,
+            lane: lane,
+            coordinates: coordinates,
+            mode: nil)
+        return TaskPlanEntry(
+            task: task.id,
+            identity: ArtifactDigest(bytes: Array(repeating: 1, count: 32)),
+            isClean: false,
+            explanation: "fixture",
+            coordinates: coordinates,
+            lane: lane,
+            durationWorkload: workload)
+    }
+    try TaskDurationEstimateStore(
+        root: stateRoot.appending("duration-estimates")
+    ).record(estimates, plan: estimatePlan)
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: stateRoot,
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    let order = await probe.startOrder()
+    let exclusiveIndex = try #require(order.firstIndex(of: "exclusive"))
+    let queuedIndex = try #require(order.firstIndex(of: "queued"))
+    #expect(exclusiveIndex < queuedIndex)
 }
 
 @Test func taskSchedulerRunsIndependentOCIWorkConcurrently() async throws {

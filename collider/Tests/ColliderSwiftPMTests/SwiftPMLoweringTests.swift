@@ -320,7 +320,10 @@ private func executeWithSwiftPM(
         .map(String.init)
     #expect(received.filter { $0 == "test" }.count == 1)
     #expect(received.first == "test")
-    #expect(received.suffix(2) == ["--filter", "gpuHeadless_"])
+    let filter = try #require(received.firstIndex(of: "--filter"))
+    #expect(received[received.index(after: filter)] == "gpuHeadless_")
+    let xunit = try #require(received.firstIndex(of: "--xunit-output"))
+    #expect(received[received.index(after: xunit)].hasSuffix("/swift-test-0.xml"))
 }
 
 @Test func hostSwiftPMDoesNotReceiveTargetSDKSourceIdentities() async throws {

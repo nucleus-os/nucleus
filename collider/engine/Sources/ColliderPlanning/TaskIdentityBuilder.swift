@@ -1,12 +1,17 @@
 import ColliderCore
 import SystemPackage
 
+struct TaskIdentitySnapshot: Sendable {
+    let digest: ArtifactDigest
+    let bytes: [UInt8]
+}
+
 struct TaskIdentityBuilder {
     func build(
         of task: TaskDeclaration,
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices
-    ) async throws -> ArtifactDigest {
+    ) async throws -> TaskIdentitySnapshot {
         var resolutions = TaskIdentityResolutions()
         return try await identity(
             of: task,
@@ -20,7 +25,7 @@ struct TaskIdentityBuilder {
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices,
         resolutions: inout TaskIdentityResolutions
-    ) async throws -> ArtifactDigest {
+    ) async throws -> TaskIdentitySnapshot {
         var encoder = IdentityEncoder(
             identityPathMap: services.identityPathMap)
         encoder.append(task.id.rawValue)
@@ -179,7 +184,9 @@ struct TaskIdentityBuilder {
                     )
                 })
         }
-        return services.digestBytes(encoder.bytes)
+        return TaskIdentitySnapshot(
+            digest: services.digestBytes(encoder.bytes),
+            bytes: encoder.bytes)
     }
 
     private func identityInputs(of task: TaskDeclaration) -> [ArtifactInput] {

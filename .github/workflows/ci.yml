@@ -122,10 +122,8 @@ jobs:
         run: collider check protected-main-source
       - name: Verify documentation layout
         run: python3 tools/check-documentation-layout.py
-      - name: Build the catalog
-        run: collider build all
-      - name: Test the catalog
-        run: collider test all
+      - name: Verify the catalog
+        run: collider verify all
       # The durable evidence is the builder-owned run record, not this log.
       # Verification records are retained independently of local runs, so this
       # step exists to name the ones this revision produced.

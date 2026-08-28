@@ -250,11 +250,17 @@ public actor ColliderRuntime {
                     return result
                 }
             ).scoped(to: action.requirements),
-            observations: ActionObservationRecorder { observation in
-                recordedObservations.withLock {
-                    $0.actionStages.append(observation)
-                }
-            }
+            observations: ActionObservationRecorder(
+                record: { observation in
+                    recordedObservations.withLock {
+                        $0.actionStages.append(observation)
+                    }
+                },
+                recordTestCases: { testCases in
+                    recordedObservations.withLock {
+                        $0.testCases.append(contentsOf: testCases)
+                    }
+                })
         )
         try await action.execute(in: context)
         return recordedObservations.withLock { $0 }

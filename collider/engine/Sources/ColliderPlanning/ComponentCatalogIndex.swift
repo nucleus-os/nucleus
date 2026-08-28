@@ -1,7 +1,26 @@
 import ColliderCore
 
-struct ComponentCatalogIndex {
+public struct PreparedComponentCatalog: Sendable {
+    let index: ComponentCatalogIndex
+    let graph: TaskGraph
+
+    public init(_ catalog: ComponentCatalog) throws {
+        let index = try ComponentCatalogIndex(catalog)
+        self.index = index
+        graph = index.graph
+        try ColliderPlanner().validateCompleteGraph(graph.declarations)
+    }
+
+    public func selectedTasks(
+        for requests: [ComponentEntrypointRequest]
+    ) throws -> [TaskID] {
+        try index.roots(for: requests)
+    }
+}
+
+struct ComponentCatalogIndex: Sendable {
     let tasks: [TaskDeclaration]
+    let graph: TaskGraph
 
     private let components: [ComponentID: ComponentDefinition]
     private let groups: [String: ComponentSelectionGroup]
@@ -32,7 +51,7 @@ struct ComponentCatalogIndex {
             }
             allTasks += component.tasks
         }
-        _ = try TaskGraph(allTasks)
+        graph = try TaskGraph(allTasks)
         try StorageCatalog.validateProducers(catalog.storage, tasks: allTasks)
 
         var groupsByName: [String: ComponentSelectionGroup] = [:]

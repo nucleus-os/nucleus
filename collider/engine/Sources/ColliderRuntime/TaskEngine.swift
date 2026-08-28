@@ -194,6 +194,83 @@ private func claimsConflict(
     return false
 }
 
+private func scheduledTaskID(
+    _ scheduled: ScheduledTask,
+    swiftBuilds: [LoweredExecutionTask],
+    declaredTasks: [TaskDeclaration]
+) -> TaskID {
+    switch scheduled {
+    case .swiftBuild(let index): swiftBuilds[index].task.id
+    case .declared(let index): declaredTasks[index].id
+    }
+}
+
+private func scheduledTaskLane(
+    _ scheduled: ScheduledTask,
+    swiftBuildPlans: [TaskPlanEntry],
+    declaredPlans: [TaskPlanEntry]
+) -> TaskExecutionLane {
+    switch scheduled {
+    case .swiftBuild(let index): swiftBuildPlans[index].lane
+    case .declared(let index): declaredPlans[index].lane
+    }
+}
+
+private func estimatedCriticalPathPriorities(
+    swiftBuilds: [LoweredExecutionTask],
+    swiftBuildPlans: [TaskPlanEntry],
+    declaredTasks: [TaskDeclaration],
+    declaredPlans: [TaskPlanEntry],
+    buildPrerequisites: [TaskID: Set<TaskID>],
+    buildsByOwner: [TaskID: Set<TaskID>]
+) -> [TaskID: UInt64] {
+    func estimatedDuration(_ plan: TaskPlanEntry) -> UInt64 {
+        guard !plan.isClean else { return 0 }
+        if let estimate = plan.durationEstimate?.durationNanoseconds {
+            return estimate
+        }
+        return switch plan.lane {
+        case .lightweight: 1_000_000_000
+        case .hostExclusive: 10_000_000_000
+        case .oci: 60_000_000_000
+        }
+    }
+
+    var durations: [TaskID: UInt64] = [:]
+    for (task, plan) in zip(swiftBuilds.map(\.task), swiftBuildPlans) {
+        durations[task.id] = estimatedDuration(plan)
+    }
+    for (task, plan) in zip(declaredTasks, declaredPlans) {
+        durations[task.id] = estimatedDuration(plan)
+    }
+
+    var successors: [TaskID: Set<TaskID>] = [:]
+    for build in swiftBuilds {
+        for prerequisite in buildPrerequisites[build.task.id, default: []]
+        where durations[prerequisite] != nil {
+            successors[prerequisite, default: []].insert(build.task.id)
+        }
+    }
+    for task in declaredTasks {
+        let prerequisites = Set(task.executionDependencies).union(
+            buildsByOwner[task.id, default: []])
+        for prerequisite in prerequisites where durations[prerequisite] != nil {
+            successors[prerequisite, default: []].insert(task.id)
+        }
+    }
+
+    var priorities: [TaskID: UInt64] = [:]
+    func priority(_ task: TaskID) -> UInt64 {
+        if let cached = priorities[task] { return cached }
+        let downstream = successors[task, default: []].map(priority).max() ?? 0
+        let value = durations[task, default: 0] &+ downstream
+        priorities[task] = value
+        return value
+    }
+    for task in durations.keys { _ = priority(task) }
+    return priorities
+}
+
 extension ColliderRuntime {
     public func withTaskLocks<Result: Sendable>(
         _ locks: Set<TaskLock>,
@@ -314,6 +391,13 @@ extension ColliderRuntime {
             uniqueKeysWithValues: swiftBuilds.map {
                 ($0.task.id, $0.prerequisites)
             })
+        let schedulingPriorities = estimatedCriticalPathPriorities(
+            swiftBuilds: swiftBuilds,
+            swiftBuildPlans: swiftBuildPlans,
+            declaredTasks: ordered,
+            declaredPlans: plan,
+            buildPrerequisites: buildPrerequisites,
+            buildsByOwner: buildsByOwner)
         var completed = Set(plan.filter(\.isClean).map(\.task))
         completed.formUnion(swiftBuildPlans.filter(\.isClean).map(\.task))
         var pendingBuilds = swiftBuilds.indices.filter {
@@ -353,25 +437,54 @@ extension ColliderRuntime {
                     for ready in readyBuilds + readyDeclared where readySince[ready] == nil {
                         readySince[ready] = ContinuousClock().now
                     }
-                    let candidate =
-                        readyBuilds.first(where: { candidate in
-                            canSchedule(
-                                candidate,
-                                swiftBuildPlans: swiftBuildPlans,
-                                declaredPlans: plan,
-                                running: running,
-                                runningClaims: runningClaims,
-                                limits: options.laneLimits)
-                        })
-                        ?? readyDeclared.first(where: { candidate in
-                            canSchedule(
-                                candidate,
-                                swiftBuildPlans: swiftBuildPlans,
-                                declaredPlans: plan,
-                                running: running,
-                                runningClaims: runningClaims,
-                                limits: options.laneLimits)
-                        })
+                    let ready = (readyBuilds + readyDeclared).sorted { left, right in
+                        let leftID = scheduledTaskID(
+                            left,
+                            swiftBuilds: swiftBuilds,
+                            declaredTasks: ordered)
+                        let rightID = scheduledTaskID(
+                            right,
+                            swiftBuilds: swiftBuilds,
+                            declaredTasks: ordered)
+                        let leftPriority = schedulingPriorities[leftID, default: 0]
+                        let rightPriority = schedulingPriorities[rightID, default: 0]
+                        if leftPriority != rightPriority {
+                            return leftPriority > rightPriority
+                        }
+                        return leftID.rawValue < rightID.rawValue
+                    }
+                    let highestPriorityExclusive = ready.first { candidate in
+                        scheduledTaskLane(
+                            candidate,
+                            swiftBuildPlans: swiftBuildPlans,
+                            declaredPlans: plan) == .hostExclusive
+                    }.flatMap { exclusive -> ScheduledTask? in
+                        guard let first = ready.first else { return nil }
+                        let exclusiveID = scheduledTaskID(
+                            exclusive,
+                            swiftBuilds: swiftBuilds,
+                            declaredTasks: ordered)
+                        let firstID = scheduledTaskID(
+                            first,
+                            swiftBuilds: swiftBuilds,
+                            declaredTasks: ordered)
+                        return schedulingPriorities[exclusiveID, default: 0]
+                            >= schedulingPriorities[firstID, default: 0]
+                            ? exclusive : nil
+                    }
+                    // Once the most important ready work needs the whole host,
+                    // stop filling other lanes. Existing work drains and the
+                    // exclusive task starts at the next scheduling boundary.
+                    let candidates = highestPriorityExclusive.map { [$0] } ?? ready
+                    let candidate = candidates.first(where: { candidate in
+                        canSchedule(
+                            candidate,
+                            swiftBuildPlans: swiftBuildPlans,
+                            declaredPlans: plan,
+                            running: running,
+                            runningClaims: runningClaims,
+                            limits: options.laneLimits)
+                    })
 
                     guard let candidate else { break }
                     let task: TaskDeclaration

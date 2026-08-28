@@ -741,6 +741,32 @@ package struct ComponentRegistry {
             controls: controls)
     }
 
+    func verify(
+        selection: String?,
+        controls: TaskControls
+    ) async throws {
+        try await checkBrowserPrerequisites(selection: selection, controls: controls)
+        let catalog = try await componentCatalog()
+        var requests = [
+            ComponentEntrypointRequest(
+                entrypoint: .build,
+                selection: selection),
+            ComponentEntrypointRequest(
+                entrypoint: .testDefault,
+                selection: selection),
+        ]
+        if selection == nil || selection == "all" {
+            requests.append(
+                ComponentEntrypointRequest(
+                    entrypoint: ReleaseGateEntrypoints.test,
+                    selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
+        }
+        try await context.execute(
+            catalog: catalog,
+            requests: requests,
+            controls: controls)
+    }
+
     func generate(
         _ selection: String,
         controls: TaskControls
