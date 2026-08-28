@@ -412,7 +412,14 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.appendOptional(execution.imageEntrypointOverride) {
             $0.append($1)
         }
-        encoder.appendSequence(execution.command) { $0.append($1) }
+        // A command's arguments carry paths the same way environment values
+        // do, and for the same reason: a recipe names an output or an input by
+        // the path it has on this host. Encoding them opaquely kept that host's
+        // directories in the identity, so the same execution from a second
+        // checkout reused nothing. Container-internal paths canonicalize to
+        // themselves, so the ones that are already placement-free are
+        // unaffected.
+        encoder.appendSequence(execution.command) { $0.append(argument: $1) }
         encoder.append(ociActionOutputIdentity(execution.output))
     }
 }

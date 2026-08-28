@@ -60,9 +60,11 @@ the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
 moving either checkout.
 
-Status: complete for the checkout half. No declared task identity in the graph
-contains the checkout, and the lowered SwiftPM identities that contradicted that
-in a shared build store now agree as well. What follows records how that was
+Status: complete, except the gate's byte-identity clause, which Phase 4 owns and
+which needs a second machine to state. No task identity in the graph contains
+the checkout or the store, the lowered SwiftPM identities that contradicted that
+in a shared build store now agree, and every root this workspace resolves
+through is declared. What follows records how that was
 established, because the evidence took three forms and the cause was none of the
 things the values suggested.
 
@@ -95,10 +97,10 @@ them. The identity path map sorts its roots by path length, descending, so that
 a nested root is canonicalized before the root containing it; that order is
 therefore a property of where a checkout sits. `filePrefixMapFlags` iterated the
 map's own order and emitted the flags in it, and those flags are part of a
-SwiftPM identity. The authoritative checkout's workspace and cache paths are
-both twenty-five characters, so the sort ties and breaks by name and the cache
-mapping is emitted first; the runner work tree's workspace path is
-ninety-three, so it does not tie and the workspace mapping is emitted first.
+SwiftPM identity. The authoritative checkout's workspace path is twenty-five
+characters and its cache path thirty-one, so the cache mapping was emitted
+first; the runner work tree's workspace path is ninety-three, longer than
+either, so the workspace mapping was emitted first.
 Every value canonicalized correctly in both, which is why the values had been
 checked and cleared: the sequence carried the placement instead.
 
@@ -161,12 +163,39 @@ planned and lowered identity is scanned for a prefix only this host owns, and
 each one found must live under the store both accounts share. `/usr/local` is
 not treated as such a prefix: it exists inside the Linux images, where it is the
 container's own and carries no placement, and this host's package prefix is
-`/opt/homebrew`. What remains under the store is dominated by two roots the map
-does not declare -- the package-graph scratch under `state/build`, and the
+`/opt/homebrew`. What remained under the store was dominated by two roots the map
+did not declare -- the package-graph scratch under `state/build`, and the
 product artifact tree under `state/artifacts` -- with the signing identity path
-behind them. Declaring the store's state root would canonicalize all of them at
-once and invalidate every identity in the store, so it is a deliberate act
-rather than a cleanup.
+behind them.
+
+Those roots are now declared, by their own names rather than by the one
+directory that holds them. `build`, `artifacts`, and `identity` sit under the
+cache root on a host with no machine build store and move beside it, under the
+store's state root, on a host with one; only their own names exist in both
+layouts, so only their own names make the two agree. That is the requirement
+that makes two checkouts agree, applied to one host that can be provisioned two
+ways. The log root moves the same way, from inside the checkout to inside the
+store, and is declared with them because lanes that name their own log
+directory put it in an identity.
+
+Declaring them exposed one further leak, which the check turned from an
+invisible difference into a hard failure. A container command's arguments were
+encoded as opaque strings while the environment values beside them were
+canonicalized, so a path a recipe spelled by its host location survived into
+identity; commands now canonicalize as every other argument does. Container
+paths canonicalize to themselves, so nothing already placement-free changed.
+
+The assertion is an absence rather than a containment. No string in any planned
+or lowered identity carries a prefix this host owns, in any task reachable from
+any public entrypoint, and the scan that once reported a list reports nothing.
+
+Two consequences follow from one declaration serving identity and execution
+alike. Every identity in the graph changes, so the store's warm state is
+superseded in one sweep and each product is produced once more. And container
+mount targets move with it: a products directory that crossed as
+`/Library/Nucleus/Collider/state/build/swiftpm/…` now crosses as
+`/nucleus-build/swiftpm/…`. A deep target with no mounted parent already
+worked, because that host path was itself one.
 
 ## Phase 2: Bind macOS Execution Canonically
 

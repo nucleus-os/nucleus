@@ -227,10 +227,13 @@ package struct WorkspaceContext: Sendable {
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
             environment: normalizedEnvironment,
-            identityPathMap: IdentityPathMap(roots: [
-                IdentityPathRoot(name: "workspace", path: root),
-                IdentityPathRoot(name: "cache", path: resolvedCacheRoot),
-            ]))
+            identityPathMap: Self.identityPathMap(
+                root: root,
+                cacheRoot: resolvedCacheRoot,
+                hostBuildRoot: hostBuildRoot,
+                artifactRoot: artifactRoot,
+                identityRoot: identityRoot,
+                logRoot: logRoot))
     }
 
     func repository(_ name: String) -> FilePath { root.appending(name) }
@@ -250,10 +253,49 @@ package struct WorkspaceContext: Sendable {
     package var producesIntoVerificationScratch = false
 
     package var identityPathMap: IdentityPathMap {
-        IdentityPathMap(roots: [
-            IdentityPathRoot(name: "workspace", path: root),
-            IdentityPathRoot(name: "cache", path: cacheRoot),
-        ])
+        Self.identityPathMap(
+            root: root,
+            cacheRoot: cacheRoot,
+            hostBuildRoot: hostBuildRoot,
+            artifactRoot: artifactRoot,
+            identityRoot: identityRoot,
+            logRoot: logRoot)
+    }
+
+    /// Every root a path in this workspace may sit under.
+    ///
+    /// Build intermediates, staged artifacts, and durable identity material
+    /// are named individually rather than by the one directory that happens to
+    /// hold them, because that directory is not the same directory in both
+    /// layouts. Without a machine build store the three live under the cache
+    /// root; with one they move beside it, under the store's state root. Only
+    /// their own names exist in both, so only their own names make the two
+    /// layouts agree -- which is the same requirement that makes two checkouts
+    /// agree, applied to one host that can be provisioned two ways. The log
+    /// root moves the same way, from inside the checkout to inside the store,
+    /// and lanes that name their own log directory put it in an identity.
+    ///
+    /// A root that is literally another root needs one name, not two, so the
+    /// list is reduced by path in a fixed order. Deriving that order from the
+    /// paths would make it a property of placement again.
+    static func identityPathMap(
+        root: FilePath,
+        cacheRoot: FilePath,
+        hostBuildRoot: FilePath,
+        artifactRoot: FilePath,
+        identityRoot: FilePath,
+        logRoot: FilePath
+    ) -> IdentityPathMap {
+        var seen: Set<FilePath> = []
+        var roots: [IdentityPathRoot] = []
+        for (name, path) in [
+            ("workspace", root), ("cache", cacheRoot), ("build", hostBuildRoot),
+            ("artifacts", artifactRoot), ("identity", identityRoot),
+            ("logs", logRoot),
+        ] where seen.insert(path).inserted {
+            roots.append(IdentityPathRoot(name: name, path: path))
+        }
+        return IdentityPathMap(roots: roots)
     }
 
     /// Where a mapped root appears in compiled output.
@@ -275,8 +317,9 @@ package struct WorkspaceContext: Sendable {
         // sorts by path length, descending, so a nested root is canonicalized
         // before the root that contains it -- a property of the paths
         // themselves, and therefore of where this checkout happens to sit.
-        // Where the workspace and cache paths are the same length the sort ties
-        // and breaks by name; where the workspace is longer it does not. Each
+        // The authoritative checkout's cache path is the longer of the two, so
+        // the cache sorts first there; a runner work tree's workspace path is
+        // longer than either, so the workspace sorts first instead. Each
         // flag's value canonicalizes, so no placement survives in what is
         // emitted, but the sequence would carry it: the same revision in two
         // checkouts produced the same flags in two orders, and two identities.

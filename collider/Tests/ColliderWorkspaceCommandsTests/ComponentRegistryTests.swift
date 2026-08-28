@@ -76,6 +76,17 @@ private func sharedFixtureCatalog() async throws -> ComponentCatalog {
     try await SharedFixtureCatalog.shared.catalog()
 }
 
+/// The placement map that catalog resolves through, so an assertion about a
+/// container path names the path the container is given rather than the host
+/// path it was derived from.
+private var fixturePlacement: IdentityPathMap {
+    WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: [:],
+        runtime: ColliderRuntime()
+    ).identityPathMap
+}
+
 private struct RelocatableStorageSignature: Equatable {
     let id: String
     let owner: String
@@ -587,17 +598,21 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
             execution.mounts.contains(
                 OCIMount(
                     source: sourceSnapshotOutput.removingLastComponent(),
-                    target: sourceSnapshotOutput.removingLastComponent().string,
+                    target: fixturePlacement.executionPath(
+                        sourceSnapshotOutput.removingLastComponent()),
                     access: .readOnly)))
         #expect(
             !execution.mounts.contains {
-                $0.source == root && $0.target == root.string
+                $0.source == root
+                    && $0.target == fixturePlacement.executionPath(root)
             })
         #expect(
             !execution.mounts.contains {
-                $0.target.hasSuffix("/artifacts/product-store")
+                $0.target.hasSuffix("/nucleus-artifacts/product-store")
             })
-        #expect(execution.command.contains(sourceSnapshotOutput.string))
+        #expect(
+            execution.command.contains(
+                fixturePlacement.executionPath(sourceSnapshotOutput)))
         #expect(
             execution.command.contains {
                 $0.hasSuffix("nucleus-linux-assembler")
@@ -659,7 +674,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 })
             let storeMount = try #require(
                 qualificationExecution.mounts.first {
-                    $0.target.hasSuffix("/artifacts/product-store")
+                    $0.target.hasSuffix("/nucleus-artifacts/product-store")
                 })
             #expect(storeMount.isReadOnly)
             #expect(!qualificationExecution.command.contains(storeMount.target))
@@ -667,11 +682,11 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 qualificationExecution.mounts.contains {
                     $0.isReadOnly
                         && $0.target.contains(
-                            "/artifacts/package-publication/")
+                            "/nucleus-artifacts/package-publication/")
                 })
             let outputMount = try #require(
                 qualificationExecution.mounts.first {
-                    $0.target.contains("/artifacts/package-qualification/")
+                    $0.target.contains("/nucleus-artifacts/package-qualification/")
                 })
             #expect(outputMount.purpose == .boundedExport)
             #expect(
@@ -3090,9 +3105,9 @@ private func artifactInput(
 /// canonicalized before the root containing it, which makes the order a
 /// property of where a checkout sits. Emitting the flags in that order put the
 /// sequence into identity even though every value canonicalized: one checkout
-/// whose workspace and cache paths are the same length ties and breaks by name,
-/// another whose workspace path is longer does not, and the same revision
-/// lowered to two different SwiftPM identities in one shared build store.
+/// whose cache path outruns its workspace path sorts the cache first, another
+/// whose workspace path outruns both sorts the workspace first, and the same
+/// revision lowered to two different SwiftPM identities in one shared store.
 @Test func prefixMappingFlagOrderDoesNotFollowCheckoutPathLength() {
     func flags(workspace: String, cache: String) -> (swift: [String], clang: [String]) {
         WorkspaceContext(
@@ -3102,14 +3117,15 @@ private func artifactInput(
             cacheRoot: FilePath(cache)
         ).filePrefixMapFlags
     }
-    // Equal-length paths, so the map's own sort ties and breaks by name.
-    let tied = flags(
+    // The cache path outruns the workspace path, so the map's own sort reaches
+    // the cache first.
+    let cacheFirst = flags(
         workspace: "/Library/Nucleus/checkout",
-        cache: "/Library/Nucleus/Collider")
-    // A workspace path far longer than the cache, so the sort does not tie.
-    let untied = flags(
+        cache: "/Library/Nucleus/Collider/cache")
+    // A workspace path longer than either, so that sort reaches it first.
+    let workspaceFirst = flags(
         workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
-        cache: "/Library/Nucleus/Collider")
+        cache: "/Library/Nucleus/Collider/cache")
 
     func names(_ values: [String]) -> [String] {
         values.compactMap { value in
@@ -3117,9 +3133,13 @@ private func artifactInput(
             return String(value[range.upperBound...])
         }
     }
-    #expect(names(tied.swift) == names(untied.swift))
-    #expect(names(tied.clang) == names(untied.clang))
-    #expect(names(tied.swift) == ["cache", "workspace"])
+    #expect(names(cacheFirst.swift) == names(workspaceFirst.swift))
+    #expect(names(cacheFirst.clang) == names(workspaceFirst.clang))
+    // Name order is the one order neither placement can influence. Asserting
+    // the sequence rather than a fixed list keeps the property stated when the
+    // set of declared roots changes.
+    #expect(names(cacheFirst.swift) == names(cacheFirst.swift).sorted())
+    #expect(Set(names(cacheFirst.swift)).isSuperset(of: ["cache", "workspace"]))
 }
 
 /// Placement independence is an equality between two placements, not the
@@ -3148,11 +3168,11 @@ private func artifactInput(
         .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
     let digest = ArtifactDigest(bytes: Array(repeating: 7, count: 32))
     let map = context.identityPathMap
-    // The store both accounts share. The plan's claim is that every host path
-    // still reaching an identity lives under it, so none of them divides this
-    // host's warm state and they divide only a second machine. Asserting that
-    // is what keeps the remainder from growing while it is worked through.
-    let store = context.cacheRoot.removingLastComponent().string
+    // Every root this workspace resolves through is declared, so a path this
+    // host owns surviving canonicalization is a path no other machine can
+    // reproduce. The assertion is that there are none, rather than that the
+    // remaining ones share a directory: sharing one only hid them behind warm
+    // state this host happened to keep.
     // Prefixes only this host owns. `/usr/local` is deliberately absent: it
     // exists inside the Linux images too, where it is the container's own and
     // carries no placement, and this host's package prefix is `/opt/homebrew`.
@@ -3222,13 +3242,10 @@ private func artifactInput(
     }
 
     let found = leaked.withLock { $0 }
-    let outside = found.mapValues { paths in
-        paths.filter { !$0.hasPrefix(store) }
-    }.filter { !$0.value.isEmpty }
-    let report = outside.keys.sorted().flatMap { task in
-        ["\(task)"] + (outside[task] ?? []).sorted().map { "    \($0)" }
+    let report = found.keys.sorted().flatMap { task in
+        ["\(task)"] + (found[task] ?? []).sorted().map { "    \($0)" }
     }
-    #expect(outside.isEmpty, Comment(rawValue: report.joined(separator: "\n")))
+    #expect(found.isEmpty, Comment(rawValue: report.joined(separator: "\n")))
 }
 
 @Test func oneBuildContextHasOneIdentityFromTwoPlacements() {
@@ -3251,15 +3268,16 @@ private func artifactInput(
         ).identityBytes
     }
 
-    // The authoritative checkout, whose workspace and cache paths are the same
-    // length, so the map's sort ties and breaks by name.
+    // The authoritative checkout, whose cache path is the longer of the two,
+    // so the map's sort reaches the cache first.
     let authoritative = identity(
         workspace: "/Library/Nucleus/checkout",
-        cache: "/Library/Nucleus/Collider")
-    // A runner work tree, whose workspace path is far longer, so it does not.
+        cache: "/Library/Nucleus/Collider/cache")
+    // A runner work tree, whose workspace path is longer than either, so the
+    // sort reaches the workspace first instead.
     let runner = identity(
         workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
-        cache: "/Library/Nucleus/Collider")
+        cache: "/Library/Nucleus/Collider/cache")
     // And a placement that shares neither property with either.
     let elsewhere = identity(
         workspace: "/opt/n",
