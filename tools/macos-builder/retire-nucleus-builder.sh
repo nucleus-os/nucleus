@@ -69,6 +69,24 @@ do
   ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1 \
     || { echo "error: runner service is still loaded in $service_domain" >&2; exit 70; }
 done
+# Every machine root is judged before anything is removed. Removal used to begin
+# with the descriptors and launchers and only then ask whether the roots
+# qualified, so a root holding anything besides builder state -- a build store
+# and a checkout both live under one on this host -- aborted the run after the
+# sudoers grant, the `collider` launcher, and the service descriptors were
+# already gone. Refusing has to happen while refusing still means nothing
+# changed.
+for machine_root in \
+  "$installed_machine_root" \
+  "$(/usr/bin/dirname "$declared_runner_root")"
+do
+  [[ -n "$machine_root" ]] || continue
+  [[ -e "$machine_root" || -L "$machine_root" ]] || continue
+  nucleus_supported_machine_root_path "$machine_root" \
+    && nucleus_machine_root_holds_only_builder_state "$machine_root" \
+    || { echo "error: refusing to remove unrecognized machine root: $machine_root" >&2; exit 73; }
+done
+
 # The watchdog only ever restarts the runner service, so removing it after the
 # runner is already gone leaves nothing for it to act on in between.
 /bin/launchctl bootout \

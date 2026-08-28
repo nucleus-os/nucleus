@@ -1003,6 +1003,48 @@ has work, because it reaches the next message by long poll. A watchdog installed
 beside the runner checks exactly that, restarting the service after several
 consecutive checks find no connection, and never while a job is executing.
 
+Wanting a newer runner then found that no supported way to install one existed.
+Provisioning is a first installation and refuses a host that already holds
+runner state, because registering again over a live runner is how a machine ends
+up with two identities; retirement is its inverse and removes machine-wide
+builder state wholesale. Neither is an upgrade, so an already-provisioned host
+could only move between pinned versions by unregistering a working runner. Worse,
+retirement could not complete here at all: a machine root may hold only the two
+subtrees provisioning creates, this host's root holds the build store and the
+checkout as well, and the refusal came after the sudoers grant, the launchers,
+and the service descriptors had already been removed. That check now runs before
+anything is removed, which is the same defect and the same repair as the
+container guard above.
+
+An update needs neither identity. Registration lives in dotfiles the release
+archive does not contain, so replacing everything the archive does provide
+leaves the runner registered as itself. The updater stages the new tree beside
+the old one, copies the registration and the diagnostic history across, swaps
+the two, and keeps the previous installation until finalization and verification
+both pass, so a failure is a rename back rather than a re-registration.
+
+Copied rather than moved, and that distinction is the whole of the rollback.
+Moving them leaves the retained tree missing the files that make it a runner, so
+restoring it destroys the only copy of a registration that exists nowhere else
+and leaves binaries that cannot authenticate against a server-side runner that
+will never come back online. That is not a hypothetical: the first version of
+this moved them, its finalization failed, and the rollback lost the credentials.
+The rollback now also refuses to discard the staged tree unless the retained one
+is complete, because a rollback that cannot restore is not one.
+
+Registration can be lost by other means and provisioning cannot repair it, for
+the same reason it cannot upgrade. Re-registering in place replaces the server's
+record of this runner with a new credential for the same identity and changes
+nothing else, so a host whose credentials are gone recovers without being
+retired.
+
+Two versions drift independently and are repaired by different acts, so the
+check reports them separately. An installed runner behind the pinned contract is
+fixed by installing on this host; a pinned contract behind upstream is a source
+change and a commit. Reading the installed version does not execute the runner,
+which would need the builder's own privileges because it writes a diagnostic log
+as it starts, so anyone may ask what this host has.
+
 The rest of this phase is pending.
 
 Remove the GitHub-hosted pull-request job. Install the protected main-only

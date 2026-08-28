@@ -191,7 +191,7 @@ foreign_runner_work_path="$(
   || fail "runner work checkout is inside the runner installation"
 [[ $(/bin/launchctl asuser "$builder_uid" /usr/bin/sudo -H -u "$builder_user" \
   "$runner_root/bin/Runner.Listener" --version) == "$runner_version" ]] \
-  || fail "runner version drifted"
+  || fail "runner version drifted; install the pinned one with update-nucleus-runner.sh"
 [[ $(/usr/bin/plutil -extract agentName raw -o - "$runner_root/.runner") == "$runner_name" ]] \
   || fail "runner name drifted"
 [[ $(/usr/bin/plutil -extract poolName raw -o - "$runner_root/.runner") == "$runner_group" ]] \
