@@ -52,6 +52,10 @@ struct MacOSBuilderContract: Codable, Sendable {
         let runnerArchiveSHA256: String
         let runnerArchiveSize: UInt64
         let runnerServiceLabel: String
+        let runnerWatchdogServiceLabel: String
+        let runnerWatchdogIntervalSeconds: UInt64
+        let bootCoordinatorServiceLabel: String
+        let bootCoordinatorIntervalSeconds: UInt64
         let runnerRoot: String
         let buildStateGroup: String
         let hostContractRoot: String
@@ -110,7 +114,19 @@ struct MacOSBuilderContract: Codable, Sendable {
             builder.runnerGroup == "nucleus",
             builder.runnerLabel == "nucleus-m2-ultra",
             builder.runnerArchiveSHA256.count == 64,
-            builder.runnerArchiveSize > 0
+            builder.runnerArchiveSize > 0,
+            builder.runnerWatchdogIntervalSeconds > 0,
+            builder.bootCoordinatorIntervalSeconds > 0,
+            [
+                builder.runnerServiceLabel,
+                builder.runnerWatchdogServiceLabel,
+                builder.bootCoordinatorServiceLabel,
+            ].allSatisfy({ !$0.isEmpty }),
+            Set([
+                builder.runnerServiceLabel,
+                builder.runnerWatchdogServiceLabel,
+                builder.bootCoordinatorServiceLabel,
+            ]).count == 3
         else {
             throw MacOSBuilderContractFailure.invalid(
                 "builder identity and pinned runner contract are invalid")
@@ -233,6 +249,7 @@ struct MacOSBuilderDoctor {
             resources(contract, scope: scope),
             executionLease(scope: scope),
             builderLauncher(scope: scope),
+            bootCoordinator(contract, scope: scope),
             buildStore(contract, scope: scope),
             persistentService(contract, storageLayout: storageLayout, scope: scope),
             containerSystem(contract, storageLayout: storageLayout, scope: scope),
@@ -474,6 +491,69 @@ struct MacOSBuilderDoctor {
         }
     }
 
+    private func bootCoordinator(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        let source = context.root.appending(
+            "tools/macos-builder/builder-boot-coordinator")
+        let installed = FilePath(contract.builder.hostContractRoot)
+            .appending("builder-boot-coordinator")
+        let plist = FilePath("/Library/LaunchDaemons")
+            .appending("\(contract.builder.bootCoordinatorServiceLabel).plist")
+        return HostPrerequisite(
+            id: "macos-builder:boot-coordinator",
+            scope: scope,
+            description: "boot recovery for the isolated builder services",
+            remediation:
+                "run 'sudo tools/macos-builder/finalize-nucleus-builder.sh' to "
+                + "install the root boot coordinator"
+        ) {
+            let files = FileManager.default
+            guard files.contentsEqual(atPath: source.string, andPath: installed.string),
+                let executableAttributes = try? files.attributesOfItem(
+                    atPath: installed.string),
+                executableAttributes[.ownerAccountID] as? NSNumber == 0,
+                executableAttributes[.groupOwnerAccountID] as? NSNumber == 0,
+                executableAttributes[.posixPermissions] as? NSNumber == 0o755,
+                let plistAttributes = try? files.attributesOfItem(atPath: plist.string),
+                plistAttributes[.ownerAccountID] as? NSNumber == 0,
+                plistAttributes[.groupOwnerAccountID] as? NSNumber == 0,
+                plistAttributes[.posixPermissions] as? NSNumber == 0o644,
+                let data = files.contents(atPath: plist.string),
+                let service = try? PropertyListDecoder().decode(
+                    BootCoordinatorServicePlist.self,
+                    from: data),
+                service.label == contract.builder.bootCoordinatorServiceLabel,
+                let builderUID = try? await context.run(
+                    "/usr/bin/id", ["-u", contract.builder.user], capture: true),
+                service.programArguments == [
+                    installed.string,
+                    contract.builder.user,
+                    builderUID.trimmingCharacters(in: .whitespacesAndNewlines),
+                    contract.launchd.label,
+                    FilePath(contract.builder.home)
+                        .appending("Library/LaunchAgents/\(contract.launchd.label).plist").string,
+                    contract.appleContainer.executable,
+                    contract.builder.runnerServiceLabel,
+                    FilePath(contract.builder.hostContractRoot)
+                        .appending("\(contract.builder.runnerServiceLabel).plist").string,
+                    contract.builder.runnerRoot,
+                    contract.builder.runnerWatchdogServiceLabel,
+                    FilePath(contract.builder.hostContractRoot)
+                        .appending("\(contract.builder.runnerWatchdogServiceLabel).plist").string,
+                ],
+                service.runAtLoad,
+                service.startInterval == contract.builder.bootCoordinatorIntervalSeconds,
+                let launchd = try? await context.run(
+                    "/bin/launchctl",
+                    ["print", "system/\(contract.builder.bootCoordinatorServiceLabel)"],
+                    capture: true)
+            else { return nil }
+            return "\(installed), \(launchd.split(separator: "\n").first ?? "loaded")"
+        }
+    }
+
     /// Whether this account owns the container service.
     ///
     /// A store host runs exactly one, in the builder's launchd session, and a
@@ -693,6 +773,20 @@ struct MacOSBuilderDoctor {
             network.mode == "hostOnly"
         else { return nil }
         return "\(network.name) mode=hostOnly"
+    }
+}
+
+private struct BootCoordinatorServicePlist: Decodable {
+    let label: String
+    let programArguments: [String]
+    let runAtLoad: Bool
+    let startInterval: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case label = "Label"
+        case programArguments = "ProgramArguments"
+        case runAtLoad = "RunAtLoad"
+        case startInterval = "StartInterval"
     }
 }
 

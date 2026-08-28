@@ -396,7 +396,8 @@ struct MacOSBuilderProvisioning {
 
     private func launchDaemonIsLoaded() async -> Bool {
         await commandSucceeds(
-            "/bin/launchctl", ["print", "system/\(contract.builder.runnerServiceLabel)"])
+            "/bin/launchctl",
+            ["print", "system/\(contract.builder.bootCoordinatorServiceLabel)"])
     }
 
     // MARK: GitHub control plane
@@ -591,6 +592,7 @@ struct MacOSBuilderProvisioning {
 
     private func validateProvisioningScripts() throws {
         for script in [
+            "builder-boot-coordinator",
             "builder-machine-root.sh",
             "finalize-nucleus-builder.sh",
             "provision-nucleus-builder.sh",
@@ -647,7 +649,7 @@ struct MacOSBuilderProvisioning {
     }
 
     private var runnerPlistPath: FilePath {
-        FilePath("/Library/LaunchDaemons")
+        FilePath(contract.builder.hostContractRoot)
             .appending("\(contract.builder.runnerServiceLabel).plist")
     }
 

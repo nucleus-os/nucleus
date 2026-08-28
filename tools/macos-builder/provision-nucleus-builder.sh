@@ -43,12 +43,14 @@ readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly expected_sha="$(contract_value builder.runnerArchiveSHA256)"
 readonly expected_size="$(contract_value builder.runnerArchiveSize)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
 readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
+readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
 
 for declared_path in "$runner_root" "$host_contract_root" "$runner_work_root"; do
   if [[ "$declared_path" != /* || "$declared_path" =~ [[:space:]] ]]; then
@@ -84,6 +86,7 @@ if [[ -e "$runner_root" || -L "$runner_root" ]]; then
       && [[ ! -e "$runner_plist" && ! -L "$runner_plist" ]] \
       && [[ ! -e "$legacy_runner_agent_plist" && ! -L "$legacy_runner_agent_plist" ]] \
       && [[ ! -e "$legacy_runner_plist" && ! -L "$legacy_runner_plist" ]] \
+      && [[ ! -e "$boot_coordinator_plist" && ! -L "$boot_coordinator_plist" ]] \
       && [[ ! -e /usr/local/bin/collider && ! -L /usr/local/bin/collider ]] \
       && [[ ! -e /usr/local/bin/nucleus-builder-run && ! -L /usr/local/bin/nucleus-builder-run ]]; then
     runner_staging_state=unregistered
@@ -208,7 +211,8 @@ done < <(/usr/bin/find -x "$checkout" -perm -o+w -print0)
 
 if [[ -e "$runner_plist" || -L "$runner_plist" \
     || -e "$legacy_runner_agent_plist" || -L "$legacy_runner_agent_plist" \
-    || -e "$legacy_runner_plist" || -L "$legacy_runner_plist" ]]; then
+    || -e "$legacy_runner_plist" || -L "$legacy_runner_plist" \
+    || -e "$boot_coordinator_plist" || -L "$boot_coordinator_plist" ]]; then
   echo "error: runner service state already exists" >&2
   exit 73
 fi

@@ -41,6 +41,8 @@
     "runnerServiceLabel": "com.nucleus.github-actions-runner",
     "runnerWatchdogServiceLabel": "com.nucleus.github-actions-runner-watchdog",
     "runnerWatchdogIntervalSeconds": 60,
+    "bootCoordinatorServiceLabel": "com.nucleus.builder-boot-coordinator",
+    "bootCoordinatorIntervalSeconds": 60,
     "runnerRoot": "/Library/Nucleus/GitHubActionsRunner",
     "hostContractRoot": "/Library/Nucleus/Builder",
     "hostExecutionLock": "/Library/Nucleus/Builder/host-execution.lock",

@@ -40,6 +40,8 @@ readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
 readonly runner_watchdog_interval="$(contract_value builder.runnerWatchdogIntervalSeconds)"
+readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
+readonly boot_coordinator_interval="$(contract_value builder.bootCoordinatorIntervalSeconds)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
@@ -57,10 +59,14 @@ readonly runner_watchdog="$host_contract_root/runner-watchdog"
 readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
 readonly runner_watchdog_state="$runner_logs/watchdog.state"
 readonly container_service_label="$(contract_value launchd.label)"
+readonly container_executable="$(contract_value appleContainer.executable)"
 readonly builder_agent_directory="$builder_home/Library/LaunchAgents"
 readonly builder_agent_plist="$builder_agent_directory/$container_service_label.plist"
 readonly builder_service_directory="$builder_home/Library/Application Support/Nucleus/Collider/service"
 readonly builder_service_starter="$builder_service_directory/container-system-start"
+readonly boot_coordinator="$host_contract_root/builder-boot-coordinator"
+readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
+readonly boot_coordinator_log="$host_contract_root/builder-boot-coordinator.log"
 
 [[ ! -L "$runner_root" && -d "$runner_root" ]] \
   || { echo "error: registered runner root is not a directory" >&2; exit 73; }
@@ -131,6 +137,10 @@ done
 
 /usr/bin/install -d -o root -g wheel -m 0755 "$(/usr/bin/dirname "$host_contract_root")"
 /usr/bin/install -d -o root -g wheel -m 0755 "$host_contract_root"
+[[ ! -L "$boot_coordinator" && ! -L "$boot_coordinator_plist" ]] \
+  || { echo "error: boot coordinator installation target is a symbolic link" >&2; exit 73; }
+/usr/bin/install -o root -g wheel -m 0755 \
+  "$script_directory/builder-boot-coordinator" "$boot_coordinator"
 printf '%s\n' "$checkout" >"$host_contract_root/authoritative-checkout"
 /usr/sbin/chown root:wheel "$host_contract_root/authoritative-checkout"
 /bin/chmod 0644 "$host_contract_root/authoritative-checkout"
@@ -223,7 +233,7 @@ done
 # sudoers.d disables sudo for every user on the host.
 readonly sudoers_file=/etc/sudoers.d/nucleus-builder
 temporary_sudoers="$(/usr/bin/mktemp /tmp/nucleus-sudoers.XXXXXX)"
-trap '/bin/rm -f "$temporary_sudoers" "${temporary_plist:-}"' EXIT
+trap '/bin/rm -f "$temporary_sudoers" "${temporary_plist:-}" "${temporary_watchdog_plist:-}" "${temporary_boot_coordinator_plist:-}"' EXIT
 /bin/cat >"$temporary_sudoers" <<SUDOERS
 # Installed by tools/macos-builder/finalize-nucleus-builder.sh. Do not edit.
 $developer_user ALL=(root) NOPASSWD: /usr/local/bin/nucleus-builder-run
@@ -297,6 +307,8 @@ done
 # checkout and must never own it. The exception is granted for that checkout and
 # the repositories beneath it, because every submodule is a repository with the
 # same ownership. It is scoped to those paths rather than disabling the check.
+/bin/launchctl print "$runner_service_domain" >/dev/null 2>&1 \
+  || /bin/launchctl bootstrap "$runner_service_domain"
 run_as_builder /usr/bin/git config --global --replace-all safe.directory "$checkout"
 run_as_builder /usr/bin/git config --global --add safe.directory "$checkout/*"
 # The same refusal in the other direction. Resolving a package graph
@@ -434,6 +446,45 @@ PLIST
   "$runner_service_domain/$runner_watchdog_service_label" >/dev/null 2>&1 || true
 run_as_builder /bin/launchctl bootstrap \
   "$runner_service_domain" "$runner_watchdog_plist"
+
+# The per-user bootstrap namespace is volatile across a machine reboot, and the
+# hidden builder never logs in to recreate it. This root daemon owns only that
+# lifecycle edge: it recreates the user domain, restores the container service,
+# then exposes the runner after the local execution substrate is healthy.
+temporary_boot_coordinator_plist="$(/usr/bin/mktemp /tmp/nucleus-boot-coordinator-plist.XXXXXX)"
+/bin/cat >"$temporary_boot_coordinator_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$boot_coordinator_service_label</string>
+  <key>ProgramArguments</key><array>
+    <string>$boot_coordinator</string>
+    <string>$builder_user</string>
+    <string>$builder_uid</string>
+    <string>$container_service_label</string>
+    <string>$builder_agent_plist</string>
+    <string>$container_executable</string>
+    <string>$runner_service_label</string>
+    <string>$runner_plist</string>
+    <string>$runner_root</string>
+    <string>$runner_watchdog_service_label</string>
+    <string>$runner_watchdog_plist</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>$boot_coordinator_interval</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>$boot_coordinator_log</string>
+  <key>StandardErrorPath</key><string>$boot_coordinator_log</string>
+</dict></plist>
+PLIST
+/usr/bin/plutil -lint "$temporary_boot_coordinator_plist" >/dev/null
+/usr/bin/install -o root -g wheel -m 0644 \
+  "$temporary_boot_coordinator_plist" "$boot_coordinator_plist"
+/bin/rm -f "$temporary_boot_coordinator_plist"
+/bin/launchctl bootout \
+  "system/$boot_coordinator_service_label" >/dev/null 2>&1 || true
+/bin/launchctl bootstrap system "$boot_coordinator_plist"
 
 "$script_directory/verify-nucleus-builder.sh"
 echo "finalized trusted builder identity and pinned runner $runner_version"

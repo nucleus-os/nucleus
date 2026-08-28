@@ -20,7 +20,10 @@ readonly runner_group="$(contract_value builder.runnerGroup)"
 readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
+readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
+readonly boot_coordinator_interval="$(contract_value builder.bootCoordinatorIntervalSeconds)"
 readonly container_service_label="$(contract_value launchd.label)"
+readonly container_executable="$(contract_value appleContainer.executable)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
@@ -28,6 +31,9 @@ readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
 readonly runner_watchdog="$host_contract_root/runner-watchdog"
 readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
+readonly boot_coordinator="$host_contract_root/builder-boot-coordinator"
+readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
+readonly builder_agent_plist="$builder_home/Library/LaunchAgents/$container_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
@@ -217,6 +223,48 @@ foreign_runner_work_path="$(
   || fail "runner watchdog LaunchAgent descriptor is not installed"
 /bin/launchctl print "user/$builder_uid/$runner_watchdog_service_label" >/dev/null \
   || fail "runner watchdog LaunchAgent is not loaded"
+[[ -f "$boot_coordinator" && ! -L "$boot_coordinator" ]] \
+  || fail "builder boot coordinator is not installed"
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$boot_coordinator") == root:wheel:755 ]] \
+  || fail "builder boot coordinator ownership or mode drifted"
+/usr/bin/cmp -s "$script_directory/builder-boot-coordinator" "$boot_coordinator" \
+  || fail "installed builder boot coordinator differs from the checkout"
+[[ -f "$boot_coordinator_plist" && ! -L "$boot_coordinator_plist" ]] \
+  || fail "builder boot coordinator LaunchDaemon descriptor is absent"
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$boot_coordinator_plist") == root:wheel:644 ]] \
+  || fail "builder boot coordinator descriptor ownership or mode drifted"
+[[ $(/usr/bin/plutil -extract Label raw -o - "$boot_coordinator_plist") \
+    == "$boot_coordinator_service_label" ]] \
+  || fail "builder boot coordinator descriptor label drifted"
+expected_boot_coordinator_arguments=(
+  "$boot_coordinator"
+  "$builder_user"
+  "$builder_uid"
+  "$container_service_label"
+  "$builder_agent_plist"
+  "$container_executable"
+  "$runner_service_label"
+  "$runner_plist"
+  "$runner_root"
+  "$runner_watchdog_service_label"
+  "$runner_watchdog_plist"
+)
+for argument_index in "${!expected_boot_coordinator_arguments[@]}"; do
+  [[ $(/usr/bin/plutil -extract "ProgramArguments.$argument_index" raw -o - \
+      "$boot_coordinator_plist") == "${expected_boot_coordinator_arguments[$argument_index]}" ]] \
+    || fail "builder boot coordinator arguments drifted"
+done
+if /usr/bin/plutil -extract "ProgramArguments.${#expected_boot_coordinator_arguments[@]}" \
+    raw -o - "$boot_coordinator_plist" >/dev/null 2>&1; then
+  fail "builder boot coordinator argument count drifted"
+fi
+[[ $(/usr/bin/plutil -extract RunAtLoad raw -o - "$boot_coordinator_plist") == true ]] \
+  || fail "builder boot coordinator is not configured to run at boot"
+[[ $(/usr/bin/plutil -extract StartInterval raw -o - "$boot_coordinator_plist") \
+    == "$boot_coordinator_interval" ]] \
+  || fail "builder boot coordinator interval drifted"
+/bin/launchctl print "system/$boot_coordinator_service_label" >/dev/null \
+  || fail "builder boot coordinator LaunchDaemon is not loaded"
 runner_service_pid="$(
   /bin/launchctl print "user/$builder_uid/$runner_service_label" \
     | /usr/bin/awk '/^[[:space:]]*pid = / { print $3; exit }'

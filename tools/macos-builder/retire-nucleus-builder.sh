@@ -20,16 +20,30 @@ readonly builder_user="$(contract_value builder.user)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
+readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
 readonly declared_runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
 readonly runner_watchdog="$host_contract_root/runner-watchdog"
 readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
+readonly boot_coordinator="$host_contract_root/builder-boot-coordinator"
+readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_service_domain="user/$builder_uid"
+restore_boot_coordinator=false
+
+cleanup() {
+  if [[ "$restore_boot_coordinator" == true && -f "$boot_coordinator_plist" ]]; then
+    /bin/launchctl print "system/$boot_coordinator_service_label" >/dev/null 2>&1 \
+      || /bin/launchctl bootstrap system "$boot_coordinator_plist" >/dev/null 2>&1 \
+      || true
+  fi
+}
+
+trap cleanup EXIT
 
 if /bin/ps -axo command= \
     | /usr/bin/awk -v worker="$declared_runner_root/bin/Runner.Worker" \
@@ -48,6 +62,31 @@ for installed_plist in "$runner_plist" "$legacy_runner_agent_plist" "$legacy_run
     break
   fi
 done
+
+# Every machine root is judged before anything is removed. Removal used to begin
+# with the descriptors and launchers and only then ask whether the roots
+# qualified, so a root holding anything besides builder state -- a build store
+# and a checkout both live under one on this host -- aborted the run after the
+# sudoers grant, the `collider` launcher, and the service descriptors were
+# already gone. Refusing has to happen while refusing still means nothing
+# changed.
+for machine_root in \
+  "$installed_machine_root" \
+  "$(/usr/bin/dirname "$declared_runner_root")"
+do
+  [[ -n "$machine_root" ]] || continue
+  [[ -e "$machine_root" || -L "$machine_root" ]] || continue
+  nucleus_supported_machine_root_path "$machine_root" \
+    && nucleus_machine_root_holds_only_builder_state "$machine_root" \
+    || { echo "error: refusing to remove unrecognized machine root: $machine_root" >&2; exit 73; }
+done
+
+# Stop the root lifecycle owner only after every refusal check has passed, so a
+# failed retirement leaves boot recovery intact. The EXIT trap restores it if a
+# later service stop fails before its installed descriptor is removed.
+restore_boot_coordinator=true
+/bin/launchctl bootout \
+  "system/$boot_coordinator_service_label" >/dev/null 2>&1 || true
 
 for service_domain in \
   "$runner_service_domain" \
@@ -69,23 +108,6 @@ do
   ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1 \
     || { echo "error: runner service is still loaded in $service_domain" >&2; exit 70; }
 done
-# Every machine root is judged before anything is removed. Removal used to begin
-# with the descriptors and launchers and only then ask whether the roots
-# qualified, so a root holding anything besides builder state -- a build store
-# and a checkout both live under one on this host -- aborted the run after the
-# sudoers grant, the `collider` launcher, and the service descriptors were
-# already gone. Refusing has to happen while refusing still means nothing
-# changed.
-for machine_root in \
-  "$installed_machine_root" \
-  "$(/usr/bin/dirname "$declared_runner_root")"
-do
-  [[ -n "$machine_root" ]] || continue
-  [[ -e "$machine_root" || -L "$machine_root" ]] || continue
-  nucleus_supported_machine_root_path "$machine_root" \
-    && nucleus_machine_root_holds_only_builder_state "$machine_root" \
-    || { echo "error: refusing to remove unrecognized machine root: $machine_root" >&2; exit 73; }
-done
 
 # The watchdog only ever restarts the runner service, so removing it after the
 # runner is already gone leaves nothing for it to act on in between.
@@ -95,6 +117,8 @@ done
   "$runner_plist" \
   "$runner_watchdog_plist" \
   "$runner_watchdog" \
+  "$boot_coordinator_plist" \
+  "$boot_coordinator" \
   "$legacy_runner_agent_plist" \
   "$legacy_runner_plist" \
   /etc/sudoers.d/nucleus-builder \

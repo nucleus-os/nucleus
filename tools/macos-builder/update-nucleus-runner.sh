@@ -32,6 +32,8 @@ readonly runner_archive_url="$(contract_value builder.runnerArchiveURL)"
 readonly expected_sha="$(contract_value builder.runnerArchiveSHA256)"
 readonly expected_size="$(contract_value builder.runnerArchiveSize)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
+readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
 readonly organization="$(contract_value builder.organization)"
 readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_group="$(contract_value builder.runnerGroup)"
@@ -47,6 +49,26 @@ readonly runner_work="$(contract_value builder.runnerWorkRoot)"
 readonly preserved_entries=(
   .runner .credentials .credentials_rsaparams .env .path _diag svc.sh
 )
+
+registration_token=''
+restore_boot_coordinator=false
+
+cleanup() {
+  registration_token=''
+  if [[ "$restore_boot_coordinator" == true && -f "$boot_coordinator_plist" ]]; then
+    /bin/launchctl print "system/$boot_coordinator_service_label" >/dev/null 2>&1 \
+      || /bin/launchctl bootstrap system "$boot_coordinator_plist" >/dev/null 2>&1 \
+      || true
+  fi
+}
+
+stop_boot_coordinator() {
+  restore_boot_coordinator=true
+  /bin/launchctl bootout \
+    "system/$boot_coordinator_service_label" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT
 
 usage() {
   cat >&2 <<'USAGE'
@@ -136,11 +158,11 @@ case "${1:-}" in
   IFS= read -r registration_token
   [[ -n "$registration_token" ]] \
     || { echo "error: a short-lived registration token is required on stdin" >&2; exit 64; }
-  trap 'registration_token=' EXIT
   [[ -x "$runner_root/config.sh" ]] \
     || { echo "error: no runner is installed at $runner_root" >&2; exit 73; }
   refuse_while_busy
   builder_uid="$(/usr/bin/id -u "$builder_user")"
+  stop_boot_coordinator
   /bin/launchctl bootout "user/$builder_uid/$runner_service_label" >/dev/null 2>&1 || true
   # Configuration writes its credentials into the runner root, which
   # finalization leaves owned by root.
@@ -186,6 +208,7 @@ fi
   || { echo "error: a previous update left $incoming or $previous behind" >&2; exit 73; }
 refuse_while_busy
 
+stop_boot_coordinator
 /bin/launchctl bootout "$service_target" >/dev/null 2>&1 || true
 for _ in {1..50}; do
   /bin/launchctl print "$service_target" >/dev/null 2>&1 || break
