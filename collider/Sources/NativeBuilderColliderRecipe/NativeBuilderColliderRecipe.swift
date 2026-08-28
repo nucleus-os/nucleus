@@ -394,6 +394,7 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
     private let execution: OCIExecution
     private let pipeline: OCIExecutionPipeline
     private let outputRoot: FilePath
+    private let pinnedSources: [(source: FilePath, revision: String)]
 
     var identity: Identity { Identity(execution: execution) }
     var requirements: ActionRequirements { pipeline.requirements }
@@ -412,6 +413,10 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
         environment: [String: String]
     ) throws {
         self.outputRoot = outputRoot
+        pinnedSources = [
+            (swiftPMSource, inputs.swiftPackageManagerRevision),
+            (swiftBuildSource, inputs.swiftBuildRevision),
+        ]
         let entrypoint = OCIMountedEntrypoint(
             image: image,
             executable: assemblyScript,
@@ -446,28 +451,9 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
                 "NUCLEUS_SWIFTPM_OVERLAY_PRODUCTS": identityPathMap.executionPath(products),
                 "NUCLEUS_SWIFTPM_REVISION": inputs.swiftPackageManagerRevision,
                 "NUCLEUS_SWIFTBUILD_REVISION": inputs.swiftBuildRevision,
-                "NUCLEUS_SWIFTPM_SOURCE": identityPathMap.executionPath(swiftPMSource),
-                "NUCLEUS_SWIFTBUILD_SOURCE": identityPathMap.executionPath(swiftBuildSource),
                 "NUCLEUS_SWIFT_COMPILER_ARCHIVE_SHA256":
                     swiftCompilerArchiveSHA256,
                 "SOURCE_DATE_EPOCH": String(inputs.sourceDateEpoch),
-                // The assembly step asks git whether each pinned checkout is
-                // at its manifest revision and clean, which nothing else
-                // establishes: source identity detects that the tree changed,
-                // not that it is the revision the overlay claims to be. Both
-                // are host directories bind-mounted read-only, so they are
-                // owned by the developer account while the container runs as
-                // the builder, and git refuses a repository whose owner is not
-                // the caller. The mismatch is structural rather than
-                // incidental, and this is the mechanism git provides for it.
-                // Declared through the environment so the trust lasts exactly
-                // one execution and no global git state is written.
-                "GIT_CONFIG_COUNT": "2",
-                "GIT_CONFIG_KEY_0": "safe.directory",
-                "GIT_CONFIG_VALUE_0": identityPathMap.executionPath(swiftPMSource),
-                "GIT_CONFIG_KEY_1": "safe.directory",
-                "GIT_CONFIG_VALUE_1": identityPathMap.executionPath(
-                    swiftBuildSource),
             ],
             imageEntrypointOverride: entrypoint.containerPath,
             command: ["assemble"],
@@ -477,8 +463,77 @@ private struct AssembleSwiftPMOverlayAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
+        for pinned in pinnedSources {
+            try await verify(pinned.source, isAt: pinned.revision, in: context)
+        }
         try context.files.createDirectory(outputRoot)
         try await context.containers.run(execution)
+    }
+
+    /// Asserts a pinned source is the revision the overlay claims and carries
+    /// no modification.
+    ///
+    /// Source identity establishes that the tree did not change, not that it is
+    /// the revision the manifest names, so nothing else states this. It runs
+    /// here rather than inside the assembly step because only the submodule
+    /// subtree crosses into that container, while a gitlink's `.git` is a file
+    /// naming a directory in the superproject wherever the checkout was made by
+    /// cloning with submodules. Asking git there answers only for a checkout
+    /// whose repository happens to sit in place, which the authoritative one
+    /// does and a work tree created by cloning does not; the host holds the
+    /// whole repository either way.
+    private func verify(
+        _ source: FilePath,
+        isAt revision: String,
+        in context: ActionContext
+    ) async throws {
+        let head = try await git(["rev-parse", "HEAD"], in: source, context: context)
+        guard head == revision else {
+            throw SwiftPMOverlaySourceFailure.unexpectedRevision(
+                source: source, expected: revision, actual: head)
+        }
+        let modifications = try await git(
+            ["status", "--porcelain"], in: source, context: context)
+        guard modifications.isEmpty else {
+            throw SwiftPMOverlaySourceFailure.modified(source: source)
+        }
+    }
+
+    private func git(
+        _ arguments: [String],
+        in source: FilePath,
+        context: ActionContext
+    ) async throws -> String {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: ["-C", source.string] + arguments,
+                workingDirectory: source,
+                environment: execution.environment,
+                output: .captured(limit: 1 << 20)))
+        guard result.status == 0 else {
+            throw SwiftPMOverlaySourceFailure.notAGitCheckout(source)
+        }
+        return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private enum SwiftPMOverlaySourceFailure: Error, CustomStringConvertible {
+    case notAGitCheckout(FilePath)
+    case unexpectedRevision(source: FilePath, expected: String, actual: String)
+    case modified(source: FilePath)
+
+    var description: String {
+        switch self {
+        case .notAGitCheckout(let source):
+            return "pinned overlay source is not a readable git checkout: \(source)"
+        case .unexpectedRevision(let source, let expected, let actual):
+            return
+                "pinned overlay source \(source) is at \(actual), "
+                + "and the overlay manifest names \(expected)"
+        case .modified(let source):
+            return "pinned overlay source has uncommitted modifications: \(source)"
+        }
     }
 }
 

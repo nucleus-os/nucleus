@@ -5,15 +5,15 @@ products=${NUCLEUS_SWIFTPM_OVERLAY_PRODUCTS:?}
 output=${NUCLEUS_SWIFTPM_OVERLAY_OUTPUT:?}
 swiftpm_revision=${NUCLEUS_SWIFTPM_REVISION:?}
 swiftbuild_revision=${NUCLEUS_SWIFTBUILD_REVISION:?}
-swiftpm_source=${NUCLEUS_SWIFTPM_SOURCE:?}
-swiftbuild_source=${NUCLEUS_SWIFTBUILD_SOURCE:?}
 compiler_digest=${NUCLEUS_SWIFT_COMPILER_ARCHIVE_SHA256:?}
 source_date_epoch=${SOURCE_DATE_EPOCH:?}
 
-test "$(git -C "$swiftpm_source" rev-parse HEAD)" = "$swiftpm_revision"
-test "$(git -C "$swiftbuild_source" rev-parse HEAD)" = "$swiftbuild_revision"
-test -z "$(git -C "$swiftpm_source" status --porcelain)"
-test -z "$(git -C "$swiftbuild_source" status --porcelain)"
+# Each source is checked against its manifest revision, and for cleanliness, on
+# the host before this runs. A gitlink's `.git` is a file naming a directory in
+# the superproject wherever the checkout was made by cloning with submodules,
+# and only the submodule subtree crosses into here, so git inside this container
+# can only answer for a checkout whose repository happens to sit in place. The
+# whole repository is present on the host and answers for either shape.
 
 executable="$products/swift-package-manager"
 test -x "$executable"
