@@ -1480,6 +1480,13 @@ private func artifactInput(
     try Data("first compiler".utf8).write(to: firstCompiler)
     try Data("second compiler".utf8).write(to: secondCompiler)
 
+    // Resolving a package graph writes into the build root, and on a host with
+    // a machine build store that root is the store, which this account may read
+    // and not write. Setting HOME does not redirect it: the store is selected by
+    // being installed, not by whose home is in the environment. A test that
+    // builds its own workspace has to name its own build root, or it asks the
+    // shared one to hold an entry for a fixture and fails on any host where
+    // that entry is not already there.
     func invocation(sourceID: String, compiler: URL) async throws -> SwiftPMInvocation {
         try await WorkspaceContext(
             root: FilePath(workspace.path),
@@ -1488,7 +1495,9 @@ private func artifactInput(
                 "NUCLEUS_SWIFT_SOURCE_ID": sourceID,
                 "SWIFTC": compiler.path,
             ],
-            runtime: ColliderRuntime()
+            runtime: ColliderRuntime(),
+            cacheRoot: FilePath(workspace.path).appending("cache"),
+            hostBuildRoot: FilePath(workspace.path).appending("build")
         ).swiftPMInvocation()
     }
 
