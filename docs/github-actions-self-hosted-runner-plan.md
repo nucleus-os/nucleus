@@ -969,6 +969,24 @@ signing, or version allocation.
 
 ## Phase 7: Cut Over Main CI/CD
 
+Status: the concurrency clause holds. Protected main pushes share one group and
+a newer revision cancels the run in flight; the group had been keyed on the
+revision, which made it per-commit, so it only ever cancelled a duplicate of the
+same commit and a superseded revision ran to completion holding the admission
+its replacement was waiting for. Cancellation needs nothing further from
+Collider, in either of the two ways a cancelled job ends. A signalled run tears
+its containers down through the registered cleanup path, records the
+interrupting signal, and finalizes its record as interrupted. A run killed
+outright finalizes nothing itself, and needs to: both the machine execution
+admission and the per-run lease are kernel locks on open descriptors, so the
+kernel releases them at process death, and the next run reconciles a record
+whose lease no longer exists into an interrupted one rather than inferring
+liveness from a timestamp or a process identifier. A cancelled revision
+therefore leaves no held admission and no record still claiming to be running. A dispatch keeps its
+own per-revision group, so it is neither cancelled by the tip nor able to cancel
+it, and it remains how a revision a supersession skipped gets verified. The rest
+of this phase is pending.
+
 Remove the GitHub-hosted pull-request job. Install the protected main-only
 workflow, M2 Ultra runner, native qualification routing, successful-run
 artifact retention, and protected delivery consumers.

@@ -14,8 +14,18 @@ on:
 permissions:
   contents: read
 
+# Protected main has one tip and the machine has one execution admission, so
+# only the newest revision is worth running: a superseded one holds the
+# admission the run that replaced it is waiting for, and reports on a commit
+# nobody is on. Every push therefore shares one group and cancels the run in
+# flight. Keying this on the revision made the group per-commit, so it only ever
+# cancelled a duplicate of the same commit and never a superseded one.
+#
+# A dispatch keeps its own per-revision group. It names an exact ancestor
+# deliberately, which is how a revision a supersession skipped is verified after
+# the fact, so it must neither cancel the tip's run nor be cancelled by it.
 concurrency:
-  group: protected-main-verification-${{ github.event_name == 'workflow_dispatch' && inputs.revision || github.sha }}
+  group: protected-main-verification-${{ github.event_name == 'workflow_dispatch' && format('revision-{0}', inputs.revision) || 'push' }}
   cancel-in-progress: true
 
 jobs:

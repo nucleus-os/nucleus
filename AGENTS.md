@@ -20,7 +20,12 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 - When asked to commit or push, do it on the current branch (including `main`). Create a new branch only when the user explicitly asks for one; do not branch off `main` by default.
 - Run build and test verification through the installed `collider` command. Its workspace launcher derives the host environment and refreshes the release Collider executable whenever the current Git/toolchain source fingerprint changes. Do not source `tools/host-env.sh` manually or invoke `collider/.build/.../collider` directly. On a host with a machine build store, a command that executes a task graph re-runs itself as `nucleus-builder` through the root launcher and says so on standard error; inspection and dry runs stay in the invoking account. Do not invoke `nucleus-builder-run` by hand, and do not add an operation to its grammar to reach one: Collider decides what must cross.
 - Protected `main` CI is the verification sweep, and it runs the full build and
-  test graph on every pushed revision. Local verification exists to shorten the
+  test graph on the newest pushed revision. A push cancels the run in flight for
+  an older one, because the machine has a single execution admission and a
+  superseded run holds it against the run that replaced it. Pushing again
+  therefore discards the previous revision's pending result: read the result for
+  the revision you actually left at the tip, and re-verify a skipped one with a
+  manual dispatch naming it. Local verification exists to shorten the
   feedback loop on uncommitted work, not to reproduce that sweep, so scope it to
   what changed, then push and read the CI result rather than running a component
   gate CI runs anyway. A local run also takes the single host execution
