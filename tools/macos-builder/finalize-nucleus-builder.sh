@@ -343,9 +343,15 @@ do
   /bin/launchctl bootout "$runner_domain/$runner_service_label" >/dev/null 2>&1 || true
 done
 
+# A service that is not loaded is one of the two answers this asks for, and
+# `launchctl print` reports it by failing. Under `set -o pipefail` that failure
+# propagates out of the substitution and ends the script with no message at all,
+# which is how finalization came to abort in silence whenever it ran against a
+# stopped runner -- the state the updater deliberately creates before it swaps
+# the installation. The emptiness is handled immediately below.
 current_runner_service_pid="$(
   /bin/launchctl print "$runner_service_domain/$runner_service_label" 2>/dev/null \
-    | /usr/bin/awk '$1 == "pid" && $2 == "=" { print $3; exit }'
+    | /usr/bin/awk '$1 == "pid" && $2 == "=" { print $3; exit }' || true
 )"
 current_runner_service_is_healthy=false
 if [[ -n "$current_runner_service_pid" \
