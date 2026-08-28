@@ -969,23 +969,41 @@ signing, or version allocation.
 
 ## Phase 7: Cut Over Main CI/CD
 
-Status: the concurrency clause holds. Protected main pushes share one group and
-a newer revision cancels the run in flight; the group had been keyed on the
-revision, which made it per-commit, so it only ever cancelled a duplicate of the
-same commit and a superseded revision ran to completion holding the admission
-its replacement was waiting for. Cancellation needs nothing further from
-Collider, in either of the two ways a cancelled job ends. A signalled run tears
-its containers down through the registered cleanup path, records the
-interrupting signal, and finalizes its record as interrupted. A run killed
-outright finalizes nothing itself, and needs to: both the machine execution
-admission and the per-run lease are kernel locks on open descriptors, so the
-kernel releases them at process death, and the next run reconciles a record
-whose lease no longer exists into an interrupted one rather than inferring
-liveness from a timestamp or a process identifier. A cancelled revision
-therefore leaves no held admission and no record still claiming to be running. A dispatch keeps its
-own per-revision group, so it is neither cancelled by the tip nor able to cancel
-it, and it remains how a revision a supersession skipped gets verified. The rest
-of this phase is pending.
+Status: the concurrency group is one group, and cancellation is not yet safe
+enough to use it. Protected main pushes share a group and a newer revision
+cancels the run in flight; the group had been keyed on the revision, which made
+it per-commit, so it only ever cancelled a duplicate of the same commit while a
+superseded revision ran to completion holding the admission its replacement was
+waiting for. A dispatch keeps its own per-revision group, so it is neither
+cancelled by the tip nor able to cancel it, and it remains how a revision a
+supersession skipped gets verified.
+
+Reading the interrupt path suggested cancellation was already clean, and
+exercising it showed otherwise. Collider exits and the kernel releases both the
+machine admission and the per-run lease, because each is a lock on an open
+descriptor; a later run then reconciles a record whose lease no longer exists
+into an interrupted one rather than inferring liveness from a timestamp. But the
+build itself survives. A cancelled `test all` left `swift-test` running with no
+parent, in its own process group, for as long as it was allowed to: the run
+record stayed at `executing 0/14` naming a `hostExclusive` task, and only a
+manual kill across the account boundary ended it. Cancellation that releases the
+admission while the work continues is worse than the queueing it replaces,
+because the replacement starts immediately and two graphs then share one store.
+Interruption must terminate the child process group before this group key is
+worth having.
+
+The same cancellation wedged the runner. Its listener logged that it would
+continue with a new status, scheduled a backoff retry, and never issued it; the
+process stayed up, so nothing exited and launchd had nothing to restart, and a
+queued job waited ten minutes against an idle machine until the service was
+kickstarted by hand. An idle runner and a deaf one are indistinguishable from
+outside, which is why nothing detected it. The distinguishing fact is the
+socket: a healthy listener holds an open connection to GitHub whether or not it
+has work, because it reaches the next message by long poll. A watchdog installed
+beside the runner checks exactly that, restarting the service after several
+consecutive checks find no connection, and never while a job is executing.
+
+The rest of this phase is pending.
 
 Remove the GitHub-hosted pull-request job. Install the protected main-only
 workflow, M2 Ultra runner, native qualification routing, successful-run

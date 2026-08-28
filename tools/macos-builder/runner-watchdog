@@ -1,0 +1,81 @@
+#!/bin/bash
+# Restarts the Actions runner when its listener stops reaching GitHub.
+#
+# The runner's broker session can die without the process dying with it. On the
+# status transition that follows a finished job the listener logs that it will
+# continue with a new status, schedules a backoff retry, and then never issues
+# it. The process stays up and healthy-looking, so launchd's KeepAlive cannot
+# see anything wrong, and a queued job waits against an idle machine until
+# somebody notices the silence. An idle runner and a deaf one are
+# indistinguishable from the outside, which is what makes this worth detecting
+# from in here.
+#
+# The one thing that does distinguish them is the socket. A healthy listener
+# holds an open connection to GitHub whether or not it has work, because it
+# reaches the next message by long poll. A listener whose session died holds
+# none, which is the state this watches for. A wedge that somehow kept its
+# socket would not be caught, and that is the deliberate limit of this signal.
+set -euo pipefail
+
+readonly runner_root="${1:?runner root}"
+readonly service_target="${2:?launchd service target}"
+readonly state_file="${3:?state file}"
+# Consecutive checks without a connection before restarting. A single miss is
+# not evidence: a poll may land between two connections. Three at this interval
+# is minutes of continuous silence.
+readonly required_strikes=3
+
+log() {
+  printf '%s runner-watchdog: %s\n' "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1"
+}
+
+strikes() {
+  local recorded
+  recorded="$(/bin/cat "$state_file" 2>/dev/null || true)"
+  [[ "$recorded" =~ ^[0-9]+$ ]] && printf '%s' "$recorded" || printf '0'
+}
+
+record_strikes() {
+  printf '%s\n' "$1" >"$state_file"
+}
+
+process_exists() {
+  /bin/ps -axo pid=,command= \
+    | /usr/bin/awk -v match_path="$1" '$2 == match_path { print $1; found = 1 }
+      END { exit(found ? 0 : 1) }'
+}
+
+# A job is executing. Restarting the listener now would abandon a build that may
+# have been running for hours, so no evidence justifies acting here.
+if process_exists "$runner_root/bin/Runner.Worker" >/dev/null; then
+  record_strikes 0
+  exit 0
+fi
+
+listener_pid="$(process_exists "$runner_root/bin/Runner.Listener" | /usr/bin/head -1)" || {
+  # No listener at all is launchd's job, not this one, and restarting a service
+  # that is already being restarted would fight it.
+  record_strikes 0
+  exit 0
+}
+
+# -a intersects the selections. Without it lsof unions them and reports every
+# established connection on the machine, so any browser tab would stand in for
+# the runner's own session and this would never fire.
+if /usr/sbin/lsof -a -nP -p "$listener_pid" -iTCP -sTCP:ESTABLISHED 2>/dev/null \
+    | /usr/bin/grep -q ':443'; then
+  record_strikes 0
+  exit 0
+fi
+
+recorded="$(strikes)"
+recorded=$((recorded + 1))
+if (( recorded < required_strikes )); then
+  record_strikes "$recorded"
+  log "listener $listener_pid has no connection to GitHub ($recorded/$required_strikes)"
+  exit 0
+fi
+
+log "listener $listener_pid has had no connection to GitHub for $recorded checks; restarting $service_target"
+record_strikes 0
+/bin/launchctl kickstart -k "$service_target"

@@ -19,12 +19,15 @@ readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly runner_group="$(contract_value builder.runnerGroup)"
 readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
+readonly runner_watchdog="$host_contract_root/runner-watchdog"
+readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
@@ -203,6 +206,17 @@ foreign_runner_work_path="$(
   || fail "legacy runner LaunchDaemon descriptor remains installed"
 /bin/launchctl print "user/$builder_uid/$runner_service_label" >/dev/null \
   || fail "runner per-user LaunchAgent is not loaded"
+# A runner whose session dies without its process dying leaves a queued job
+# waiting against an idle machine, and nothing else on this host can tell that
+# state from a runner with no work.
+[[ -f "$runner_watchdog" && ! -L "$runner_watchdog" ]] \
+  || fail "runner watchdog is not installed"
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$runner_watchdog") == root:wheel:755 ]] \
+  || fail "runner watchdog ownership or mode drifted"
+[[ -f "$runner_watchdog_plist" && ! -L "$runner_watchdog_plist" ]] \
+  || fail "runner watchdog LaunchAgent descriptor is not installed"
+/bin/launchctl print "user/$builder_uid/$runner_watchdog_service_label" >/dev/null \
+  || fail "runner watchdog LaunchAgent is not loaded"
 runner_service_pid="$(
   /bin/launchctl print "user/$builder_uid/$runner_service_label" \
     | /usr/bin/awk '/^[[:space:]]*pid = / { print $3; exit }'

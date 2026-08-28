@@ -38,6 +38,8 @@ readonly runner_group="$(contract_value builder.runnerGroup)"
 readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_version="$(contract_value builder.runnerVersion)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
+readonly runner_watchdog_interval="$(contract_value builder.runnerWatchdogIntervalSeconds)"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly developer_uid="$(/usr/bin/id -u "$developer_user")"
 readonly runner_root="$(contract_value builder.runnerRoot)"
@@ -51,6 +53,9 @@ readonly runner_plist="$host_contract_root/$runner_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly runner_service_domain="user/$builder_uid"
+readonly runner_watchdog="$host_contract_root/runner-watchdog"
+readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
+readonly runner_watchdog_state="$runner_logs/watchdog.state"
 readonly container_service_label="$(contract_value launchd.label)"
 readonly builder_agent_directory="$builder_home/Library/LaunchAgents"
 readonly builder_agent_plist="$builder_agent_directory/$container_service_label.plist"
@@ -374,6 +379,47 @@ fi
 if [[ "$current_runner_service_is_healthy" == false ]]; then
   run_as_builder /bin/launchctl bootstrap "$runner_service_domain" "$runner_plist"
 fi
+
+# The runner's broker session can die while its process stays up, which leaves a
+# queued job waiting against a machine that looks idle and healthy. launchd
+# cannot see that, because nothing exited. The watchdog is what notices, and it
+# runs as the builder because only the builder may inspect its own runner and
+# restart its own service.
+/usr/bin/install -o root -g wheel -m 0755 \
+  "$script_directory/runner-watchdog" "$runner_watchdog"
+temporary_watchdog_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-watchdog-plist.XXXXXX)"
+/bin/cat >"$temporary_watchdog_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$runner_watchdog_service_label</string>
+  <key>LimitLoadToSessionType</key><array>
+    <string>Aqua</string>
+    <string>Background</string>
+  </array>
+  <key>ProgramArguments</key><array>
+    <string>$runner_watchdog</string>
+    <string>$runner_root</string>
+    <string>$runner_service_domain/$runner_service_label</string>
+    <string>$runner_watchdog_state</string>
+  </array>
+  <key>StartInterval</key><integer>$runner_watchdog_interval</integer>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>$runner_logs/watchdog.log</string>
+  <key>StandardErrorPath</key><string>$runner_logs/watchdog.log</string>
+</dict></plist>
+PLIST
+/usr/bin/plutil -lint "$temporary_watchdog_plist" >/dev/null
+/usr/bin/install -o root -g wheel -m 0644 \
+  "$temporary_watchdog_plist" "$runner_watchdog_plist"
+/bin/rm -f "$temporary_watchdog_plist"
+# Restarting the watchdog costs nothing: it holds no session and each run is one
+# short check, so it is reloaded unconditionally rather than compared.
+/bin/launchctl bootout \
+  "$runner_service_domain/$runner_watchdog_service_label" >/dev/null 2>&1 || true
+run_as_builder /bin/launchctl bootstrap \
+  "$runner_service_domain" "$runner_watchdog_plist"
 
 "$script_directory/verify-nucleus-builder.sh"
 echo "finalized trusted builder identity and pinned runner $runner_version"

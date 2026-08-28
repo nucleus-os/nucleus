@@ -39,6 +39,8 @@
     "runnerArchiveSHA256": "8e8839c49b7060b6b2154f4931f815df330c27f167d53ef2239ee3dfce28b079",
     "runnerArchiveSize": 127389671,
     "runnerServiceLabel": "com.nucleus.github-actions-runner",
+    "runnerWatchdogServiceLabel": "com.nucleus.github-actions-runner-watchdog",
+    "runnerWatchdogIntervalSeconds": 60,
     "runnerRoot": "/Library/Nucleus/GitHubActionsRunner",
     "hostContractRoot": "/Library/Nucleus/Builder",
     "hostExecutionLock": "/Library/Nucleus/Builder/host-execution.lock",

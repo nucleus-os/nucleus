@@ -19,9 +19,12 @@ contract_value() {
 readonly builder_user="$(contract_value builder.user)"
 readonly developer_user="$(contract_value builder.developerUser)"
 readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
+readonly runner_watchdog_service_label="$(contract_value builder.runnerWatchdogServiceLabel)"
 readonly declared_runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
+readonly runner_watchdog="$host_contract_root/runner-watchdog"
+readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
@@ -66,8 +69,14 @@ do
   ! /bin/launchctl print "$service_domain/$runner_service_label" >/dev/null 2>&1 \
     || { echo "error: runner service is still loaded in $service_domain" >&2; exit 70; }
 done
+# The watchdog only ever restarts the runner service, so removing it after the
+# runner is already gone leaves nothing for it to act on in between.
+/bin/launchctl bootout \
+  "$runner_service_domain/$runner_watchdog_service_label" >/dev/null 2>&1 || true
 /bin/rm -f \
   "$runner_plist" \
+  "$runner_watchdog_plist" \
+  "$runner_watchdog" \
   "$legacy_runner_agent_plist" \
   "$legacy_runner_plist" \
   /etc/sudoers.d/nucleus-builder \
