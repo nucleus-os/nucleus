@@ -468,13 +468,24 @@ extension ColliderRuntime {
                             first,
                             swiftBuilds: swiftBuilds,
                             declaredTasks: ordered)
+                        let runningPriority =
+                            running.keys.map {
+                                schedulingPriorities[
+                                    scheduledTaskID(
+                                        $0,
+                                        swiftBuilds: swiftBuilds,
+                                        declaredTasks: ordered),
+                                    default: 0]
+                            }.max() ?? 0
                         return schedulingPriorities[exclusiveID, default: 0]
-                            >= schedulingPriorities[firstID, default: 0]
+                            >= max(
+                                schedulingPriorities[firstID, default: 0],
+                                runningPriority)
                             ? exclusive : nil
                     }
-                    // Once the most important ready work needs the whole host,
-                    // stop filling other lanes. Existing work drains and the
-                    // exclusive task starts at the next scheduling boundary.
+                    // Once an exclusive task is at least as important as all
+                    // ready and running work, stop filling other lanes. Existing
+                    // work drains and it starts at the next scheduling boundary.
                     let candidates = highestPriorityExclusive.map { [$0] } ?? ready
                     let candidate = candidates.first(where: { candidate in
                         canSchedule(
