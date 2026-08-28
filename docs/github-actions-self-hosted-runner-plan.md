@@ -989,8 +989,19 @@ record stayed at `executing 0/14` naming a `hostExclusive` task, and only a
 manual kill across the account boundary ended it. Cancellation that releases the
 admission while the work continues is worse than the queueing it replaces,
 because the replacement starts immediately and two graphs then share one store.
-Interruption must terminate the child process group before this group key is
-worth having.
+
+The forwarding existed and could not run in time. A child is placed in its own
+process group, which is what keeps a signal aimed at Collider from reaching it
+and leaves the forwarding as the only path that does, and that forwarding was
+sent through an actor: the signal handler scheduled a task and returned. A
+process being torn down is not guaranteed to run one, so the single action that
+had to happen before death was the one deferred past it. The handler now signals
+every live process group before it returns, reading them under a lock rather
+than by suspending, and escalates on a second signal without consulting the
+actor either. What remains outside this is a Collider killed outright, which no
+handler of any shape can answer; recovering from that needs a later run to
+reconcile process groups a dead run left behind, as it already reconciles the
+record.
 
 The same cancellation wedged the runner. Its listener logged that it would
 continue with a new status, scheduled a backoff retry, and never issued it; the

@@ -191,6 +191,75 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
+/// A signal handler forwards before it returns, or it may never forward.
+///
+/// A child is placed in its own process group, which is what keeps a signal
+/// aimed at this process from reaching it and leaves the forwarding as the only
+/// path that does. Sending that forwarding through the actor means scheduling a
+/// task first, and a process being torn down is not guaranteed to run one; a
+/// cancelled build left `swift-test` running with no parent for exactly that
+/// reason. This asserts the synchronous path a signal handler actually uses,
+/// against a real process group rather than a recorded intention.
+@Test func interruptionForwardsToAProcessGroupWithoutSuspending() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-immediate-signal-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let marker = directory.appendingPathComponent("terminated")
+    let ready = directory.appendingPathComponent("ready")
+    let cancellation = RuntimeCancellation()
+    let runtime = ColliderRuntime(cancellation: cancellation)
+    let operation = Task {
+        try await runtime.execute(
+            CommandSpec(
+                executable: .named("sh"),
+                arguments: [
+                    "-c",
+                    "trap 'printf terminated > \"$1\"; exit 0' TERM; "
+                        + "printf ready > \"$2\"; "
+                        + "while :; do sleep 0.05; done",
+                    "sh", marker.path, ready.path,
+                ],
+                workingDirectory: FilePath(directory.path),
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+                ],
+                output: .captured(limit: 1_024)))
+    }
+    let readinessDeadline = ContinuousClock().now.advanced(by: .seconds(5))
+    while ContinuousClock().now < readinessDeadline {
+        if FileManager.default.fileExists(atPath: ready.path),
+            await cancellation.hasActiveProcessGroups()
+        {
+            break
+        }
+        try await ContinuousClock().sleep(for: .milliseconds(10))
+    }
+    try #require(FileManager.default.fileExists(atPath: ready.path))
+
+    // No await: this is the call a signal handler makes, and its whole purpose
+    // is to have delivered the signal by the time it returns.
+    let forwarding = cancellation.forwardImmediately(signal: SIGTERM)
+
+    #expect(forwarding.signal == SIGTERM)
+    #expect(forwarding.attemptedProcessGroups == 1)
+    #expect(forwarding.failures.isEmpty)
+    let result = try await operation.value
+    #expect(result.status == 0)
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+}
+
+/// A second signal escalates, and reads nothing that could suspend to decide.
+@Test func immediateForwardingEscalatesWithoutConsultingTheActor() {
+    let cancellation = RuntimeCancellation()
+
+    let graceful = cancellation.forwardImmediately(signal: SIGTERM)
+    let forced = cancellation.forwardImmediately(signal: SIGTERM)
+
+    #expect(graceful.signal == SIGTERM)
+    #expect(forced.signal == SIGKILL)
+}
+
 @Test func repeatedInterruptionEscalatesNativeProcessGroups() async {
     let cancellation = RuntimeCancellation()
 
