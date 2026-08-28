@@ -309,6 +309,14 @@ run_as_builder /usr/bin/git config --global --add safe.directory "$checkout/*"
 /usr/bin/sudo -u "$developer_user" /usr/bin/git config --global \
   --add safe.directory "$build_store/*"
 
+# Installing the container service stops every running container to restart the
+# API server under it. A build executing at that moment loses its containers
+# mid-task and fails, so the job check has to happen before this rather than
+# only before the runner is rehomed further down: by then the damage is done.
+if runner_worker_is_active; then
+  echo "error: a job is executing; restarting the container service would fail it" >&2
+  exit 75
+fi
 run_as_builder "$script_directory/install-container-service.sh"
 # Apple Container registers its XPC API in the builder's per-user launchd
 # domain. The Actions listener must inhabit that same domain; a LaunchDaemon
