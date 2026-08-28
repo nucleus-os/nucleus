@@ -26,8 +26,8 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(contract.builder.user == "nucleus-builder")
     #expect(contract.builder.organization == "https://github.com/nucleus-os")
     #expect(contract.builder.runnerGroup == "nucleus")
-    #expect(contract.builder.runnerVersion == "2.336.0")
-    #expect(contract.builder.runnerArchiveSize == 127_389_671)
+    #expect(contract.builder.runnerVersion == "2.337.0")
+    #expect(contract.builder.runnerArchiveSize == 127_732_571)
     #expect(contract.builder.runnerRoot == "/Library/Nucleus/GitHubActionsRunner")
     #expect(contract.builder.hostContractRoot == "/Library/Nucleus/Builder")
     // Collider locks the compiled-in path, so a checkout cannot move which
