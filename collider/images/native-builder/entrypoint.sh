@@ -55,19 +55,28 @@ case "${1:-}" in
       fi
       export_products=0
       for argument in "$@"; do
-        if [[ "$argument" == --show-bin-path ]]; then
+        if [[ "$argument" == --show-bin-path \
+            || "$argument" == --export-products ]]; then
           export_products=1
           break
         fi
       done
       if [[ "$export_products" == 1 ]]; then
         bin_path=$("$@")
+        driver_metadata=$(mktemp -d)
+        if [[ -d "$products/.collider-driver" ]]; then
+          cp -R "$products/.collider-driver" "$driver_metadata/"
+        fi
         find "$products" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
         # The export root is a macOS bind mount. Copy the product tree and its
         # symlinks, but do not ask Linux to restore source timestamps or
         # ownership on the mount point; those metadata operations are not part
         # of the artifact and are rejected by the host filesystem boundary.
         cp -R "$bin_path"/. "$products"/
+        if [[ -d "$driver_metadata/.collider-driver" ]]; then
+          cp -R "$driver_metadata/.collider-driver" "$products/"
+        fi
+        rm -rf -- "$driver_metadata"
         printf '%s\n' "$host_products"
         exit 0
       fi

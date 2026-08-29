@@ -1221,24 +1221,22 @@ public enum LinuxColliderRecipe: ColliderComponent {
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
-            arguments: [
-                "--parallel", "--num-workers",
-                String(SwiftBuildContext.concurrentOCIMaximumParallelism),
-                "--skip",
-                "gpu(DRM|Loader|Headless)_",
-            ])
+            options: SwiftTestOptions(
+                skips: ["gpu(DRM|Loader|Headless)_"],
+                parallel: true,
+                workers: Int(SwiftBuildContext.concurrentOCIMaximumParallelism)))
         let loaderRequirement = swiftPM.testProduct(
             package: "nucleus",
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
-            arguments: ["--filter", "gpuLoader_"])
+            options: SwiftTestOptions(filters: ["gpuLoader_"]))
         let headlessRequirement = swiftPM.testProduct(
             package: "nucleus",
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
-            arguments: ["--filter", "gpuHeadless_"])
+            options: SwiftTestOptions(filters: ["gpuHeadless_"]))
         var testBuilder = TaskBuilder(
             id: LinuxTaskIDs.test(architecture),
             component: ComponentID(rawValue: "linux"))

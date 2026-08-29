@@ -23,6 +23,7 @@ install -d "$output/usr/bin" "$output/usr/share/pm" \
 install -m 0755 "$executable" "$output/usr/bin/swift-package-manager"
 ln -s swift-package-manager "$output/usr/bin/swift-package"
 ln -s swift-package-manager "$output/usr/bin/swift-build"
+ln -s swift-package-manager "$output/usr/bin/swift-nucleus-driver"
 find "$products" -mindepth 1 -maxdepth 1 -type d \
   \( -name '*.bundle' -o -name '*.resources' \) \
   -exec cp -R {} "$output/usr/share/pm/" \;
@@ -46,6 +47,7 @@ readelf --file-header "$output/usr/bin/swift-package-manager" \
   | grep --fixed-strings AArch64
 test "$(readlink "$output/usr/bin/swift-package")" = swift-package-manager
 test "$(readlink "$output/usr/bin/swift-build")" = swift-package-manager
+test "$(readlink "$output/usr/bin/swift-nucleus-driver")" = swift-package-manager
 LD_LIBRARY_PATH=/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64 \
   SWIFTPM_EXEC_NAME=swift-build \
   "$output/usr/bin/swift-package-manager" --version

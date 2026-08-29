@@ -401,7 +401,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         testProduct: String,
         packageRoot: FilePath,
         environment: [String: String],
-        arguments: [String] = [],
+        options: SwiftTestOptions = .init(),
         expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
         let inputs =
@@ -415,7 +415,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             invocation: self,
             inputs: inputs,
             environment: environment,
-            arguments: arguments,
+            options: options,
             expectedBuildOutputs: expectedBuildOutputs)
     }
 
@@ -498,6 +498,13 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             let subcommand = arguments.first
         else {
             return (ociSwiftExecutable, nil, commandArguments(arguments))
+        }
+        if subcommand == "nucleus-driver" {
+            return (
+                executable.string,
+                "swift-nucleus-driver",
+                Array(arguments.dropFirst())
+            )
         }
         return (
             executable.string,
@@ -613,6 +620,15 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     /// it, not where the host keeps it, and this must agree with the mount
     /// target naming the same tree. Host execution observes the host.
     public var executionPackageRoot: String { executionPath(context.packageRoot) }
+
+    public var executionToolsetPaths: [String] {
+        context.toolsets.map(executionPath)
+    }
+
+    public var usesSwiftPMOverlayDriver: Bool {
+        guard case .oci(let configuration) = context.execution else { return false }
+        return configuration.swiftPMExecutable != nil
+    }
 
     /// Where a host path appears to this invocation's execution environment.
     private func executionPath(_ path: FilePath) -> String {
@@ -776,7 +792,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
     public let invocation: SwiftPMInvocation
     public let inputs: [ArtifactInput]
     public let environment: [String: String]
-    public let arguments: [String]
+    public let options: SwiftTestOptions
     public let expectedBuildOutputs: [PathPostcondition]
 
     public init(
@@ -786,7 +802,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         invocation: SwiftPMInvocation,
         inputs: [ArtifactInput],
         environment: [String: String],
-        arguments: [String] = [],
+        options: SwiftTestOptions = .init(),
         expectedBuildOutputs: [PathPostcondition] = []
     ) {
         precondition(
@@ -800,12 +816,41 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         self.invocation = invocation
         self.inputs = inputs
         self.environment = environment
-        self.arguments = arguments
+        self.options = options
         self.expectedBuildOutputs = expectedBuildOutputs
     }
 
     public var qualifiedProduct: String {
         "\(package):\(testProduct)"
+    }
+}
+
+public struct SwiftTestOptions: Hashable, Sendable {
+    public let filters: [String]
+    public let skips: [String]
+    public let parallel: Bool
+    public let workers: Int?
+
+    public init(
+        filters: [String] = [],
+        skips: [String] = [],
+        parallel: Bool = false,
+        workers: Int? = nil
+    ) {
+        precondition(workers == nil || workers! > 0)
+        self.filters = filters
+        self.skips = skips
+        self.parallel = parallel
+        self.workers = workers
+    }
+
+    public func addingFilter(_ filter: String?) -> SwiftTestOptions {
+        guard let filter else { return self }
+        return SwiftTestOptions(
+            filters: filters + [filter],
+            skips: skips,
+            parallel: parallel,
+            workers: workers)
     }
 }
 

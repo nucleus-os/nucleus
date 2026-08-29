@@ -50,7 +50,7 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
                 testProduct: suite.suite,
                 packageRoot: context.repositoryRoot.appending(suite.package),
                 environment: context.environment,
-                arguments: ["--filter", suite.suite])
+                options: SwiftTestOptions(filters: [suite.suite]))
             var builder = TaskBuilder(
                 id: TaskID(rawValue: "test.release-gate.\(suite.id)"),
                 component: descriptor.id)

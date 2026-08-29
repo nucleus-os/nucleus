@@ -1,4 +1,5 @@
 import ColliderCore
+import Foundation
 import SystemPackage
 
 public struct SwiftPMLowering: TaskPlanLowering {
@@ -61,9 +62,10 @@ public struct SwiftPMLowering: TaskPlanLowering {
         tasksByID: [TaskID: TaskDeclaration]
     ) throws -> [LoweredExecutionTask] {
         let groupedTests = Dictionary(grouping: tests) {
-            $0.requirement.arguments
+            $0.requirement.options
         }.sorted {
-            $0.key.lexicographicallyPrecedes($1.key)
+            SwiftPMOperation.test($0.key).identityArguments.lexicographicallyPrecedes(
+                SwiftPMOperation.test($1.key).identityArguments)
         }
         let invocation =
             products.first?.requirement.invocation
@@ -377,7 +379,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         else {
             throw SwiftPMLoweringFailure.incompatibleBuildContexts
         }
-        let buildArguments = ["build", "--product", requestedProduct]
+        let buildOperation = SwiftPMOperation.buildProduct(requestedProduct)
         var builder = TaskBuilder(
             id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
@@ -397,9 +399,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 action: try swiftPMAction(
                     invocation: first.invocation,
                     environment: first.environment,
-                    arguments: prebuildTargets.map {
-                        ["build", "--target", $0]
-                    } + [buildArguments])
+                    operations: prebuildTargets.map(SwiftPMOperation.buildTarget)
+                        + [buildOperation])
             )
             .addingDependencies(owners.flatMap(\.dependencies)),
             identityBytes: identity.bytes)
@@ -412,7 +413,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         guard let first = requirements.first,
             requirements.allSatisfy({
                 $0.invocation == first.invocation
-                    && $0.arguments == first.arguments
+                    && $0.options == first.options
             })
         else {
             throw SwiftPMLoweringFailure.incompatibleTestContexts
@@ -440,14 +441,14 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 inputs.append(input)
             }
         }
-        let testArguments =
-            first.arguments + (testFilter.map { ["--filter", $0] } ?? [])
+        let testOptions = first.options.addingFilter(testFilter)
+        let testOperation = SwiftPMOperation.test(testOptions)
         let identity = physicalTaskID(
             role: "test",
             context: first.invocation.context,
             products: testProducts,
             prebuildTargets: [],
-            arguments: testArguments)
+            arguments: testOperation.identityArguments)
         var builder = TaskBuilder(
             id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
@@ -467,7 +468,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 action: try swiftPMAction(
                     invocation: first.invocation,
                     environment: environment,
-                    arguments: [["test"] + testArguments],
+                    operations: [testOperation],
                     recordsTestResults: true)
             )
             .addingDependencies(owners.flatMap(\.dependencies)),
@@ -508,7 +509,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
     private func swiftPMAction(
         invocation: SwiftPMInvocation,
         environment: [String: String],
-        arguments: [[String]],
+        operations: [SwiftPMOperation],
         recordsTestResults: Bool = false
     ) throws -> AnyColliderAction {
         let processes: [SwiftPMProcess]
@@ -518,7 +519,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
             hostEnvironment.removeValue(
                 forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
-            processes = arguments.enumerated().map { index, arguments in
+            processes = operations.enumerated().map { index, operation in
                 let results =
                     recordsTestResults
                     ? invocation.testResultsDirectory.appending("swift-test-\(index).xml")
@@ -529,19 +530,61 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         .appending("swift-test-\(index).xml")
                     : nil
                 return SwiftPMProcess(
-                    stageName: SwiftPMAction.stageName(arguments: arguments),
+                    stageName: operation.stageName,
                     execution: .host(
                         invocation.command(
-                            arguments: arguments
+                            arguments: operation.commandArguments
                                 + (executionResults.map {
                                     ["--xunit-output", $0.string]
                                 } ?? []),
                             workingDirectory: invocation.context.packageRoot,
                             environment: hostEnvironment)),
-                    testResults: results)
+                    testResults: results,
+                    driverRequest: nil,
+                    requestPath: nil,
+                    eventsPath: nil)
+            }
+        case .oci where invocation.usesSwiftPMOverlayDriver:
+            processes = try operations.enumerated().map { index, operation in
+                let results =
+                    recordsTestResults
+                    ? invocation.testResultsDirectory.appending("swift-test-\(index).xml")
+                    : nil
+                let executionResults =
+                    recordsTestResults
+                    ? invocation.executionTestResultsDirectory
+                        .appending("swift-test-\(index).xml")
+                    : nil
+                let requestPath = invocation.productsDirectory.appending(
+                    ".collider-driver/request-\(index).json")
+                let eventsPath = invocation.productsDirectory.appending(
+                    ".collider-driver/events-\(index).jsonl")
+                let executionRequestPath = FilePath(
+                    "/swiftpm-products/.collider-driver/request-\(index).json")
+                let executionEventsPath = FilePath(
+                    "/swiftpm-products/.collider-driver/events-\(index).jsonl")
+                return SwiftPMProcess(
+                    stageName: operation.stageName,
+                    execution: .oci(
+                        try invocation.ociExecution(
+                            arguments: [
+                                "nucleus-driver",
+                                "--request-path", executionRequestPath.string,
+                                "--events-path", executionEventsPath.string,
+                            ],
+                            workingDirectory: FilePath(
+                                invocation.executionPackageRoot),
+                            environment: environment)),
+                    testResults: results,
+                    driverRequest: SwiftPMDriverRequest(
+                        invocation: invocation,
+                        operation: operation,
+                        xUnitOutputPath: executionResults?.string),
+                    requestPath: requestPath,
+                    eventsPath: eventsPath)
             }
         case .oci:
-            processes = try arguments.enumerated().map { index, arguments in
+            processes = try operations.enumerated().map { index, operation in
                 let results =
                     recordsTestResults
                     ? invocation.testResultsDirectory.appending("swift-test-\(index).xml")
@@ -552,17 +595,19 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         .appending("swift-test-\(index).xml")
                     : nil
                 return SwiftPMProcess(
-                    stageName: SwiftPMAction.stageName(arguments: arguments),
+                    stageName: operation.stageName,
                     execution: .oci(
                         try invocation.ociExecution(
-                            arguments: arguments
+                            arguments: operation.commandArguments
                                 + (executionResults.map {
                                     ["--xunit-output", $0.string]
                                 } ?? []),
-                            workingDirectory: FilePath(
-                                invocation.executionPackageRoot),
+                            workingDirectory: FilePath(invocation.executionPackageRoot),
                             environment: environment)),
-                    testResults: results)
+                    testResults: results,
+                    driverRequest: nil,
+                    requestPath: nil,
+                    eventsPath: nil)
             }
         }
         let binPathQuery: SwiftPMProcess
@@ -580,7 +625,38 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         workingDirectory: invocation.context.packageRoot,
                         environment: hostEnvironment,
                         output: .captured(limit: 64 * 1_024))),
-                testResults: nil)
+                testResults: nil,
+                driverRequest: nil,
+                requestPath: nil,
+                eventsPath: nil)
+        case .oci where invocation.usesSwiftPMOverlayDriver:
+            let index = operations.count
+            let requestPath = invocation.productsDirectory.appending(
+                ".collider-driver/request-\(index).json")
+            let eventsPath = invocation.productsDirectory.appending(
+                ".collider-driver/events-\(index).jsonl")
+            binPathQuery = SwiftPMProcess(
+                stageName: "swift-package.products-publication",
+                execution: .oci(
+                    try invocation.ociExecution(
+                        arguments: [
+                            "nucleus-driver",
+                            "--request-path",
+                            "/swiftpm-products/.collider-driver/request-\(index).json",
+                            "--events-path",
+                            "/swiftpm-products/.collider-driver/events-\(index).jsonl",
+                            "--export-products",
+                        ],
+                        workingDirectory: FilePath(invocation.executionPackageRoot),
+                        environment: environment,
+                        output: .captured(limit: 64 * 1_024))),
+                testResults: nil,
+                driverRequest: SwiftPMDriverRequest(
+                    invocation: invocation,
+                    operation: .productsPath,
+                    xUnitOutputPath: nil),
+                requestPath: requestPath,
+                eventsPath: eventsPath)
         case .oci:
             binPathQuery = SwiftPMProcess(
                 stageName: "swift-package.products-publication",
@@ -590,7 +666,10 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         workingDirectory: FilePath(invocation.executionPackageRoot),
                         environment: environment,
                         output: .captured(limit: 64 * 1_024))),
-                testResults: nil)
+                testResults: nil,
+                driverRequest: nil,
+                requestPath: nil,
+                eventsPath: nil)
         }
         return try AnyColliderAction(
             SwiftPMAction(
@@ -685,6 +764,148 @@ private struct SwiftPMProcess: Hashable, Sendable {
     let stageName: String
     let execution: SwiftPMProcessExecution
     let testResults: FilePath?
+    let driverRequest: SwiftPMDriverRequest?
+    let requestPath: FilePath?
+    let eventsPath: FilePath?
+}
+
+private enum SwiftPMOperation: Hashable, Sendable {
+    case buildProduct(String)
+    case buildTarget(String)
+    case test(SwiftTestOptions)
+    case productsPath
+
+    var commandArguments: [String] {
+        switch self {
+        case .buildProduct(let product): ["build", "--product", product]
+        case .buildTarget(let target): ["build", "--target", target]
+        case .test(let options):
+            ["test"]
+                + options.filters.flatMap { ["--filter", $0] }
+                + options.skips.flatMap { ["--skip", $0] }
+                + (options.parallel ? ["--parallel"] : [])
+                + (options.workers.map { ["--num-workers", String($0)] } ?? [])
+        case .productsPath: ["build", "--show-bin-path"]
+        }
+    }
+
+    var identityArguments: [String] { commandArguments }
+
+    var stageName: String {
+        switch self {
+        case .buildProduct(let product): "swift-package.build-product.\(product)"
+        case .buildTarget(let target): "swift-package.compile.\(target)"
+        case .test: "swift-package.test"
+        case .productsPath: "swift-package.products-publication"
+        }
+    }
+}
+
+private struct SwiftPMDriverRequest: Codable, Hashable, Sendable {
+    struct TestOptions: Codable, Hashable, Sendable {
+        let product: String?
+        let filters: [String]
+        let skips: [String]
+        let parallel: Bool
+        let workers: Int?
+        let xUnitOutputPath: String?
+    }
+
+    let operation: String
+    let selection: String?
+    let test: TestOptions?
+    let packagePath: String
+    let scratchPath: String
+    let cachePath: String?
+    let swiftSDKsPath: String?
+    let buildSystem: String
+    let configuration: String
+    let jobs: UInt32
+    let debugInformationFormat: String?
+    let targetTriple: String?
+    let swiftSDK: String?
+    let toolsetPaths: [String]
+    let staticSwiftStandardLibrary: Bool
+    let forceResolvedVersions: Bool
+    let sanitizer: String?
+    let traits: [String]
+    let swiftCompilerFlags: [String]
+    let cCompilerFlags: [String]
+    let cxxCompilerFlags: [String]
+    let linkerFlags: [String]
+
+    init(
+        invocation: SwiftPMInvocation,
+        operation: SwiftPMOperation,
+        xUnitOutputPath: String?
+    ) {
+        switch operation {
+        case .buildProduct(let product):
+            self.operation = "buildProduct"
+            selection = product
+            test = nil
+        case .buildTarget(let target):
+            self.operation = "buildTarget"
+            selection = target
+            test = nil
+        case .test(let options):
+            self.operation = "test"
+            selection = nil
+            test = TestOptions(
+                product: nil,
+                filters: options.filters,
+                skips: options.skips,
+                parallel: options.parallel,
+                workers: options.workers,
+                xUnitOutputPath: xUnitOutputPath)
+        case .productsPath:
+            self.operation = "productsPath"
+            selection = nil
+            test = nil
+        }
+        packagePath = invocation.executionPackageRoot
+        scratchPath = invocation.executionScratchPath.string
+        cachePath = nil
+        if case .oci = invocation.context.execution,
+            case .swiftSDK = invocation.context.target
+        {
+            swiftSDKsPath = SwiftPMInvocation.ociSwiftSDKDirectory.string
+        } else {
+            swiftSDKsPath = nil
+        }
+        buildSystem = invocation.context.buildSystem.rawValue
+        configuration = invocation.context.configuration.rawValue
+        jobs = invocation.context.maximumParallelism
+        debugInformationFormat = invocation.context.debugInformationFormat?.rawValue
+        switch invocation.context.target {
+        case .host:
+            targetTriple = nil
+            swiftSDK = nil
+        case .triple(let triple):
+            targetTriple = triple
+            swiftSDK = nil
+        case .swiftSDK(let name, let triple):
+            targetTriple = triple
+            swiftSDK = name
+        }
+        toolsetPaths = invocation.executionToolsetPaths
+        staticSwiftStandardLibrary = invocation.context.staticSwiftStandardLibrary
+        forceResolvedVersions = invocation.dependencyLock != nil
+        sanitizer = invocation.context.sanitizer
+        traits = invocation.context.traits
+        swiftCompilerFlags = invocation.context.swiftFlags
+        cCompilerFlags = invocation.context.cFlags
+        cxxCompilerFlags = invocation.context.cxxFlags
+        linkerFlags = invocation.context.linkerFlags
+    }
+}
+
+private struct SwiftPMDriverEvent: Codable, Sendable {
+    let kind: String
+    let message: String?
+    let target: String?
+    let success: Bool?
+    let productsPath: String?
 }
 
 private struct SwiftPMAction: ColliderAction {
@@ -695,6 +916,12 @@ private struct SwiftPMAction: ColliderAction {
         func encode(into encoder: inout IdentityEncoder) {
             encoder.append(UInt64(processes.count))
             for process in processes {
+                encoder.appendOptional(process.driverRequest) { requestEncoder, request in
+                    let jsonEncoder = JSONEncoder()
+                    jsonEncoder.outputFormatting = [.sortedKeys]
+                    requestEncoder.append(
+                        bytes: Array((try? jsonEncoder.encode(request)) ?? Data()))
+                }
                 switch process.execution {
                 case .host(let command):
                     encoder.append(nested: HostSwiftPMCommandIdentity(command: command))
@@ -774,10 +1001,15 @@ private struct SwiftPMAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        if identity.processes.contains(where: {
-            guard case .oci = $0.execution else { return false }
-            return true
-        }) {
+        let usesDriver = identity.processes.contains(where: {
+            $0.driverRequest != nil
+        })
+        if usesDriver
+            || identity.processes.contains(where: {
+                guard case .oci = $0.execution else { return false }
+                return true
+            })
+        {
             try context.files.createDirectory(scratchPath)
             try context.files.remove(productsDirectory)
             try context.files.createDirectory(productsDirectory)
@@ -788,6 +1020,16 @@ private struct SwiftPMAction: ColliderAction {
         }
         for (index, process) in identity.processes.enumerated() {
             try context.cancellation.check()
+            if let request = process.driverRequest,
+                let requestPath = process.requestPath,
+                let eventsPath = process.eventsPath
+            {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                try context.files.createDirectory(requestPath.removingLastComponent())
+                try context.files.write(Array(try encoder.encode(request)), to: requestPath)
+                try context.files.remove(eventsPath)
+            }
             let start = ContinuousClock.now
             let result: CommandResult
             switch process.execution {
@@ -802,8 +1044,21 @@ private struct SwiftPMAction: ColliderAction {
                     durationNanoseconds: elapsedNanoseconds(since: start),
                     inputByteCount: 0,
                     outputByteCount: 0))
+            let driverEvents = try decodeDriverEvents(
+                at: process.eventsPath,
+                context: context)
             guard result.succeeded else {
                 throw result.executionFailure(reason: "Swift package command failed")
+            }
+            if process.driverRequest != nil {
+                guard
+                    let completion = driverEvents.last(where: {
+                        $0.kind == "completed"
+                    }), completion.success == true
+                else {
+                    throw SwiftPMLoweringFailure.invalidDriverEvents(
+                        driverEvents.last?.message ?? "missing successful completion event")
+                }
             }
             if let results = process.testResults,
                 try context.files.metadata(for: results) != nil
@@ -814,30 +1069,26 @@ private struct SwiftPMAction: ColliderAction {
             }
             if index == identity.processes.indices.last {
                 try publishProductsDirectory(
-                    result.standardOutput,
+                    driverEvents.last(where: { $0.kind == "completed" })?.productsPath
+                        ?? result.standardOutput,
                     context: context)
             }
         }
     }
 
-    fileprivate static func stageName(arguments: [String]) -> String {
-        if let index = arguments.firstIndex(of: "--target"),
-            arguments.indices.contains(index + 1)
-        {
-            return "swift-package.compile.\(arguments[index + 1])"
+    private func decodeDriverEvents(
+        at path: FilePath?,
+        context: ActionContext
+    ) throws -> [SwiftPMDriverEvent] {
+        guard let path else { return [] }
+        guard try context.files.metadata(for: path) != nil else {
+            throw SwiftPMLoweringFailure.invalidDriverEvents(
+                "driver produced no event stream")
         }
-        if let index = arguments.firstIndex(of: "--product"),
-            arguments.indices.contains(index + 1)
-        {
-            return "swift-package.build-product.\(arguments[index + 1])"
+        let bytes = try context.files.read(path)
+        return try bytes.split(separator: 0x0A).map {
+            try JSONDecoder().decode(SwiftPMDriverEvent.self, from: Data($0))
         }
-        if arguments.contains("--show-bin-path") {
-            return "swift-package.products-publication"
-        }
-        if arguments.first == "build" {
-            return "swift-package.build-all-products"
-        }
-        return "swift-package.\(arguments.first ?? "invoke")"
     }
 
     private func publishProductsDirectory(
@@ -978,6 +1229,7 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
     case emptyInvocation
     case invalidDependencyMaterialization
     case invalidBinPath(String)
+    case invalidDriverEvents(String)
 
     public var description: String {
         switch self {
@@ -991,6 +1243,8 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
             "SwiftPM dependency materialization requires an OCI invocation with a lockfile"
         case .invalidBinPath(let value):
             "SwiftPM returned an invalid binary output path: \(value)"
+        case .invalidDriverEvents(let value):
+            "Nucleus SwiftPM driver returned an invalid event stream: \(value)"
         }
     }
 }

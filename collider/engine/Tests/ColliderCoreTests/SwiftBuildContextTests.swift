@@ -414,6 +414,20 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         operation.containerEnvironment["NUCLEUS_SWIFTPM_HOST_PRODUCTS"]
             == invocation.productsDirectory.string)
+    let driverOperation = try invocation.ociExecution(
+        arguments: [
+            "nucleus-driver",
+            "--request-path", "/swiftpm-products/request.json",
+            "--events-path", "/swiftpm-products/events.jsonl",
+        ],
+        workingDirectory: fixturePackageRoot,
+        environment: [:])
+    #expect(
+        driverOperation.containerEnvironment["SWIFTPM_EXEC_NAME"]
+            == "swift-nucleus-driver")
+    #expect(driverOperation.command.contains("--request-path"))
+    #expect(driverOperation.command.contains("/swiftpm-products/request.json"))
+    #expect(!driverOperation.command.contains("--build-system"))
     let product = invocation.product(
         package: "fixture",
         product: "Fixture",

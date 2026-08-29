@@ -304,7 +304,7 @@ private func executeWithSwiftPM(
         invocation: invocation,
         inputs: [],
         environment: ["PATH": "\(tools.path):/usr/bin:/bin"],
-        arguments: ["--filter", "gpuHeadless_"])
+        options: SwiftTestOptions(filters: ["gpuHeadless_"]))
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.filtered-test"),
         component: ComponentID(rawValue: "fixture"),
@@ -637,7 +637,7 @@ private func executeWithSwiftPM(
                     invocation: invocation,
                     inputs: [],
                     environment: environment,
-                    arguments: ["--filter", suite])
+                    options: SwiftTestOptions(filters: [suite]))
             ])
     }
 

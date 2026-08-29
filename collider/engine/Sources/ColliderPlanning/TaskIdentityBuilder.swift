@@ -77,7 +77,16 @@ struct TaskIdentityBuilder {
             requirementEncoder.append(
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))
-            requirementEncoder.appendSequence(requirement.arguments) { $0.append($1) }
+            requirementEncoder.appendSequence(requirement.options.filters) {
+                $0.append($1)
+            }
+            requirementEncoder.appendSequence(requirement.options.skips) {
+                $0.append($1)
+            }
+            requirementEncoder.append(requirement.options.parallel)
+            requirementEncoder.appendOptional(requirement.options.workers) {
+                $0.append(UInt64($1))
+            }
             requirementEncoder.appendSequence(requirement.expectedBuildOutputs) {
                 outputEncoder, output in
                 outputEncoder.append(path: output.path)

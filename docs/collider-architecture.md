@@ -54,11 +54,19 @@ and SwiftBuild checkouts are root submodules. Collider resolves their exact
 package closure on the networked host, compiles `swift-package-manager`
 natively for arm64 in an offline container and persistent workspace, and
 publishes a bounded directory containing that unified executable, its
-`swift-package` and `swift-build` links, matching
+`swift-package`, `swift-build`, and `swift-nucleus-driver` links, matching
 resources, and source/compiler provenance. Production SwiftPM actions mount
 that directory read-only at `/swiftpm-overlay`. Their typed artifact references
 retain its producer edge, and its revision participates in every Linux SwiftPM
 action identity.
+
+Production Linux build and test actions cross a typed request/event boundary
+through `swift-nucleus-driver`. The driver maps requests directly into the
+pinned SwiftPM command and build-system APIs, uses SwiftBuild through SwiftPM,
+and emits structured progress, command, completion, and product-publication
+events. Collider neither rebuilds human-oriented SwiftPM argument lists for
+these actions nor parses console output for control data. The complete boundary
+is defined by the [SwiftPM overlay driver architecture](swiftpm-overlay-driver-architecture.md).
 
 The single stable builder image retains the official adjacent SwiftPM
 executables and resources for bootstrap work. Production actions invoke the
@@ -69,9 +77,9 @@ overlay artifact, so changing SwiftPM,
 SwiftBuild, their resources, or the overlay assembly does not import or unpack
 the heavyweight image again. No GitHub workflow or external release artifact is
 part of this graph. The overlay replaces no compiler, driver, LLVM, Clang,
-standard library, or target SDK component. Its only behavioral patch keeps host
-build tools and transitive helpers on the arm64 Linux host SDK while SwiftBuild
-plans an x86_64 target.
+standard library, or target SDK component. Its fork changes are limited to the
+typed Nucleus driver and preserving the arm64 Linux host SDK for host build tools
+and transitive helpers while SwiftBuild plans an x86_64 target.
 
 The generated target-SDK store publishes one active generation through the
 stable `swift-target-sdks/current` link. SwiftPM discovery links target paths

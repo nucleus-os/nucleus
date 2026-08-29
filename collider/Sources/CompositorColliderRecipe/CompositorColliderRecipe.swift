@@ -42,7 +42,7 @@ public enum CompositorColliderRecipe: ColliderComponent {
     ) -> TaskDeclaration {
         testTask(
             CompositorTaskIDs.testGPUDRM, root, environment,
-            ["test", "--filter", "gpuDRM_"],
+            SwiftTestOptions(filters: ["gpuDRM_"]),
             [],
             swiftPM: swiftPM)
     }
@@ -52,7 +52,7 @@ private func testTask(
     _ id: TaskID,
     _ root: FilePath,
     _ environment: [String: String],
-    _ arguments: [String],
+    _ options: SwiftTestOptions,
     _ dependencies: [TaskID],
     swiftPM: SwiftPMInvocation
 ) -> TaskDeclaration {
@@ -61,7 +61,7 @@ private func testTask(
         testProduct: "compositor-corePackageTests",
         packageRoot: root,
         environment: environment,
-        arguments: Array(arguments.dropFirst()))
+        options: options)
     return TaskDeclaration(
         id: id,
         component: ComponentID(rawValue: "compositor"),

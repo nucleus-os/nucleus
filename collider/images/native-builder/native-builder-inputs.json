@@ -1,5 +1,5 @@
 {
-  "ubuntuSnapshot": "20260730T000000Z",
+  "ubuntuSnapshot": "20260829T000000Z",
   "archives": [
     {
       "name": "swift-arm64.tar.gz",
@@ -44,11 +44,11 @@
     },
     {
       "suite": "resolute-updates",
-      "inReleaseSHA256": "b6cb5a6f083b457f7340fc01ae858cfd097f95a703f5da41fe749dfb80e9e7f9"
+      "inReleaseSHA256": "6d0779547cfe56239474b34d632ace29ace7a3814929423d8a9f6e4158c65402"
     },
     {
       "suite": "resolute-security",
-      "inReleaseSHA256": "09bf49fd1722dc81c550dfd38f9bdb3ea91d7f99c0a083ece3f9a8e6b23a04f2"
+      "inReleaseSHA256": "69f139ab913aa85d68807b47e21b015449c0614399b2a783b22772fd7cb390a8"
     }
   ]
 }

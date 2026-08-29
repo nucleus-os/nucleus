@@ -85,7 +85,7 @@ RUN echo 'f833e07c5dffb9f7a26084522ef58854c4297982439a2affc94e20dbb495c696  /tmp
         /tmp/swift-libicu74-arm64.deb
 
 COPY inputs/archives/swift-arm64.tar.gz /tmp/swift.tar.gz
-RUN echo 'd0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de  /tmp/swift.tar.gz' \
+RUN echo '040c5d553abed9591db318bdf04688e7361eaba192acc787bb836fb1a28a092f  /tmp/swift.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift \
     && tar --extract --gzip \

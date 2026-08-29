@@ -355,10 +355,9 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
         })
     #expect(swiftBuildRegression.swiftTests.count == 1)
     #expect(
-        swiftBuildRegression.swiftTests.first?.arguments == [
-            "--filter",
+        swiftBuildRegression.swiftTests.first?.options.filters == [
             "HostBuildToolTaskConstructionTests."
-                + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux",
+                + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux"
         ])
     let swiftPMRegression = try #require(
         withoutLinuxOperations.tasks.first {
@@ -366,9 +365,8 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
         })
     #expect(swiftPMRegression.swiftTests.count == 1)
     #expect(
-        swiftPMRegression.swiftTests.first?.arguments == [
-            "--filter",
-            "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly",
+        swiftPMRegression.swiftTests.first?.options.filters == [
+            "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly"
         ])
     #expect(
         swiftPMRegression.dependencies.contains(
@@ -1135,11 +1133,9 @@ private func fixtureReactNativeNodeModules(
     let nativeTest = try #require(
         catalog.tasks.first { $0.id == TaskID(rawValue: "linux.arm64.test") })
     let nativeTestRequirement = try #require(nativeTest.swiftTests.first)
-    #expect(
-        nativeTestRequirement.arguments == [
-            "--parallel", "--num-workers", "12", "--skip",
-            "gpu(DRM|Loader|Headless)_",
-        ])
+    #expect(nativeTestRequirement.options.parallel)
+    #expect(nativeTestRequirement.options.workers == 12)
+    #expect(nativeTestRequirement.options.skips == ["gpu(DRM|Loader|Headless)_"])
     #expect(nativeTestRequirement.invocation.context.maximumParallelism == 12)
     if case .oci(let execution) = nativeTestRequirement.invocation.context.execution {
         #expect(execution.resourceLimits == .parallelBuild)

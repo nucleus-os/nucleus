@@ -9,6 +9,7 @@ Architecture and contract documents describe the current system. An implementati
 - [Runtime architecture](nucleus-runtime-architecture.md)
 - [Single-root SwiftPM architecture](single-root-swiftpm-architecture.md)
 - [Collider architecture](collider-architecture.md)
+- [SwiftPM overlay driver](swiftpm-overlay-driver-architecture.md)
 - [NucleusUI API contract](nucleus-ui-api-contract.md)
 - [NucleusUI graphics contract](nucleus-ui-graphics-contract.md)
 - [Application runtime](app-runtime-roadmap.md)

@@ -167,11 +167,10 @@ public enum NativeBuilderColliderRecipe {
             testProduct: "SwiftBuildPackageTests",
             packageRoot: swiftBuildSource,
             environment: environment,
-            arguments: [
-                "--filter",
+            options: SwiftTestOptions(filters: [
                 "HostBuildToolTaskConstructionTests."
-                    + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux",
-            ])
+                    + "hostToolUsesHostSDKWhenDestinationIsAlsoLinux"
+            ]))
         let swiftBuildRegressionTask = TaskBuilder(
             id: NativeBuilderTaskIDs.swiftBuildRegressionTest,
             component: descriptor.id
@@ -226,10 +225,9 @@ public enum NativeBuilderColliderRecipe {
             testProduct: "SwiftPMPackageTests",
             packageRoot: swiftPMSource,
             environment: environment,
-            arguments: [
-                "--filter",
-                "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly",
-            ])
+            options: SwiftTestOptions(filters: [
+                "SwiftBuildSystemTests.commandLineFlagsAreDestinationOnly"
+            ]))
         let swiftPMRegressionTask = TaskBuilder(
             id: NativeBuilderTaskIDs.swiftPMRegressionTest,
             component: descriptor.id

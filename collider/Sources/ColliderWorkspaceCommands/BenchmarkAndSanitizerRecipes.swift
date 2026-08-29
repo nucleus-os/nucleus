@@ -276,7 +276,7 @@ enum SanitizerColliderRecipe: ColliderComponent {
                 testProduct: suite,
                 packageRoot: context.repositoryRoot.appending(invocation.package),
                 environment: environment,
-                arguments: ["--filter", suite])
+                options: SwiftTestOptions(filters: [suite]))
             var builder = TaskBuilder(
                 id: id,
                 component: descriptor.id)
