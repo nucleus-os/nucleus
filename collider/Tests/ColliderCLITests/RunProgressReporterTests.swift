@@ -117,7 +117,8 @@ private final class ProgressCapture: Sendable {
     let reporter = GitHubActionsRunReporter(
         console: console,
         registry: registry,
-        run: run)
+        run: run,
+        workspaceRoot: FilePath(directory.path))
     let failure = ExecutionFailure(
         task: task,
         logPath: await registry.stageLogPath(for: task, in: run).string,
@@ -135,6 +136,62 @@ private final class ProgressCapture: Sendable {
     #expect(capture.text.contains("durable output"))
     #expect(capture.text.contains("::error title=Collider task fixture.build::"))
     #expect(capture.text.contains("fixture failed"))
+    try await registry.finish(run, status: .failed, failedTask: task)
+}
+
+/// A stage log that blames a source line the checkout actually contains must
+/// annotate that line, so the failure lands on the file rather than only naming
+/// the task. The compiler saw the file at its own mount point, which is why the
+/// annotation path is resolved against the checkout instead of taken as given.
+@Test func githubReporterAnnotatesAResolvedSourceLocation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-github-diagnostic-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let checkout = directory.appendingPathComponent("checkout")
+    let source = checkout.appendingPathComponent("core/swift/Sources")
+    try FileManager.default.createDirectory(
+        at: source, withIntermediateDirectories: true)
+    FileManager.default.createFile(
+        atPath: source.appendingPathComponent("A.swift").path, contents: nil)
+
+    let registry = RunRegistry(root: FilePath(directory.appendingPathComponent("runs").path))
+    let run = try await registry.begin(command: ["collider", "build", "fixture"])
+    let task = TaskID(rawValue: "fixture.build")
+    try await registry.appendLog(
+        Array(
+            ("/nucleus-workspace/core/swift/Sources/A.swift:12:5: "
+                + "error: cannot find 'x' in scope\n").utf8),
+        stage: task,
+        in: run)
+    let capture = ProgressCapture()
+    let console = CommandConsole(
+        progress: .always,
+        environment: ["GITHUB_ACTIONS": "true"],
+        standardOutput: { _ in },
+        standardError: capture.write)
+    let reporter = GitHubActionsRunReporter(
+        console: console,
+        registry: registry,
+        run: run,
+        workspaceRoot: FilePath(checkout.path))
+    let failure = ExecutionFailure(
+        task: task,
+        logPath: await registry.stageLogPath(for: task, in: run).string,
+        reason: "Swift package command failed")
+
+    await reporter.consume(
+        .event(
+            RunEvent(
+                sequence: 1,
+                timestamp: "2026-08-17T00:00:00Z",
+                runID: run.id,
+                payload: .task(.failed(task: task, failure: failure)))))
+
+    #expect(
+        capture.text.contains(
+            "::error file=core/swift/Sources/A.swift,line=12,col=5,"
+                + "title=Collider task fixture.build::"))
+    #expect(capture.text.contains("cannot find 'x' in scope"))
     try await registry.finish(run, status: .failed, failedTask: task)
 }
 
@@ -210,6 +267,7 @@ private func waitFor(
         console: console,
         registry: registry,
         run: nil,
+        workspaceRoot: FilePath("/"),
         // No pulse can fire, so the only render is the final one.
         repaintInterval: .seconds(3_600))
 
@@ -228,6 +286,7 @@ private func waitFor(
             console: console,
             registry: registry,
             run: nil,
+            workspaceRoot: FilePath("/"),
             repaintInterval: .milliseconds(10))
     }
     // The stream is still open, so repeated renders can only be pulses.
@@ -248,6 +307,7 @@ private func waitFor(
             console: console,
             registry: registry,
             run: nil,
+            workspaceRoot: FilePath("/"),
             repaintInterval: .milliseconds(10))
     }
     #expect(await waitFor { renderCount(capture) >= 2 })
@@ -273,6 +333,7 @@ private func waitFor(
             console: console,
             registry: registry,
             run: nil,
+            workspaceRoot: FilePath("/"),
             repaintInterval: .milliseconds(10))
     }
     #expect(await waitFor { renderCount(capture) >= 1 })

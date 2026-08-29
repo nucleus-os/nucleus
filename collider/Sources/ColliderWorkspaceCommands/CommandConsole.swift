@@ -331,6 +331,13 @@ package final class CommandConsole: @unchecked Sendable {
             case .githubActions:
                 let text = safeTerminalText(summary.text) + "\n"
                 try standardError(Data(text.utf8))
+                for test in summary.failedTestCases {
+                    let title = githubWorkflowValue("Test \(test.qualifiedName)")
+                    let message = githubWorkflowValue(
+                        "failed in \(safeTerminalText(test.task))")
+                    try standardError(
+                        Data("::error title=\(title)::\(message)\n".utf8))
+                }
                 if !state.githubSummaryWritten, let githubStepSummaryPath {
                     try appendGitHubSummary(summary, to: githubStepSummaryPath)
                     state.githubSummaryWritten = true
@@ -377,17 +384,34 @@ package final class CommandConsole: @unchecked Sendable {
         }
     }
 
+    /// Annotate a failed task.
+    ///
+    /// A resolved diagnostic places the annotation on the source line that
+    /// failed, which is where a reader looks first. Without one the annotation
+    /// still names the task and its stage log, because a failure with no source
+    /// location -- a container that could not start, a validation that rejected
+    /// an artifact -- is not attributable to a file.
     package func githubFailure(
         task: TaskID,
         reason: String,
-        logPath: String
+        logPath: String,
+        diagnostic: ResolvedSourceDiagnostic? = nil
     ) throws {
         guard progressPresentation == .githubActions else { return }
         let title = githubWorkflowValue("Collider task \(task.rawValue)")
-        let message = githubWorkflowValue(
-            "\(safeTerminalText(reason)) (stage log: \(safeTerminalText(logPath)))")
         try state.withLock { _ in
-            try standardError(Data("::error title=\(title)::\(message)\n".utf8))
+            if let diagnostic {
+                let message = githubWorkflowValue(safeTerminalText(diagnostic.message))
+                let file = githubWorkflowValue(diagnostic.path)
+                try standardError(
+                    Data(
+                        ("::error file=\(file),line=\(diagnostic.line),"
+                            + "col=\(diagnostic.column),title=\(title)::\(message)\n").utf8))
+            } else {
+                let message = githubWorkflowValue(
+                    "\(safeTerminalText(reason)) (stage log: \(safeTerminalText(logPath)))")
+                try standardError(Data("::error title=\(title)::\(message)\n".utf8))
+            }
         }
     }
 
@@ -696,10 +720,26 @@ package final class CommandConsole: @unchecked Sendable {
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }
         try handle.seekToEnd()
-        let markdown =
+        var markdown =
             "## Collider run `\(githubMarkdownCode(summary.runID))`\n\n"
             + "**Status:** \(summary.status.rawValue)\n\n"
-            + "```text\n\(safeTerminalText(summary.text))\n```\n\n"
+        if !summary.failedTestCases.isEmpty {
+            let heading =
+                summary.failedTestCaseCount == summary.failedTestCases.count
+                ? "### Failed tests"
+                : "### Failed tests"
+                    + " (\(summary.failedTestCases.count)"
+                    + " of \(summary.failedTestCaseCount))"
+            markdown += heading + "\n\n"
+            markdown += "| Test | Task |\n| --- | --- |\n"
+            for test in summary.failedTestCases {
+                markdown +=
+                    "| `\(githubMarkdownCode(test.qualifiedName))`"
+                    + " | `\(githubMarkdownCode(test.task))` |\n"
+            }
+            markdown += "\n"
+        }
+        markdown += "```text\n\(safeTerminalText(summary.text))\n```\n\n"
         try handle.write(contentsOf: Data(markdown.utf8))
     }
 }

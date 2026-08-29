@@ -3,6 +3,7 @@ import ColliderCore
 import ColliderPersistence
 import ColliderWorkspaceCommands
 import Foundation
+import SystemPackage
 
 struct RunProgressSemanticState: Equatable, Sendable {
     let runID: RunID?
@@ -192,6 +193,7 @@ func consumeRunObservations(
     console: CommandConsole,
     registry: RunRegistry,
     run: RunHandle?,
+    workspaceRoot: FilePath,
     repaintInterval: Duration = RunProgressReporter.repaintInterval
 ) async {
     let reporter = RunProgressReporter(console: console)
@@ -199,7 +201,8 @@ func consumeRunObservations(
         GitHubActionsRunReporter(
             console: console,
             registry: registry,
-            run: $0)
+            run: $0,
+            workspaceRoot: workspaceRoot)
     }
     // The observation branch is finite, so chaining one terminal event gives the
     // merged sequence an explicit end. The timer branch never ends on its own:

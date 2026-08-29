@@ -108,7 +108,8 @@ public struct ColliderCommand: AsyncParsableCommand {
                     observations,
                     console: console,
                     registry: registry,
-                    run: run)
+                    run: run,
+                    workspaceRoot: workspace)
             }
         }
         defer { observationTask?.cancel() }
@@ -254,7 +255,7 @@ public struct ColliderCommand: AsyncParsableCommand {
                     Array(
                         ("Superseded: "
                             + SupersededSourceFailure(closures: superseded)
-                                .description).utf8),
+                            .description).utf8),
                     in: run)
             }
             if status == .interrupted, let run = application.run {

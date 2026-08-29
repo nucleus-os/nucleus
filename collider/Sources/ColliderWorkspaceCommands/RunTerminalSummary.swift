@@ -14,6 +14,22 @@ package struct RunTerminalContainerSummary: Codable, Equatable, Sendable {
     package let timings: OCIExecutionTimings
 }
 
+/// One test case a run observed failing, named by the task that ran it.
+///
+/// Test results are already decoded from the xUnit files the test tasks write,
+/// so this reports recorded observations rather than parsed console output.
+package struct RunTerminalFailedTestSummary: Codable, Equatable, Sendable {
+    package let task: String
+    package let suite: String?
+    package let name: String
+    package let durationNanoseconds: UInt64
+
+    package var qualifiedName: String {
+        guard let suite, !suite.isEmpty else { return name }
+        return "\(suite).\(name)"
+    }
+}
+
 package struct RunTerminalSummary: Codable, Equatable, Sendable {
     package let runID: String
     package let status: RunStatus
@@ -30,6 +46,11 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
     package let schedulingWaitDurationNanoseconds: UInt64?
     package let slowestTasks: [RunTerminalTaskSummary]
     package let slowestContainerExecutions: [RunTerminalContainerSummary]
+    /// Every observed test failure, up to the reported cap.
+    package let failedTestCases: [RunTerminalFailedTestSummary]
+    /// How many test failures the run observed, which exceeds `failedTestCases`
+    /// when a run fails more tests than are worth naming in a summary.
+    package let failedTestCaseCount: Int
 
     package init(
         snapshot: RecordedRunSnapshot,
@@ -38,14 +59,16 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
         let manifest = snapshot.manifest
         runID = manifest.runID.rawValue
         status = manifest.status
-        cleanTasks = manifest.tasks?.values.count(where: { record in
-            if case .localClean? = record.outcome { return true }
-            return false
-        }) ?? 0
-        executedTasks = manifest.tasks?.values.count(where: { record in
-            if case .executed? = record.outcome { return true }
-            return false
-        }) ?? 0
+        cleanTasks =
+            manifest.tasks?.values.count(where: { record in
+                if case .localClean? = record.outcome { return true }
+                return false
+            }) ?? 0
+        executedTasks =
+            manifest.tasks?.values.count(where: { record in
+                if case .executed? = record.outcome { return true }
+                return false
+            }) ?? 0
         failedTasks = observedState.tasks.values.count(where: { state in
             if case .failed = state { return true }
             return false
@@ -95,7 +118,30 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
             return $0.timings.totalDurationNanoseconds
                 > $1.timings.totalDurationNanoseconds
         }.prefix(5).map { $0 }
+
+        let failures = (manifest.tasks ?? [:]).flatMap { task, record in
+            (record.observations?.testCases ?? []).lazy.filter {
+                $0.outcome == .failed
+            }.map {
+                RunTerminalFailedTestSummary(
+                    task: task,
+                    suite: $0.suite,
+                    name: $0.name,
+                    durationNanoseconds: $0.durationNanoseconds)
+            }
+        }.sorted {
+            if $0.task == $1.task {
+                return $0.qualifiedName < $1.qualifiedName
+            }
+            return $0.task < $1.task
+        }
+        failedTestCaseCount = failures.count
+        failedTestCases = Array(failures.prefix(Self.reportedFailedTestCap))
     }
+
+    /// Naming every failure in a run that fails thousands of tests buries the
+    /// rest of the summary, so the count stays exact while the list is capped.
+    package static let reportedFailedTestCap = 20
 
     package var text: String {
         var outcome = [
@@ -128,6 +174,15 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
         }
         if let schedulingWaitDurationNanoseconds {
             lines.append("scheduling wait  \(formatDuration(schedulingWaitDurationNanoseconds))")
+        }
+        if !failedTestCases.isEmpty {
+            lines.append(
+                failedTestCaseCount == failedTestCases.count
+                    ? "failed tests"
+                    : "failed tests (\(failedTestCases.count) of \(failedTestCaseCount))")
+            for test in failedTestCases {
+                lines.append("  \(test.qualifiedName)  \(test.task)")
+            }
         }
         if !slowestTasks.isEmpty {
             lines.append("slowest tasks")
