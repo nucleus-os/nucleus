@@ -60,6 +60,7 @@ struct MacOSBuilderContract: Codable, Sendable {
         let buildStateGroup: String
         let hostContractRoot: String
         let hostExecutionLock: String
+        let quarantineMarker: String
         let runnerWorkRoot: String
     }
 
@@ -164,7 +165,8 @@ struct MacOSBuilderContract: Codable, Sendable {
         // privileged shell provisioning installs that same inode.
         guard builder.hostContractRoot == MacOSMachineStorageLayout.contractRoot.string,
             builder.hostExecutionLock
-                == MacOSMachineStorageLayout.hostExecutionAdmission.string
+                == MacOSMachineStorageLayout.hostExecutionAdmission.string,
+            builder.quarantineMarker == MacOSMachineStorageLayout.builderQuarantine.string
         else {
             throw MacOSBuilderContractFailure.invalid(
                 "declared machine-wide paths disagree with the compiled Collider layout")
@@ -249,6 +251,8 @@ struct MacOSBuilderDoctor {
             resources(contract, scope: scope),
             executionLease(scope: scope),
             builderLauncher(scope: scope),
+            builderNotQuarantined(contract, scope: scope),
+            builderQuarantineBoundary(contract, scope: scope),
             bootCoordinator(contract, scope: scope),
             buildStore(contract, scope: scope),
             persistentService(contract, storageLayout: storageLayout, scope: scope),
@@ -531,6 +535,7 @@ struct MacOSBuilderDoctor {
                     installed.string,
                     contract.builder.user,
                     builderUID.trimmingCharacters(in: .whitespacesAndNewlines),
+                    contract.builder.quarantineMarker,
                     contract.launchd.label,
                     FilePath(contract.builder.home)
                         .appending("Library/LaunchAgents/\(contract.launchd.label).plist").string,
@@ -551,6 +556,55 @@ struct MacOSBuilderDoctor {
                     capture: true)
             else { return nil }
             return "\(installed), \(launchd.split(separator: "\n").first ?? "loaded")"
+        }
+    }
+
+    private func builderNotQuarantined(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "macos-builder:not-quarantined",
+            scope: scope,
+            description: "trusted builder is not quarantined",
+            remediation:
+                "retire and recommission the reconstructible builder state; "
+                + "never delete the quarantine marker in place"
+        ) {
+            let marker = FilePath(contract.builder.quarantineMarker)
+            let files = FileManager.default
+            let markerExists = files.fileExists(atPath: marker.string)
+            let markerIsSymbolicLink =
+                (try? files.destinationOfSymbolicLink(atPath: marker.string)) != nil
+            guard !markerExists, !markerIsSymbolicLink else { return nil }
+            return "\(marker), absent"
+        }
+    }
+
+    private func builderQuarantineBoundary(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        let source = context.root.appending(
+            "tools/macos-builder/quarantine-nucleus-builder.sh")
+        let installed = FilePath(contract.builder.hostContractRoot)
+            .appending("quarantine-nucleus-builder")
+        return HostPrerequisite(
+            id: "macos-builder:quarantine-boundary",
+            scope: scope,
+            description: "root-owned builder quarantine boundary",
+            remediation:
+                "run 'sudo tools/macos-builder/finalize-nucleus-builder.sh' to "
+                + "install the quarantine boundary"
+        ) {
+            let files = FileManager.default
+            guard files.contentsEqual(atPath: source.string, andPath: installed.string),
+                let attributes = try? files.attributesOfItem(atPath: installed.string),
+                attributes[.ownerAccountID] as? NSNumber == 0,
+                attributes[.groupOwnerAccountID] as? NSNumber == 0,
+                attributes[.posixPermissions] as? NSNumber == 0o755
+            else { return nil }
+            return "\(installed), identical to \(source)"
         }
     }
 

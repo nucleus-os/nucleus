@@ -39,6 +39,14 @@ readonly runner_name="$(contract_value builder.runnerName)"
 readonly runner_group="$(contract_value builder.runnerGroup)"
 readonly runner_label="$(contract_value builder.runnerLabel)"
 readonly runner_work="$(contract_value builder.runnerWorkRoot)"
+readonly quarantine_marker="$(contract_value builder.quarantineMarker)"
+
+refuse_if_quarantined() {
+  if [[ -e "$quarantine_marker" || -L "$quarantine_marker" ]]; then
+    echo "error: nucleus-builder is quarantined; retire and recommission it instead of updating" >&2
+    exit 77
+  fi
+}
 
 # State the release archive does not carry. Registration is the reason an
 # upgrade does not need a token, and the diagnostic history is the reason an
@@ -155,6 +163,7 @@ case "${1:-}" in
   # replaces the server's record of this runner with a new credential for the
   # same identity, which is what `--replace` means, and changes nothing else.
   [[ $EUID -eq 0 && $# -eq 1 ]] || usage
+  refuse_if_quarantined
   IFS= read -r registration_token
   [[ -n "$registration_token" ]] \
     || { echo "error: a short-lived registration token is required on stdin" >&2; exit 64; }
@@ -189,6 +198,7 @@ case "${1:-}" in
 esac
 
 [[ $EUID -eq 0 && $# -eq 1 ]] || usage
+refuse_if_quarantined
 readonly archive="$1"
 readonly builder_uid="$(/usr/bin/id -u "$builder_user")"
 readonly service_target="user/$builder_uid/$runner_service_label"

@@ -46,6 +46,7 @@
     "runnerRoot": "/Library/Nucleus/GitHubActionsRunner",
     "hostContractRoot": "/Library/Nucleus/Builder",
     "hostExecutionLock": "/Library/Nucleus/Builder/host-execution.lock",
+    "quarantineMarker": "/Library/Nucleus/Builder/quarantined",
     "runnerWorkRoot": "/Users/nucleus-builder/Library/Developer/Nucleus/Collider/actions-runner-work"
   },
   "resources": {

@@ -247,11 +247,15 @@ task identity is unchanged by relocating the checkout or the store.
 
 Status: active
 
-Protected-main CI plans the whole catalog clean against the developer-warmed
-store and executes only the three tasks declared to run every time. A developer
-dry run plans the same revision identically, with no identity mismatch and no
-failed validation. Six discriminators were found and removed, each one a name
-for something other than the source:
+Protected-main CI and the authoritative checkout resolve the same task
+identities and machine-store coordinates. Revision
+`e4a3962a39893be41715ca5f7a38fd01aa8fe8ed` passed the complete protected-main
+verification selection. Planning that exact revision afterward from the
+authoritative checkout found every one of the 41 cacheable tasks valid and
+selected only fourteen declared always-run or SwiftPM-incremental test tasks.
+This establishes automated-to-local warm-state reuse without repeating the
+verification sweep. Six placement discriminators were removed to reach this
+state:
 
 - the SwiftPM dependency task's own name, which takes the lockfile's absolute
   path as an argument and encoded it through an empty placement map;
@@ -281,14 +285,6 @@ own framing, so two plans that disagree report where rather than only that.
 `--as-builder` plans as the identity that would execute, taking no admission and
 recording no run, because a plan is a property of that identity and no other
 account can be asked what it computes.
-
-Remaining for a second machine: dependency checkouts are named beneath the host
-build root, which is not a declared placement root, so their prefix is still
-this machine's. Declaring it also declares a container mount target, so anything
-beneath it that crosses into a container needs a matching mount.
-
-Identity agreement is not this phase's gate. The byte comparison is now
-possible and it does not pass.
 
 Producing twice needs no deletion. Where a package manager builds is not part of
 what it builds, so a verifying invocation produces the same identity into a
@@ -322,10 +318,6 @@ What this does not establish is a second machine. Both productions share this
 host's toolchain, kernel, and container runtime, and only what a build derives
 locally has been made to differ.
 
-That result is the reason the byte clause exists. The two checkouts agree on
-every identity in the catalog and still do not agree on the bytes for one
-target, which is exactly the failure equal identities cannot detect.
-
 Discarding a working set remains impossible and is no longer in the way. It is
 declared with a runtime as its producer rather than a task, so no workflow lock
 resolves for it, and cleaning will not remove storage it cannot serialize
@@ -338,44 +330,14 @@ build root, which is not a declared placement root, so their prefix is still
 this machine's. Declaring it also declares a container mount target, so anything
 beneath it that crosses into a container needs a matching mount.
 
-Identity agreement is not this phase's gate, and the byte comparison it needs
-cannot be performed. Nothing forces an artifact to be produced a second time.
-Rebuild invalidates task state while the package manager inside the task stays
-incremental, and the host working set that holds its build survives both that
-and a component clean, so the next build reuses it and never has an opportunity
-to disagree with itself.
-
-Discarding that working set is refused, and the refusal is the defect: it is
-declared with a runtime as its producer rather than a task, so no workflow lock
-resolves for it, and cleaning will not remove storage it cannot serialize
-against whatever is producing it. Storage produced by a runtime is therefore
-permanently unreachable, which is also why the component holding it cannot be
-cleaned as a whole. Naming one declaration is now possible and reaches it; the
-lock is what remains.
-
-That capability is Phase 5's, which verifies an artifact by rebuilding it rather
-than by trusting the run that produced it. This phase's byte clause depends on
-it, so the phases are ordered backwards: the mechanism has to exist before
-either can be gated on bytes. The reverse ordering, in which a local build
-consumes what an automated one produced, remains outstanding and needs no new
-mechanism.
-
-The protected-main CI checkout and the authoritative checkout produce identical
-product task identities and artifact coordinates for one effective source, and
-each reuses the other's warm state. CI is the real second checkout: the local
-launcher cannot admit another location, and planning that location locally
-would require network resolution.
-
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
-The first bounded workflow lane invokes the ordinary `collider build all`
-catalog entrypoint and nothing broader. Its first watched run is the experiment:
-the clean checkout's executed-versus-cached task count measures whether the
-developer-warmed store is placement-independent. A broad rebuild is a failed
-gate, not a baseline to accept. The workflow expands to tests, packages,
-qualification, and delivery only after this lane reuses the warm state.
+Local-to-automated reuse on an identical effective dirty tree, product-store
+digest agreement across the two checkouts, and reproduction on a second machine
+remain. The CI checkout is the supported second checkout on this host; the
+launcher deliberately admits no other local source location.
 
 Gate: an automated build followed by a local build of one effective source, and
 the reverse ordering, execute no compilation the other already performed; the

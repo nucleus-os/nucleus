@@ -42,6 +42,10 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
             == MacOSMachineStorageLayout.hostExecutionAdmission.string)
     #expect(
         contract.builder.hostExecutionLock.hasPrefix(contract.builder.hostContractRoot + "/"))
+    #expect(
+        contract.builder.quarantineMarker == MacOSMachineStorageLayout.builderQuarantine.string)
+    #expect(
+        contract.builder.quarantineMarker.hasPrefix(contract.builder.hostContractRoot + "/"))
     // A builder in staff would read the whole interactive home by group.
     #expect(contract.builder.group == "nucleus-builder")
     #expect(contract.builder.group != "staff")

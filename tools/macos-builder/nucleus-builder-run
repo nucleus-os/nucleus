@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly builder_user="nucleus-builder"
 readonly checkout_record="/Library/Nucleus/Builder/authoritative-checkout"
+readonly quarantine_marker="/Library/Nucleus/Builder/quarantined"
 
 if [[ $EUID -ne 0 ]]; then
   echo "error: invoke this root-owned launcher through sudo" >&2
@@ -15,6 +16,10 @@ fi
 if [[ ! -f "$checkout_record" ]]; then
   echo "error: builder checkout contract is not installed" >&2
   exit 72
+fi
+if [[ -e "$quarantine_marker" || -L "$quarantine_marker" ]]; then
+  echo "error: nucleus-builder is quarantined; retire and recommission it before trusted execution" >&2
+  exit 77
 fi
 
 readonly requested_checkout="$1"

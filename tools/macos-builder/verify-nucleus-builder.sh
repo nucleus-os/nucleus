@@ -33,6 +33,8 @@ readonly runner_watchdog="$host_contract_root/runner-watchdog"
 readonly runner_watchdog_plist="$host_contract_root/$runner_watchdog_service_label.plist"
 readonly boot_coordinator="$host_contract_root/builder-boot-coordinator"
 readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
+readonly quarantine_marker="$(contract_value builder.quarantineMarker)"
+readonly quarantine_executable="$host_contract_root/quarantine-nucleus-builder"
 readonly builder_agent_plist="$builder_home/Library/LaunchAgents/$container_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
@@ -40,6 +42,9 @@ readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
 readonly build_store=/Library/Nucleus/Collider
 readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
+
+[[ ! -e "$quarantine_marker" && ! -L "$quarantine_marker" ]] \
+  || fail "$builder_user is quarantined; retire and recommission it"
 
 [[ $(/usr/bin/dscl . -read "/Users/$builder_user" IsHidden | /usr/bin/awk '{print $2}') == 1 ]] \
   || fail "$builder_user is not hidden"
@@ -229,6 +234,12 @@ foreign_runner_work_path="$(
   || fail "builder boot coordinator ownership or mode drifted"
 /usr/bin/cmp -s "$script_directory/builder-boot-coordinator" "$boot_coordinator" \
   || fail "installed builder boot coordinator differs from the checkout"
+[[ -f "$quarantine_executable" && ! -L "$quarantine_executable" ]] \
+  || fail "builder quarantine boundary is not installed"
+[[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$quarantine_executable") == root:wheel:755 ]] \
+  || fail "builder quarantine boundary ownership or mode drifted"
+/usr/bin/cmp -s "$script_directory/quarantine-nucleus-builder.sh" "$quarantine_executable" \
+  || fail "installed builder quarantine boundary differs from the checkout"
 [[ -f "$boot_coordinator_plist" && ! -L "$boot_coordinator_plist" ]] \
   || fail "builder boot coordinator LaunchDaemon descriptor is absent"
 [[ $(/usr/bin/stat -f '%Su:%Sg:%Lp' "$boot_coordinator_plist") == root:wheel:644 ]] \
@@ -240,6 +251,7 @@ expected_boot_coordinator_arguments=(
   "$boot_coordinator"
   "$builder_user"
   "$builder_uid"
+  "$quarantine_marker"
   "$container_service_label"
   "$builder_agent_plist"
   "$container_executable"

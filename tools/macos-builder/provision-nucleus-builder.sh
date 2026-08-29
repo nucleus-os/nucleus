@@ -46,11 +46,17 @@ readonly runner_service_label="$(contract_value builder.runnerServiceLabel)"
 readonly boot_coordinator_service_label="$(contract_value builder.bootCoordinatorServiceLabel)"
 readonly runner_root="$(contract_value builder.runnerRoot)"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
+readonly quarantine_marker="$(contract_value builder.quarantineMarker)"
 readonly runner_work_root="$(contract_value builder.runnerWorkRoot)"
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
 readonly legacy_runner_agent_plist="/Library/LaunchAgents/$runner_service_label.plist"
 readonly legacy_runner_plist="/Library/LaunchDaemons/$runner_service_label.plist"
 readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
+
+if [[ -e "$quarantine_marker" || -L "$quarantine_marker" ]]; then
+  echo "error: nucleus-builder is quarantined; retire it before provisioning" >&2
+  exit 77
+fi
 
 for declared_path in "$runner_root" "$host_contract_root" "$runner_work_root"; do
   if [[ "$declared_path" != /* || "$declared_path" =~ [[:space:]] ]]; then

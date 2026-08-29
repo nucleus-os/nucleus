@@ -6,21 +6,22 @@
 # recreate that namespace and bootstrap the root-approved descriptors into it.
 set -euo pipefail
 
-if [[ $EUID -ne 0 || $# -ne 10 ]]; then
-  echo "usage: $0 <builder-user> <builder-uid> <container-label> <container-plist> <container-executable> <runner-label> <runner-plist> <runner-root> <watchdog-label> <watchdog-plist>" >&2
+if [[ $EUID -ne 0 || $# -ne 11 ]]; then
+  echo "usage: $0 <builder-user> <builder-uid> <quarantine-marker> <container-label> <container-plist> <container-executable> <runner-label> <runner-plist> <runner-root> <watchdog-label> <watchdog-plist>" >&2
   exit 64
 fi
 
 readonly builder_user="$1"
 readonly builder_uid="$2"
-readonly container_label="$3"
-readonly container_plist="$4"
-readonly container_executable="$5"
-readonly runner_label="$6"
-readonly runner_plist="$7"
-readonly runner_root="$8"
-readonly watchdog_label="$9"
-readonly watchdog_plist="${10}"
+readonly quarantine_marker="$3"
+readonly container_label="$4"
+readonly container_plist="$5"
+readonly container_executable="$6"
+readonly runner_label="$7"
+readonly runner_plist="$8"
+readonly runner_root="$9"
+readonly watchdog_label="${10}"
+readonly watchdog_plist="${11}"
 readonly service_domain="user/$builder_uid"
 
 log() {
@@ -57,6 +58,11 @@ runner_worker_is_active() {
     | /usr/bin/awk -v worker="$runner_root/bin/Runner.Worker" \
       '$1 == worker { found = 1 } END { exit(found ? 0 : 1) }'
 }
+
+if [[ -e "$quarantine_marker" || -L "$quarantine_marker" ]]; then
+  log "builder is quarantined; refusing service recovery"
+  exit 77
+fi
 
 if ! /bin/launchctl print "$service_domain" >/dev/null 2>&1; then
   log "creating $service_domain"

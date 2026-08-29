@@ -37,10 +37,10 @@ reuse.
 1. Complete the remaining gates in Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    the protected-main host-contract, provenance, build, and test lanes already
-   run successfully. Prove the corrected local-to-automated and
-   automated-to-local warm-state reuse, close the remaining dirty-tree and
-   mutation-supersession checks, and enforce the account, credential, network,
-   and recovery boundaries.
+   run successfully, and the installed root boot coordinator restores the
+   builder-domain container and runner services without an interactive login.
+   Prove the corrected local-to-automated warm-state reuse, exercise a real host
+   restart, and complete the container-network, quarantine, and recovery gates.
 2. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the

@@ -49,6 +49,7 @@ readonly runner_work="$(contract_value builder.runnerWorkRoot)"
 readonly runner_logs="$builder_home/Library/Logs/Nucleus/GitHubActionsRunner"
 readonly host_contract_root="$(contract_value builder.hostContractRoot)"
 readonly host_execution_lock="$(contract_value builder.hostExecutionLock)"
+readonly quarantine_marker="$(contract_value builder.quarantineMarker)"
 readonly build_state_group="$(contract_value builder.buildStateGroup)"
 readonly build_store=/Library/Nucleus/Collider
 readonly runner_plist="$host_contract_root/$runner_service_label.plist"
@@ -67,6 +68,12 @@ readonly builder_service_starter="$builder_service_directory/container-system-st
 readonly boot_coordinator="$host_contract_root/builder-boot-coordinator"
 readonly boot_coordinator_plist="/Library/LaunchDaemons/$boot_coordinator_service_label.plist"
 readonly boot_coordinator_log="$host_contract_root/builder-boot-coordinator.log"
+readonly quarantine_executable="$host_contract_root/quarantine-nucleus-builder"
+
+if [[ -e "$quarantine_marker" || -L "$quarantine_marker" ]]; then
+  echo "error: nucleus-builder is quarantined; retire and recommission it instead of finalizing" >&2
+  exit 77
+fi
 
 [[ ! -L "$runner_root" && -d "$runner_root" ]] \
   || { echo "error: registered runner root is not a directory" >&2; exit 73; }
@@ -141,6 +148,10 @@ done
   || { echo "error: boot coordinator installation target is a symbolic link" >&2; exit 73; }
 /usr/bin/install -o root -g wheel -m 0755 \
   "$script_directory/builder-boot-coordinator" "$boot_coordinator"
+[[ ! -L "$quarantine_executable" ]] \
+  || { echo "error: quarantine installation target is a symbolic link" >&2; exit 73; }
+/usr/bin/install -o root -g wheel -m 0755 \
+  "$script_directory/quarantine-nucleus-builder.sh" "$quarantine_executable"
 printf '%s\n' "$checkout" >"$host_contract_root/authoritative-checkout"
 /usr/sbin/chown root:wheel "$host_contract_root/authoritative-checkout"
 /bin/chmod 0644 "$host_contract_root/authoritative-checkout"
@@ -461,6 +472,7 @@ temporary_boot_coordinator_plist="$(/usr/bin/mktemp /tmp/nucleus-boot-coordinato
     <string>$boot_coordinator</string>
     <string>$builder_user</string>
     <string>$builder_uid</string>
+    <string>$quarantine_marker</string>
     <string>$container_service_label</string>
     <string>$builder_agent_plist</string>
     <string>$container_executable</string>

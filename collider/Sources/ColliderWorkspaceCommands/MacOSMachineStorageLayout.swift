@@ -22,6 +22,12 @@ package enum MacOSMachineStorageLayout {
         contractRoot.appending("host-execution.lock")
     }
 
+    /// Persistent fail-closed state installed by the privileged quarantine
+    /// boundary. Only retirement removes the root that contains it.
+    package static var builderQuarantine: FilePath {
+        contractRoot.appending("quarantined")
+    }
+
     /// The root-owned launcher that runs a build as the identity permitted to
     /// write the store. Named in refusals so an account that cannot execute is
     /// told what can.

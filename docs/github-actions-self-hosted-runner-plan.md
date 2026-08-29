@@ -84,6 +84,16 @@ runner group, builder account, and registered runner are provisioned, and
 protected-main verification runs green on the M2 Ultra for both a `main` push
 and an exact-revision manual dispatch.
 
+Protected-main verification now plans the complete build and test closure once
+through `collider verify all`. Prepared planning state is shared by assessment
+and execution, the scheduler starts runnable work on the critical path while
+preserving exclusive claims, and each Swift test product emits per-test xUnit
+timings. Revision `e4a3962a39893be41715ca5f7a38fd01aa8fe8ed` passed the complete
+55-task selection; a subsequent authoritative-checkout plan of that exact
+revision found all 41 cacheable tasks valid and selected only the fourteen
+declared always-run or SwiftPM-incremental test tasks. That establishes
+automated-to-local warm-state reuse without repeating the verification sweep.
+
 The builder account now owns the materialized dependency graph in the machine
 store. The bounded `collider build all` lane has run from the clean Actions
 checkout and completed all 43 catalog tasks for both Linux architectures. Its
@@ -720,8 +730,12 @@ identity is what asserts an interchangeability the artifacts do not yet have.
 
 This phase carries the remaining Phase 3 gate items that require controlled
 executed-build comparisons. Automated execution against the machine store is
-now established; dirty-tree observation, mutation supersession, and the two
-local/automated orderings remain to be measured explicitly.
+now established. A controlled local `test core` run captured a dirty NucleusUI
+source tree, compiled from that capture while the checkout changed, revalidated
+the exact source closure it consumed, and terminated as `superseded` in durable
+run `2026-08-29T17-58-53.907Z-422`. The temporary source change was removed.
+Automated-to-local reuse is established; local-to-automated reuse on an
+identical effective source remains.
 
 The first automated build lane is deliberately bounded to the ordinary
 `collider build all` catalog entrypoint. Its first watched successful run built
@@ -796,6 +810,33 @@ runner work directories leaves the retained build state intact.
 
 ## Phase 5: Enforce Account, Credential, Network, and Recovery Boundaries
 
+Status: active
+
+The builder identity, read-only source view, machine store, runner credentials,
+container service, watchdog, and root-owned launch descriptors are installed
+and checked before every protected-main graph. A root boot coordinator creates
+the builder user domain when no interactive login has done so, starts the Apple
+Container API there, and exposes the runner only after the API is healthy. It
+does not restart the service while a Runner Worker is active. Finalization and
+`collider doctor ci-macos-builder` prove the installed descriptor, executable,
+arguments, interval, ownership, account separation, and service health. A real
+host restart, container-network denial, and quarantine/recovery exercise remain
+before this phase is complete. The root-owned quarantine command now writes a
+persistent fail-closed marker before stopping the runner, watchdog, container
+service, and every builder-owned process. The local launcher and boot
+coordinator refuse trusted execution while that marker or a symbolic link is
+present; finalization, provisioning, registration, and runner installation also
+refuse it. There is deliberately no in-place unquarantine path: retirement and
+recommissioning remove and reconstruct the machine state, while read-only
+runner inspection and archive acquisition remain available for diagnosis.
+Finalization installed that boundary and the revised coordinator contract on
+the M2 Ultra; `collider doctor ci-macos-builder` then proved the installed
+root-owned files identical to the checkout, the marker absent, and every host
+prerequisite satisfied. Finalization's hostile probes already prove that the
+builder cannot enumerate or read the interactive home, SSH state, unrelated
+source, signing identity, publication state, or sudo authority, and that it can
+read but cannot mutate the authoritative checkout or machine contract.
+
 Keep all build and qualification credentials read-only and job-scoped. The
 builder cannot read personal homes, attach to personal agents, hold a release
 signing or code-signing identity, reach publisher credentials, or deploy
@@ -828,8 +869,10 @@ the declared recovery gate completes.
 
 ## Phase 6: Define One Complete Verification Graph
 
-Status: the host-contract, provenance, build, and test lanes run on protected
-main, and their evidence outlives ordinary local work.
+Status: active. The host-contract, provenance, build, and test lanes run as one
+prepared `collider verify all` graph on protected main, and their evidence
+outlives ordinary local work. Linux-runtime packaging, product-store
+qualification, and delivery remain pending.
 
 Adding it found what a build-only graph had been hiding. Neither staged native
 SDK could be read where it is used: the render SDK and the React Native SDK
@@ -969,14 +1012,21 @@ signing, or version allocation.
 
 ## Phase 7: Cut Over Main CI/CD
 
-Status: the concurrency group is one group, and cancellation is not yet safe
-enough to use it. Protected main pushes share a group and a newer revision
-cancels the run in flight; the group had been keyed on the revision, which made
-it per-commit, so it only ever cancelled a duplicate of the same commit while a
-superseded revision ran to completion holding the admission its replacement was
-waiting for. A dispatch keeps its own per-revision group, so it is neither
-cancelled by the tip nor able to cancel it, and it remains how a revision a
-supersession skipped gets verified.
+Status: active. Protected-main pushes share one concurrency group and a newer
+revision cancels a superseded run. Signal forwarding reaches live child process
+groups synchronously, a watchdog recovers a connected-but-deaf listener, and a
+root boot coordinator restores the builder-domain container and runner services
+without an interactive login. Protected-main supersession and host-restart
+acceptance remain pending. A dispatch keeps its own per-revision group, so it is
+neither cancelled by the tip nor able to cancel it, and it remains how a
+revision a supersession skipped gets verified.
+
+A controlled local cancellation reached an active Linux Swift package test,
+forwarded the interruption to its child process group, recorded durable run
+`2026-08-29T18-05-30.774Z-3325` as `interrupted`, and left no builder SwiftPM,
+Swift test, or Collider child alive. The complete macOS builder doctor contract
+passed immediately afterward. Protected-main supersession and host-restart
+acceptance remain because they also exercise GitHub and launchd control planes.
 
 Reading the interrupt path suggested cancellation was already clean, and
 exercising it showed otherwise. Collider exits and the kernel releases both the

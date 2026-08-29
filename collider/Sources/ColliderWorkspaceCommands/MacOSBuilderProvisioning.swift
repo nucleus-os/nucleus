@@ -596,6 +596,7 @@ struct MacOSBuilderProvisioning {
             "builder-machine-root.sh",
             "finalize-nucleus-builder.sh",
             "provision-nucleus-builder.sh",
+            "quarantine-nucleus-builder.sh",
             "retire-nucleus-builder.sh",
             "verify-nucleus-builder.sh",
         ] {
