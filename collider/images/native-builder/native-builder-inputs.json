@@ -3,8 +3,8 @@
   "archives": [
     {
       "name": "swift-arm64.tar.gz",
-      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-01-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-01-a-ubuntu24.04-aarch64.tar.gz",
-      "sha256": "d0d2aa2a243bf33d038da02611055bf13e48fe0e20a41a8443faa731884a03de"
+      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a-ubuntu24.04-aarch64.tar.gz",
+      "sha256": "040c5d553abed9591db318bdf04688e7361eaba192acc787bb836fb1a28a092f"
     },
     {
       "name": "swift-libxml2-arm64.deb",

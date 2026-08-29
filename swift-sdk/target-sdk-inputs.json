@@ -2,16 +2,16 @@
   "artifacts": {
     "androidSDK": {
       "maximumResponseSize": 419430400,
-      "sha256": "c5bb1c4399375c1a59c6aa672f3f81014e111de0d464ada8ae8cc5814ce29681",
-      "url": "https://download.swift.org/swift-6.4.x-branch/android-sdk/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_android.artifactbundle.tar.gz"
+      "sha256": "367906253e708dfc976b01478e8261c0df137a033b540f4b71b84fd3a05ce71d",
+      "url": "https://download.swift.org/swift-6.4.x-branch/android-sdk/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a_android.artifactbundle.tar.gz"
     },
     "macOSHostPackage": {
       "maximumResponseSize": 2147483648,
-      "sha256": "04c0f47146235a913fc88bcfba71b406788a148fc8d9c84274971d8610b59f4d",
-      "url": "https://download.swift.org/swift-6.4.x-branch/xcode/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-osx.pkg"
+      "sha256": "c1abe3083269fe0f3c8b43ef1d3be435b9273b5642493969ef51e923ce531587",
+      "url": "https://download.swift.org/swift-6.4.x-branch/xcode/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a-osx.pkg"
     }
   },
-  "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
+  "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a",
   "linuxTargets": [
     {
       "architecture": "arm64",

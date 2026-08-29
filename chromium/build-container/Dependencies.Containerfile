@@ -1,4 +1,4 @@
-FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM docker.io/library/ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -36,4 +36,3 @@ ENV HOME=/tmp/nucleus-home \
     PATH=/source/chromium/src/third_party/llvm-build/Linux_x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=UTC
-

@@ -12,10 +12,13 @@ the ABI baseline, which is a separate statement.
 
 ## Current State
 
-The builder image is already Ubuntu 26.04:
+The builder image uses the official rolling Ubuntu 26.04 OCI tag at a fixed
+digest, while the generator records the expected point-release baseline as
+26.04.1. Ubuntu does not publish a separate 26.04.1 OCI tag or change
+`VERSION_ID` from 26.04:
 
 ```
-FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM docker.io/library/ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
 ```
 
 The target sysroot it builds against is Ubuntu 24.04. `target-sdk-inputs.json`
@@ -48,7 +51,7 @@ a divergence from an upstream it tracks.
 ## Phase 1: Teach the Generator the Release
 
 The `Ubuntu` enumeration in the `swift-sdk-generator` fork gains `resolute`:
-the case, the `26.04` mapping in `init(version:)`, the `version` property, and
+the case, the `26.04.1` mapping in `init(version:)`, the `version` property, and
 its required packages, which are `libgcc-13-dev`, `libicu78`, and
 `libstdc++-13-dev`. The fork carries the change and the source closure points
 at the revision that has it.
@@ -57,11 +60,11 @@ The generator is first because nothing else can be validated without it: it
 rejects an unknown release outright, so a rebased lock would fail before any
 package was read.
 
-Gate: the generator accepts `--distribution-version 26.04` and reports the
+Gate: the generator accepts `--distribution-version 26.04.1` and reports the
 required packages for it, and the pinned source closure names the fork revision
 that added it.
 
-Status: complete. The fork carries `resolute` at `66a4e8e` on
+Status: complete. The rebased fork carries `resolute` at `894daa2` on
 `nucleus-ubuntu-2604`, and the source closure points at it. The release maps in
 both directions and declares `libgcc-13-dev`, `libicu78`, and
 `libstdc++-13-dev`; only the ICU soname moves from noble. The fork's own
@@ -72,7 +75,7 @@ distribution tests cover the new release in both directions and pass.
 `target-sdk-inputs.json` pins every package at its resolute version for both
 architectures, taken from the release's own package index rather than composed
 by hand. `libbsd0` and `libmd0` join the set, which closes the gap that stops
-payload assembly. `SwiftTargetSDKColliderRecipe` passes `26.04` and names the
+payload assembly. `SwiftTargetSDKColliderRecipe` passes `26.04.1` and names the
 result for the release it is.
 
 Gate: the sysroot for each architecture contains every SONAME its own contents
@@ -86,7 +89,7 @@ package index, and `libbsd0` and `libmd0` are added per architecture. Every
 package kept its name, so nothing is renamed and no toolchain series moves.
 Digests were verified end to end for the added packages and for `libc6` and
 `libxdmcp6` on both architectures, and the remainder are verified by the
-download tasks that consume them. The recipe passes `26.04` and names its
+download tasks that consume them. The recipe passes `26.04.1` and names its
 output `ubuntu-resolute.sdk`.
 
 ## Phase 3: Rebuild and Hold the Baseline
@@ -158,7 +161,9 @@ Nucleus code, so there was nothing to fix short of a compatibility layer, and
 the baseline moved. The cost is stated rather than hidden: Ubuntu 24.04,
 Debian 13, and RHEL 10 no longer run a Nucleus payload.
 
-The bootstrap compiler is a Swift.org toolchain built for Ubuntu 24.04, running
-on a 26.04 image. That combination is already what runs today, so the rebase
-does not introduce it, but it is the thing to look at first if the rebuilt SDK
-misbehaves in a way the package versions do not explain.
+The bootstrap compiler is the matching August 26 Swift.org toolchain built for
+Ubuntu 24.04, running on the pinned 26.04 image. The target runtime sources,
+macOS host package, Android artifact bundle, and bootstrap compiler therefore
+advance as one snapshot set; this host-distribution split remains the first
+thing to inspect if the rebuilt SDK misbehaves in a way the package versions do
+not explain.

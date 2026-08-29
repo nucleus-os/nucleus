@@ -14,10 +14,13 @@ Nucleus target must use libc++ uniformly. This is a target-runtime build, not a
 Swift toolchain build.
 
 `target-sdk-inputs.json` is the external-artifact manifest for one matching
-Swift 6.4 snapshot set. It pins only inputs that gitlinks cannot represent:
+Swift 6.4 snapshot set. The native-builder manifest pins the matching official
+Linux/arm64 bootstrap compiler. Together they pin only inputs that gitlinks
+cannot represent:
 
 - the signed Swift.org macOS package providing native arm64 host tools;
 - the official Android artifact bundle;
+- the official Swift.org Linux/arm64 bootstrap compiler;
 - exact Ubuntu arm64 and amd64 runtime-build and SDK-link package closures.
 
 The selected Xcode 27 provides the macOS compiler, SDK, and developer tools.

@@ -1857,7 +1857,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 "--no-host-toolchain",
                 "--target", target.triple,
                 "--distribution-name", "ubuntu",
-                "--distribution-version", "26.04",
+                "--distribution-version", "26.04.1",
                 "--swift-version", snapshot,
                 "--target-swift-package-path", target.runtimeInstall.string,
                 "--sdk-name", temporarySDKName,
