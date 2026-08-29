@@ -126,10 +126,11 @@ dependency order:
 2. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
 3. [Android render stack](android-render-stack-plan.md)
 4. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
-5. [Native shell completion](native-shell-completion-plan.md)
-6. [Screen capture and recording](screen-recording-plan.md)
-7. [View pixel alignment](view-pixel-alignment-plan.md)
-8. [Glyph dilation](text-glyph-dilation-plan.md)
+5. [GPU driver capability adoption](gpu-driver-capability-adoption-plan.md)
+6. [Native shell completion](native-shell-completion-plan.md)
+7. [Screen capture and recording](screen-recording-plan.md)
+8. [View pixel alignment](view-pixel-alignment-plan.md)
+9. [Glyph dilation](text-glyph-dilation-plan.md)
 
 ### Qualification sequence
 
