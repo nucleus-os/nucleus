@@ -20,11 +20,24 @@ private actor ParallelismProbe {
     private var maximumActive = 0
     private var started: [String] = []
 
-    func exercise(name: String, duration: Duration = .milliseconds(100)) async {
+    func exercise(
+        name: String,
+        duration: Duration = .milliseconds(100),
+        rendezvousParticipants: Int? = nil
+    ) async {
         started.append(name)
         active += 1
         maximumActive = max(maximumActive, active)
-        try? await Task.sleep(for: duration)
+        if let rendezvousParticipants {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while maximumActive < rendezvousParticipants,
+                ContinuousClock.now < deadline
+            {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        } else {
+            try? await Task.sleep(for: duration)
+        }
         active -= 1
     }
 
@@ -42,6 +55,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect]
     let lane: TaskExecutionLane
     let duration: Duration
+    let rendezvousParticipants: Int?
 
     init(
         identity: ParallelismProbeIdentity,
@@ -50,7 +64,8 @@ private struct ParallelismProbeAction: ColliderAction {
         publicationClaim: FilePath? = nil,
         persistentWorkspaceEffects: [ActionPersistentWorkspaceEffect] = [],
         lane: TaskExecutionLane = .lightweight,
-        duration: Duration = .milliseconds(100)
+        duration: Duration = .milliseconds(100),
+        rendezvousParticipants: Int? = nil
     ) {
         self.identity = identity
         self.probe = probe
@@ -59,6 +74,7 @@ private struct ParallelismProbeAction: ColliderAction {
         self.persistentWorkspaceEffects = persistentWorkspaceEffects
         self.lane = lane
         self.duration = duration
+        self.rendezvousParticipants = rendezvousParticipants
     }
 
     var requirements: ActionRequirements {
@@ -77,7 +93,10 @@ private struct ParallelismProbeAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        await probe.exercise(name: identity.name, duration: duration)
+        await probe.exercise(
+            name: identity.name,
+            duration: duration,
+            rendezvousParticipants: rendezvousParticipants)
         try context.files.write(Array(identity.name.utf8), to: output)
     }
 }
@@ -300,7 +319,8 @@ private struct FailAfterWriteAction: ColliderAction {
                     probe: probe,
                     output: output,
                     persistentWorkspaceEffects: [schedulerWorkspace(key: name)],
-                    lane: .oci)))
+                    lane: .oci,
+                    rendezvousParticipants: 2)))
     }
 
     _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
