@@ -16,6 +16,13 @@ a command mode of the unified `swift-package-manager` executable, selected as
 `swift-nucleus-driver`; it is not linked into Collider and does not move
 toolchain code into the macOS orchestrator process.
 
+An OCI action whose execution configuration names no overlay executable invokes
+the official toolchain's SwiftPM directly. The overlay's own build and the
+target-SDK runtime builds are exactly those actions: the driver does not exist
+until the overlay that carries it has been built. This is bootstrap ordering,
+not a retained alternative, and no action the overlay can serve may take that
+path.
+
 This process boundary is deliberate. The implementation APIs belong to the
 pinned SwiftPM and SwiftBuild revisions and execute in the offline Linux build
 environment beside the compiler and target SDK they control. Collider remains a
@@ -68,4 +75,8 @@ reconstructing SwiftPM or SwiftBuild scratch layouts.
 New package operations extend the typed request, direct SwiftPM implementation,
 and structured event model together. They do not add raw trailing argument
 arrays, scrape console text, link SwiftPM into Collider, bypass SwiftPM to call
-llbuild, or preserve a parallel CLI-based OCI path.
+llbuild, or give an action the overlay can serve a parallel CLI-based OCI path.
+
+Every request field reaches task identity, through the build context's identity
+encoding or through the operation's identity arguments. A field in neither
+cannot re-key its task, so a changed request would serve the previous result.
