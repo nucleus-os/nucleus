@@ -78,8 +78,10 @@ SwiftBuild, their resources, or the overlay assembly does not import or unpack
 the heavyweight image again. No GitHub workflow or external release artifact is
 part of this graph. The overlay replaces no compiler, driver, LLVM, Clang,
 standard library, or target SDK component. Its fork changes are limited to the
-typed Nucleus driver and preserving the arm64 Linux host SDK for host build tools
-and transitive helpers while SwiftBuild plans an x86_64 target.
+typed Nucleus driver, selecting Swift Testing tests from SwiftPM's parsed options
+rather than from the process command line so a caller that is not the command
+line can select and skip tests, and preserving the arm64 Linux host SDK for host
+build tools and transitive helpers while SwiftBuild plans an x86_64 target.
 
 The generated target-SDK store publishes one active generation through the
 stable `swift-target-sdks/current` link. SwiftPM discovery links target paths
