@@ -254,6 +254,13 @@ SUDOERS
 /usr/bin/install -o root -g wheel -m 0440 "$temporary_sudoers" "$sudoers_file"
 
 # The EXIT trap installed above already removes this file.
+# `ProcessType` decides the QoS class every process this service spawns
+# inherits, which on Apple Silicon decides which cores they are allowed to run
+# on. `Background` confines them to the efficiency cores, and it did: the same
+# test bundle took 534.9 s under the runner and 127.8 s from a shell on the same
+# machine, with the ratio uniform across every test in it rather than
+# concentrated anywhere. A build service's work is the machine's purpose while
+# it runs, so it takes the standard class and the performance cores with it.
 temporary_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-plist.XXXXXX)"
 /bin/cat >"$temporary_plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -272,7 +279,7 @@ temporary_plist="$(/usr/bin/mktemp /tmp/nucleus-runner-plist.XXXXXX)"
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Standard</string>
   <key>StandardOutPath</key><string>$runner_logs/runner.log</string>
   <key>StandardErrorPath</key><string>$runner_logs/runner.error.log</string>
 </dict></plist>

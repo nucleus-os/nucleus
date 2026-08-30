@@ -858,6 +858,17 @@ acquisition reaches only the public origins required by the pinned source and
 dependency graph. Apple containers retain the host-only network with DNS
 disabled and receive only already acquired inputs.
 
+The runner and the container service take the standard QoS class, not the
+background one. `ProcessType` decides the class every process a launchd service
+spawns inherits, and on Apple Silicon that decides which cores they may run on:
+`Background` confines them to the efficiency cores. It did. The same test bundle
+took 534.9 seconds under the runner and 127.8 seconds from a shell on the same
+machine, as the same account, with nothing else executing -- and the ratio held
+uniformly across every test in the bundle rather than concentrating anywhere,
+which is what distinguishes a machine running the work slower from the work
+being slower. The watchdog and the boot coordinator stay in the background
+class; they poll and start services rather than build.
+
 Nothing in the store may outlive the builder's ability to collect it. Content
 staged out of the authoritative checkout arrives carrying that tree's
 inheritable entry denying the builder write and delete, and a copy that

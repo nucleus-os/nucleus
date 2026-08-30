@@ -21,7 +21,7 @@
     <false/>
   </dict>
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Standard</string>
   <key>SoftResourceLimits</key>
   <dict>
     <key>NumberOfFiles</key>
