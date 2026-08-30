@@ -59,6 +59,17 @@ actor RunProgressReporter {
             switch observation {
             case .plan(let plan):
                 if reducer == nil { reducer = RunEventReducer() }
+                // Planning is the only place a lowered task's component and
+                // product survive: the name it carries from here on is the
+                // digest of its identity. Handing them to the console once is
+                // what lets every later human rendering of that task say what
+                // it is.
+                console.recordTaskLabels(
+                    Dictionary(
+                        plan.entries.compactMap { entry in
+                            entry.attribution.map { (entry.task, $0) }
+                        },
+                        uniquingKeysWith: { existing, _ in existing }))
                 try reducer?.consumePlan(plan.entries, runID: plan.runID)
             case .event(let event):
                 if reducer == nil {
@@ -97,7 +108,8 @@ actor RunProgressReporter {
                 date.timeIntervalSince(lastEmissionDate) >= livenessInterval,
                 let task = snapshot.activeRows.first?.task
             {
-                try? console.progress("still running  \(task.rawValue)")
+                try? console.progress(
+                    "still running  \(console.displayName(for: task))")
                 self.lastEmissionDate = date
             }
         case .githubActions:

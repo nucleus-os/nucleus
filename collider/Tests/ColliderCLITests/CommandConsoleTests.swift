@@ -180,7 +180,66 @@ private struct FixtureReport: Codable, Equatable {
     #expect(standardError.text.contains("::endgroup::\n"))
     #expect(standardError.text.contains("::error title=Collider task fixture.build::"))
     #expect(standardError.text.contains("compile failed%0Awith context"))
-    #expect(standardError.text.contains("stage log%3A "))
+    #expect(standardError.text.contains("stage log: "))
+}
+
+/// The two halves of a workflow command are escaped by different rules, and a
+/// task named by a digest exercises both: `:` ends a property list, so it is
+/// escaped in `title=`, and means nothing in a message, so it is not.
+@Test func githubActionsNamesTasksByLabelAndEscapesEachHalfOfACommand() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-github-labels-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    let log = directory.appendingPathComponent("stage.log")
+    try Data("line one\n".utf8).write(to: log)
+    let standardError = ConsoleCapture()
+    let console = CommandConsole(
+        progress: .always,
+        environment: ["GITHUB_ACTIONS": "true"],
+        standardOutput: { _ in },
+        standardError: standardError.write)
+    let task = TaskID(rawValue: "swift.package.test.sha256:abc123")
+    console.recordTaskLabels([task: "collider:collider-cliPackageTests"])
+
+    try console.githubTaskLog(task: task, path: log.path)
+    try console.githubFailure(
+        task: task,
+        reason: "no space left on device (28)",
+        logPath: log.path)
+
+    #expect(
+        standardError.text.contains(
+            "::group::collider:collider-cliPackageTests"
+                + "  (swift.package.test.sha256:abc123)\n"))
+    #expect(
+        standardError.text.contains(
+            "::error title=Collider task collider%3Acollider-cliPackageTests"
+                + "  (swift.package.test.sha256%3Aabc123)::"))
+    #expect(standardError.text.contains("no space left on device (28) (stage log: "))
+}
+
+/// A progress row has to fit a line beside the output it reports, so it carries
+/// the label alone. An unlabelled task is already named for what it does.
+@Test func progressRowsNameALoweredTaskByItsLabel() throws {
+    let standardError = ConsoleCapture()
+    let console = CommandConsole(
+        progress: .always,
+        standardErrorIsTerminal: false,
+        standardOutput: { _ in },
+        standardError: standardError.write)
+    let lowered = TaskID(rawValue: "swift.package.build.sha256:abc123")
+    let plain = TaskID(rawValue: "core.skia")
+    console.recordTaskLabels([lowered: "core:NucleusCore"])
+
+    try console.progress(
+        progressSnapshot(task: lowered, additionalActiveTask: plain))
+
+    #expect(standardError.text.contains("core:NucleusCore [oci]  compile\n"))
+    #expect(standardError.text.contains("core.skia [lightweight]  running\n"))
+    #expect(!standardError.text.contains("swift.package.build.sha256:abc123"))
 }
 
 @Test func explicitMachineProgressKeepsJSONReportsPureOnStandardOutput() throws {

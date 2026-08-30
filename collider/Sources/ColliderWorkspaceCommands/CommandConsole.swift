@@ -70,6 +70,7 @@ package final class CommandConsole: @unchecked Sendable {
         var taskOutputBuffers: [TaskOutputBufferKey: [UInt8]] = [:]
         var taskOutputTails: [TaskID: [String]] = [:]
         var latestTaskOutput: [TaskID: String] = [:]
+        var taskLabels: [TaskID: String] = [:]
         var renderedLineCount = 0
         var cursorHidden = false
         var suspended = false
@@ -234,6 +235,27 @@ package final class CommandConsole: @unchecked Sendable {
             style: colorEnabled ? .red : nil)
     }
 
+    /// Record the human names planning gave this run's tasks.
+    ///
+    /// A lowered SwiftPM invocation is named by the digest of its identity,
+    /// which is what makes the name stable across checkouts and what leaves a
+    /// reader nothing to read. Planning already knows which component and
+    /// product the invocation exists for, so presentation says that and keeps
+    /// the digest beside it for correlation. Machine output is unaffected: the
+    /// task identity in a JSON progress record or a run manifest is the raw
+    /// name, and a label never substitutes for it.
+    package func recordTaskLabels(_ labels: [TaskID: String]) {
+        guard !labels.isEmpty else { return }
+        state.withLock { state in
+            state.taskLabels.merge(labels) { _, new in new }
+        }
+    }
+
+    /// The recorded label for a task, for a caller composing its own line.
+    package func displayName(for task: TaskID) -> String {
+        state.withLock { Self.displayName(task, labels: $0.taskLabels) }
+    }
+
     package func progress(_ text: String) throws {
         let lines = safeLogicalLines(text)
         try updateProgress(lines, snapshot: nil)
@@ -243,7 +265,8 @@ package final class CommandConsole: @unchecked Sendable {
         let lines = state.withLock { state in
             render(
                 snapshot: snapshot,
-                latestTaskOutput: state.latestTaskOutput)
+                latestTaskOutput: state.latestTaskOutput,
+                taskLabels: state.taskLabels)
         }
         try updateProgress(lines, snapshot: snapshot)
     }
@@ -332,8 +355,8 @@ package final class CommandConsole: @unchecked Sendable {
                 let text = safeTerminalText(summary.text) + "\n"
                 try standardError(Data(text.utf8))
                 for test in summary.failedTestCases {
-                    let title = githubWorkflowValue("Test \(test.qualifiedName)")
-                    let message = githubWorkflowValue(
+                    let title = githubCommandProperty("Test \(test.qualifiedName)")
+                    let message = githubCommandMessage(
                         "failed in \(safeTerminalText(test.task))")
                     try standardError(
                         Data("::error title=\(title)::\(message)\n".utf8))
@@ -361,8 +384,9 @@ package final class CommandConsole: @unchecked Sendable {
 
     package func githubTaskLog(task: TaskID, path: String) throws {
         guard progressPresentation == .githubActions else { return }
-        try state.withLock { _ in
-            let title = githubWorkflowValue(task.rawValue)
+        try state.withLock { state in
+            let title = githubCommandMessage(
+                Self.qualifiedName(task, labels: state.taskLabels))
             try standardError(Data("::group::\(title)\n".utf8))
             if let data = try? Data(
                 contentsOf: URL(fileURLWithPath: path),
@@ -398,17 +422,19 @@ package final class CommandConsole: @unchecked Sendable {
         diagnostic: ResolvedSourceDiagnostic? = nil
     ) throws {
         guard progressPresentation == .githubActions else { return }
-        let title = githubWorkflowValue("Collider task \(task.rawValue)")
-        try state.withLock { _ in
+        try state.withLock { state in
+            let title = githubCommandProperty(
+                "Collider task "
+                    + Self.qualifiedName(task, labels: state.taskLabels))
             if let diagnostic {
-                let message = githubWorkflowValue(safeTerminalText(diagnostic.message))
-                let file = githubWorkflowValue(diagnostic.path)
+                let message = githubCommandMessage(safeTerminalText(diagnostic.message))
+                let file = githubCommandProperty(diagnostic.path)
                 try standardError(
                     Data(
                         ("::error file=\(file),line=\(diagnostic.line),"
                             + "col=\(diagnostic.column),title=\(title)::\(message)\n").utf8))
             } else {
-                let message = githubWorkflowValue(
+                let message = githubCommandMessage(
                     "\(safeTerminalText(reason)) (stage log: \(safeTerminalText(logPath)))")
                 try standardError(Data("::error title=\(title)::\(message)\n".utf8))
             }
@@ -450,7 +476,8 @@ package final class CommandConsole: @unchecked Sendable {
 
     private func render(
         snapshot: RunProgressSnapshot,
-        latestTaskOutput: [TaskID: String]
+        latestTaskOutput: [TaskID: String],
+        taskLabels: [TaskID: String]
     ) -> [String] {
         var lines: [String]
         if let hostPhase = snapshot.hostPhase {
@@ -496,7 +523,8 @@ package final class CommandConsole: @unchecked Sendable {
                     }
                 }
             let detail = latestTaskOutput[row.task] ?? eventDetail
-            return "\(row.task.rawValue) [\(row.lane.rawValue)]  \(detail)"
+            let name = Self.displayName(row.task, labels: taskLabels)
+            return "\(name) [\(row.lane.rawValue)]  \(detail)"
         }
         if snapshot.residualActiveRowCount > 0 {
             lines.append("+\(snapshot.residualActiveRowCount) more active")
@@ -560,7 +588,9 @@ package final class CommandConsole: @unchecked Sendable {
         do {
             for (task, line) in lines {
                 let prefix =
-                    attributesTasks ? task.map { "\($0.rawValue) | " } ?? "" : ""
+                    attributesTasks
+                    ? task.map { "\(Self.displayName($0, labels: state.taskLabels)) | " } ?? ""
+                    : ""
                 try standardError(Data((prefix + line + "\n").utf8))
             }
         } catch {
@@ -582,7 +612,39 @@ package final class CommandConsole: @unchecked Sendable {
         guard let snapshot = state.progressSnapshot else { return }
         state.logicalProgressLines = render(
             snapshot: snapshot,
-            latestTaskOutput: state.latestTaskOutput)
+            latestTaskOutput: state.latestTaskOutput,
+            taskLabels: state.taskLabels)
+    }
+
+    /// What a person reads instead of a task's name.
+    ///
+    /// An unlabelled task is already named for what it does, so it renders as
+    /// itself. A labelled one is a lowered SwiftPM invocation whose name is a
+    /// digest, and a progress row has to fit a terminal line beside the output
+    /// it is reporting, so the row carries the label alone.
+    private static func displayName(_ task: TaskID, labels: [TaskID: String]) -> String {
+        guard let label = labels[task], !label.isEmpty else { return task.rawValue }
+        return truncated(label, to: taskLabelWidth)
+    }
+
+    /// What a person reads where the task's identity still has to be recoverable.
+    ///
+    /// A group title and a failure annotation are both starting points for
+    /// looking something up in a run record, which is keyed by the name, so
+    /// both keep it. The label leads because that is the half a reader
+    /// recognizes and the half that survives when the interface truncates.
+    private static func qualifiedName(_ task: TaskID, labels: [TaskID: String]) -> String {
+        guard let label = labels[task], !label.isEmpty else { return task.rawValue }
+        return "\(truncated(label, to: taskLabelWidth))  (\(task.rawValue))"
+    }
+
+    /// One SwiftPM invocation can be merged from more owners than any line can
+    /// hold, and the front of that list is the part that identifies it.
+    private static let taskLabelWidth = 96
+
+    private static func truncated(_ value: String, to width: Int) -> String {
+        guard value.count > width else { return value }
+        return value.prefix(width - 1) + "\u{2026}"
     }
 
     private static func renderDuration(_ nanoseconds: UInt64) -> String {
@@ -754,11 +816,24 @@ private struct MachineProgressSummary: Encodable {
     let summary: RunTerminalSummary
 }
 
-private func githubWorkflowValue(_ value: String) -> String {
+/// Escape the message half of a workflow command, which is everything after
+/// the `::` that closes the property list.
+///
+/// Only the characters that would end the message or begin another command are
+/// escaped. A message is not parsed for properties, so `:` and `,` are ordinary
+/// text there; escaping them anyway is what put `%3A` in the middle of every
+/// task group title and stage log path CI has produced.
+private func githubCommandMessage(_ value: String) -> String {
     value
         .replacingOccurrences(of: "%", with: "%25")
         .replacingOccurrences(of: "\r", with: "%0D")
         .replacingOccurrences(of: "\n", with: "%0A")
+}
+
+/// Escape one value in a workflow command's property list, where `,` starts the
+/// next property and `:` ends the list.
+private func githubCommandProperty(_ value: String) -> String {
+    githubCommandMessage(value)
         .replacingOccurrences(of: ":", with: "%3A")
         .replacingOccurrences(of: ",", with: "%2C")
 }
