@@ -42,13 +42,27 @@ reuse.
    builder-domain container and runner services without an interactive login.
    Prove the corrected local-to-automated warm-state reuse, exercise a real host
    restart, and complete the container-network, quarantine, and recovery gates.
-2. Complete the product-execution portions of the
+2. Complete the [build input currency plan](build-input-currency-plan.md).
+   Its first phase is the only work in this inventory whose failure arrives
+   without a Nucleus change: the target SDK acquires its Ubuntu packages from
+   mutable pool paths that lose each file when a new version publishes.
+   Establish immutable acquisition, retire the inputs nothing builds, and bring
+   the container substrate and source-built dependencies current before the
+   packaging, distribution, and qualification chain binds artifact digests to
+   inputs that cannot be re-obtained.
+3. Complete the [task identity precision plan](task-identity-precision-plan.md).
+   A revision touching three files gives 71 of 286 tasks work, because two
+   mutually exclusive activation paths give one Swift SDK generation two
+   identities, and five C and C++ components consume the whole SDK rather than
+   the toolchain they actually read. Restoring identity precision makes every
+   gate below cheaper and makes a clean result mean what it says.
+4. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-3. Extend Phases 6 and 7 of the
+5. Extend Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    through protected-main Linux-runtime packaging. An actual
    `collider package linux-runtime` execution closes the remaining half of Phase
@@ -56,63 +70,63 @@ reuse.
    both AOSP products and both complete six-member native package cohorts already
    come from graph-owned inputs. Physical Android qualification remains outside
    this packaging gate.
-4. Complete Phases 5 and 6 of the
+6. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
    the exact version-bearing cohorts, assemble signed repository snapshots
    offline, and remove Collider's remaining product-installation commands.
-5. Complete Phases 6 through 8 of the
+7. Complete Phases 6 through 8 of the
    [build store retention plan](build-store-retention-plan.md). Phases 1 through
    5 already bound SwiftPM identity contexts on every run and brought the
    container store under collection; the first collecting prune returned 411.9
    GiB. Make interactive inspection read the store directly, declare residency
    for every materialized source root, and report recorded allocation before the
    long-running qualification matrices begin.
-6. Complete Phases 1 through 5 of the
+8. Complete Phases 1 through 5 of the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    Protected-main packaging does not wait for this reliability work. Measure the
    translated host workload against the existing generations, then supply the
    missing native host toolchains and prove both products without translation
    before unattended Android qualification can be accepted.
-7. Complete Phase 6 of the
+9. Complete Phase 6 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the signed local repository snapshots: qualify each unchanged artifact
    digest across the declared distribution matrix without rebuilding it.
-8. Complete the remaining qualification plans in the order listed below. Their
+10. Complete the remaining qualification plans in the order listed below. Their
    agent-runnable gates bind native, physical, security, and product evidence to
    the package cohorts, and complete the qualification portion of the
    protected-main verification graph.
-9. Complete Phase 7 of the
+11. Complete Phase 7 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    on physical arm64 and x86_64 hardware. After the Android application and
    container-security gates are complete, execute Phase 6 of the
    [Android architecture parity plan](android-architecture-parity-plan.md) on
    physical arm64 hardware as part of the same hardware-qualification stage.
-10. Complete Phase 7 of the
+12. Complete Phase 7 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish qualified repository cohorts through the separated GitHub Release
    and R2 authorities.
-11. Complete Phase 8 of the
+13. Complete Phase 8 of the
     [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    against the native package, repository, and qualification pipeline.
-12. Complete Phase 8 of the
+14. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to publish and qualify the nightly native update lifecycle.
-13. Complete the
+15. Complete the
     [Collider architecture simplification plan](collider-architecture-simplification-plan.md)
     after the nightly lifecycle fixes the build, packaging, qualification, and
     publication contracts. Decompose catalog construction, storage policy,
     package assembly, recipe ownership, and command execution policy before
     adding new development-host execution surfaces.
-14. Complete Phase 9 of the
+16. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to add non-installed remote development generations over the established
    product-artifact contract.
-15. Complete Phases 2 through 6 of
+17. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-16. Complete Phases 3 through 10 of the
+18. Complete Phases 3 through 10 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
