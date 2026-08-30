@@ -164,10 +164,20 @@ contributes nothing to its identity, and it carries no artifact references or
 identity dependencies at all. `wayland.generator` and `wayland.generate` keep the
 full bundle: both execute Swift, so the Swift half is genuinely theirs.
 
-Remaining, and smaller than what this phase removed: the validator and the
-validation fixture still name the generation directory, so a change to either
-re-assembles an SDK it cannot affect. They determine neither half, and belong to
-the validation tasks alone.
+The validator and the validation fixture still name the generation directory, so
+a change to either re-assembles an SDK it cannot affect. Removing them was tried
+and reverted, and the reason is worth keeping: the validation tasks consume
+`assembly.hostSwift`, each target's SDK artifact, and `assembly.linuxSDK`, so
+they are planned only on the generation path. Naming the generation after the
+validator is therefore the only thing that re-runs validation when the validator
+changes -- wastefully, by rebuilding an identical SDK, but it is load-bearing.
+Dropping it measured clean everywhere, including the validation tasks, because
+on the reuse path they are not planned at all. That is a verification gate
+failing open, which no saving justifies.
+
+The order is therefore fixed: make validation runnable against a published
+generation first, then remove the coupling. Until the first exists, the
+generation digest keeps naming inputs that do not define it.
 
 The claim the facet makes is that the listed inputs determine the native half of
 the sysroot. Verify it directly rather than by inspection: after the snapshot
