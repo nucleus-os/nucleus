@@ -45,7 +45,7 @@ extension ColliderRuntime {
         try FileManager.default.createDirectory(
             atPath: parent.string,
             withIntermediateDirectories: true)
-        let imageID = try await ociBackend.prepareImage(preparation)
+        let imageID = try await requireOCIBackend().prepareImage(preparation)
         guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(
                 "OCI executor did not produce a content-addressed builder image ID")
@@ -191,7 +191,7 @@ extension ColliderRuntime {
             taskOutputPresentation: taskOutputPresentation ?? .verbose,
             taskOutputObserver: taskOutputObserver)
         do {
-            let outcome = try await ociBackend.execute(request)
+            let outcome = try await requireOCIBackend().execute(request)
             let result = outcome.result.recordingExecutionContext(context)
             if let logging {
                 try? await logging.registry.record(

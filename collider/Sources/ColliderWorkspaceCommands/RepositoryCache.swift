@@ -1210,6 +1210,10 @@ struct RepositoryCache {
     /// The runtime's own builder container is excluded, because the runtime
     /// creates it and the next image build expects it.
     private func reclaimableContainers() async -> ContainerPruneOutcome {
+        guard context.runtime.hasOCIRuntimeBackend else {
+            return ContainerPruneOutcome(
+                unavailable: "no container runtime backend is configured")
+        }
         do {
             let containers = try await context.runtime.ociContainers()
             return ContainerPruneOutcome(
@@ -1224,6 +1228,14 @@ struct RepositoryCache {
     }
 
     private func reclaimableImages() async -> ImagePruneOutcome {
+        // Asked rather than attempted. Absence is a property of this runtime,
+        // not a failure of the store, and reporting it as a caught error made
+        // "there is no container backend here" read as a claim that the host
+        // could not support one.
+        guard context.runtime.hasOCIRuntimeBackend else {
+            return ImagePruneOutcome(
+                unavailable: "no container runtime backend is configured")
+        }
         do {
             let images = try await context.runtime.ociImages()
             let infrastructure = try await context.runtime.ociInfrastructureImages()

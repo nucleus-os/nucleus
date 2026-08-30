@@ -71,8 +71,14 @@ public actor ColliderRuntime {
     let taskOutputObserver: TaskOutputObserver
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
-    let ociBackend: any OCIRuntimeBackend
-    package nonisolated let hasOCIRuntimeBackend: Bool
+    let ociBackend: (any OCIRuntimeBackend)?
+    /// Whether this runtime can run containers at all.
+    ///
+    /// Derived rather than stored: one fact, in one place. A host with no
+    /// backend is a real state -- Linux has none until its rootless backend
+    /// exists -- and it is now visible as absence rather than as a backend that
+    /// throws when asked anything.
+    public nonisolated var hasOCIRuntimeBackend: Bool { ociBackend != nil }
 
     public init(
         logging: CommandLogging? = nil,
@@ -101,56 +107,64 @@ public actor ColliderRuntime {
         downloads = ColliderDownloads(cacheRoot: downloadCacheRoot)
         self.cancellation = cancellation
         self.ociConfiguration = ociConfiguration
-        hasOCIRuntimeBackend = ociBackend != nil
-        self.ociBackend = ociBackend ?? UnsupportedOCIRuntimeBackend()
+        self.ociBackend = ociBackend
+    }
+
+    /// The container backend, or a failure that says it is missing.
+    ///
+    /// A caller that can proceed without containers asks `hasOCIRuntimeBackend`
+    /// first; this is for the ones that cannot.
+    func requireOCIBackend() throws -> any OCIRuntimeBackend {
+        guard let ociBackend else { throw OCIExecutorFailure.noRuntimeBackend }
+        return ociBackend
     }
 
     public func ociRuntimeHealth() async throws -> OCIRuntimeHealth {
-        try await ociBackend.health()
+        try await requireOCIBackend().health()
     }
 
     public func ociRuntimeNetwork(
         named name: String
     ) async throws -> OCIRuntimeNetworkState {
-        try await ociBackend.network(named: name)
+        try await requireOCIBackend().network(named: name)
     }
 
     public func ociRuntimeDiskUsage() async throws -> OCIRuntimeDiskUsage {
-        try await ociBackend.diskUsage(configuration: ociConfiguration)
+        try await requireOCIBackend().diskUsage(configuration: ociConfiguration)
     }
 
     public func ociImages() async throws -> [OCIImageState] {
-        try await ociBackend.images()
+        try await requireOCIBackend().images()
     }
 
     public func deleteOCIImages(references: [String]) async throws {
-        try await ociBackend.deleteImages(references: references)
+        try await requireOCIBackend().deleteImages(references: references)
     }
 
     public func collectOrphanedOCIImageContent() async throws -> UInt64 {
-        try await ociBackend.collectOrphanedImageContent()
+        try await requireOCIBackend().collectOrphanedImageContent()
     }
 
     public func ociInfrastructureImages() async throws -> OCIInfrastructureImages {
-        try await ociBackend.infrastructureImages()
+        try await requireOCIBackend().infrastructureImages()
     }
 
     public func ociContainers() async throws -> [OCIContainerState] {
-        try await ociBackend.containers()
+        try await requireOCIBackend().containers()
     }
 
     public func deleteOCIContainer(named name: String) async throws {
-        try await ociBackend.deleteContainer(named: name)
+        try await requireOCIBackend().deleteContainer(named: name)
     }
 
     public func ociPersistentWorkspaces() async throws
         -> [OCIPersistentWorkspaceState]
     {
-        try await ociBackend.persistentWorkspaces(configuration: ociConfiguration)
+        try await requireOCIBackend().persistentWorkspaces(configuration: ociConfiguration)
     }
 
     public func deleteOCIPersistentWorkspace(named name: String) async throws {
-        try await ociBackend.deletePersistentWorkspace(
+        try await requireOCIBackend().deletePersistentWorkspace(
             named: name,
             configuration: ociConfiguration)
     }
@@ -159,7 +173,7 @@ public actor ColliderRuntime {
         _ workspace: PersistentWorkspaceDeclaration,
         imageReference: String
     ) async throws {
-        try await ociBackend.reclaimPersistentWorkspace(
+        try await requireOCIBackend().reclaimPersistentWorkspace(
             workspace,
             imageReference: imageReference,
             configuration: ociConfiguration,

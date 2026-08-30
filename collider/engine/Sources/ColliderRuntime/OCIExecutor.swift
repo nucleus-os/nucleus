@@ -52,6 +52,11 @@ package enum OCIExecutorFailure: Error, CustomStringConvertible {
     case unsupportedExecutionPlatform(ExecutionPlatform)
     case unsupportedPolicy
     case unsupportedRunner(RunnerPlatform)
+    /// No container backend at all, which is a property of how the runtime was
+    /// built rather than of the host it is running on. Distinct from
+    /// `unsupportedRunner`, which a backend that exists raises when asked to run
+    /// somewhere it cannot.
+    case noRuntimeBackend
 
     package var description: String {
         switch self {
@@ -65,6 +70,8 @@ package enum OCIExecutorFailure: Error, CustomStringConvertible {
         case .unsupportedPolicy:
             "OCI executor requires all capabilities dropped, privilege acquisition "
                 + "prohibited, and a process limit"
+        case .noRuntimeBackend:
+            "no container runtime backend is configured"
         case .unsupportedRunner(let runner):
             "unsupported OCI runner: \(runner.operatingSystem.rawValue)/"
                 + runner.architecture.rawValue
