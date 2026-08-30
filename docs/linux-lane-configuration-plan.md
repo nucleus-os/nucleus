@@ -55,10 +55,46 @@ leaves the design question that produced the crash: whether a back-reference rea
 during deinitialization should tolerate a host already torn down, rather than
 requiring every present and future test to pin the fixture.
 
-Achieved state: the Linux lane passes in release without any test pinning a
-fixture to make it do so.
+The design question is settled, and the answer is a rule the module already
+keeps everywhere else: a `deinit` does not read an `unowned` reference. ARC
+deinitializes an owner before the cascade it triggers finishes, and `unowned`
+is only guaranteed during ordinary use, which deinitialization is not. Of every
+`deinit` in the Wayland runtime module, exactly one reaches outward, and it is
+`WlSurface`'s -- the rest release only what they own.
 
-Gate: `collider test runtime` passes with the Linux lane building `.release`.
+So the outward half of that deinitializer moves to an explicit destruction entry
+point: `roleSurfaceDestroyed`, `detachFromParent`, `detachSubsurfaceChildren`,
+the pointer-cursor unbind, `removeSurface`, `deferBufferRelease`, and
+`sceneDelegate.surfaceDestroyed`. A `wl_surface` is owned solely by its
+resource's `user_data`, so the resource's destruction is the real destroy event
+and the deinitializer is only its echo; `WaylandDisplay` already attaches
+resource and client lifetime listeners through
+`swift_wayland_resource_lifetime_listener_attach`, so the seam exists and is in
+use. What stays in `deinit` is what the surface owns: frame callbacks,
+presentation feedback, and the buffer-release contract.
+
+Three alternatives were considered and rejected. Making the back-references
+`weak` converts a lifetime error into a silent no-op and taxes
+`RouterSurfaceSceneDriver.host`, which is read on every commit. Pinning the
+fixture with `withExtendedLifetime` -- which is what currently holds the tests
+together -- cannot cover a suite that holds its graph as a stored property, and
+protects only the tests that exist today. Destroying the display before the host
+does not apply at all: tests construct surfaces directly, with no `wl_resource`
+to destroy.
+
+Achieved state: the Linux lane passes in release, no `deinit` in the module
+reads an `unowned` reference, and no test pins a fixture to make either true.
+The eighteen `withExtendedLifetime` pins revert with the change that makes them
+unnecessary.
+
+Gate: `collider test runtime` passes with the Linux lane building `.release`,
+with those pins removed.
+
+One migration to make deliberately rather than discover: tests build surfaces
+without resources, so nothing will invoke the new entry point for them. A test
+that wants destruction semantics has to ask for them, which is the clearer
+arrangement, but each existing test that relied on the deinitializer to notify
+has to be found and converted.
 
 ## Phase 2: Converge the lanes
 
