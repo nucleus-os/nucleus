@@ -1105,7 +1105,18 @@ package struct ComponentRegistry {
                         key: "nucleus-swiftpm",
                         artifactTarget: resolvedArtifactTarget,
                         role: "build"),
-                    capacityBytes: 100 * 1_024 * 1_024 * 1_024,
+                    // Sized against the reachable working set of a full
+                    // verification, which is the largest operation that mounts
+                    // this workspace. That sweep plans eight SwiftPM
+                    // invocations against linux-arm64-glibc, one build and
+                    // seven test products, and identity-context retention never
+                    // evicts a context a planned task will read. At the roughly
+                    // twelve gigabytes each measured here that is the whole
+                    // hundred gigabytes this held before, which is how a sweep
+                    // filled it and failed on ENOSPC mid-link. The ceiling is
+                    // the sweep's working set plus room for it to grow, not a
+                    // round number.
+                    capacityBytes: 200 * 1_024 * 1_024 * 1_024,
                     filesystem: .ext4,
                     journal: .writeback64MiB),
                 compilerCacheWorkspace: PersistentWorkspaceDeclaration(

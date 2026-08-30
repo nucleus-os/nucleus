@@ -385,3 +385,65 @@ way to answer the question.
 Gate: `collider cache status` reports every root's allocation and the store's
 total against the physical disk without a flag; `--measure-allocations` produces
 the same totals within the tolerance of concurrent writes.
+
+## Phase 9: Declare and Enforce Workspace Capacity
+
+Every persistent workspace is a sparse image provisioned at a nominal size
+chosen once: 100 GiB for most build roots, 300 GiB for the AOSP source and
+output roots, 150 GiB for the Chromium outputs, 50 GiB for the SwiftPM overlay
+and the AOSP compiler cache. Nothing states why a workspace has the size it has,
+nothing reports how close it is to that size, and a workspace that reaches it
+fails the task inside it with ENOSPC rather than with a statement about
+capacity.
+
+Allocation inside these images does not return to the host on its own, so a
+workspace's cost to the host is its high-water mark rather than its live
+contents. `core-skia-intermediates-linux-arm64-glibc-build` holds 0.3 GiB
+against a 100.1 GiB image and `nucleus-swiftpm-linux-arm64-glibc-build` holds
+97.5 GiB against the same size. Capacity is therefore stated against the mark,
+and headroom is the number that predicts failure.
+
+That workspace has already failed a protected-main sweep. The run verifying
+`d13b57c1` stopped at 58 of 71 tasks with `No space left on device (28)` from
+`mkdtemp`, and with `ld.lld` taking SIGBUS on an mmap'd output in the same
+workspace, which is what a full filesystem looks like to a linker. The volume
+measured 98.75 GiB of 100.12 GiB afterward.
+
+Nothing had accumulated improperly. Phase 4 bounds context count, and it is
+working. The sweep's own reachable set is simply larger than the volume.
+Planning a full verification reports fourteen SwiftPM invocations, and eight of
+them resolve against `linux-arm64-glibc`: one build and seven test products. The
+remaining six are one x86_64 build and five that execute natively on the host.
+Eight contexts against the ninety-eight gigabytes the workspace held is roughly
+twelve gigabytes each, so this workspace was provisioned at exactly its own
+working set with nothing left over. Phase 4 evicts by reachability first and
+explicitly never evicts a context a planned task will read, so every one of
+those eight is unevictable by design while the run that needs them is planned.
+The bound cannot save a root whose single-operation working set does not fit.
+
+The same split explains the sibling. `linux-x86-64-glibc` resolves one of the
+fourteen rather than eight, and holds 23.1 GiB rather than 98.75, because that
+lane builds without running the Linux test products.
+
+Capacity is therefore sized against the reachable working set of the largest
+single operation that mounts the workspace, and that operation is the
+verification sweep. A nominal size below that number is not a budget, it is a
+scheduled failure. Collider treats a declared capacity that disagrees with an
+existing volume as a configuration mismatch and refuses the mount, so raising a
+ceiling is not a change that takes effect on its own: the declaration and the
+recreation of the volume are one operation, and every task holding state in that
+workspace rebuilds from empty.
+
+Achieved state: each workspace declares its nominal capacity beside the role
+that justifies it. A run reports allocation against capacity for every workspace
+it mounts, and a workspace crossing its declared threshold fails the run naming
+the workspace and its remaining headroom, rather than surfacing ENOSPC from
+inside a container where the message describes a write instead of a store.
+Enforcement reads what the builder already has and does not wait on Phase 6;
+reporting the same headroom from the interactive account arrives with it.
+
+Gate: `collider cache status` reports capacity, allocation, and headroom for
+every workspace; a workspace driven past its threshold fails with that statement
+and not with ENOSPC; the arm64 Linux SwiftPM workspace is returned below its
+threshold, and the reason its allocation exceeded its sibling's is recorded
+rather than absorbed by growing the image.
