@@ -215,12 +215,13 @@ func normalizedRootVerbsResolveTheRetiredDomainOperations() async throws {
             "XDG_CACHE_HOME": overriddenCache.path,
         ],
         runtime: ColliderRuntime())
-    let defaultCatalog = try await ComponentRegistry(context: defaultContext).componentCatalog(
-        hostAugmentation: HostCatalogAugmentation.none)
-    let overriddenCatalog = try await ComponentRegistry(
-        context: overriddenContext
-    ).componentCatalog(
-        hostAugmentation: HostCatalogAugmentation.none)
+    // Two independent catalogs, built at once for the same reason.
+    async let defaultCatalogTask = ComponentRegistry(context: defaultContext)
+        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+    async let overriddenCatalogTask = ComponentRegistry(context: overriddenContext)
+        .componentCatalog(hostAugmentation: HostCatalogAugmentation.none)
+    let defaultCatalog = try await defaultCatalogTask
+    let overriddenCatalog = try await overriddenCatalogTask
     let hostStorage = try MacOSHostStorageLayout.current()
 
     #expect(
@@ -320,11 +321,16 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
         prefix: FilePath("/nucleus-runtime"),
         selection: RuntimeBuildSelection())
 
-    let withoutLinuxOperations = try await registry.componentCatalog(
+    // Concurrently: constructing a catalog is the expensive part of this suite
+    // and these two share nothing, so running them in sequence made this test
+    // cost two of them back to back.
+    async let withoutLinuxOperationsTask = registry.componentCatalog(
         hostAugmentation: HostCatalogAugmentation.none)
-    let withLinuxOperations = try await registry.componentCatalog(
+    async let withLinuxOperationsTask = registry.componentCatalog(
         hostAugmentation: .linux(
             shellConfiguration: shellConfiguration))
+    let withoutLinuxOperations = try await withoutLinuxOperationsTask
+    let withLinuxOperations = try await withLinuxOperationsTask
 
     #expect(
         Set(withoutLinuxOperations.storage.map(\.id)).count

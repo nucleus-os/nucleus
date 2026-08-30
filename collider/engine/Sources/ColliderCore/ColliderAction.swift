@@ -803,7 +803,10 @@ public struct AnyColliderAction: Hashable, Sendable {
             guard effect.scope.root.string.hasPrefix("/") else {
                 throw ActionDeclarationFailure.relativeEffectRoot(effect.scope.root)
             }
-            guard effect.scope.root.lexicallyNormalized() == effect.scope.root else {
+            // Asked, not constructed. Normalizing to compare allocates a
+            // whole path per effect per action, and every action declaration in
+            // the catalog runs this.
+            guard effect.scope.root.isLexicallyNormal else {
                 throw ActionDeclarationFailure.noncanonicalEffectRoot(effect.scope.root)
             }
         }

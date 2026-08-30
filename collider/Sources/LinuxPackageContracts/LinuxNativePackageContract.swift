@@ -573,7 +573,7 @@ package func validatedLinuxPackageAbsolutePath(_ value: String) throws -> FilePa
         components.first?.isEmpty == true,
         components.dropFirst().allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
         path.isAbsolute,
-        path.lexicallyNormalized() == path
+        path.isLexicallyNormal
     else {
         throw LinuxNativePackageContractFailure(
             "package owns an unsafe path: \(value)")
@@ -598,7 +598,7 @@ package func validateLinuxPackageSymlinkTarget(
         !target.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.contains),
         components.allSatisfy({ $0 != "." }),
         targetPath.string == target,
-        targetPath.lexicallyNormalized() == targetPath
+        targetPath.isLexicallyNormal
     else {
         throw LinuxNativePackageContractFailure(
             "package symlink has an unsafe target: \(linkPath) -> \(target)")
