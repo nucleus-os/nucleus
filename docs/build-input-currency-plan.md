@@ -111,11 +111,23 @@ v4.4.0. Upstream is v7.0.1. The pinned commit is three major versions behind and
 carries a runner runtime that GitHub deprecates on its own schedule, which makes
 this the one input in this plan whose failure arrives without a Nucleus change.
 
-Achieved state: the workflow pins the v7.0.1 commit, retaining the
-commit-pinned form rather than a floating tag.
+The bump is not a repository-tree change alone. This repository restricts
+Actions to a selected list, requires SHA pinning, and allows neither
+GitHub-owned nor verified publishers by default. The allowlist holds exactly one
+pattern, `actions/checkout` at the v4.4.0 commit, so a workflow naming any other
+revision fails before a job starts: the run reports `startup_failure` with no
+job, no annotation, and a zero-second duration, which reads as a malformed
+workflow rather than as a policy refusal. An attempt to bump the pin alone
+produced exactly that and was reverted.
+
+Achieved state: the repository's selected-actions allowlist names the v7.0.1
+commit and the workflow pins the same commit, in that order. The allowlist entry
+is a repository settings change rather than a tracked file, so this phase is the
+one place in this plan where the change does not live entirely in the tree, and
+the settings change is the prerequisite rather than the follow-up.
 
 Gate: the protected-main verification sweep completes its checkout on the
-upgraded action.
+upgraded action, and the workflow's Node 20 deprecation warning is gone.
 
 ## Phase 5: Apple container stack currency
 
