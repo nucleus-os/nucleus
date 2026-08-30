@@ -145,11 +145,28 @@ extension IdentityPathMap {
 }
 
 extension [UInt8] {
+    /// Whether `pattern` appears anywhere in these bytes.
+    ///
+    /// Compared in place. Slicing a candidate window into a new array to
+    /// compare it allocates once per starting offset -- for every declared root,
+    /// against every task's identity payload, on every plan -- and comparing
+    /// the bytes where they already are costs nothing beyond the comparison.
     fileprivate func containsSubsequence(_ pattern: [UInt8]) -> Bool {
         guard !pattern.isEmpty, count >= pattern.count else { return false }
-        for start in 0...(count - pattern.count)
-        where Array(self[start..<(start + pattern.count)]) == pattern {
-            return true
+        let first = pattern[0]
+        let limit = count - pattern.count
+        var start = 0
+        while start <= limit {
+            if self[start] == first {
+                var offset = 1
+                while offset < pattern.count,
+                    self[start + offset] == pattern[offset]
+                {
+                    offset += 1
+                }
+                if offset == pattern.count { return true }
+            }
+            start += 1
         }
         return false
     }

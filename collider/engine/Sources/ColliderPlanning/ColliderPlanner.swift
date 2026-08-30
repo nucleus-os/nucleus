@@ -58,6 +58,7 @@ public struct ColliderPlanner {
         let ordered = try graph.orderedTasks(selecting: selected)
         let explicitlySelected = Set(selected)
         let identityBuilder = TaskIdentityBuilder()
+        let normalization = NormalizationCache()
         var identities: [TaskID: ArtifactDigest] = [:]
         var entries: [TaskPlanEntry] = []
 
@@ -104,7 +105,7 @@ public struct ColliderPlanner {
                     explanation: assessment.explanation,
                     coordinates: coordinates,
                     lane: lane,
-                    claims: normalizedClaims(for: task),
+                    claims: normalizedClaims(for: task, normalizing: normalization),
                     durationWorkload: workload,
                     durationEstimate: services.durationEstimate(workload).map {
                         TaskDurationEstimate(
@@ -177,7 +178,7 @@ public struct ColliderPlanner {
                     explanation: assessment.explanation,
                     coordinates: coordinates,
                     lane: lane,
-                    claims: normalizedClaims(for: lowered.task),
+                    claims: normalizedClaims(for: lowered.task, normalizing: normalization),
                     logicalOwners: lowered.logicalOwners.sorted {
                         $0.rawValue < $1.rawValue
                     },
@@ -292,8 +293,27 @@ public struct ColliderPlanner {
             artifact: action.requirements.artifactTarget)
     }
 
+    /// Lexical normalization, memoized for one plan.
+    ///
+    /// Claims are derived from every task's locks and effects, and the roots
+    /// they name repeat heavily across a graph -- the checkout, the store, a
+    /// handful of scratch roots. Normalizing is pure and its inputs are few, so
+    /// a plan normalizes each distinct path once instead of once per task that
+    /// mentions it.
+    private final class NormalizationCache {
+        private var normalized: [FilePath: String] = [:]
+
+        func callAsFunction(_ path: FilePath) -> String {
+            if let existing = normalized[path] { return existing }
+            let result = path.lexicallyNormalized().string
+            normalized[path] = result
+            return result
+        }
+    }
+
     private func normalizedClaims(
-        for task: TaskDeclaration
+        for task: TaskDeclaration,
+        normalizing normalize: NormalizationCache
     ) -> [PlannedTaskClaim] {
         var claims: [String: PlannedTaskClaim] = [:]
         func insert(_ claim: PlannedTaskClaim) {
@@ -306,7 +326,7 @@ public struct ColliderPlanner {
                 switch lock {
                 case .checkout(let value): "checkout:\(value)"
                 case .shared(let path):
-                    "shared:\(path.lexicallyNormalized().string)"
+                    "shared:\(normalize(path))"
                 }
             insert(
                 PlannedTaskClaim(
@@ -316,8 +336,7 @@ public struct ColliderPlanner {
         for effect in task.action?.requirements.effects ?? [] {
             insert(
                 PlannedTaskClaim(
-                    subject: .path(
-                        effect.scope.root.lexicallyNormalized().string),
+                    subject: .path(normalize(effect.scope.root)),
                     access: effect.access == .read ? .shared : .exclusive))
         }
         for effect in task.action?.requirements.persistentWorkspaceEffects ?? [] {
