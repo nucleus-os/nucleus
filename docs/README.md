@@ -50,12 +50,12 @@ reuse.
    the container substrate and source-built dependencies current before the
    packaging, distribution, and qualification chain binds artifact digests to
    inputs that cannot be re-obtained.
-3. Complete the [task identity precision plan](task-identity-precision-plan.md).
-   A revision touching three files gives 71 of 286 tasks work, because two
-   mutually exclusive activation paths give one Swift SDK generation two
-   identities, and five C and C++ components consume the whole SDK rather than
-   the toolchain they actually read. Restoring identity precision makes every
-   gate below cheaper and makes a clean result mean what it says.
+3. Complete the [Linux lane configuration plan](linux-lane-configuration-plan.md).
+   One package closure compiles twice per verification sweep, into two Linux
+   contexts an omitted default produced rather than anyone chose, for 60% of the
+   sweep. Converging them costs no checking, and the release timing it exposes
+   the Linux lane to has already found two lifetime defects that debug
+   concealed.
 4. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
@@ -193,6 +193,12 @@ that physical arm64 result.
 - [macOS host storage consolidation](macos-host-storage-consolidation-plan.md)
   established the conventional per-user host layout and removed custom APFS
   volume policy.
+- [Task identity precision](task-identity-precision-plan.md) gave one active
+  Swift SDK generation one identity whichever path established it, and faced the
+  SDK with a native sysroot so the six C and C++ components that read only the
+  sysroot no longer re-key on changes confined to the Swift half. A comment
+  appended to a validation script had dirtied all sixteen SDK consumers on both
+  architectures; it now dirties none.
 - [Collider process execution](collider-process-execution-plan.md) put every
   child process on one concurrently drained mechanism, made the source-identity
   path async so planning no longer blocks a cooperative thread, gave the

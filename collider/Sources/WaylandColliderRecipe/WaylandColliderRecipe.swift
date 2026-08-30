@@ -72,7 +72,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             generationRoot: context.cacheRoot.appending("generation/wayland"),
             environment: context.environment,
             placement: context.identityPathMap,
-            swiftPM: context.swiftPM(.linux(.arm64)),
+            swiftPM: context.swiftPM(.linux(.arm64, configuration: .debug)),
             builder: native.builder,
             scanner: scanner)
         tasks.append(contentsOf: generation.tasks)

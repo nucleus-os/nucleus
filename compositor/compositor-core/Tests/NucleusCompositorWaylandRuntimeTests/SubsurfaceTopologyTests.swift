@@ -1,4 +1,5 @@
 import Testing
+
 @testable import NucleusCompositorWaylandRuntime
 
 @MainActor
@@ -9,6 +10,7 @@ import Testing
 
     @Test func positionAndStackApplyOnlyWithParentCommit() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let first = surface(compositor, graph: graph)
@@ -28,8 +30,9 @@ import Testing
         #expect(first.subsurfaceX == 12)
         #expect(first.subsurfaceY == 34)
 
-        #expect(parent.placeChild(
-            second, relativeTo: first, .below))
+        #expect(
+            parent.placeChild(
+                second, relativeTo: first, .below))
         #expect(parent.subsurfaceChildren[0] === first)
         parent.commit()
         #expect(parent.subsurfaceChildren[0] === second)
@@ -38,6 +41,7 @@ import Testing
 
     @Test func ancestryCycleAndInheritedSynchronizationAreExplicit() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let root = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)
@@ -59,6 +63,7 @@ import Testing
 
     @Test func alphaAndTopologyLatchWithTheSynchronizedChildCommit() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)
@@ -80,6 +85,7 @@ import Testing
 
     @Test func stateOnlyChildCommitAccumulatesOnEarlierCachedState() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)

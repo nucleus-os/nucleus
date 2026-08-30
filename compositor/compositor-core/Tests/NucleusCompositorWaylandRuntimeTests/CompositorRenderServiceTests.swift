@@ -1,6 +1,7 @@
 import Glibc
-import Testing
 import NucleusCompositorServer
+import Testing
+
 @testable import NucleusCompositorWaylandRuntime
 
 @MainActor
@@ -99,8 +100,9 @@ final class RenderServiceSpy: CompositorRenderService {
         sourceRegion _: RenderCaptureRegion?,
         completion: @escaping @MainActor (RenderPixelCapture?) -> Void
     ) -> UInt64? {
-        completion(RenderPixelCapture(
-            pixels: [1, 2, 3, 4], width: 1, height: 1))
+        completion(
+            RenderPixelCapture(
+                pixels: [1, 2, 3, 4], width: 1, height: 1))
         return 1
     }
 
@@ -108,8 +110,9 @@ final class RenderServiceSpy: CompositorRenderService {
         iosurfaceID _: UInt32,
         completion: @escaping @MainActor (RenderPixelCapture?) -> Void
     ) -> UInt64? {
-        completion(RenderPixelCapture(
-            pixels: [5, 6, 7, 8], width: 1, height: 1))
+        completion(
+            RenderPixelCapture(
+                pixels: [5, 6, 7, 8], width: 1, height: 1))
         return 2
     }
 
@@ -148,7 +151,9 @@ final class RenderServiceSpy: CompositorRenderService {
 
 @MainActor
 @Test func typedRenderServicePreservesValuesAndBorrowedOwnership() {
-    let server = WaylandTestGraph().server
+    let graph = WaylandTestGraph()
+    defer { withExtendedLifetime(graph) {} }
+    let server = graph.server
 
     let driver = RouterRenderDriver(server: server)
     #expect(driver.presentationClockId == UInt32(CLOCK_MONOTONIC))
@@ -194,13 +199,15 @@ final class RenderServiceSpy: CompositorRenderService {
         pixels: shmPixels.span)
     shmPixels[0] = 0
     #expect(shmID == 41)
-    #expect(spy.shmSnapshot == .init(
-        previousIOSurfaceID: 37,
-        width: 2,
-        height: 1,
-        drmFormat: 0x3432_5241,
-        stride: 8,
-        pixels: [10, 20, 30, 40, 50, 60, 70, 80]))
+    #expect(
+        spy.shmSnapshot
+            == .init(
+                previousIOSurfaceID: 37,
+                width: 2,
+                height: 1,
+                drmFormat: 0x3432_5241,
+                stride: 8,
+                pixels: [10, 20, 30, 40, 50, 60, 70, 80]))
 
     let importRequest = RouterSurfaceSceneDriver.renderDmabufImport(
         previousIOSurfaceID: 38,
@@ -208,53 +215,60 @@ final class RenderServiceSpy: CompositorRenderService {
         acquire: SyncPoint(handle: 101, point: 102),
         release: SyncPoint(handle: 201, point: 202))
     #expect(spy.importDmabuf(importRequest) == 42)
-    #expect(spy.dmabufImport == RenderDmabufImport(
-        previousIOSurfaceID: 38,
-        width: 640,
-        height: 480,
-        drmFormat: 0x3432_5258,
-        modifier: 99,
-        planes: [
-            RenderDmabufPlane(
-                fd: firstPipe[0], offset: 4, stride: 2_560),
-            RenderDmabufPlane(
-                fd: secondPipe[0], offset: 8, stride: 1_280),
-        ],
-        acquire: RenderSyncPoint(handle: 101, point: 102),
-        release: RenderSyncPoint(handle: 201, point: 202)))
+    #expect(
+        spy.dmabufImport
+            == RenderDmabufImport(
+                previousIOSurfaceID: 38,
+                width: 640,
+                height: 480,
+                drmFormat: 0x3432_5258,
+                modifier: 99,
+                planes: [
+                    RenderDmabufPlane(
+                        fd: firstPipe[0], offset: 4, stride: 2_560),
+                    RenderDmabufPlane(
+                        fd: secondPipe[0], offset: 8, stride: 1_280),
+                ],
+                acquire: RenderSyncPoint(handle: 101, point: 102),
+                release: RenderSyncPoint(handle: 201, point: 202)))
 
     #expect(driver.dmabufImport(attrs))
-    #expect(spy.dmabufProbe == RenderDmabufProbe(
-        width: 640,
-        height: 480,
-        drmFormat: 0x3432_5258,
-        modifier: 99,
-        planes: [
-            RenderDmabufPlane(
-                fd: firstPipe[0], offset: 4, stride: 2_560),
-            RenderDmabufPlane(
-                fd: secondPipe[0], offset: 8, stride: 1_280),
-        ]))
+    #expect(
+        spy.dmabufProbe
+            == RenderDmabufProbe(
+                width: 640,
+                height: 480,
+                drmFormat: 0x3432_5258,
+                modifier: 99,
+                planes: [
+                    RenderDmabufPlane(
+                        fd: firstPipe[0], offset: 4, stride: 2_560),
+                    RenderDmabufPlane(
+                        fd: secondPipe[0], offset: 8, stride: 1_280),
+                ]))
     #expect(fcntl(firstPipe[0], F_GETFD) >= 0)
     #expect(fcntl(secondPipe[0], F_GETFD) >= 0)
 
     #expect(driver.presentationClockId == 7)
     #expect(driver.dmabufMainDevice() == 9)
-    #expect(driver.dmabufSupportedFormats() == [
-        DmabufFormat(format: 0x3432_5258, modifier: 11),
-        DmabufFormat(format: 0x3432_5241, modifier: 12),
-    ])
+    #expect(
+        driver.dmabufSupportedFormats() == [
+            DmabufFormat(format: 0x3432_5258, modifier: 11),
+            DmabufFormat(format: 0x3432_5241, modifier: 12),
+        ])
     #expect(driver.gammaRampSize(output: nil) == 256)
     driver.gammaApply(
         output: nil,
         red: [1, 2],
         green: [3, 4],
         blue: [5, 6])
-    #expect(spy.gammaRamp == RenderGammaRamp(
-        outputID: 0,
-        red: [1, 2],
-        green: [3, 4],
-        blue: [5, 6]))
+    #expect(
+        spy.gammaRamp
+            == RenderGammaRamp(
+                outputID: 0,
+                red: [1, 2],
+                green: [3, 4],
+                blue: [5, 6]))
     driver.gammaClear(output: nil)
     #expect(spy.clearedOutputID == 0)
     #expect(driver.importSyncobjTimeline(fd: 17) == 17)
@@ -269,29 +283,34 @@ final class RenderServiceSpy: CompositorRenderService {
         sourceRegion: region,
         overlaysCursor: true)
     var captureSucceeded = false
-    #expect(spy.beginCaptureOutput(to: captureRequest) {
-        captureSucceeded = $0
-    } != nil)
+    #expect(
+        spy.beginCaptureOutput(to: captureRequest) {
+            captureSucceeded = $0
+        } != nil)
     #expect(captureSucceeded)
-    #expect(spy.dmabufCapture == RenderDmabufCapture(
-        outputID: 73,
-        width: 640,
-        height: 480,
-        drmFormat: 0x3432_5258,
-        modifier: 99,
-        planes: [
-            RenderDmabufPlane(
-                fd: firstPipe[0], offset: 4, stride: 2_560),
-            RenderDmabufPlane(
-                fd: secondPipe[0], offset: 8, stride: 1_280),
-        ],
-        sourceRegion: region,
-        overlaysCursor: true))
+    #expect(
+        spy.dmabufCapture
+            == RenderDmabufCapture(
+                outputID: 73,
+                width: 640,
+                height: 480,
+                drmFormat: 0x3432_5258,
+                modifier: 99,
+                planes: [
+                    RenderDmabufPlane(
+                        fd: firstPipe[0], offset: 4, stride: 2_560),
+                    RenderDmabufPlane(
+                        fd: secondPipe[0], offset: 8, stride: 1_280),
+                ],
+                sourceRegion: region,
+                overlaysCursor: true))
 }
 
 @MainActor
 @Test func serverDoesNotOwnRenderServiceLifetime() {
-    let server = WaylandTestGraph().server
+    let graph = WaylandTestGraph()
+    defer { withExtendedLifetime(graph) {} }
+    let server = graph.server
     #expect(server.renderService == nil)
 
     weak var releasedService: RenderServiceSpy?

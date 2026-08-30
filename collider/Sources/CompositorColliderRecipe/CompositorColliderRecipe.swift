@@ -20,7 +20,7 @@ public enum CompositorColliderRecipe: ColliderComponent {
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
-        let swiftPM = try context.swiftPM(.linux(.arm64))
+        let swiftPM = try context.swiftPM(.linux(.arm64, configuration: .debug))
         let test = testDRMGPU(
             root: root,
             environment: context.environment,

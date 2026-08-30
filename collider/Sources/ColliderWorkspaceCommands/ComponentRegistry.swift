@@ -182,7 +182,9 @@ package struct ComponentRegistry {
             .hostDebug: try await context.swiftPMInvocation()
         ]
         for architecture in PlatformArchitecture.allCases {
-            buildContexts[.linux(architecture)] = try await linuxSwiftPMInvocation(
+            buildContexts[
+                .linux(architecture, configuration: .debug)
+            ] = try await linuxSwiftPMInvocation(
                 architecture: architecture,
                 builder: nativeConfiguration,
                 checkoutRoots: checkoutRoots)
@@ -204,7 +206,9 @@ package struct ComponentRegistry {
             checkoutRoots: assemblerCheckoutRoots)
         buildContexts[.linuxAssembler] = runtimeAssembler
         for sanitizer in SanitizerKind.allCases {
-            buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
+            buildContexts[
+                .linux(.arm64, configuration: .debug, sanitizer: sanitizer.rawValue)
+            ] =
                 try await linuxSwiftPMInvocation(
                     sanitizer: sanitizer.rawValue,
                     linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [],

@@ -957,7 +957,14 @@ private func drainWaylandMessages(
                         advertisedVersion: 1,
                         owner: { owner, _ in owner }))),
         ]
-        _ = globals
+        // These server-side globals are what the client binds, and nothing else
+        // holds them: `wl_global_create` keeps a raw pointer, not a reference.
+        // `_ = globals` discards the array immediately rather than extending its
+        // lifetime, so an optimized build was free to destroy every global
+        // before the client's first round trip -- leaving the registry with
+        // everything wanted and nothing bound. Debug releases late enough to
+        // hide it.
+        defer { withExtendedLifetime(globals) {} }
 
         var sockets: [Int32] = [0, 0]
         try #require(

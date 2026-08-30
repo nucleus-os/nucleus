@@ -227,7 +227,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 architecture: architecture,
                 root: context.repositoryRoot,
                 environment: context.environment,
-                swiftPM: try context.swiftPM(.linux(architecture)),
+                swiftPM: try context.swiftPM(.linux(architecture, configuration: .debug)),
                 targetArtifacts: try native.artifacts(for: target))
             buildRoots.insert(LinuxTaskIDs.build(architecture))
             if architecture == .arm64 {

@@ -94,6 +94,7 @@ struct WaylandProtocolConformanceTests {
     /// an inert protocol object from becoming discoverable accidentally.
     @Test func productionRegistryMatchesSupportedProtocolContract() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let sink = InMemoryCommitSink()
         let author = WindowSceneAuthor(commitSinkFactory: { sink })
         let runtime = try #require(graph.routerRuntime(author: author))
@@ -155,6 +156,7 @@ struct WaylandProtocolConformanceTests {
 
     @Test func syntheticInputGlobalsAreVisibleOnlyOnTheSupervisorCapability() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let author = WindowSceneAuthor(commitSinkFactory: { InMemoryCommitSink() })
         let runtime = try #require(graph.routerRuntime(author: author))
         graph.host.install(runtime)
@@ -955,6 +957,7 @@ struct WaylandProtocolConformanceTests {
     /// and the reconcile path the unminimize fix drives.
     @MainActor @Test func foreignToplevelReportsMinimizedState() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let router = try #require(NucleusWaylandRouter())
         let compositor = graph.compositor()
         compositor.register(in: router)
@@ -2014,6 +2017,7 @@ struct WaylandProtocolConformanceTests {
     /// had no path back, so this would leave the window stranded.
     @MainActor @Test func foreignToplevelUnminimizeRestoresWindow() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let seat = graph.seat(display: graph.display)
         let driver = RouterWindowDriver(

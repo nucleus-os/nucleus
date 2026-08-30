@@ -195,9 +195,18 @@ public struct RecipeBuildContextID: RawRepresentable, Hashable, Codable, Sendabl
     /// builder image, for recipes that run one of them.
     public static let linuxAssembler = Self(rawValue: "linux.assembler")
 
+    /// A Linux build context.
+    ///
+    /// The configuration is not defaulted. It was, to `.debug`, and three lanes
+    /// took that by omission while the release gates asked for `.release`, so
+    /// one closure compiles twice into separate scratch directories -- 5,140
+    /// targets and 6,872 targets of a heavily overlapping graph, for 60% of a
+    /// verification sweep. Which configuration a lane builds is a decision, and
+    /// naming it is how the graph stops accumulating contexts nobody chose.
+    /// Converging them is `docs/linux-lane-configuration-plan.md`.
     public static func linux(
         _ architecture: PlatformArchitecture,
-        configuration: SwiftBuildConfiguration = .debug,
+        configuration: SwiftBuildConfiguration,
         sanitizer: String? = nil
     ) -> Self {
         let suffix = sanitizer.map { ".sanitize.\($0)" } ?? ""

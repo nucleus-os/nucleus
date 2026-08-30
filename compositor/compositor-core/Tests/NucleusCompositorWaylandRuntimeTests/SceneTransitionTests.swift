@@ -13,6 +13,7 @@ struct NucleusCompositorTransitionStressTests {
     @MainActor
     @Test func firstMapPublishesAlreadyImportedRootContent() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let sink = InMemoryCommitSink()
         let author = WindowSceneAuthor(commitSinkFactory: { sink })
         let feeder = SceneFeeder(author: author, host: graph.host)
@@ -47,6 +48,7 @@ struct NucleusCompositorTransitionStressTests {
     @MainActor
     @Test func closingTransitionRetainsSnapshotAndDestroysExactlyOnce() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let server = graph.server
 
         let sink = InMemoryCommitSink()
@@ -139,6 +141,7 @@ struct NucleusCompositorTransitionStressTests {
     @MainActor
     @Test func secondTileAtomicallySupersedesAndRetiresFirstSnapshot() throws {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let server = graph.server
 
         let sink = InMemoryCommitSink()
@@ -232,6 +235,7 @@ struct NucleusCompositorTransitionStressTests {
     @MainActor
     @Test func sessionLockCancellationRetiresTileSnapshotAndMotion() {
         let graph = WaylandTestGraph()
+        defer { withExtendedLifetime(graph) {} }
         let server = graph.server
 
         let author = WindowSceneAuthor(

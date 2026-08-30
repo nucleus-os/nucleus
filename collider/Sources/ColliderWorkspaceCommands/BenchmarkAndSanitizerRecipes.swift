@@ -194,8 +194,11 @@ enum SanitizerColliderRecipe: ColliderComponent {
         var tasks: [TaskDeclaration] = []
         var entrypoints: [ComponentEntrypoint] = []
         for sanitizer in SanitizerKind.allCases {
+            // Sanitizers pair with debug: their reports name the code that
+            // triggered them, which optimization is free to have moved or
+            // erased. This lane duplicates no other, so it costs one context.
             let swiftPM = try context.swiftPM(
-                .linux(.arm64, sanitizer: sanitizer.rawValue))
+                .linux(.arm64, configuration: .debug, sanitizer: sanitizer.rawValue))
             var environment = context.environment
             environment.merge(sanitizer.runtimeEnvironment) { _, configured in configured }
             if sanitizer == .address {

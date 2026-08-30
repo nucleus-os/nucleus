@@ -1,4 +1,5 @@
 import Testing
+
 @testable import NucleusCompositorWaylandRuntime
 
 @MainActor
@@ -18,10 +19,11 @@ func activationTokensHaveUniqueOpaqueRandomPayloads() {
     for _ in 0..<1_024 {
         let token = manager.mintToken(authorized: true)
         #expect(token.utf8.count == 32)
-        #expect(token.utf8.allSatisfy { byte in
-            (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
-                || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
-        })
+        #expect(
+            token.utf8.allSatisfy { byte in
+                (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+                    || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+            })
         tokens.insert(token)
     }
 
@@ -53,6 +55,7 @@ func activationTokenGenerationRetriesAnActiveCollision() {
 @MainActor @Test
 func activationTokensRemainOpaqueAndOneShotAcrossTheWaylandWire() throws {
     let graph = WaylandTestGraph()
+    defer { withExtendedLifetime(graph) {} }
     let router = try #require(NucleusWaylandRouter())
     let compositor = graph.compositor()
     let manager = XdgActivationManager()
@@ -126,7 +129,8 @@ func activationTokensRemainOpaqueAndOneShotAcrossTheWaylandWire() throws {
     #expect(client.send(activation))
     client.pump()
     #expect(delegate.activations.count == 1)
-    #expect(delegate.activations.first?.surfaceID
-        == compositor.liveSurfaceIDs.first)
+    #expect(
+        delegate.activations.first?.surfaceID
+            == compositor.liveSurfaceIDs.first)
     #expect(delegate.activations.first?.token == authorizedToken)
 }
