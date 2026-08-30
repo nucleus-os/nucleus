@@ -306,23 +306,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func reusableActiveGeneration(
         _ configuration: SwiftTargetSDKGenerationConfiguration
     ) throws -> PreparedComponent {
-        var builder = TaskBuilder(
-            id: TaskID(rawValue: "swift-sdk.use-active-generation"),
-            component: component)
-        let generationMarker: ArtifactReference = try builder.output(
-            "generation-marker",
-            path: configuration.generation.appending(
-                ".nucleus-target-sdk-generation"),
-            validation: .regularFile)
-        let task = builder.build(
-            inputs: [.file(configuration.inputsFile)],
-            locks: [
-                .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
-            ],
-            recordsActiveArtifact: true)
-        let activation = ActivationArtifact(
-            task: task,
-            generationMarker: generationMarker)
+        let activation = try activationTask(configuration)
+        let task = activation.task
         let discoveries = try discoveryTasks(
             configuration,
             activation: activation)
@@ -396,10 +381,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 id: "swift-target-sdk-active",
                 owner: descriptor.id,
                 producers: producers(
-                    {
-                        $0 == "swift-sdk.activate-target-sdks"
-                            || $0 == "swift-sdk.use-active-generation"
-                    },
+                    { $0 == "swift-sdk.activate-target-sdks" },
                     runtime: "swift-sdk-generation-lifecycle"),
                 storageClass: .published,
                 root: configuration.active,
@@ -488,7 +470,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             generator: generator,
             runtimes: runtimes)
         let validation = try validationTasks(configuration, assembly: assembly)
-        let activation = try activationTask(configuration, validation: validation)
+        let activation = try activationTask(configuration, after: validation)
         let discoveries = try discoveryTasks(configuration, activation: activation)
         let ready = try readyTask(
             configuration,
@@ -1196,20 +1178,38 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         return ValidationArtifacts(tasks: tasks, marker: marker)
     }
 
+    /// The task that asserts which generation is the active Swift SDK.
+    ///
+    /// One generation has one identity, whichever path established it. The
+    /// generation directory is named by a digest over everything that defines
+    /// it -- the pinned inputs, the generator source, the validator, the NDK
+    /// and host toolchain -- so that name, carried here by the marker's output
+    /// path, is what identifies the assertion. Producing the generation in this
+    /// run rather than finding it already published is a difference in the work
+    /// the run had to do, not in which SDK is active.
+    ///
+    /// The generation subgraph is therefore ordered before this task rather
+    /// than consumed by it. Consuming it made the marker's recorded identity
+    /// depend on whether the run built the generation or reused it, and every
+    /// consumer of the SDK re-executed on each alternation while the toolchain
+    /// on disk never changed.
     private static func activationTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
-        validation: ValidationArtifacts
+        after validation: ValidationArtifacts? = nil
     ) throws -> ActivationArtifact {
         var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
             component: component)
-        builder.consume(validation.marker)
+        if let validation {
+            builder.after(validation.marker.ordering)
+        }
         let marker: ArtifactReference = try builder.output(
             "generation-marker",
             path: configuration.generation.appending(
                 ".nucleus-target-sdk-generation"),
             validation: .regularFile)
         let task = builder.build(
+            inputs: [.file(configuration.inputsFile)],
             postconditions: [
                 PathPostcondition(
                     path: configuration.active,
@@ -1392,12 +1392,27 @@ private struct ActivateSwiftSDKGenerationAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.readWrite, scope: .output(candidate)),
-                ActionEffect(.write, scope: .output(generation)),
+                // Read as well as write: whether a candidate was staged decides
+                // whether this generation still has to be published.
+                ActionEffect(.readWrite, scope: .output(generation)),
                 ActionEffect(.write, scope: .publication(active)),
             ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
+        // A run that found this generation already published staged no
+        // candidate, so the assertion this action makes is already true. The
+        // generation's own marker is what proves it, and requiring it keeps a
+        // genuinely missing candidate an error rather than a silent success.
+        guard try context.files.metadata(for: candidate)?.type == .directory else {
+            let published = generation.appending(".nucleus-target-sdk-generation")
+            guard try context.files.metadata(for: published)?.type == .regular else {
+                throw SwiftTargetSDKRecipeFailure.invalidInput(
+                    "no target SDK candidate at \(candidate), and \(generation) "
+                        + "has no generation marker to activate")
+            }
+            return
+        }
         let marker = candidate.appending(".nucleus-target-sdk-generation")
         guard try context.files.metadata(for: marker)?.type == .regular else {
             throw SwiftTargetSDKRecipeFailure.invalidInput(

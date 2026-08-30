@@ -31,33 +31,34 @@ Two mechanisms produce the churn, and they compound.
 
 ## Phase 1: Give one active generation one identity
 
-The recipe builds the active Swift SDK generation through two mutually
-exclusive paths. `swift-sdk.activate-target-sdks` runs when a full generation is
-produced, and `swift-sdk.use-active-generation` runs when
-`activeGenerationIsReusable` finds an existing generation the active symlink
-already resolves to. Both declare the same `generation-marker` output, at the
-same path, holding the same content. They are different tasks with different
-identities, so the recorded identity of that marker depends on which path last
-produced it.
+Status: active
+
+The recipe built the active Swift SDK generation through two mutually exclusive
+paths. `swift-sdk.activate-target-sdks` ran when a full generation was produced,
+and `swift-sdk.use-active-generation` ran when `activeGenerationIsReusable` found
+an existing generation the active symlink already resolved to. Both declared the
+same `generation-marker` output, at the same path, holding the same content.
+They were different tasks with different identities, so the recorded identity of
+that marker depended on which path last produced it.
 
 `swift-sdk.publish-active-generation` consumes that marker, and every consumer
 of the SDK consumes its result. Each flip between the two paths therefore
-changes the marker's producing identity, changes the published SDK artifact
-identity, and invalidates every SDK consumer -- while the generation directory
-on disk, the toolchain in it, and the marker's own 45 bytes of content are all
+changed the marker's producing identity, changed the published SDK artifact
+identity, and invalidated every SDK consumer -- while the generation directory
+on disk, the toolchain in it, and the marker's own 45 bytes of content were all
 unchanged.
 
-Three consecutive runs demonstrate the flip. A sweep took the activation path,
+Three consecutive runs demonstrated the flip. A sweep took the activation path,
 a following local build took the reuse path and reported
 `publish-active-generation` moving from `410e` to `97cc`, and the next sweep
 took the activation path again and recorded `97cc`. Nothing about the SDK
 differed across the middle transition; only the identity of the task that
 asserted it did.
 
-The flip is not command-scoped. `forceSwiftSDKGeneration` is set only by
+The flip was not command-scoped. `forceSwiftSDKGeneration` is set only by
 `collider build swift-sdk --rebuild`; every other invocation passes
 `reuseActiveGeneration: true` and lets `activeGenerationIsReusable` decide, so
-the path alternates whenever an SDK input changes and then stops changing --
+the path alternated whenever an SDK input changed and then stopped changing --
 exactly the local-iteration-then-sweep pattern this repository works in.
 
 Achieved state: one active generation has one identity, whichever path
@@ -65,9 +66,33 @@ established it. A run that reuses an existing generation records the marker
 identity that producing it would have recorded, so alternating between the two
 paths leaves the SDK artifact identity and every consumer of it clean.
 
-Gate: a full SDK generation, then a consumer build that takes the reuse path,
-then a third run, where the SDK artifact identity is identical across all three
-and no SDK consumer re-executes across the flip.
+`swift-sdk.use-active-generation` no longer exists. Both paths build
+`swift-sdk.activate-target-sdks`, with the same output slot, inputs, locks,
+postcondition, assessment policy, and action. The generation directory is named
+by a digest over everything that defines it, and the marker's output path
+carries that name, so the name is what identifies the assertion. Whether the run
+produced the generation or found it published is a difference in the work the
+run had to do, not in which SDK is active.
+
+The generation subgraph therefore reaches activation as an ordering edge rather
+than a consumed artifact. `ArtifactReference.ordering` expresses that: run after
+this artifact's producer without taking its identity. `TaskDeclaration` already
+separated `dependencies`, which identity encodes, from `executionDependencies`,
+which adds ordering; the edge was simply the wrong kind. The activation action
+publishes a staged candidate when one exists and otherwise requires the
+generation's own marker, so a genuinely missing candidate stays an error rather
+than becoming a silent success.
+
+Landed with a recipe test asserting that every field planning encodes into a
+task identity matches across the two paths while the ordering edge does not, and
+that activation carries no artifact references or identity dependencies at all.
+
+Remaining gate: a full SDK generation, then a consumer build that takes the
+reuse path, then a third run, where the SDK artifact identity is identical
+across all three and no SDK consumer re-executes across the flip. The first run
+after this change re-keys the activation identity once, because the recorded
+identity was produced under the old encoding; the gate reads the two runs after
+that one.
 
 ## Phase 2: Face the Swift SDK so consumers depend on what they read
 

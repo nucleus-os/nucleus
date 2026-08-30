@@ -280,7 +280,7 @@ import Testing
     #expect(
         Set(reused.component.tasks.map(\.id.rawValue))
             == Set([
-                "swift-sdk.use-active-generation",
+                "swift-sdk.activate-target-sdks",
                 "swift-sdk.discover-\(inputs.linuxBundleID)",
                 "swift-sdk.discover-\(inputs.androidBundleID)",
                 "swift-sdk.publish-active-generation",
@@ -294,7 +294,7 @@ import Testing
     #expect(discoveryTasks.allSatisfy { $0.assessmentPolicy == .always })
     #expect(
         discoveryTasks.allSatisfy {
-            $0.dependencies == [TaskID(rawValue: "swift-sdk.use-active-generation")]
+            $0.dependencies == [TaskID(rawValue: "swift-sdk.activate-target-sdks")]
         })
     let ready = try #require(
         reused.component.tasks.first {
@@ -303,7 +303,7 @@ import Testing
     #expect(
         Set(ready.dependencies)
             == Set([
-                TaskID(rawValue: "swift-sdk.use-active-generation"),
+                TaskID(rawValue: "swift-sdk.activate-target-sdks"),
                 TaskID(rawValue: "swift-sdk.discover-\(inputs.linuxBundleID)"),
                 TaskID(rawValue: "swift-sdk.discover-\(inputs.androidBundleID)"),
             ]))
@@ -311,6 +311,40 @@ import Testing
     #expect(
         reused.activeSwift.path
             == configuration.active.appending("toolchain/usr/bin/swift"))
+
+    // One generation has one identity, whichever path established it. Every
+    // field planning encodes into a task identity has to match across the two
+    // paths; the generation subgraph reaches activation as an ordering edge,
+    // which identity deliberately excludes. Comparing the declarations is what
+    // makes the SDK artifact identity, and therefore every consumer of it,
+    // survive a run that reuses a generation instead of producing one.
+    let activatedByGeneration = try #require(
+        result.tasks.first { $0.id.rawValue == "swift-sdk.activate-target-sdks" })
+    let activatedByReuse = try #require(
+        reused.component.tasks.first {
+            $0.id.rawValue == "swift-sdk.activate-target-sdks"
+        })
+    #expect(activatedByGeneration.component == activatedByReuse.component)
+    #expect(activatedByGeneration.dependencies == activatedByReuse.dependencies)
+    #expect(activatedByGeneration.dependencies.isEmpty)
+    #expect(
+        activatedByGeneration.artifactReferences
+            == activatedByReuse.artifactReferences)
+    #expect(activatedByGeneration.artifactReferences.isEmpty)
+    #expect(activatedByGeneration.outputSlots == activatedByReuse.outputSlots)
+    #expect(activatedByGeneration.inputs == activatedByReuse.inputs)
+    #expect(activatedByGeneration.postconditions == activatedByReuse.postconditions)
+    #expect(activatedByGeneration.locks == activatedByReuse.locks)
+    #expect(
+        activatedByGeneration.assessmentPolicy == activatedByReuse.assessmentPolicy)
+    #expect(activatedByGeneration.action?.kind == activatedByReuse.action?.kind)
+
+    // The generation still has to be validated before it is activated, and the
+    // reuse path has nothing to wait for.
+    #expect(activatedByReuse.orderingDependencies.isEmpty)
+    #expect(activatedByReuse.executionDependencies.isEmpty)
+    #expect(activatedByGeneration.orderingDependencies.count == 1)
+    #expect(activatedByGeneration.executionDependencies.count == 1)
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {
