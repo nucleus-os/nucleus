@@ -32,9 +32,16 @@ enum ColliderStorageComponent {
                     storageClass: .incremental,
                     root: context.hostBuildRoot.appending("swiftpm"),
                     safetyRoot: context.hostBuildRoot,
+                    // Two levels, not one: a host scratch is per checkout, so a
+                    // context sits under `<checkout>/<sanitizer>` rather than
+                    // `<sanitizer>` alone. Retaining twice as many for the same
+                    // reason -- the reachable set is one checkout's, so every
+                    // context belonging to the other counts as unreachable, and
+                    // collecting one checkout's work from the other's run is
+                    // what giving them separate scratches was meant to stop.
                     retentionPolicy: .taskIdentityContexts(
-                        .init(intermediateLevels: 1, naming: .artifactDigestDirectory),
-                        retaining: 4)),
+                        .init(intermediateLevels: 2, naming: .artifactDigestDirectory),
+                        retaining: 8)),
                 StorageDeclaration(
                     id: "swift-package-graphs",
                     owner: owner,
