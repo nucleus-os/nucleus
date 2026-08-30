@@ -428,11 +428,29 @@ lane builds without running the Linux test products.
 Capacity is therefore sized against the reachable working set of the largest
 single operation that mounts the workspace, and that operation is the
 verification sweep. A nominal size below that number is not a budget, it is a
-scheduled failure. Collider treats a declared capacity that disagrees with an
-existing volume as a configuration mismatch and refuses the mount, so raising a
-ceiling is not a change that takes effect on its own: the declaration and the
-recreation of the volume are one operation, and every task holding state in that
-workspace rebuilds from empty.
+scheduled failure.
+
+Raising a ceiling used to be unreachable. A declared capacity that disagreed
+with the volume holding it was a configuration mismatch that refused the mount,
+and no command could resolve it: `clean` removes a workspace only for the
+component that is its sole consumer, and a shared one like `nucleus-swiftpm` is
+excluded because cleaning it from one component would pull state from under the
+others, while `prune` removes only workspaces no identity claims and this one is
+claimed. The declaration was authoritative everywhere except where it mattered,
+and the only resolution was deleting a volume by hand outside Collider.
+
+Workspace shape now reconciles to its declaration. A persistent workspace holds
+rebuildable intermediates by construction, so when the capacity, filesystem, or
+driver options of the volume disagree with the declaration that claims it, the
+volume is recreated to match and initialized like any freshly created one. This
+is the same principle Phase 4 applied to context count: the ceiling belongs in
+the policy rather than in how often an operator remembers to intervene.
+Ownership is settled first and is never reconciled, so a volume whose name or
+labels disagree still refuses rather than being destroyed by a declaration that
+does not own it, and a workspace a running container holds refuses too rather
+than having its filesystem pulled out from under a live build. Recreation
+discards everything the workspace held, which is the declared outcome rather
+than a surprise, so each one is reported on standard error.
 
 Achieved state: each workspace declares its nominal capacity beside the role
 that justifies it. A run reports allocation against capacity for every workspace

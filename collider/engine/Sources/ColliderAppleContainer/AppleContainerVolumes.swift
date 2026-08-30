@@ -45,9 +45,30 @@ struct AppleContainerVolumeOperations: Sendable {
         })
 }
 
+struct ApplePersistentWorkspaceReconciliation: Sendable {
+    let identity: PersistentWorkspaceIdentity
+    let name: String
+    let reason: String
+}
+
 struct ApplePersistentWorkspaceResolution: Sendable {
     let names: [PersistentWorkspaceIdentity: String]
     let created: [OCIPersistentWorkspaceMount]
+    let reconciled: [ApplePersistentWorkspaceReconciliation]
+}
+
+/// How an existing volume disagrees with the declaration that claims it.
+private enum WorkspaceDivergence {
+    case none
+    /// The image's shape disagrees. A persistent workspace holds rebuildable
+    /// intermediates by construction, and its shape is a declared property, so
+    /// the declaration wins and the volume is recreated to match it. Leaving
+    /// this to an operator puts the ceiling back where retention policy already
+    /// refused to leave it: in how often someone remembers to intervene.
+    case shape(String)
+    /// Ownership or naming disagrees, so recreating would destroy something
+    /// this declaration does not own. That is never reconciled automatically.
+    case identity(String)
 }
 
 struct ApplePersistentWorkspaceManager: Sendable {
@@ -66,17 +87,20 @@ struct ApplePersistentWorkspaceManager: Sendable {
         _ mounts: [OCIPersistentWorkspaceMount]
     ) async throws -> ApplePersistentWorkspaceResolution {
         guard !mounts.isEmpty else {
-            return ApplePersistentWorkspaceResolution(names: [:], created: [])
+            return ApplePersistentWorkspaceResolution(
+                names: [:], created: [], reconciled: [])
         }
         _ = try owner()
         var names: [PersistentWorkspaceIdentity: String] = [:]
         var created: [OCIPersistentWorkspaceMount] = []
+        var reconciled: [ApplePersistentWorkspaceReconciliation] = []
+        var activeNames: Set<String>?
         for mount in mounts {
             let declaration = mount.workspace
             let name = try physicalName(for: declaration.identity)
             let expectedLabels = try labels(for: declaration.identity)
             let expectedOptions = options(for: declaration)
-            let volume: VolumeConfiguration
+            var volume: VolumeConfiguration
             do {
                 volume = try await operations.create(
                     name,
@@ -88,15 +112,60 @@ struct ApplePersistentWorkspaceManager: Sendable {
                 guard isAlreadyExists(error) else { throw error }
                 volume = try await operations.inspect(name)
             }
-            try validate(
+            switch divergence(
                 volume,
                 declaration: declaration,
                 expectedName: name,
                 expectedLabels: expectedLabels,
                 expectedOptions: expectedOptions)
+            {
+            case .none:
+                break
+            case .identity(let reason):
+                throw AppleContainerFailure.persistentWorkspaceConfigurationMismatch(
+                    name: name,
+                    reason: reason)
+            case .shape(let reason):
+                // Reconciling a volume a container is holding would pull the
+                // filesystem out from under a running build, so an in-use
+                // workspace still refuses rather than reconciling.
+                if activeNames == nil {
+                    activeNames = try await operations.activeNames()
+                }
+                guard activeNames?.contains(name) != true else {
+                    throw AppleContainerFailure.persistentWorkspaceConfigurationMismatch(
+                        name: name,
+                        reason: "\(reason); a running container holds it")
+                }
+                try await operations.delete(name)
+                volume = try await operations.create(
+                    name,
+                    "local",
+                    expectedOptions,
+                    expectedLabels)
+                guard
+                    case .none = divergence(
+                        volume,
+                        declaration: declaration,
+                        expectedName: name,
+                        expectedLabels: expectedLabels,
+                        expectedOptions: expectedOptions)
+                else {
+                    throw AppleContainerFailure.persistentWorkspaceConfigurationMismatch(
+                        name: name,
+                        reason: "\(reason); recreating it did not resolve the difference")
+                }
+                created.append(mount)
+                reconciled.append(
+                    ApplePersistentWorkspaceReconciliation(
+                        identity: declaration.identity,
+                        name: name,
+                        reason: reason))
+            }
             names[declaration.identity] = name
         }
-        return ApplePersistentWorkspaceResolution(names: names, created: created)
+        return ApplePersistentWorkspaceResolution(
+            names: names, created: created, reconciled: reconciled)
     }
 
     func states() async throws -> [OCIPersistentWorkspaceState] {
@@ -162,36 +231,37 @@ struct ApplePersistentWorkspaceManager: Sendable {
         return labels
     }
 
-    private func validate(
+    /// Ownership is settled before shape. A volume this declaration does not
+    /// own must never reach the branch that recreates one.
+    private func divergence(
         _ volume: VolumeConfiguration,
         declaration: PersistentWorkspaceDeclaration,
         expectedName: String,
         expectedLabels: [String: String],
         expectedOptions: [String: String]
-    ) throws {
-        let mismatch: String?
+    ) -> WorkspaceDivergence {
         if volume.name != expectedName {
-            mismatch = "name is \(volume.name), expected \(expectedName)"
-        } else if volume.driver != "local" {
-            mismatch = "driver is \(volume.driver), expected local"
-        } else if volume.format != declaration.filesystem.rawValue {
-            mismatch =
-                "format is \(volume.format), expected \(declaration.filesystem.rawValue)"
-        } else if volume.sizeInBytes != declaration.capacityBytes {
-            mismatch =
+            return .identity("name is \(volume.name), expected \(expectedName)")
+        }
+        if volume.labels != expectedLabels {
+            return .identity("ownership labels differ")
+        }
+        if volume.driver != "local" {
+            return .identity("driver is \(volume.driver), expected local")
+        }
+        if volume.format != declaration.filesystem.rawValue {
+            return .shape(
+                "format is \(volume.format), expected \(declaration.filesystem.rawValue)")
+        }
+        if volume.sizeInBytes != declaration.capacityBytes {
+            return .shape(
                 "capacity is \(volume.sizeInBytes.map(String.init) ?? "missing"), expected \(declaration.capacityBytes)"
-        } else if volume.options != expectedOptions {
-            mismatch = "driver options differ"
-        } else if volume.labels != expectedLabels {
-            mismatch = "ownership labels differ"
-        } else {
-            mismatch = nil
+            )
         }
-        if let mismatch {
-            throw AppleContainerFailure.persistentWorkspaceConfigurationMismatch(
-                name: expectedName,
-                reason: mismatch)
+        if volume.options != expectedOptions {
+            return .shape("driver options differ")
         }
+        return .none
     }
 
     private func options(

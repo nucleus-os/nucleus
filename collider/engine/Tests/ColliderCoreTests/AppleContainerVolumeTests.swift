@@ -170,7 +170,13 @@ private actor FixtureAppleVolumeStore {
     #expect(sharedState.identity.artifactTarget == nil)
 }
 
-@Test func appleVolumeManagerRejectsConfigurationDrift() async throws {
+/// A declared capacity that disagrees with the volume holding it is the
+/// declaration changing, not the store going wrong. The workspace holds
+/// rebuildable intermediates, so it is recreated to match rather than refusing
+/// every task that mounts it until someone deletes it by hand.
+@Test func appleVolumeManagerRecreatesAWorkspaceWhoseDeclaredShapeChanged()
+    async throws
+{
     let store = FixtureAppleVolumeStore()
     let manager = ApplePersistentWorkspaceManager(
         configuration: fixtureVolumeConfiguration(),
@@ -190,6 +196,49 @@ private actor FixtureAppleVolumeStore {
             ],
             sizeInBytes: declaration.capacityBytes / 2))
 
+    let mount = OCIPersistentWorkspaceMount(
+        workspace: declaration,
+        target: "/build",
+        access: .readWrite)
+    let resolution = try await manager.resolve([mount])
+
+    #expect(await store.deletedNames() == [name])
+    #expect(resolution.names[declaration.identity] == name)
+    #expect(resolution.reconciled.count == 1)
+    #expect(resolution.reconciled.first?.name == name)
+    #expect(resolution.reconciled.first?.reason.contains("capacity") == true)
+    // The recreated workspace is empty, so it must be initialized like any
+    // freshly created one rather than mounted as if it carried state.
+    #expect(resolution.created.count == 1)
+    let state = try await manager.states().first
+    #expect(state?.capacityBytes == declaration.capacityBytes)
+}
+
+/// Reconciliation is for shape. A volume whose ownership labels disagree is not
+/// this declaration's to destroy, and recreating it would discard another
+/// owner's state.
+@Test func appleVolumeManagerRefusesAWorkspaceItDoesNotOwn() async throws {
+    let store = FixtureAppleVolumeStore()
+    let manager = ApplePersistentWorkspaceManager(
+        configuration: fixtureVolumeConfiguration(),
+        operations: store.operations())
+    let declaration = fixtureVolumeDeclaration()
+    let name = try manager.physicalName(for: declaration.identity)
+    var foreignLabels = try manager.labels(for: declaration.identity)
+    foreignLabels["com.nucleus.collider.persistent-workspace.owner"] = "someone-else"
+    await store.insert(
+        VolumeConfiguration(
+            name: name,
+            driver: "local",
+            format: "ext4",
+            source: "/fixture/\(name)/volume.img",
+            labels: foreignLabels,
+            options: [
+                "size": String(declaration.capacityBytes),
+                "journal": "writeback:\(declaration.journal.sizeBytes)",
+            ],
+            sizeInBytes: declaration.capacityBytes))
+
     await #expect(throws: AppleContainerFailure.self) {
         _ = try await manager.resolve([
             OCIPersistentWorkspaceMount(
@@ -198,6 +247,41 @@ private actor FixtureAppleVolumeStore {
                 access: .readWrite)
         ])
     }
+    #expect(await store.deletedNames().isEmpty)
+}
+
+/// Recreating a volume a running container holds would pull the filesystem out
+/// from under a live build, so an in-use workspace refuses instead.
+@Test func appleVolumeManagerRefusesToRecreateAWorkspaceInUse() async throws {
+    let store = FixtureAppleVolumeStore()
+    let manager = ApplePersistentWorkspaceManager(
+        configuration: fixtureVolumeConfiguration(),
+        operations: store.operations())
+    let declaration = fixtureVolumeDeclaration()
+    let name = try manager.physicalName(for: declaration.identity)
+    await store.insert(
+        VolumeConfiguration(
+            name: name,
+            driver: "local",
+            format: "ext4",
+            source: "/fixture/\(name)/volume.img",
+            labels: try manager.labels(for: declaration.identity),
+            options: [
+                "size": String(declaration.capacityBytes / 2),
+                "journal": "writeback:\(declaration.journal.sizeBytes)",
+            ],
+            sizeInBytes: declaration.capacityBytes / 2),
+        active: true)
+
+    await #expect(throws: AppleContainerFailure.self) {
+        _ = try await manager.resolve([
+            OCIPersistentWorkspaceMount(
+                workspace: declaration,
+                target: "/build",
+                access: .readWrite)
+        ])
+    }
+    #expect(await store.deletedNames().isEmpty)
 }
 
 @Test func appleVolumeManagerDeletesOnlyVolumesOwnedByThisCheckout() async throws {

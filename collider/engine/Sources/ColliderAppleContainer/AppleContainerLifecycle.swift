@@ -99,6 +99,14 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
             configuration: request.configuration)
         let resolution = try await workspaces.resolve(
             request.execution.persistentWorkspaceMounts)
+        // Recreating a workspace discards everything it held. That is the
+        // declared outcome rather than a surprise, but it is never silent.
+        for reconciliation in resolution.reconciled {
+            FileHandle.standardError.write(
+                Data(
+                    ("collider: recreated persistent workspace "
+                        + "\(reconciliation.name): \(reconciliation.reason)\n").utf8))
+        }
         do {
             for mount in resolution.created {
                 guard let volumeName = resolution.names[mount.workspace.identity] else {
