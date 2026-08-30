@@ -50,19 +50,13 @@ reuse.
    the container substrate and source-built dependencies current before the
    packaging, distribution, and qualification chain binds artifact digests to
    inputs that cannot be re-obtained.
-3. Complete the [Linux lane configuration plan](linux-lane-configuration-plan.md).
-   One package closure compiles twice per verification sweep, into two Linux
-   contexts an omitted default produced rather than anyone chose, for 60% of the
-   sweep. Converging them costs no checking, and the release timing it exposes
-   the Linux lane to has already found two lifetime defects that debug
-   concealed.
-4. Complete the product-execution portions of the
+3. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the
    product-side interim corrections, and record the CI cache-hit gate as its
    second-checkout proof. Its macOS host-tool VM phase remains deferred until
    host execution produces a delivered artifact.
-5. Extend Phases 6 and 7 of the
+4. Extend Phases 6 and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
    through protected-main Linux-runtime packaging. An actual
    `collider package linux-runtime` execution closes the remaining half of Phase
@@ -70,12 +64,12 @@ reuse.
    both AOSP products and both complete six-member native package cohorts already
    come from graph-owned inputs. Physical Android qualification remains outside
    this packaging gate.
-6. Complete Phases 5 and 6 of the
+5. Complete Phases 5 and 6 of the
    [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
    to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
    the exact version-bearing cohorts, assemble signed repository snapshots
    offline, and remove Collider's remaining product-installation commands.
-7. Complete Phases 6 through 9 of the
+6. Complete Phases 6 through 9 of the
    [build store retention plan](build-store-retention-plan.md). Phases 1 through
    5 already bound SwiftPM identity contexts on every run and brought the
    container store under collection; the first collecting prune returned 411.9
@@ -85,13 +79,13 @@ reuse.
    the schedule does not set: the arm64 Linux SwiftPM workspace holds 97.5 GiB
    against a 100 GiB image, and the lane the verification sweep depends on most
    fails on ENOSPC when it fills.
-8. Complete Phases 1 through 5 of the
+7. Complete Phases 1 through 5 of the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    Protected-main packaging does not wait for this reliability work. Measure the
    translated host workload against the existing generations, then supply the
    missing native host toolchains and prove both products without translation
    before unattended Android qualification can be accepted.
-9. Complete Phase 6 of the
+8. Complete Phase 6 of the
    [Linux distribution portability plan](linux-distribution-portability-plan.md)
    using the signed local repository snapshots: qualify each unchanged artifact
    digest across the declared distribution matrix without rebuilding it.
@@ -142,12 +136,12 @@ dependency order:
 1. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
 2. [Android Swift/Java end-to-end qualification](android-swift-java-qualification.md)
 3. [Android render stack](android-render-stack-plan.md)
-4. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
-5. [GPU driver capability adoption](gpu-driver-capability-adoption-plan.md)
-6. [Native shell completion](native-shell-completion-plan.md)
-7. [Screen capture and recording](screen-recording-plan.md)
-8. [View pixel alignment](view-pixel-alignment-plan.md)
-9. [Glyph dilation](text-glyph-dilation-plan.md)
+3. [Render concurrency and presentation pipeline](render-concurrency-and-presentation-pipeline-plan.md)
+4. [GPU driver capability adoption](gpu-driver-capability-adoption-plan.md)
+5. [Native shell completion](native-shell-completion-plan.md)
+6. [Screen capture and recording](screen-recording-plan.md)
+7. [View pixel alignment](view-pixel-alignment-plan.md)
+8. [Glyph dilation](text-glyph-dilation-plan.md)
 
 ### Qualification sequence
 
@@ -193,6 +187,16 @@ that physical arm64 result.
 - [macOS host storage consolidation](macos-host-storage-consolidation-plan.md)
   established the conventional per-user host layout and removed custom APFS
   volume policy.
+- [Linux lane configuration](linux-lane-configuration-plan.md) gave each
+  architecture one Linux build context. Three lanes had taken `.debug` from an
+  omitted default while the release gates asked for `.release`, so one package
+  closure compiled twice per sweep -- 5,140 targets and 6,872 of a graph that
+  overlaps almost entirely. Converging them cost no checking, because
+  first-party Swift declares no `assert` and its preconditions are retained in
+  release, and it required removing the two lifetime defects that debug timing
+  had been concealing: a deinitializer reaching outward through an `unowned`
+  reference, and server-side globals discarded by `_ = globals` rather than kept
+  alive.
 - [Task identity precision](task-identity-precision-plan.md) gave one active
   Swift SDK generation one identity whichever path established it, and faced the
   SDK with a native sysroot so the six C and C++ components that read only the

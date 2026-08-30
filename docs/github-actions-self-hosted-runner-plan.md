@@ -869,6 +869,20 @@ which is what distinguishes a machine running the work slower from the work
 being slower. The watchdog and the boot coordinator stay in the background
 class; they poll and start services rather than build.
 
+Host SwiftPM scratch is per checkout; the container workspace is shared. Task
+identity resolves paths through the declared roots, so a build is identified by
+what it built rather than by where the source sat, and an artifact produced in
+one checkout is reusable by the other. A SwiftPM scratch cannot be shared on the
+same terms: SwiftPM records absolute source paths in its incremental state, so a
+scratch written by a checkout at one path is rebuilt from nothing by a checkout
+at another. There are always two -- the builder may read the authoritative
+checkout and not write it, so CI materializes the revision it verifies into its
+own -- and they were alternating through one scratch at 437 seconds a time. Each
+now has its own directory, declared as the placement root `swiftpm-scratch` so
+both canonicalize to one name and identity still cannot tell them apart. The
+container case keeps one workspace, because there the checkout is mounted at a
+canonical path and the two genuinely are one path to SwiftPM.
+
 Nothing in the store may outlive the builder's ability to collect it. Content
 staged out of the authoritative checkout arrives carrying that tree's
 inheritable entry denying the builder write and delete, and a copy that
