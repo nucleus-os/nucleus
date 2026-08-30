@@ -278,6 +278,34 @@ package struct WorkspaceContext: Sendable {
     /// A root that is literally another root needs one name, not two, so the
     /// list is reduced by path in a fixed order. Deriving that order from the
     /// paths would make it a property of placement again.
+    /// Where host SwiftPM builds this checkout.
+    ///
+    /// One name, one directory per checkout. Task identity resolves paths
+    /// through the declared roots, so both checkouts canonicalize this to
+    /// `swiftpm-scratch` and a build done in one is still reusable by the
+    /// other -- which is the whole point of placement-independent identity.
+    /// The directory itself cannot be shared: SwiftPM records absolute source
+    /// paths in its incremental state, so a scratch written by a checkout at
+    /// one path is fully rebuilt by a checkout at another. That is what the
+    /// authoritative checkout and CI's own checkout were doing to each other
+    /// on every alternation, at 437 seconds a time.
+    ///
+    /// The container case is different and is left alone: there the checkout is
+    /// mounted at a canonical path, so the two genuinely are the same to
+    /// SwiftPM and one workspace is correct.
+    static func hostSwiftPMScratchRoot(
+        root: FilePath,
+        hostBuildRoot: FilePath
+    ) -> FilePath {
+        hostBuildRoot
+            .appending("swiftpm")
+            .appending(
+                ArtifactHasher.digest(bytes: Array(root.string.utf8))
+                    .hexadecimal
+                    .prefix(16)
+                    .description)
+    }
+
     static func identityPathMap(
         root: FilePath,
         cacheRoot: FilePath,
@@ -292,6 +320,7 @@ package struct WorkspaceContext: Sendable {
             ("workspace", root), ("cache", cacheRoot), ("build", hostBuildRoot),
             ("artifacts", artifactRoot), ("identity", identityRoot),
             ("logs", logRoot),
+            ("swiftpm-scratch", hostSwiftPMScratchRoot(root: root, hostBuildRoot: hostBuildRoot)),
         ] where seen.insert(path).inserted {
             roots.append(IdentityPathRoot(name: name, path: path))
         }

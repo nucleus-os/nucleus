@@ -1,3 +1,4 @@
+import ColliderCore
 import SystemPackage
 import Testing
 
@@ -118,4 +119,39 @@ func buildStoreWorkspaceOwnerIsStableAcrossLanguages() {
             workspaceRoot: FilePath("/any/checkout"),
             buildStore: MacOSMachineStorageLayout.buildStore)
             == "bc6d2c59588b3c9a1018f35be10bb546ad43c7dfefadce2c1fc50451b2f16103")
+}
+
+@Test func hostSwiftPMScratchSeparatesCheckoutsWithoutReachingIdentity() {
+    let store = FilePath("/Library/Nucleus/Collider/state/build")
+    let cache = FilePath("/Library/Nucleus/Collider/cache")
+    let artifacts = FilePath("/Library/Nucleus/Collider/artifacts")
+    let identity = FilePath("/Library/Nucleus/Collider/identity")
+    let logs = FilePath("/Library/Nucleus/Collider/logs")
+    let authoritative = FilePath("/Library/Nucleus/checkout")
+    let runner = FilePath("/Users/nucleus-builder/actions-runner-work/nucleus/nucleus")
+
+    // SwiftPM records absolute source paths in its incremental state, so two
+    // checkouts cannot share one scratch without rebuilding each other's.
+    let authoritativeScratch = WorkspaceContext.hostSwiftPMScratchRoot(
+        root: authoritative, hostBuildRoot: store)
+    let runnerScratch = WorkspaceContext.hostSwiftPMScratchRoot(
+        root: runner, hostBuildRoot: store)
+    #expect(authoritativeScratch != runnerScratch)
+
+    // And identity must not be able to tell, or a build done in one checkout
+    // stops being reusable by the other.
+    func map(_ root: FilePath) -> IdentityPathMap {
+        WorkspaceContext.identityPathMap(
+            root: root,
+            cacheRoot: cache,
+            hostBuildRoot: store,
+            artifactRoot: artifacts,
+            identityRoot: identity,
+            logRoot: logs)
+    }
+    #expect(
+        map(authoritative).canonicalize(
+            authoritativeScratch.appending("unsanitized/abc/products").string)
+            == map(runner).canonicalize(
+                runnerScratch.appending("unsanitized/abc/products").string))
 }

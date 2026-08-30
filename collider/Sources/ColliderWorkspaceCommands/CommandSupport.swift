@@ -107,7 +107,10 @@ extension WorkspaceContext {
             scratchPath: verificationScratch(
                 layout.swiftScratch(
                     for: context,
-                    under: scratchRoot ?? hostBuildRoot.appending("swiftpm"))),
+                    under: scratchRoot
+                        ?? WorkspaceContext.hostSwiftPMScratchRoot(
+                            root: root,
+                            hostBuildRoot: hostBuildRoot))),
             swiftExecutable: swiftExecutable,
             dependencyLock: {
                 let lock = packageRoot.appending("Package.resolved")
