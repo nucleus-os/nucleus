@@ -337,6 +337,18 @@ extension ColliderRuntime {
         let swiftPMInvocationCount = swiftBuildPlans.count
         if let eventRun, let eventRegistry {
             try await eventRegistry.recordPlan(reportedPlan, in: eventRun)
+            // A clean task establishes nothing during this run, but what it
+            // established is still what is active. Recording it here is what
+            // lets the run record name the same artifact whether or not the run
+            // had work to do; the execution path below records this same
+            // identity for the same task when it does run.
+            for (task, entry) in zip(ordered, plan)
+            where entry.isClean && task.recordsActiveArtifact {
+                try await eventRegistry.recordActiveArtifact(
+                    entry.identity,
+                    name: task.component.rawValue,
+                    in: eventRun)
+            }
             try await eventRegistry.recordPlanningDuration(
                 planningDurationNanoseconds,
                 in: eventRun)

@@ -1219,7 +1219,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
             ],
             assessmentPolicy: .always,
-            recordsActiveArtifact: true,
             action:
                 try AnyColliderAction(
                     ActivateSwiftSDKGenerationAction(

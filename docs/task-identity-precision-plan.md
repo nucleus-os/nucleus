@@ -31,7 +31,7 @@ Two mechanisms produce the churn, and they compound.
 
 ## Phase 1: Give one active generation one identity
 
-Status: active
+Status: complete
 
 The recipe built the active Swift SDK generation through two mutually exclusive
 paths. `swift-sdk.activate-target-sdks` ran when a full generation was produced,
@@ -87,12 +87,26 @@ Landed with a recipe test asserting that every field planning encodes into a
 task identity matches across the two paths while the ordering edge does not, and
 that activation carries no artifact references or identity dependencies at all.
 
-Remaining gate: a full SDK generation, then a consumer build that takes the
-reuse path, then a third run, where the SDK artifact identity is identical
-across all three and no SDK consumer re-executes across the flip. The first run
-after this change re-keys the activation identity once, because the recorded
-identity was produced under the old encoding; the gate reads the two runs after
-that one.
+The run record names the active artifact by component, and more than one task
+in this component claimed that name. The record is written only when a task
+executes, so a run that published a generation recorded
+`swift-sdk.publish-active-generation`'s identity while a run that reused one
+recorded the always-run activation task's, for the same generation directory
+and the same toolchain. Nothing reads that record for identity or scheduling,
+so it never reached a consumer, but it is the line a reader checks this phase
+against, and it reported movement where there was none.
+`swift-sdk.publish-active-generation` is now the sole claimant, because its
+`active-sdk` and `active-swift` outputs are what every consumer resolves, and a
+clean task records the identity it already established, so the line names the
+same artifact whether or not the run had work to do.
+
+Gate met. A forced rebuild produced and published a generation, recording the
+SDK artifact as `a6b07dd3`. The next run reused that generation, left
+`swift-sdk.publish-active-generation` clean, and recorded the same `a6b07dd3`;
+planning the whole build across that transition left all sixteen SDK consumers
+clean, both architectures. `swift-sdk.activate-target-sdks` is the only task
+still dirty, because it is declared to run every time, and it no longer moves
+any identity by doing so.
 
 ## Phase 2: Face the Swift SDK so consumers depend on what they read
 

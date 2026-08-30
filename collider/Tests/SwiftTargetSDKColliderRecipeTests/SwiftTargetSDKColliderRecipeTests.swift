@@ -345,6 +345,20 @@ import Testing
     #expect(activatedByReuse.executionDependencies.isEmpty)
     #expect(activatedByGeneration.orderingDependencies.count == 1)
     #expect(activatedByGeneration.executionDependencies.count == 1)
+
+    // Exactly one task in the component names the active artifact. The run
+    // record keys that by component, so a second claimant makes the recorded
+    // digest depend on which task last executed rather than on which SDK is
+    // active: a run that reused a generation reported the activation task's
+    // identity while a run that published one reported this task's, for the
+    // same generation directory. `publish-active-generation` is the claimant
+    // because its outputs are what every consumer of the SDK resolves.
+    #expect(
+        result.tasks.filter(\.recordsActiveArtifact).map(\.id.rawValue)
+            == ["swift-sdk.publish-active-generation"])
+    #expect(
+        reused.component.tasks.filter(\.recordsActiveArtifact).map(\.id.rawValue)
+            == ["swift-sdk.publish-active-generation"])
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {
