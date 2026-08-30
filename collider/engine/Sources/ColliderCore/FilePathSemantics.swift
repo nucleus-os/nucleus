@@ -1,5 +1,28 @@
 import SystemPackage
 
+/// A containment root prepared once for repeated tests against it.
+///
+/// `isContained(in:)` normalizes both sides on every call, which is right for a
+/// single comparison and wasteful inside a scan: deciding which tasks write
+/// under a storage root asks every task's every effect about one root, so that
+/// root was normalized once per effect rather than once per scan.
+public struct FilePathContainmentRoot: Sendable {
+    private let normalized: FilePath
+    private let components: [FilePath.Component]
+
+    public init(_ root: FilePath) {
+        let normalized = root.normalizedForComparison()
+        self.normalized = normalized
+        components = Array(normalized.components)
+    }
+
+    public func contains(_ path: FilePath) -> Bool {
+        let path = path.normalizedForComparison()
+        guard path.root == normalized.root else { return false }
+        return path.components.starts(with: components)
+    }
+}
+
 extension FilePath {
     public func normalizedForComparison() -> FilePath {
         lexicallyNormalized()

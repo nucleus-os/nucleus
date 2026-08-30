@@ -1521,17 +1521,37 @@ func checkoutSourceRoots(
     exact: [FilePath]
 ) -> [FilePath] {
     let packageRoots = Set(packageRoots)
-    let candidates = Set(
-        (widened.map { coalesced($0, under: root, avoiding: packageRoots) }
-            + exact).filter {
-                $0 != root && $0.starts(with: root)
-            })
-    return
-        candidates
-        .filter { candidate in
-            !candidates.contains { $0 != candidate && candidate.starts(with: $0) }
-        }
-        .sorted { $0.string < $1.string }
+    let rootComponents = root.components.map(\.string)
+    // Decomposed once. `FilePath.starts(with:)` builds a component view per
+    // call, and that view validates itself by reconstructing a whole path, so
+    // asking it n^2 times cost roughly a minute per catalog -- the entirety of
+    // it, by sampling, and paid twice per construction. Comparing component
+    // arrays that were computed once removes both the repetition and the
+    // reconstruction.
+    var decomposed: [(components: [String], path: FilePath)] = []
+    for candidate in Set(
+        widened.map { coalesced($0, under: root, avoiding: packageRoots) } + exact)
+    {
+        let components = candidate.components.map(\.string)
+        guard components != rootComponents,
+            components.starts(with: rootComponents)
+        else { continue }
+        decomposed.append((components, candidate))
+    }
+    // Ordering by components rather than by string puts a path's descendants
+    // immediately after it: `/a/b` sorts before `/a-x` here and after it as a
+    // string, and only the former keeps a covering ancestor adjacent to what it
+    // covers. That is what lets one retained path decide the next one, instead
+    // of every candidate being compared against every other.
+    decomposed.sort { $0.components.lexicographicallyPrecedes($1.components) }
+    var retained: [FilePath] = []
+    var covering: [String]?
+    for entry in decomposed {
+        if let covering, entry.components.starts(with: covering) { continue }
+        retained.append(entry.path)
+        covering = entry.components
+    }
+    return retained.sorted { $0.string < $1.string }
 }
 
 /// `path` cut to two components below `root`, or `path` where it is already
@@ -1614,19 +1634,24 @@ func checkoutIncludeRoots(
         + ReactNativeColliderRecipe.nativeSDKCheckoutLinks(
             root: root.appending("react-native"),
             sdkRoot: nativeSDK)
+    // Decomposed once, for the same reason `checkoutSourceRoots` is: this
+    // compares every include path against every link, and `starts(with:)`
+    // rebuilds and revalidates a component view on each call.
+    let rootComponents = root.components.map(\.string)
+    let linked = links.map { (components: $0.link.components.map(\.string), link: $0) }
     return includePaths.flatMap { path -> [FilePath] in
-        if path.starts(with: root) { return [path] }
+        let pathComponents = path.components.map(\.string)
+        if pathComponents.starts(with: rootComponents) { return [path] }
         var reached: [FilePath] = []
-        for link in links {
-            if path == link.link {
+        for (linkComponents, link) in linked {
+            if pathComponents == linkComponents {
                 reached += link.rootRelativeSubtrees
-            } else if path.starts(with: link.link) {
+            } else if pathComponents.starts(with: linkComponents) {
                 // A flag naming something under a link resolves through it.
                 reached.append(
-                    path.string.dropFirst(link.link.string.count)
-                        .split(separator: "/")
-                        .reduce(link.checkout) { $0.appending(String($1)) })
-            } else if link.link.starts(with: path) {
+                    pathComponents.dropFirst(linkComponents.count)
+                        .reduce(link.checkout) { $0.appending($1) })
+            } else if linkComponents.starts(with: pathComponents) {
                 // A flag naming the directory the links sit in reaches every
                 // one of them, because the include that resolves through a
                 // link never names the link: `<folly/dynamic.h>` against the

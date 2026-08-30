@@ -367,10 +367,18 @@ package final class SwiftPackageGraphResolver: Sendable {
         // belonging to a single workspace.
         let scratch = cacheRoot.appending(
             "package-graph/scratch/" + resolutionKey(packageRoot))
+        let packageGraphCache = cacheRoot.appending("package-graph/cache")
         let packageArguments =
             [
                 "package", "--package-path", packageRoot.string,
                 "--scratch-path", scratch.string,
+                // Directed, as every other SwiftPM invocation Collider makes
+                // directs it. Left out, SwiftPM's manifest cache follows the
+                // environment's home, so a caller that relocates home -- which
+                // the storage-ownership tests do deliberately -- recompiles
+                // every manifest in the closure. One cache for every package
+                // described here, because that is what a manifest cache is for.
+                "--cache-path", packageGraphCache.string,
                 // The pinned closure is authoritative and lives in a checkout
                 // the resolving identity may only read. Left to solve versions
                 // itself, SwiftPM rewrites the resolved file whenever a

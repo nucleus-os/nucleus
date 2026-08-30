@@ -396,11 +396,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             in root: FilePath,
             runtime: String
         ) -> Set<StorageProducer> {
+            let containment = FilePathContainmentRoot(root)
             let resolved: Set<StorageProducer> = Set(
                 tasks.compactMap { task -> StorageProducer? in
                     let writesRoot =
                         task.action?.requirements.effects.contains {
-                            $0.access != .read && $0.scope.root.isContained(in: root)
+                            $0.access != .read && containment.contains($0.scope.root)
                         } == true
                     return writesRoot ? .task(task.id) : nil
                 })
