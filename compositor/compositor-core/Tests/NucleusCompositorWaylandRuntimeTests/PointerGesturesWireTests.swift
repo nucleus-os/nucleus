@@ -32,7 +32,6 @@ private func pointerGestureSurface(
 @MainActor
 private func pointerGestureContext() throws -> PointerGestureWireContext {
     let graph = WaylandTestGraph()
-    defer { withExtendedLifetime(graph) {} }
     let runtime = try #require(
         graph.routerRuntime(author: WindowSceneAuthor(commitSinkFactory: { InMemoryCommitSink() })))
     runtime.seat.updateCapabilities(pointer: true, keyboard: false, touch: false)

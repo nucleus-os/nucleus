@@ -7,14 +7,13 @@ import WaylandServer
 
 /// The server-side graph a Wayland runtime test drives.
 ///
-/// This is the only strong reference to the `RouterHost`, and the router's
-/// drivers and scene feeder hold it `unowned` -- correctly, since in production
-/// the host owns them and outlives the session. A test therefore has to keep
-/// this alive for as long as anything it built is still in use, which is not
-/// the same as keeping it in scope: an optimized build may release it after its
-/// last read, and every later call through a driver then reads a destroyed
-/// object. Each test pairs construction with
-/// `defer { withExtendedLifetime(graph) {} }` for that reason.
+/// This is the only strong reference to the `RouterHost`, which the router's
+/// drivers and scene feeder hold `unowned` -- correctly, since production has
+/// the host own them and outlive the session. Tests once had to pin this with
+/// `withExtendedLifetime` so an optimized build would not release it after its
+/// last read and leave a driver reading a destroyed object. They no longer do:
+/// nothing in this graph reaches outward from a `deinit`, so the order ARC
+/// happens to release these in cannot matter.
 @MainActor
 final class WaylandTestGraph {
     let server: NucleusCompositorServer

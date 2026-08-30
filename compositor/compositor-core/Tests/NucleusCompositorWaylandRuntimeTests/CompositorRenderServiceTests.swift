@@ -152,7 +152,6 @@ final class RenderServiceSpy: CompositorRenderService {
 @MainActor
 @Test func typedRenderServicePreservesValuesAndBorrowedOwnership() {
     let graph = WaylandTestGraph()
-    defer { withExtendedLifetime(graph) {} }
     let server = graph.server
 
     let driver = RouterRenderDriver(server: server)
@@ -309,7 +308,6 @@ final class RenderServiceSpy: CompositorRenderService {
 @MainActor
 @Test func serverDoesNotOwnRenderServiceLifetime() {
     let graph = WaylandTestGraph()
-    defer { withExtendedLifetime(graph) {} }
     let server = graph.server
     #expect(server.renderService == nil)
 

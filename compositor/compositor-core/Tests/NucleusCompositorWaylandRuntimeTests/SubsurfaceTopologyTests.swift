@@ -10,7 +10,6 @@ import Testing
 
     @Test func positionAndStackApplyOnlyWithParentCommit() {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let first = surface(compositor, graph: graph)
@@ -41,7 +40,6 @@ import Testing
 
     @Test func ancestryCycleAndInheritedSynchronizationAreExplicit() {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let root = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)
@@ -63,7 +61,6 @@ import Testing
 
     @Test func alphaAndTopologyLatchWithTheSynchronizedChildCommit() {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)
@@ -85,7 +82,6 @@ import Testing
 
     @Test func stateOnlyChildCommitAccumulatesOnEarlierCachedState() {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let compositor = graph.compositor()
         let parent = surface(compositor, graph: graph)
         let child = surface(compositor, graph: graph)

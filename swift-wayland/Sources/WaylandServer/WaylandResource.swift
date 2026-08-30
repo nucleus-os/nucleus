@@ -390,6 +390,16 @@ let swiftWaylandResourceDestroy: @convention(c) (UnsafeMutablePointer<wl_resourc
     else { return }
     nonisolated(unsafe) let actorOwner = unsafe ud
     MainActor.assumeIsolated {
-        unsafe Unmanaged<AnyObject>.fromOpaque(actorOwner).release()
+        let box = unsafe Unmanaged<AnyObject>.fromOpaque(actorOwner)
+        // Before the release, not after: this is the last moment at which the
+        // owner and everything it references are all still alive. An owner that
+        // has outward work to do at destruction does it now, so its `deinit`
+        // never has to reach for something already gone.
+        if let owning = unsafe box.takeUnretainedValue() as? WaylandDispatchBoxOwning,
+            let lifetime = owning.dispatchBoxOwner as? WaylandResourceOwnerLifetime
+        {
+            lifetime.willDestroyResourceOwner()
+        }
+        unsafe box.release()
     }
 }

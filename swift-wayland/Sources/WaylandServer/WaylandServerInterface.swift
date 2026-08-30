@@ -53,6 +53,25 @@ package protocol WaylandServerInterface {
 /// protocol-conformance lookup for every request.
 @MainActor
 @safe
+/// A resource owner that is told when its resource is being destroyed.
+///
+/// A resource owner's `deinit` runs when the last reference to it goes, which
+/// during a teardown cascade can be after objects it points at have already
+/// been deinitialized -- so a `deinit` cannot safely reach outward, and any
+/// `unowned` reference it reads may already be dead. Destruction of the
+/// resource is the event that actually means "this object is going away", and
+/// it happens while the graph around it is still whole. An owner with outward
+/// work to do does it here, and leaves `deinit` to release what it owns.
+package protocol WaylandResourceOwnerLifetime: AnyObject {
+    @MainActor func willDestroyResourceOwner()
+}
+
+/// Reaches a dispatch box's owner without its interface type, which the
+/// resource destructor does not have.
+protocol WaylandDispatchBoxOwning: AnyObject {
+    var dispatchBoxOwner: AnyObject { get }
+}
+
 package final class WaylandDispatchBox<Interface: WaylandServerInterface> {
     package let owner: AnyObject
     package let handler: Interface.Requests?
@@ -64,4 +83,8 @@ package final class WaylandDispatchBox<Interface: WaylandServerInterface> {
         self.owner = owner
         self.handler = handler
     }
+}
+
+extension WaylandDispatchBox: WaylandDispatchBoxOwning {
+    var dispatchBoxOwner: AnyObject { owner }
 }

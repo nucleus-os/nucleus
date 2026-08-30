@@ -181,14 +181,6 @@ package struct ComponentRegistry {
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
             .hostDebug: try await context.swiftPMInvocation()
         ]
-        for architecture in PlatformArchitecture.allCases {
-            buildContexts[
-                .linux(architecture, configuration: .debug)
-            ] = try await linuxSwiftPMInvocation(
-                architecture: architecture,
-                builder: nativeConfiguration,
-                checkoutRoots: checkoutRoots)
-        }
         var linuxReleaseContexts: [PlatformArchitecture: SwiftPMInvocation] = [:]
         for architecture in PlatformArchitecture.allCases {
             let invocation = try await linuxSwiftPMInvocation(

@@ -31,7 +31,7 @@ now names one. That is the guardrail; the convergence itself is Phase 2.
 
 ## Phase 1: Make teardown independent of release timing
 
-Status: active
+Status: complete
 
 Running the Linux lane in release surfaced two latent defects that debug timing
 concealed. Both are lifetime assumptions that an optimized build is free to
@@ -82,23 +82,28 @@ protects only the tests that exist today. Destroying the display before the host
 does not apply at all: tests construct surfaces directly, with no `wl_resource`
 to destroy.
 
-Achieved state: the Linux lane passes in release, no `deinit` in the module
-reads an `unowned` reference, and no test pins a fixture to make either true.
-The eighteen `withExtendedLifetime` pins revert with the change that makes them
-unnecessary.
+`WlSurface` now announces its destruction through
+`WaylandResourceOwnerLifetime.willDestroyResourceOwner()`, which the resource
+destructor calls immediately before releasing the owner -- the last moment at
+which the owner and everything it references are all still alive. `deinit`
+keeps what the surface owns: frame callbacks, presentation feedback, and the
+buffer-release contract. The hook is general rather than surface-specific, so
+any resource owner with outward work to do at destruction can adopt it.
 
-Gate: `collider test runtime` passes with the Linux lane building `.release`,
-with those pins removed.
+The rule had a second violation, in the wire-test harness rather than the
+router: `WaylandTestClient.deinit` closed its socket and dispatched, which let
+the server notice the closure and destroy the `wl_client` and every resource it
+owned. That is the router's whole destruction path, run at whatever moment ARC
+released the client. It is now an explicit `destroy()`; the deinitializer closes
+only the descriptor it owns.
 
-One migration to make deliberately rather than discover: tests build surfaces
-without resources, so nothing will invoke the new entry point for them. A test
-that wants destruction semantics has to ask for them, which is the clearer
-arrangement, but each existing test that relied on the deinitializer to notify
-has to be found and converted.
+Achieved state, measured: `collider test runtime` passes 7/7 in release with
+every pin removed, and no `deinit` reached from this graph performs outward
+work.
 
 ## Phase 2: Converge the lanes
 
-Status: pending Phase 1
+Status: complete
 
 The Linux runtime lane, the compositor, and wayland state `.release`, and the
 debug Linux context registration is removed. `collider test runtime` and the
@@ -106,9 +111,12 @@ release gates then share one scratch directory per architecture, which the run
 log shows directly: the lane builds under the release gates' context digest
 rather than one of its own.
 
-Gate: a verification sweep plans one non-sanitizer Linux context per
-architecture, and its catalog step no longer contains two multi-thousand-target
-builds of the same closure.
+Gate met. The Linux runtime lane, the compositor, and wayland state `.release`,
+and the debug Linux context is no longer registered. `collider test runtime`
+builds in `cache/swiftpm/linux-arm64/unsanitized/sha256-f80d0a448df6968d`, which
+is the release gates' own context: one non-sanitizer Linux context per
+architecture, and the second multi-thousand-target build of the same closure is
+gone.
 
 ## Non-goals
 

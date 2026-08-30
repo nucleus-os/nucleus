@@ -20,7 +20,7 @@ import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
-@safe final class WlSurface {
+@safe final class WlSurface: WaylandResourceOwnerLifetime {
     // Weak: a surface must not keep its compositor alive (Rule 9 — a surface is
     // owned only by its resource). This is also nil-safe at teardown, where the
     // display (and thus surface-resource destruction) outlives the compositor.
@@ -874,6 +874,22 @@ import WaylandServerDispatch
         {
             callback.destroy()
         }
+    }
+
+    /// Announce this surface's destruction to the graph around it.
+    ///
+    /// Every reference reached here is `weak`, but what they reach is not:
+    /// `sceneDelegate` lands in a router driver that outlives this surface and
+    /// reads the `RouterHost` `unowned`. Run from `deinit`, that read happens
+    /// during whatever teardown released this surface, by which point the host
+    /// may already be deinitialized -- and a `deinit` cannot know. Destruction
+    /// of the `wl_resource` is when a surface actually goes away, and the whole
+    /// graph is still standing then, so the announcement belongs here and
+    /// `deinit` is left to release what this surface owns.
+    ///
+    /// A surface built without a resource, as the state-machine fixtures are,
+    /// is never announced. Such a fixture has no client to have destroyed it.
+    func willDestroyResourceOwner() {
         role?.roleSurfaceDestroyed(self)
         detachFromParent()
         detachSubsurfaceChildren()

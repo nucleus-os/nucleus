@@ -155,6 +155,7 @@ struct WireMessage {
 final class WaylandTestClient {
     let display: WaylandDisplay
     private let testFd: Int32  // our end; the server end (sv[0]) is owned by wl_client
+    private var endpointClosed = false
 
     convenience init?(display: WaylandDisplay) {
         self.init(display: display) { serverEndpoint in
@@ -246,8 +247,27 @@ final class WaylandTestClient {
     }
 
     isolated deinit {
-        close(testFd)
+        // Only this client's own descriptor. Dispatching here would let the
+        // server notice the closed socket and destroy the `wl_client`, which
+        // tears down every resource it owns and runs the router's destruction
+        // paths -- outward work, at whatever moment ARC happens to release this
+        // object, which by then may be after the graph it would call into is
+        // gone. A test that wants the client destroyed calls `destroy()`.
+        closeEndpoint()
+    }
+
+    /// Destroy this client's server-side state now, while the caller still has
+    /// its graph. Closing the descriptor is what the server notices; the
+    /// dispatch is what makes it act on it.
+    func destroy() {
+        closeEndpoint()
         display.dispatch()
+    }
+
+    private func closeEndpoint() {
+        guard !endpointClosed else { return }
+        endpointClosed = true
+        close(testFd)
     }
 }
 

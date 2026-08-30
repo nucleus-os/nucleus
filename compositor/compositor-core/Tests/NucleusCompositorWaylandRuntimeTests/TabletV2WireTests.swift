@@ -10,7 +10,6 @@ import WaylandProtocolTypes
 struct TabletV2WireTests {
     @Test func tabletToolAndPadProjectCompleteClientLifecycles() throws {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let runtime = try #require(
             graph.routerRuntime(
                 author: WindowSceneAuthor(commitSinkFactory: { InMemoryCommitSink() })))

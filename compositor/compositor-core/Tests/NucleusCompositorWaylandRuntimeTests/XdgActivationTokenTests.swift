@@ -55,7 +55,6 @@ func activationTokenGenerationRetriesAnActiveCollision() {
 @MainActor @Test
 func activationTokensRemainOpaqueAndOneShotAcrossTheWaylandWire() throws {
     let graph = WaylandTestGraph()
-    defer { withExtendedLifetime(graph) {} }
     let router = try #require(NucleusWaylandRouter())
     let compositor = graph.compositor()
     let manager = XdgActivationManager()

@@ -24,7 +24,6 @@ import Testing
     @MainActor
     @Test func committedSurfaceOffsetMovesHotspotByInverseDelta() {
         let graph = WaylandTestGraph()
-        defer { withExtendedLifetime(graph) {} }
         let cursor = graph.host.pointerCursorSurface
         cursor.bind(
             surfaceId: 42, hotspotX: 10, hotspotY: 20)
