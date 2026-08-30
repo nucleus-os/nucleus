@@ -156,6 +156,29 @@ if [[ -r "$fingerprint_file" ]]; then
   recorded_fingerprint="$(<"$fingerprint_file")"
 fi
 if [[ ! -x "$bin" || "$fingerprint" != "$recorded_fingerprint" ]]; then
+  # Say why the executable is being rebuilt. A refresh costs minutes, and the
+  # two reasons call for opposite responses: a missing binary means something
+  # removed it, while a moved fingerprint means one of Collider's declared
+  # compilation inputs actually changed. Reporting only that a build is
+  # happening leaves a reader unable to tell an expected refresh from a second
+  # one in the same session.
+  if [[ ! -x "$bin" ]]; then
+    refresh_reason="no release executable at $bin"
+  else
+    refresh_reason="source fingerprint changed"
+  fi
+  refresh_notice="collider: refreshing the release executable ($refresh_reason)"
+  # SwiftPM reports planning and construction in thousands of lines that bury
+  # whatever the step was asked to do. A group collapses them behind that one
+  # sentence, which is why the sentence becomes the group's title rather than a
+  # line above it. The group closes on the failure path too: an unterminated
+  # group swallows every remaining line of the step, the error included.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "::group::$refresh_notice" >&2
+  else
+    echo "$refresh_notice" >&2
+  fi
+  refresh_status=0
   swift build \
     --package-path "$pkg" \
     --cache-path "$swiftpm_cache_root" \
@@ -163,7 +186,13 @@ if [[ ! -x "$bin" || "$fingerprint" != "$recorded_fingerprint" ]]; then
     --scratch-path "$scratch_root" \
     --only-use-versions-from-resolved-file \
     -c release \
-    --product collider >&2
+    --product collider >&2 || refresh_status=$?
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "::endgroup::" >&2
+  fi
+  if [[ "$refresh_status" -ne 0 ]]; then
+    exit "$refresh_status"
+  fi
   fingerprint="$(collider_source_fingerprint)"
   temporary_fingerprint="$fingerprint_file.$$"
   printf '%s\n' "$fingerprint" >"$temporary_fingerprint"
