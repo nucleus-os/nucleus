@@ -133,7 +133,23 @@ public struct EnvironmentProjection: Hashable, Sendable {
 /// The complete SwiftPM invocation context. `identityBytes` contains only the
 /// settings that determine whether compilation artifacts may be reused.
 public struct SwiftBuildContext: Hashable, Sendable {
-    public static let defaultMaximumParallelism: UInt32 = 10
+    /// Host compilation jobs, one per performance core.
+    ///
+    /// The builder is an M2 Ultra: sixteen performance cores and eight
+    /// efficiency ones. Ten left six of the sixteen idle. Sixteen rather than
+    /// twenty-four because the efficiency cores are several times slower at
+    /// this work -- that difference is what confining these services to them
+    /// cost, before they were given the standard class -- so scheduling onto
+    /// them buys a fraction of a core and competes for memory bandwidth with
+    /// the jobs that matter. A compiler process is memory-hungry, and this is
+    /// the count at which they still fit.
+    ///
+    /// Neither value reaches an identity: how many jobs ran does not change
+    /// what they produced, so raising this rebuilds nothing.
+    public static let defaultMaximumParallelism: UInt32 = 16
+    /// Left where it is. Container work is bounded by memory across concurrent
+    /// virtual machines rather than by host cores, and nothing here has
+    /// measured it.
     public static let concurrentOCIMaximumParallelism: UInt32 = 12
 
     public let packageRoot: FilePath

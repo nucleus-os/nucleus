@@ -51,7 +51,7 @@ private let fixturePackageRoot = FilePath("/workspace")
         toolchainIdentity: "swiftc@fixture",
         maximumParallelism: 4)
 
-    #expect(defaultContext.maximumParallelism == 10)
+    #expect(defaultContext.maximumParallelism == 16)
     #expect(narrowerContext.maximumParallelism == 4)
     #expect(defaultContext.identityBytes == narrowerContext.identityBytes)
 }
@@ -116,7 +116,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "test",
             "--build-system", "swiftbuild",
             "--configuration", "release",
-            "--jobs", "10",
+            "--jobs", "16",
             "--scratch-path", scratch.string,
             "--package-path", fixturePackageRoot.string,
             "-debug-info-format", "none",
@@ -156,7 +156,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                 "run",
                 "--build-system", "swiftbuild",
                 "--configuration", "release",
-                "--jobs", "10",
+                "--jobs", "16",
                 "--scratch-path", scratch.string,
                 "--package-path", fixturePackageRoot.string,
                 "-debug-info-format", "none",
@@ -189,7 +189,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "build",
             "--build-system", "swiftbuild",
             "--configuration", "release",
-            "--jobs", "10",
+            "--jobs", "16",
             "--scratch-path", "/workspace/.nucleus/swiftpm/android",
             "--package-path", fixturePackageRoot.string,
             "--swift-sdk", "swift-release-6.4.x_android",
@@ -337,6 +337,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             name: "swift-fixture-linux",
             targetTriple: "x86_64-unknown-linux-gnu"),
         toolchainIdentity: "nucleus-linux-build@fixture",
+        maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
         execution: .oci(execution))
     let invocation = SwiftPMInvocation(
         context: context,
@@ -380,7 +381,7 @@ private let fixturePackageRoot = FilePath("/workspace")
         ])
     #expect(
         operation.command.starts(with: [
-            "swiftpm", "taskset", "--cpu-list", "0-9",
+            "swiftpm", "taskset", "--cpu-list", "0-11",
             "/swiftpm-overlay/usr/bin/swift-package-manager", "--build-system",
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
