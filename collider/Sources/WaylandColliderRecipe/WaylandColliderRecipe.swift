@@ -168,7 +168,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             id: WaylandTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "wayland"))
         task.consume(builder.image)
-        task.consume(builder.swiftSDK)
+        task.consume(builder.nativeSysroot)
         if let nativeScanner {
             task.consume(nativeScanner)
         }

@@ -1221,7 +1221,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component)
         task.consume(tool.image)
-        task.consume(builder.swiftSDK)
+        task.consume(builder.nativeSysroot)
         let hostBackend: ArtifactReference = try task.output(
             "host-backend",
             path: artifactRoot.appending("lib/libgfxstream_backend.a"),

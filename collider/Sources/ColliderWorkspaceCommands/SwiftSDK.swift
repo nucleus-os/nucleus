@@ -37,6 +37,43 @@ func swiftTargetSDKArtifactID(
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 
+/// Names what determines the native half of the target sysroot.
+///
+/// Every C and C++ consumer of the Swift SDK reads the sysroot and nothing else
+/// from it: the compiler and linker resolve inside the builder image, and the
+/// bundle supplies `--sysroot`, the libc++ include root, and the libc++ library
+/// directory. `usr/lib/swift` and `usr/lib/swift_static` share that directory
+/// with the native content but are read by no such build.
+///
+/// So this digest covers the Ubuntu packages every target unpacks, the
+/// first-party pkg-config files staged beside them, and the generator revision
+/// that lays the bundle out. It deliberately omits what determines only the
+/// Swift half -- the snapshot, the source closure, the host Xcode, the runtime
+/// builder context and preset -- and the validation inputs, which determine
+/// neither half. A change to any of those leaves the native sysroot identical,
+/// which is the claim `docs/task-identity-precision-plan.md` requires a snapshot
+/// rebase to verify by diffing the two generations with the Swift directories
+/// excluded.
+func swiftTargetSDKNativeSysrootID(
+    inputs: SwiftTargetSDKInputs,
+    pkgConfigDirectory: FilePath,
+    generatorSourceID: String
+) throws -> String {
+    var encoder = IdentityEncoder()
+    for target in inputs.linuxTargets.sorted(by: {
+        $0.architecture.rawValue < $1.architecture.rawValue
+    }) {
+        encoder.append(target.architecture.rawValue)
+        for package in target.allUbuntuPackages {
+            encoder.append(package.url)
+            encoder.append(package.sha256)
+        }
+    }
+    encoder.append(bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
+    encoder.append(generatorSourceID)
+    return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
+}
+
 func swiftTargetRuntimeBuildID(
     inputs: SwiftTargetSDKInputs,
     target: SwiftTargetSDKInputs.LinuxTarget,

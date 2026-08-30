@@ -111,16 +111,24 @@ package enum NativeOCIConfigurationFailure: Error, CustomStringConvertible {
 package struct NativeOCIConfiguration: Sendable {
     package let base: NativeOCIBaseConfiguration
     package let swiftSDK: ArtifactReference
+    /// The native half of the SDK, under an identity that moves only when the
+    /// sysroot's native content does. A C or C++ build consumes this; a Swift
+    /// or SwiftPM build consumes `swiftSDK`. Both read the same bytes through
+    /// `swiftSDKRoot` -- the facet narrows what a task's identity depends on,
+    /// not what it can see.
+    package let nativeSysroot: ArtifactReference
 
     package let packageRootViews: [String: ArtifactReference]
 
     package init(
         base: NativeOCIBaseConfiguration,
         swiftSDK: ArtifactReference,
+        nativeSysroot: ArtifactReference,
         packageRootViews: [String: ArtifactReference] = [:]
     ) {
         self.base = base
         self.swiftSDK = swiftSDK
+        self.nativeSysroot = nativeSysroot
         self.packageRootViews = packageRootViews
     }
 

@@ -67,6 +67,7 @@ import Testing
         candidate: temporary.appending("candidate"),
         generation: temporary.appending("generation"),
         active: temporary.appending("current"),
+        nativeSysroot: temporary.appending("native-sysroots/fixture-native-id"),
         ndkRoot: temporary.appending("ndk"),
         validationFixture: root.appending(
             "swift-sdk/validation/AndroidSDKConsumer"),
@@ -81,7 +82,11 @@ import Testing
 
     #expect(
         result.selected
-            == [TaskID(rawValue: "swift-sdk.publish-active-generation")])
+            == [
+                TaskID(rawValue: "swift-sdk.publish-active-generation"),
+                TaskID(rawValue: "swift-sdk.publish-native-sysroot"),
+            ])
+    #expect(result.nativeSysroot.path == configuration.nativeSysroot)
     #expect(result.activeSDK.path == configuration.active.appending("swift-sdks"))
     #expect(
         result.activeSwift.path
@@ -276,7 +281,7 @@ import Testing
         withDestinationPath: configuration.generation.string)
 
     let reused = try SwiftTargetSDKColliderRecipe.prepare(configuration)
-    #expect(reused.component.tasks.count == 4)
+    #expect(reused.component.tasks.count == 5)
     #expect(
         Set(reused.component.tasks.map(\.id.rawValue))
             == Set([
@@ -284,10 +289,14 @@ import Testing
                 "swift-sdk.discover-\(inputs.linuxBundleID)",
                 "swift-sdk.discover-\(inputs.androidBundleID)",
                 "swift-sdk.publish-active-generation",
+                "swift-sdk.publish-native-sysroot",
             ]))
     #expect(
         reused.component.entrypoints[.build]?.roots
-            == [TaskID(rawValue: "swift-sdk.publish-active-generation")])
+            == [
+                TaskID(rawValue: "swift-sdk.publish-active-generation"),
+                TaskID(rawValue: "swift-sdk.publish-native-sysroot"),
+            ])
     let discoveryTasks = reused.component.tasks.filter {
         $0.id.rawValue.hasPrefix("swift-sdk.discover-")
     }
@@ -359,6 +368,27 @@ import Testing
     #expect(
         reused.component.tasks.filter(\.recordsActiveArtifact).map(\.id.rawValue)
             == ["swift-sdk.publish-active-generation"])
+
+    // The native facet is published the same way on both paths, and reaches the
+    // active bundle by ordering rather than by consuming it. Consuming it would
+    // put the whole SDK back into the identity of every C and C++ build, which
+    // is the dependency the facet exists to remove.
+    for tasks in [result.tasks, reused.component.tasks] {
+        let facet = try #require(
+            tasks.first { $0.id.rawValue == "swift-sdk.publish-native-sysroot" })
+        #expect(facet.assessmentPolicy == .always)
+        #expect(facet.dependencies.isEmpty)
+        #expect(facet.artifactReferences.isEmpty)
+        #expect(facet.orderingDependencies.count == 1)
+        #expect(
+            facet.outputSlots.map(\.path) == [configuration.nativeSysroot])
+    }
+
+    // The facet's directory is named by a digest over the native half alone, so
+    // it is a different path from the generation the Swift half names.
+    #expect(
+        configuration.nativeSysroot.removingLastComponent()
+            != configuration.generation.removingLastComponent())
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {

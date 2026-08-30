@@ -176,6 +176,7 @@ package struct ComponentRegistry {
         let nativeConfiguration = NativeOCIConfiguration(
             base: nativeBuilder.configuration,
             swiftSDK: swiftTargetSDK.activeSDK,
+            nativeSysroot: swiftTargetSDK.nativeSysroot,
             packageRootViews: nativeBuilder.packageRootViews)
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
             .hostDebug: try await context.swiftPMInvocation()
@@ -1456,6 +1457,10 @@ package struct ComponentRegistry {
                 sysroot: root.appending("sysroot"))
         }
         let generation = paths.artifactRoot.appending("generations/\(artifactID)")
+        let nativeSysrootID = try swiftTargetSDKNativeSysrootID(
+            inputs: inputs,
+            pkgConfigDirectory: pkgConfigDirectory,
+            generatorSourceID: generatorSourceID)
         return SwiftTargetSDKGenerationConfiguration(
             inputs: inputs,
             inputsFile: inputsFile,
@@ -1473,6 +1478,8 @@ package struct ComponentRegistry {
                 "generations/.candidate-\(artifactID)"),
             generation: generation,
             active: paths.artifactRoot.appending("current"),
+            nativeSysroot: paths.artifactRoot.appending(
+                "native-sysroots/\(nativeSysrootID)"),
             ndkRoot: ndkRoot,
             validationFixture: fixture,
             validator: validator,

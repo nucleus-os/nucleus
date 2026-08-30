@@ -780,6 +780,7 @@ private func fixtureNativeBuilder(
             swiftPMOverlayRevision:
                 "5f40ba93598ca18b00c114e6dad28acdeebbbb60"),
         swiftSDK: swiftSDK,
+        nativeSysroot: swiftSDK,
         packageRootViews: ["checkout": packageRootView])
 }
 

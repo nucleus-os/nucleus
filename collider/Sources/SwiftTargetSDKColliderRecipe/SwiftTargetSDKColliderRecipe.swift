@@ -158,6 +158,9 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let candidate: FilePath
     public let generation: FilePath
     public let active: FilePath
+    /// Where the native-sysroot facet is published, named by a digest over
+    /// what determines the native half alone.
+    public let nativeSysroot: FilePath
     public let ndkRoot: FilePath
     public let validationFixture: FilePath
     public let validator: FilePath
@@ -182,6 +185,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         candidate: FilePath,
         generation: FilePath,
         active: FilePath,
+        nativeSysroot: FilePath,
         ndkRoot: FilePath,
         validationFixture: FilePath,
         validator: FilePath,
@@ -205,6 +209,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.candidate = candidate
         self.generation = generation
         self.active = active
+        self.nativeSysroot = nativeSysroot
         self.ndkRoot = ndkRoot
         self.validationFixture = validationFixture
         self.validator = validator
@@ -220,6 +225,7 @@ public struct SwiftTargetSDKTaskSet: Sendable {
     public let selected: [TaskID]
     public let activeSDK: ArtifactReference
     public let activeSwift: ExecutableReference
+    public let nativeSysroot: ArtifactReference
 }
 
 public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendable {
@@ -237,6 +243,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         package let component: ComponentDefinition
         package let activeSDK: ArtifactReference
         package let activeSwift: ExecutableReference
+        package let nativeSysroot: ArtifactReference
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -281,7 +288,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         return PreparedComponent(
             component: component,
             activeSDK: taskSet.activeSDK,
-            activeSwift: taskSet.activeSwift)
+            activeSwift: taskSet.activeSwift,
+            nativeSysroot: taskSet.nativeSysroot)
     }
 
     package static func activeGenerationIsReusable(
@@ -315,7 +323,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             configuration,
             activation: activation,
             discoveries: discoveries)
-        let tasks = [task] + discoveries.map(\.task) + [ready.task]
+        let facet = try nativeSysrootTask(configuration, ready: ready)
+        let tasks = [task] + discoveries.map(\.task) + [ready.task, facet.task]
         return PreparedComponent(
             component: try ComponentDefinition(
                 descriptor: descriptor,
@@ -323,11 +332,53 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 entrypoints: [
                     ComponentEntrypoint(
                         id: .build,
-                        roots: [ready.task.id])
+                        roots: [ready.task.id, facet.task.id])
                 ],
                 storage: storage(configuration, tasks: tasks)),
             activeSDK: ready.activeSDK,
-            activeSwift: ready.activeSwift)
+            activeSwift: ready.activeSwift,
+            nativeSysroot: facet.root)
+    }
+
+    /// Publishes the native half of the active sysroot under its own identity.
+    ///
+    /// Every C and C++ consumer reads the sysroot and nothing else out of the
+    /// SDK, so pointing them at the whole bundle makes a change to the Swift
+    /// half -- or to an input that touches neither half -- re-key builds that
+    /// contain no Swift. This task's output path is named by a digest over what
+    /// determines the native content alone, so its identity holds across every
+    /// other change.
+    ///
+    /// It runs every time and re-points at whichever generation is active,
+    /// which is what keeps the facet current while its identity stays put: the
+    /// two are independent exactly as Phase 1 requires of an always-run task.
+    private static func nativeSysrootTask(
+        _ configuration: SwiftTargetSDKGenerationConfiguration,
+        ready: ReadyArtifact
+    ) throws -> NativeSysrootArtifact {
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "swift-sdk.publish-native-sysroot"),
+            component: component)
+        builder.after(ready.activeSDK.ordering)
+        let root: ArtifactReference = try builder.output(
+            "native-sysroot",
+            path: configuration.nativeSysroot,
+            validation: .symlinkTarget)
+        let task = builder.build(
+            postconditions: [
+                PathPostcondition(
+                    path: configuration.nativeSysroot,
+                    validation: .symlinkTarget)
+            ],
+            locks: [
+                .shared(configuration.active.removingLastComponent().appending("rebuild.lock"))
+            ],
+            assessmentPolicy: .always,
+            action: try AnyColliderAction(
+                PublishNativeSysrootAction(
+                    activeSDK: configuration.active.appending("swift-sdks"),
+                    facet: configuration.nativeSysroot)))
+        return NativeSysrootArtifact(task: task, root: root)
     }
 
     private static func storage(
@@ -385,6 +436,16 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     runtime: "swift-sdk-generation-lifecycle"),
                 storageClass: .published,
                 root: configuration.active,
+                safetyRoot: artifactRoot,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "swift-target-sdk-native-sysroots",
+                owner: descriptor.id,
+                producers: producers(
+                    { $0 == "swift-sdk.publish-native-sysroot" },
+                    runtime: "swift-sdk-generation-lifecycle"),
+                storageClass: .published,
+                root: configuration.nativeSysroot.removingLastComponent(),
                 safetyRoot: artifactRoot,
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
@@ -476,6 +537,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             configuration,
             activation: activation,
             discoveries: discoveries)
+        let facet = try nativeSysrootTask(configuration, ready: ready)
 
         let tasks =
             downloads.tasks
@@ -483,12 +545,13 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             + sysroots.map(\.task) + runtimes.map(\.task)
             + [generator.task, assembly.task] + validation.tasks + [activation.task]
             + discoveries.map(\.task)
-            + [ready.task]
+            + [ready.task, facet.task]
         return SwiftTargetSDKTaskSet(
             tasks: tasks,
-            selected: [ready.task.id],
+            selected: [ready.task.id, facet.task.id],
             activeSDK: ready.activeSDK,
-            activeSwift: ready.activeSwift)
+            activeSwift: ready.activeSwift,
+            nativeSysroot: facet.root)
     }
 
     private struct Downloads {
@@ -546,6 +609,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let task: TaskDeclaration
         let activeSDK: ArtifactReference
         let activeSwift: ExecutableReference
+    }
+
+    private struct NativeSysrootArtifact {
+        let task: TaskDeclaration
+        let root: ArtifactReference
     }
 
     private struct DiscoveryArtifact {
@@ -1426,6 +1494,43 @@ private struct ActivateSwiftSDKGenerationAction: ColliderAction {
             candidate: candidate,
             generation: generation,
             active: active)
+    }
+}
+
+private struct PublishNativeSysrootAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let activeSDK: FilePath
+        let facet: FilePath
+
+        func encode(into encoder: inout IdentityEncoder) {
+            encoder.append(path: activeSDK)
+            encoder.append(path: facet)
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.publish-native-sysroot"
+
+    let activeSDK: FilePath
+    let facet: FilePath
+
+    var identity: Identity {
+        Identity(activeSDK: activeSDK, facet: facet)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(.read, scope: .input(activeSDK)),
+                ActionEffect(.write, scope: .publication(facet)),
+            ], executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in context: ActionContext) async throws {
+        guard try context.files.metadata(for: activeSDK)?.type == .directory else {
+            throw SwiftTargetSDKRecipeFailure.invalidInput(
+                "no active Swift SDK bundle at \(activeSDK) to face")
+        }
+        try context.files.replaceSymlink(at: facet, target: activeSDK.string)
     }
 }
 

@@ -1456,7 +1456,7 @@ private func skiaTask(
     task.consume(externalSources)
     task.consume(gn)
     task.consume(builder.image)
-    task.consume(builder.swiftSDK)
+    task.consume(builder.nativeSysroot)
     let directory: ArtifactReference = try task.output(
         "archives",
         path: exportDirectory,

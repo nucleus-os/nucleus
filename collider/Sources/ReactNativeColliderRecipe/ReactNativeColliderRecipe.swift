@@ -418,7 +418,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
-        taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(builder.nativeSysroot)
         taskBuilder.consume(dependencies)
         taskBuilder.consume(skiaExternalSources)
         taskBuilder.consume(icuLibrary)
@@ -603,7 +603,7 @@ public enum ReactNativeColliderRecipe {
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(dependencies)
         taskBuilder.consume(builder.image)
-        taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(builder.nativeSysroot)
         let fmt: ArtifactReference = try taskBuilder.output(
             "fmt-library",
             path: artifacts.appending("fmt/libfmt.a"),
@@ -716,7 +716,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.cxx.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
-        taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(builder.nativeSysroot)
         taskBuilder.consume(dependencies)
         taskBuilder.consume(codegen)
         taskBuilder.consume(boost)

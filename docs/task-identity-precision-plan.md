@@ -110,28 +110,71 @@ any identity by doing so.
 
 ## Phase 2: Face the Swift SDK so consumers depend on what they read
 
+Status: complete
+
 Skia declares `task.consume(builder.swiftSDK)` and mounts `builder.swiftSDKRoot`
-read-only; Hermes, gfxstream, wayland, and `rn.cxx` consume it the same way.
-Each is a GN, Ninja, or CMake build of C and C++ that reads clang, the linker,
-and the Ubuntu sysroot out of that bundle. The Swift standard library, Dispatch,
-Foundation, XCTest, Swift Testing, and the SwiftPM overlay are not inputs to any
-of them, and a change confined to those currently invalidates all five across
-both architectures.
+read-only; gfxstream, Hermes, `rn.cxx`, `rn.support`, and wayland consume it the
+same way. Each is a GN, Ninja, or CMake build of C and C++ containing no Swift.
 
-Achieved state: the Swift SDK artifact exposes a native-toolchain facet holding
-clang, the linker, and the sysroot, with an identity of its own, alongside the
-full bundle. C and C++ tasks consume the native facet. Swift compilation and
-SwiftPM tasks consume the full bundle. A change confined to the Swift half of
-the SDK leaves every C and C++ component clean.
+What they read from that bundle is the target sysroot, and only that. The
+compiler and linker are not in it: Skia's GN arguments name `cc="/usr/bin/clang"`
+and `cxx="/usr/bin/clang++"`, which resolve inside the builder image every task
+already consumes separately. The SDK contributes `--sysroot`, the libc++ include
+root, and the libc++ library directory. The Swift standard library, Dispatch,
+Foundation, XCTest, Swift Testing, and the SwiftPM overlay are inputs to none of
+them, and `usr/lib/swift` and `usr/lib/swift_static` sit inside the same sysroot
+directory as the native content, which is why a Swift-only change reaches them.
 
-This phase lands after Phase 1 because Phase 1's gate is the instrument that
-proves it: while the activation identity still moves every run, no consumer can
-be observed staying clean.
+The reach is total rather than partial. Appending two lines of shell comment to
+`swift-sdk/validate-target-sdk-artifacts.sh` -- a script that checks a finished
+SDK and contributes nothing to one -- re-keys `swift-sdk.assemble-target-sdks`
+and `swift-sdk.publish-active-generation` and dirties all sixteen SDK consumers
+across both architectures. The validator reaches them because it is one of ten
+inputs to the digest naming the generation directory, and every consumer depends
+on the identity of the task that publishes that directory.
 
-Gate: change the SwiftPM overlay revision and confirm Skia, Hermes, gfxstream,
-wayland, and `rn.cxx` remain clean for both architectures while the SwiftPM
-tasks re-execute. Then rebase the Swift SDK onto a newer snapshot and confirm
-the same five do rebuild, because clang changed with it.
+Achieved state: the Swift SDK artifact exposes a native-sysroot facet with an
+identity of its own, alongside the full bundle. The facet is named by a digest
+over what determines the native half -- every target's Ubuntu package set, the
+first-party pkg-config files, and the SDK generator revision -- and excludes what
+determines only the Swift half: the snapshot, the Swift source closure, the host
+Xcode, the runtime builder context and preset, and the validation inputs, which
+determine neither half. C and C++ tasks consume the facet. Swift compilation and
+SwiftPM tasks consume the full bundle.
+
+The facet is published by an always-run task holding Phase 1's invariant: it
+re-points at whichever generation is active on every run, and its output identity
+moves only when a native input moves. Keying it on the assembled bytes instead
+was rejected: identity is computed during planning, so a digest of content this
+run is about to produce names the previous run's bytes, and a genuine native
+change would go unnoticed for exactly the run that introduced it. Input
+provenance is what planning can know.
+
+Gate met, in both directions. Appending a comment to the validator, which
+previously dirtied all sixteen SDK consumers, now leaves all sixteen clean while
+`swift-sdk.assemble-target-sdks`, `swift-sdk.validate-target-sdks`, and
+`swift-sdk.publish-active-generation` re-execute. Replacing one target's
+`libvulkan-dev` checksum dirties every C and C++ build on both architectures,
+which is what distinguishes a facet that tracks the native half from one that
+never moves.
+
+`swift-sdk.publish-native-sysroot` is the always-run publisher. It reaches the
+active bundle by ordering rather than by consuming it, so the SDK it faces
+contributes nothing to its identity, and it carries no artifact references or
+identity dependencies at all. `wayland.generator` and `wayland.generate` keep the
+full bundle: both execute Swift, so the Swift half is genuinely theirs.
+
+Remaining, and smaller than what this phase removed: the validator and the
+validation fixture still name the generation directory, so a change to either
+re-assembles an SDK it cannot affect. They determine neither half, and belong to
+the validation tasks alone.
+
+The claim the facet makes is that the listed inputs determine the native half of
+the sysroot. Verify it directly rather than by inspection: after the snapshot
+rebase, diff the previous and current generations' sysroots with `usr/lib/swift`
+and `usr/lib/swift_static` excluded, and require them byte-identical. A
+difference means an input is missing from the facet digest, and the facet must
+grow to include it.
 
 ## Non-goals
 
