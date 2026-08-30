@@ -36,7 +36,7 @@ public enum GenerationPublisher {
         }
 
         if FileManager.default.fileExists(atPath: generation.string) {
-            try FileManager.default.removeItem(atPath: candidate.string)
+            try removeCandidate(candidate)
             try activate(
                 generation: generation, active: active, after: boundary)
             return
@@ -84,6 +84,15 @@ public enum GenerationPublisher {
             try? FileManager.default.removeItem(atPath: linkCandidate.string)
             throw error
         }
+    }
+
+    /// Remove a staged candidate the published generation made redundant.
+    ///
+    /// This is the branch a forced rebuild reaches whenever it reproduces a
+    /// generation that is already published, which is every rebuild that
+    /// changes no SDK input.
+    private static func removeCandidate(_ candidate: FilePath) throws {
+        try RemovalDenial.removeTree(candidate)
     }
 
     private static func synchronizeTree(_ path: FilePath) throws {

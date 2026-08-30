@@ -15,6 +15,15 @@ int32_t collider_unlock(int32_t descriptor);
 /// An ACL describes where a file lives, not what it contains.
 int32_t collider_copy_file_without_acl(const char *source, const char *destination);
 int32_t collider_copy_tree_without_acl(const char *source, const char *destination);
+
+/// Clears a path's access-control list, not following a symbolic link.
+///
+/// A Collider store holds reconstructible state its owner must always be able
+/// to collect. An access-control entry that arrived with copied content can say
+/// otherwise, and then denies the removal to the identity it names and to
+/// everyone else by ownership. Clearing it is how a caller that has already
+/// decided to delete something finishes doing so.
+int32_t collider_clear_acl(const char *path);
 int32_t collider_sync_file(int32_t descriptor);
 int32_t collider_sync_directory(int32_t descriptor);
 int32_t collider_replace(const char *source, const char *destination);

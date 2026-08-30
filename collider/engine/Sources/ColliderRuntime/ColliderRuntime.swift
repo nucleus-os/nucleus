@@ -509,7 +509,7 @@ public actor ColliderRuntime {
                 guard (try? path.stat(followTargetSymlink: false)) != nil else {
                     return
                 }
-                try FileManager.default.removeItem(atPath: path.string)
+                try RemovalDenial.removeTree(path)
             },
             move: { source, destination in
                 try FileManager.default.moveItem(

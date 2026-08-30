@@ -1915,21 +1915,27 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 ],
                 workingDirectory: candidate,
                 context: context)
-            // `ditto` preserves ACLs, and these `.pc` files come from the
+            // These `.pc` files are the only staged content read from the
             // checkout, which carries an inheritable entry denying the builder
-            // write and delete. Copied intact, that entry follows the bytes
-            // into the store and leaves the builder unable to collect its own
-            // staged copy: what a file may do is a property of where it now
-            // lives, not of where it was read from.
-            try await run(
-                executable: .path(FilePath("/usr/bin/ditto")),
-                arguments: [
-                    "--noacl",
-                    pkgConfigDirectory.string,
-                    finalTargetRoot.appending("usr/share/pkgconfig").string,
-                ],
-                workingDirectory: candidate,
-                context: context)
+            // write and delete. Carried onto the copy, that entry leaves the
+            // builder owning a file in its own store that it is denied
+            // permission to remove, which strands the candidate and fails every
+            // later assembly.
+            //
+            // `ditto --noacl` does not prevent it: the flag suppresses
+            // inherited entries, while an entry already materialized on a
+            // source file is copied regardless. `copy` is the primitive that
+            // does, and it exists for this -- `COPYFILE_DATA | COPYFILE_STAT`
+            // carries contents, mode, and timestamps without the source's
+            // access-control list.
+            let stagedPkgConfig = finalTargetRoot.appending("usr/share/pkgconfig")
+            try context.files.createDirectory(stagedPkgConfig)
+            for entry in try context.files.listDirectory(pkgConfigDirectory) {
+                guard let name = entry.path.lastComponent else { continue }
+                try context.files.copy(
+                    from: entry.path,
+                    to: stagedPkgConfig.appending(name.string))
+            }
             try context.files.write(
                 try linuxTripleSwiftSDKMetadata(
                     triple: target.triple,

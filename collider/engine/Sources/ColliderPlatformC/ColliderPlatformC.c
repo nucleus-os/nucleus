@@ -26,6 +26,7 @@
 #include <sys/un.h>
 #elif defined(__APPLE__)
 #include <copyfile.h>
+#include <sys/acl.h>
 #include <sys/clonefile.h>
 #include <sys/stdio.h>
 #endif
@@ -220,6 +221,26 @@ int32_t collider_copy_tree_without_acl(const char *source, const char *destinati
 #else
     (void)source;
     (void)destination;
+    errno = ENOTSUP;
+    return -1;
+#endif
+}
+
+int32_t collider_clear_acl(const char *path) {
+#if defined(__APPLE__)
+    // Darwin exposes no delete for a link's extended ACL, so setting an empty
+    // one is how the entries are dropped. This matches `chmod -N`.
+    acl_t empty = acl_init(0);
+    if (empty == NULL) {
+        return -1;
+    }
+    int32_t status = (int32_t)acl_set_link_np(path, ACL_TYPE_EXTENDED, empty);
+    int saved = errno;
+    acl_free(empty);
+    errno = saved;
+    return status;
+#else
+    (void)path;
     errno = ENOTSUP;
     return -1;
 #endif

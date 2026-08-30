@@ -858,6 +858,15 @@ acquisition reaches only the public origins required by the pinned source and
 dependency graph. Apple containers retain the host-only network with DNS
 disabled and receive only already acquired inputs.
 
+Nothing in the store may outlive the builder's ability to collect it. Content
+staged out of the authoritative checkout arrives carrying that tree's
+inheritable entry denying the builder write and delete, and a copy that
+preserves it strands the result permanently: removal is refused to the builder
+because the entry names it, and to everyone else because the builder owns the
+directory. Staging copies without the source's access-control list, and removal
+clears an entry that refuses it, so an access decision about the source tree
+never becomes a property of an artifact.
+
 Treat every builder cache, workspace, image, checkout, staged artifact, and run
 record as reconstructible project state. Never place a personal secret,
 publication credential, release signing key, browser profile, private unrelated
