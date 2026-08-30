@@ -1520,8 +1520,10 @@ func checkoutSourceRoots(
     widened: [FilePath],
     exact: [FilePath]
 ) -> [FilePath] {
-    let packageRoots = Set(packageRoots)
-    let rootComponents = root.components.map(\.string)
+    let rootComponents = pathComponents(root)
+    // Package roots as components too, so coalescing can ask whether it has
+    // landed on one without building a path to ask with.
+    let packageRootComponents = Set(packageRoots.map { pathComponents($0) })
     // Decomposed once. `FilePath.starts(with:)` builds a component view per
     // call, and that view validates itself by reconstructing a whole path, so
     // asking it n^2 times cost roughly a minute per catalog -- the entirety of
@@ -1529,14 +1531,25 @@ func checkoutSourceRoots(
     // arrays that were computed once removes both the repetition and the
     // reconstruction.
     var decomposed: [(components: [String], path: FilePath)] = []
-    for candidate in Set(
-        widened.map { coalesced($0, under: root, avoiding: packageRoots) } + exact)
-    {
-        let components = candidate.components.map(\.string)
+    var seen: Set<[String]> = []
+    func consider(_ components: [String], _ path: FilePath) {
         guard components != rootComponents,
-            components.starts(with: rootComponents)
-        else { continue }
-        decomposed.append((components, candidate))
+            components.starts(with: rootComponents),
+            seen.insert(components).inserted
+        else { return }
+        decomposed.append((components, path))
+    }
+    for path in widened {
+        let coalesced = coalesced(
+            path,
+            components: pathComponents(path),
+            under: root,
+            rootComponents: rootComponents,
+            avoiding: packageRootComponents)
+        consider(coalesced.components, coalesced.path)
+    }
+    for path in exact {
+        consider(pathComponents(path), path)
     }
     // Ordering by components rather than by string puts a path's descendants
     // immediately after it: `/a/b` sorts before `/a-x` here and after it as a
@@ -1567,22 +1580,36 @@ func checkoutSourceRoots(
 /// Package roots come from the resolved graph's manifests rather than from
 /// probing for build output, so the mount set stays a function of what the
 /// package declares rather than of the filesystem it was planned against.
+/// A path's components without constructing a `FilePath.ComponentView`.
+///
+/// That view validates itself on construction by rebuilding an entire path, so
+/// a debug build pays a path construction for every decomposition -- and this
+/// file decomposes every candidate, every include path, and every link, several
+/// times over. Splitting the string does the same job for the absolute,
+/// already-normalized paths these comparisons run on.
+private func pathComponents(_ path: FilePath) -> [String] {
+    path.string.split(separator: "/").map(String.init)
+}
+
 private func coalesced(
     _ path: FilePath,
+    components: [String],
     under root: FilePath,
-    avoiding packageRoots: Set<FilePath>
-) -> FilePath {
-    guard path.starts(with: root) else { return path }
-    let relative = path.string.dropFirst(root.string.count)
-        .split(separator: "/")
-        .map(String.init)
+    rootComponents: [String],
+    avoiding packageRoots: Set<[String]>
+) -> (components: [String], path: FilePath) {
+    guard components.starts(with: rootComponents) else { return (components, path) }
+    let relative = components.dropFirst(rootComponents.count)
     var depth = 2
     while depth < relative.count {
-        let candidate = relative.prefix(depth).reduce(root) { $0.appending($1) }
-        if !packageRoots.contains(candidate) { return candidate }
+        let candidate = rootComponents + relative.prefix(depth)
+        if !packageRoots.contains(candidate) {
+            // Built once, and only for the depth that answered.
+            return (candidate, relative.prefix(depth).reduce(root) { $0.appending($1) })
+        }
         depth += 1
     }
-    return path
+    return (components, path)
 }
 
 /// The mounts for a package root that is a view, plus the subtrees nested
@@ -1637,10 +1664,10 @@ func checkoutIncludeRoots(
     // Decomposed once, for the same reason `checkoutSourceRoots` is: this
     // compares every include path against every link, and `starts(with:)`
     // rebuilds and revalidates a component view on each call.
-    let rootComponents = root.components.map(\.string)
-    let linked = links.map { (components: $0.link.components.map(\.string), link: $0) }
+    let rootComponents = pathComponents(root)
+    let linked = links.map { (components: pathComponents($0.link), link: $0) }
     return includePaths.flatMap { path -> [FilePath] in
-        let pathComponents = path.components.map(\.string)
+        let pathComponents = pathComponents(path)
         if pathComponents.starts(with: rootComponents) { return [path] }
         var reached: [FilePath] = []
         for (linkComponents, link) in linked {
