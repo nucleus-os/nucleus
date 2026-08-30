@@ -426,3 +426,49 @@ private func workspaceRootForMacOSBuilderTests() throws -> URL {
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     return URL(path, isDirectory: true)
 }
+
+@Test
+func pathBoundaryRejectsAnotherAccountsHomeAndAcceptsTheRunningOne() {
+    let path = [
+        "/usr/local/bin",
+        "/Users/maddy/.local/state/fnm_multishells/1585_1787219768427/bin",
+        "/Users/nucleus-builder/Library/Developer/Nucleus/bin",
+        "/Users/maddy/.local/bin",
+        "/usr/bin",
+        "/bin",
+    ].joined(separator: ":")
+
+    #expect(
+        MacOSBuilderDoctor.foreignHomePathEntries(
+            path: path,
+            home: "/Users/nucleus-builder")
+            == [
+                "/Users/maddy/.local/state/fnm_multishells/1585_1787219768427/bin",
+                "/Users/maddy/.local/bin",
+            ])
+
+    // The same PATH is unremarkable in the account that owns those
+    // directories, so the rule is relative to who is running rather than to a
+    // named account.
+    #expect(
+        MacOSBuilderDoctor.foreignHomePathEntries(path: path, home: "/Users/maddy")
+            == ["/Users/nucleus-builder/Library/Developer/Nucleus/bin"])
+}
+
+@Test
+func pathBoundaryIgnoresSystemDirectoriesAndTrailingSeparators() {
+    #expect(
+        MacOSBuilderDoctor.foreignHomePathEntries(
+            path: "/usr/bin:/bin::/usr/sbin:/opt/homebrew/bin:",
+            home: "/Users/nucleus-builder"
+        )
+        .isEmpty)
+
+    // A home directory reached by a non-canonical spelling is the same
+    // directory, and the builder's own tree stays permitted through it.
+    #expect(
+        MacOSBuilderDoctor.foreignHomePathEntries(
+            path: "/Users/nucleus-builder/./bin:/Users/maddy/../maddy/.local/bin",
+            home: "/Users/nucleus-builder")
+            == ["/Users/maddy/.local/bin"])
+}

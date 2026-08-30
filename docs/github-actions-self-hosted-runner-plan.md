@@ -837,6 +837,18 @@ builder cannot enumerate or read the interactive home, SSH state, unrelated
 source, signing identity, publication state, or sudo authority, and that it can
 read but cannot mutate the authoritative checkout or machine contract.
 
+The builder's `PATH` names only system and builder-owned directories. The
+runner's `.path` was captured from whichever shell configured it and carried the
+interactive account's `~/.local/bin` and an ephemeral per-shell fnm directory
+with it. The builder cannot read either, so every executable resolution logged a
+permission error before falling through to the real one, and the separation
+rested on those directories' mode bits rather than on the builder's own
+configuration. `collider doctor ci-macos-builder` now rejects any `PATH` entry
+under a home directory other than the running account's, so the host contract
+states the invariant directly. The hostile probes remain necessary and
+insufficient for it: they establish what the builder can reach, not what it is
+configured to look for.
+
 Keep all build and qualification credentials read-only and job-scoped. The
 builder cannot read personal homes, attach to personal agents, hold a release
 signing or code-signing identity, reach publisher credentials, or deploy

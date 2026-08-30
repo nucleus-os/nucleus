@@ -259,7 +259,53 @@ struct MacOSBuilderDoctor {
             containerSystem(contract, storageLayout: storageLayout, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
             storageEnvironment(storageLayout, scope: scope),
+            accountPathBoundary(contract, scope: scope),
         ]
+    }
+
+    /// `PATH` entries under an account other than the one running.
+    ///
+    /// The runner captured its environment from whichever shell configured it,
+    /// and the interactive account's directories came along. They are
+    /// unreadable to the builder, so every executable resolution logs a
+    /// permission error per entry before falling through to the real one. The
+    /// cost is not the noise: an entry naming another account's home means the
+    /// separation between the two accounts rests on that directory's mode bits
+    /// rather than on the builder's own configuration, and a directory that
+    /// later became traversable would be executable by the builder. Nothing in
+    /// this repository sets the runner's `PATH`, so the check states the
+    /// invariant the host has to hold.
+    static func foreignHomePathEntries(path: String, home: String) -> [String] {
+        let home = normalizedPath(home)
+        return
+            path
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map { normalizedPath(String($0)) }
+            .filter { entry in
+                entry.hasPrefix("/Users/") && entry != home
+                    && !entry.hasPrefix(home + "/")
+            }
+    }
+
+    private func accountPathBoundary(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        let path = context.environment["PATH"] ?? ""
+        let foreign = Self.foreignHomePathEntries(path: path, home: NSHomeDirectory())
+        let entryCount = path.split(separator: ":", omittingEmptySubsequences: true).count
+        return HostPrerequisite(
+            id: "macos-builder:account-path-boundary",
+            scope: scope,
+            description: "PATH naming no other account's home directory",
+            remediation:
+                "remove \(foreign.joined(separator: ", ")) from PATH; the runner "
+                + "reads its own from \(contract.builder.runnerRoot)/.path, which "
+                + "must name only system and builder-owned directories"
+        ) {
+            guard foreign.isEmpty else { return nil }
+            return "\(entryCount) entries, none under another account's home"
+        }
     }
 
     private func operatingSystem(
