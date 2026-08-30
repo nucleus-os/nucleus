@@ -3192,6 +3192,7 @@ private func artifactInput(
     ]
     let fixtureToolRoot = "/fixture/"
     let leaked = Mutex<[String: Set<String>]>([:])
+    let observed = Mutex<Set<TaskID>>([])
     func scan(_ task: TaskID, _ nodes: [IdentityTrace.Node]) {
         for node in nodes {
             switch node {
@@ -3232,6 +3233,7 @@ private func artifactInput(
         taskState: { _ in .missing },
         validateOutputs: { _ in },
         observeIdentity: { task, bytes in
+            _ = observed.withLock { $0.insert(task) }
             guard let nodes = IdentityTrace.decode(bytes) else { return }
             scan(task, nodes)
         })
@@ -3239,20 +3241,23 @@ private func artifactInput(
     var session = try ColliderPlanningSession(
         catalog: catalog,
         services: services)
-    let requests = try catalog.publicEntrypoints.map {
-        (
-            request: $0,
-            roots: Set(try session.preparedCatalog.selectedTasks(for: [$0]))
-        )
-    }.sorted { $0.roots.count > $1.roots.count }
-    var covered: Set<TaskID> = []
-    for entry in requests where !entry.roots.isSubset(of: covered) {
-        _ = try await session.plan(
-            requests: [entry.request],
-            rebuildSelected: false,
-            lowerings: [SwiftPMLowering()])
-        covered.formUnion(entry.roots)
-    }
+    // One plan over every entrypoint rather than one plan each. `observeIdentity`
+    // fires per identity computed, so planning entrypoints separately rescans
+    // every task they share; the greedy coverage this replaced skipped only the
+    // entrypoints wholly subsumed by an earlier one. What the test needs is that
+    // each task is planned at least once, which one request set gives it.
+    _ = try await session.plan(
+        requests: catalog.publicEntrypoints,
+        rebuildSelected: false,
+        lowerings: [SwiftPMLowering()])
+
+    // Coverage is the point: an identity nobody computed is an identity nobody
+    // checked. Planning every entrypoint at once selects their union, and this
+    // is what says so rather than assuming it.
+    let reachable = Set(try session.preparedCatalog.selectedTasks(for: catalog.publicEntrypoints))
+    let inspected = observed.withLock { $0 }
+    #expect(reachable.subtracting(inspected).isEmpty)
+    #expect(!reachable.isEmpty)
 
     let found = leaked.withLock { $0 }
     let report = found.keys.sorted().flatMap { task in

@@ -50,9 +50,19 @@ else
 fi
 swiftpm_security_root="$application_support_root/swiftpm/security"
 swiftpm_cache_root="$cache_root/swiftpm"
-scratch_root="$developer_root/build/collider-cli"
+# One scratch and one fingerprint per clone. The builder refreshes this
+# executable from CI's checkout and from the authoritative one, and SwiftPM
+# records absolute source paths in its incremental state, so a single scratch
+# has each of those rebuild the other's work on every alternation -- the same
+# thrash the task graph's scratch had, in the launcher that runs before it.
+if command -v sha256sum >/dev/null 2>&1; then
+  clone_identity="$(printf '%s' "$root" | sha256sum | cut -c1-16)"
+else
+  clone_identity="$(printf '%s' "$root" | shasum -a 256 | cut -c1-16)"
+fi
+scratch_root="$developer_root/build/collider-cli/$clone_identity"
 bin="$scratch_root/release/collider"
-fingerprint_file="$application_support_root/launcher/collider-release-source.sha256"
+fingerprint_file="$application_support_root/launcher/collider-release-source-$clone_identity.sha256"
 mkdir -p \
   "$swiftpm_security_root" \
   "$swiftpm_cache_root" \
