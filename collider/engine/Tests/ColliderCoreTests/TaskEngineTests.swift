@@ -359,7 +359,15 @@ private struct FailAfterWriteAction: ColliderAction {
                     persistentWorkspaceEffects: [
                         schedulerWorkspace(key: "build", target: target)
                     ],
-                    lane: .oci)))
+                    lane: .oci,
+                    // Wait for the overlap rather than sampling for it. The
+                    // default probe sleeps a fixed 100 ms and asks afterwards
+                    // whether both happened to be active, which a loaded
+                    // machine answers no to -- a cold build ahead of this suite
+                    // was enough. Rendezvous still fails if the scheduler
+                    // serializes them, which is what the test is for; it just
+                    // stops the answer depending on the machine.
+                    rendezvousParticipants: 2)))
     }
 
     _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
