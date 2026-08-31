@@ -29,7 +29,7 @@
     "zustand": "^5.0.15"
   },
   "overrides": {
-    "hermes-compiler": "250829098.0.16",
+    "hermes-compiler": "250829098.0.17",
     "react": "19.2.8"
   },
   "patchedDependencies": {
@@ -42,8 +42,8 @@
     "@babel/eslint-parser": "^7.28.5",
     "@babel/plugin-syntax-flow": "^7.27.1",
     "@babel/plugin-transform-flow-strip-types": "^7.27.1",
-    "@react-native/babel-preset": "0.87.0",
-    "@react-native/metro-config": "0.87.0",
+    "@react-native/babel-preset": "0.87.1",
+    "@react-native/metro-config": "0.87.1",
     "@rnx-kit/metro-config": "^2.2.1",
     "@rnx-kit/metro-resolver-symlinks": "^0.2.8",
     "@types/node": "^26.2.0",
@@ -59,7 +59,7 @@
     "metro": "^0.87.0",
     "prettier": "^3.7.4",
     "react": "19.2.8",
-    "react-native": "0.87.0",
+    "react-native": "0.87.1",
     "tsx": "^4.23.12",
     "typescript": "^5.9.0"
   }

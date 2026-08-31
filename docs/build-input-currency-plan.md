@@ -277,9 +277,18 @@ ten Nucleus commits and is missing nothing, so rebasing onto
 `swift-6.3.3-RELEASE` would discard fifteen upstream commits rather than gain
 any. The generator half of this phase is already achieved and needs no change.
 
-Achieved state: swift-syntax is at `2026-08-26-a`, matching the compiler
-snapshot. The SDK generator needs no rebase; the reason is recorded above so it
-is not rediscovered.
+swift-syntax is not behind either, and the reason it looked behind is worth
+recording. Eighteen snapshot tags point at the pinned commit `050f1a34`,
+spanning `2026-07-06-a` through `2026-08-28-a`, because swift-syntax is only
+re-tagged when it changes; `git describe` reports the oldest of them, which is
+what made the pin read as `2026-07-23-a`. Reading the GitHub ref for
+`2026-08-26-a` gives `637e0c7c`, but that is the annotated tag object, and it
+dereferences to the commit already pinned. Both halves of this phase were
+already achieved.
+
+Status: complete. Achieved state: swift-syntax is at `2026-08-26-a`, matching
+the compiler snapshot. Neither half needed a change; the reasons are recorded
+above so they are not rediscovered.
 
 Gate: `collider build linux` and `collider build swift-sdk --rebuild`, the
 first covering macro expansion under the moved swift-syntax and the second
@@ -294,8 +303,22 @@ React Native gitlink move together. The five C++ submodules move only if React
 Native's version catalog changed between the two point releases; they are
 otherwise already correct and are not touched.
 
-Achieved state: React Native is at 0.87.1, Hermes at `.0.17` with the package
-override matching, and the C++ submodules reconciled against 0.87.1's catalog.
+The C++ submodules do not move: `packages/react-native/gradle/libs.versions.toml`
+is byte-identical between the two tags, so the five are already correct, as this
+phase anticipated. `ReactCxxPlatform` is unchanged too -- zero files differ --
+and it is the only thing the gitlink supplies, so that pointer moves to keep the
+gitlink matching the published package rather than to bring in code.
+
+A second workspace package pinned React Native as well:
+`packages/app/package.json` requires it as an exact peer, so leaving it at
+0.87.0 would have left the workspace declaring two versions of one dependency.
+That is the same shape as the NDK path and the registry scheme -- a version
+written out by hand somewhere the version bump did not look.
+
+Status: complete. Achieved state: React Native is at 0.87.1 in both package
+manifests and the gitlink, Hermes at `.0.17` with the `hermes-compiler`
+override matching what 0.87.1 itself depends on, and the C++ submodules left
+alone because 0.87.1's catalog does not move them.
 
 Gate: `collider build linux` and the React Native test surface.
 
