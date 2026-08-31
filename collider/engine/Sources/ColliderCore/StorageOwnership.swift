@@ -95,6 +95,37 @@ public enum StorageRetentionPolicy: Codable, Hashable, Sendable {
     }
 }
 
+/// Whether a materialized tree stays between builds.
+///
+/// Materialized source is the largest multiplier on this store's size -- AOSP
+/// alone exists three times, as a host input cache, a guest source workspace,
+/// and an output workspace -- and none of it was a decision. It was a
+/// consequence of what had been built last, which is the same thing as saying
+/// nobody had decided.
+///
+/// The two answers carry different obligations. A tree that stays states why it
+/// stays, so its cost is attributable. A tree that does not stay names the task
+/// that rebuilds it, so collecting it is a delay rather than a loss, and the
+/// claim that it is reconstructible is checkable rather than asserted.
+public enum StorageResidency: Codable, Hashable, Sendable {
+    /// Stays between builds, for the stated reason.
+    case resident(reason: String)
+    /// Collectable under pressure; the named task materializes it again.
+    case onDemand(reconstructedBy: TaskID)
+
+    public var isResident: Bool {
+        if case .resident = self { return true }
+        return false
+    }
+
+    public var description: String {
+        switch self {
+        case .resident(let reason): "resident: \(reason)"
+        case .onDemand(let task): "on demand, rebuilt by \(task.rawValue)"
+        }
+    }
+}
+
 public enum StorageProducer: Hashable, Sendable {
     case task(TaskID)
     case runtime(String)
@@ -108,6 +139,8 @@ public struct StorageDeclaration: Hashable, Sendable {
     public let root: FilePath
     public let safetyRoot: FilePath
     public let retentionPolicy: StorageRetentionPolicy
+    /// Required of materialized source, meaningless elsewhere.
+    public let residency: StorageResidency?
     public let activeGenerationLink: FilePath?
     public let generationNaming: DirectoryNamePattern?
     public let interruptedCandidateNaming: DirectoryNamePattern?
@@ -120,6 +153,7 @@ public struct StorageDeclaration: Hashable, Sendable {
         root: FilePath,
         safetyRoot: FilePath,
         retentionPolicy: StorageRetentionPolicy,
+        residency: StorageResidency? = nil,
         activeGenerationLink: FilePath? = nil,
         generationNaming: DirectoryNamePattern? = nil,
         interruptedCandidateNaming: DirectoryNamePattern? = nil
@@ -131,6 +165,7 @@ public struct StorageDeclaration: Hashable, Sendable {
         self.root = root
         self.safetyRoot = safetyRoot
         self.retentionPolicy = retentionPolicy
+        self.residency = residency
         self.activeGenerationLink = activeGenerationLink
         self.generationNaming = generationNaming
         self.interruptedCandidateNaming = interruptedCandidateNaming
@@ -205,11 +240,44 @@ public enum StorageCatalog {
                     )
                 }
             }
-            if declaration.storageClass == .source || declaration.storageClass == .identity {
+            if declaration.storageClass == .identity {
                 guard declaration.retentionPolicy.isProtected else {
                     throw StorageCatalogFailure.invalid(
-                        "source and identity storage must be protected: \(declaration.id)")
+                        "identity storage must be protected: \(declaration.id)")
                 }
+            }
+            // Source used to be required to be protected, which made "this is
+            // source" and "this can never be collected" the same statement.
+            // They are not: a tree materialized from a pinned input is source
+            // and is reconstructible, and the store held three copies of AOSP
+            // because nothing could say so. Source now states its residency,
+            // and the two answers carry the obligations that distinguish them.
+            if declaration.storageClass == .source {
+                switch declaration.residency {
+                case nil:
+                    throw StorageCatalogFailure.invalid(
+                        "source storage must declare its residency: \(declaration.id)")
+                case .resident:
+                    guard declaration.retentionPolicy.isProtected else {
+                        throw StorageCatalogFailure.invalid(
+                            "resident source storage must be protected: \(declaration.id)")
+                    }
+                case .onDemand(let task):
+                    guard !declaration.retentionPolicy.isProtected else {
+                        throw StorageCatalogFailure.invalid(
+                            "on-demand source storage cannot be protected, or nothing "
+                                + "may collect what it promises to rebuild: \(declaration.id)")
+                    }
+                    guard declaration.producers.contains(.task(task)) else {
+                        throw StorageCatalogFailure.invalid(
+                            "on-demand source storage must name a producing task as its "
+                                + "reconstructor: \(declaration.id)")
+                    }
+                }
+            } else if declaration.residency != nil {
+                throw StorageCatalogFailure.invalid(
+                    "residency belongs to materialized source, and \(declaration.id) "
+                        + "is \(declaration.storageClass.rawValue) storage")
             }
             switch declaration.retentionPolicy {
             case .keepActiveAndRollback:

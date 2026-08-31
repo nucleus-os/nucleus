@@ -48,7 +48,14 @@ func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         // exists because AOSP needs case-sensitive files, not because it holds
         // anything the host does not, so it is expensive to rebuild rather
         // than authoritative.
-        retentionPolicy: .explicitClean)
+        retentionPolicy: .explicitClean,
+        // Resident: the host input cache it materializes from is the
+        // collectable half of this pair, and collecting both would make an
+        // Android build start from a network hydration rather than from a
+        // checkout.
+        residency: .resident(
+            reason: "the case-sensitive working tree AOSP builds against; its "
+                + "host input cache is the collectable half of the pair"))
 }
 
 struct AOSPProductSourceOverlay: Hashable, Sendable {

@@ -12,6 +12,7 @@ struct StorageStatusRecord: Codable, Equatable {
     let allocatedBytes: UInt64?
     let reclaimableBytes: UInt64?
     let retentionPolicy: StorageRetentionPolicy
+    let residency: String?
     let state: String
 }
 
@@ -151,6 +152,7 @@ private struct PersistentWorkspaceStatusRecord: Codable {
     let capacityBytes: UInt64
     let allocatedBytes: UInt64
     let retentionPolicy: StorageRetentionPolicy?
+    let residency: String?
     let state: String
 
     /// Close enough to its declared ceiling that the next build may fail for
@@ -410,14 +412,28 @@ struct RepositoryCache {
                 reclaimableTargets[declaration.id] = try pruneTargets(for: declaration)
             }
         }
-        let measurements: [String: StorageAllocationMeasurement] =
-            if measureAllocations {
-                try await allocationMeasurements(
-                    declarations: declarations,
-                    reclaimableTargets: reclaimableTargets)
-            } else {
-                [:]
+        // Recorded rather than walked. Measuring 1.4 TiB to print a number is
+        // a cost the question does not justify, and it is also the wrong
+        // shape: most roots do not change in a given run, so most of that walk
+        // re-derives what the previous one established. The explicit
+        // measurement remains the way to check the record.
+        let measurements: [String: StorageAllocationMeasurement]
+        if measureAllocations {
+            measurements = try await allocationMeasurements(
+                declarations: declarations,
+                reclaimableTargets: reclaimableTargets)
+            allocationLedger.record(measurements.mapValues(\.allocatedBytes))
+            allocationLedger.retaining(Set(declarations.map(\.id)))
+        } else {
+            measurements = allocationLedger.load().mapValues {
+                StorageAllocationMeasurement(
+                    allocatedBytes: $0.allocatedBytes,
+                    // Reclaimable is a property of what a prune would select
+                    // now, not of what a past measurement found, so it is left
+                    // to the measurement that computes it.
+                    reclaimableBytes: 0)
             }
+        }
         let declaredWorkspaces = try persistentWorkspaceUsage().mapValues(\.declaration)
         async let ociUsage = boundedObservation(
             "Apple Container disk usage",
@@ -447,6 +463,7 @@ struct RepositoryCache {
                     capacityBytes: workspace.capacityBytes,
                     allocatedBytes: workspace.allocatedBytes,
                     retentionPolicy: declaration?.retentionPolicy,
+                    residency: declaration?.residency?.description,
                     state: workspace.active
                         ? "active"
                         : declaration?.retentionPolicy.isProtected == true
@@ -468,6 +485,7 @@ struct RepositoryCache {
                 allocatedBytes: allocated,
                 reclaimableBytes: reclaimable,
                 retentionPolicy: declaration.retentionPolicy,
+                residency: declaration.residency?.description,
                 state: storageState(
                     declaration: declaration,
                     exists: exists,
@@ -480,7 +498,7 @@ struct RepositoryCache {
             hostFilesystem: hostFilesystemStatus(),
             totals: storageTotals(
                 storage: records,
-                measuredDeclaredRoots: measureAllocations,
+                measuredDeclaredRoots: measureAllocations || !measurements.isEmpty,
                 appleContainer: resolvedContainer,
                 persistentWorkspaces: resolvedWorkspaces),
             storage: records,
@@ -639,6 +657,21 @@ struct RepositoryCache {
         }
         let workspaceReclaimableBytes = workspaceRecords.reduce(UInt64(0)) {
             $0 &+ $1.allocatedBytes
+        }
+
+        // A prune is the other thing that changes a root, so it records what
+        // it left behind. Only the roots it touched: measuring the rest would
+        // be the walk this record exists to avoid.
+        if !dryRun {
+            let touched = Set(targetRecords.map(\.id))
+            let changed = storageDeclarations.filter { touched.contains($0.id) }
+            if !changed.isEmpty,
+                let measured = try? await allocationMeasurements(
+                    declarations: changed,
+                    reclaimableTargets: [:])
+            {
+                allocationLedger.record(measured.mapValues(\.allocatedBytes))
+            }
         }
 
         let selectedAllocatedBytes =
@@ -1178,6 +1211,11 @@ struct RepositoryCache {
         ).lexicallyNormalized()
     }
 
+    /// Where the measured allocation of each declared root is kept.
+    var allocationLedger: StorageAllocationLedger {
+        StorageAllocationLedger(root: context.stateRoot)
+    }
+
     private func allocationMeasurements(
         declarations: [StorageDeclaration],
         reclaimableTargets: [String: [URL]]
@@ -1575,6 +1613,7 @@ struct RepositoryCache {
             )
             lines.append(
                 "  \(entry.storageClass.rawValue) · \(entry.owner) · \(entry.retentionPolicy.name)"
+                    + (entry.residency.map { " · \($0)" } ?? "")
             )
             lines.append("  \(entry.path)")
             lines.append("  \(entry.retentionPolicy.description)")
@@ -1632,7 +1671,8 @@ struct RepositoryCache {
                         } ?? "any target")
                         + " · "
                         + workspace.identity.role
-                        + (workspace.retentionPolicy.map { " · \($0.name)" } ?? ""))
+                        + (workspace.retentionPolicy.map { " · \($0.name)" } ?? "")
+                        + (workspace.residency.map { " · \($0)" } ?? ""))
                 lines.append("  \(workspace.name)")
             }
         case .unavailable(let reason):

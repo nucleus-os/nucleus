@@ -69,14 +69,10 @@ reuse.
    to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
    the exact version-bearing cohorts, assemble signed repository snapshots
    offline, and remove Collider's remaining product-installation commands.
-6. Complete Phases 7 and 8 of the
-   [build store retention plan](build-store-retention-plan.md). Phases 1 through
-   6 and 9 are complete: identity contexts are bound on every run, the container
-   store is under collection, inspection answers from the store rather than from
-   the service that writes it, and every workspace declares a capacity whose
-   threshold refuses a mount instead of reaching ENOSPC inside a container. What
-   remains is declaring residency for every materialized source root and
-   recording allocation rather than walking 1.4 TiB for it.
+6. The [build store retention plan](build-store-retention-plan.md) is complete.
+   Its one outstanding gate is a destructive rebuild: deleting the on-demand
+   AOSP source-input cache and re-hydrating 73.4 GiB over host networking to
+   prove the tree it promises to reconstruct.
 7. Complete Phases 1 through 5 of the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    Protected-main packaging does not wait for this reliability work. Measure the

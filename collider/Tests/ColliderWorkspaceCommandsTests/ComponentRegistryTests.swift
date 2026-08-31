@@ -353,7 +353,10 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
     #expect(storageOwners["browser-product-x86_64-generations"] == "browser")
     let storageClasses = Dictionary(
         uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.storageClass) })
-    #expect(storageClasses["android-aosp-source-inputs"] == .cache)
+    // Source, not cache. It is a partial-clone Repo tree, and calling it a
+    // cache described how it is used rather than what it holds, which left
+    // seventy-three gigabytes outside every decision about materialized source.
+    #expect(storageClasses["android-aosp-source-inputs"] == .source)
     #expect(storageClasses["android-aosp-signing-identity"] == .identity)
     let swiftBuildRegression = try #require(
         withoutLinuxOperations.tasks.first {

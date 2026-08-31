@@ -288,19 +288,26 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     public let filesystem: PersistentWorkspaceFilesystem
     public let journal: PersistentWorkspaceJournal
     public let retentionPolicy: StorageRetentionPolicy
+    /// Required of a workspace holding materialized source, meaningless
+    /// elsewhere. A build or compiler-cache workspace holds intermediates that
+    /// are reconstructed by definition; a source workspace holds a tree whose
+    /// cost is worth a decision.
+    public let residency: StorageResidency?
 
     public init(
         identity: PersistentWorkspaceIdentity,
         capacityBytes: UInt64,
         filesystem: PersistentWorkspaceFilesystem,
         journal: PersistentWorkspaceJournal,
-        retentionPolicy: StorageRetentionPolicy = .explicitClean
+        retentionPolicy: StorageRetentionPolicy = .explicitClean,
+        residency: StorageResidency? = nil
     ) {
         self.identity = identity
         self.capacityBytes = capacityBytes
         self.filesystem = filesystem
         self.journal = journal
         self.retentionPolicy = retentionPolicy
+        self.residency = residency
     }
 
     /// The allocation past which this workspace is treated as out of room.

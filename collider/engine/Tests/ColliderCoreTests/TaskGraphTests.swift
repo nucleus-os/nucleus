@@ -149,10 +149,17 @@ import Testing
         forbiddenRemovalRoots: [cache])
 }
 
-@Test func storageCatalogProtectsSourceAndIdentityBoundaries() throws {
+/// Identity storage is authoritative unconditionally.
+///
+/// Source used to be checked here on the same terms, and no longer is: whether
+/// a materialized tree may be collected is a residency decision now, because
+/// requiring source to be protected made "this is source" and "this can never
+/// be collected" the same statement. What remains unconditional is that the
+/// material an identity signs with is never a cleanup candidate.
+@Test func storageCatalogProtectsIdentityBoundaries() throws {
     let scope = FilePath("/scope")
     let workspace = scope.appending("workspace")
-    for storageClass in [StorageClass.source, .identity] {
+    for storageClass in [StorageClass.identity] {
         let protected = StorageDeclaration(
             id: storageClass.rawValue,
             owner: ComponentID(rawValue: "core"),

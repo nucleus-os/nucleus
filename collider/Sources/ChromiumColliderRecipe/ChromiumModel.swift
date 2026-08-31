@@ -188,7 +188,15 @@ package func chromiumSourceWorkspace(
             role: "source"),
         capacityBytes: 64 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,
-        journal: .writeback64MiB)
+        journal: .writeback64MiB,
+        retentionPolicy: .explicitClean,
+        // Resident. Unlike AOSP there is no second copy to fall back on: the
+        // host holds the pinned inputs but not a materialized tree, so
+        // collecting this one turns the next Chromium build into a full
+        // source materialization.
+        residency: .resident(
+            reason: "the only materialized Chromium tree; the host holds "
+                + "pinned inputs but nothing checked out"))
 }
 
 package struct ChromiumProductBuild: Hashable, Sendable {

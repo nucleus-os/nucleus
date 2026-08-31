@@ -318,11 +318,21 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 id: "android-aosp-source-inputs",
                 owner: descriptor.id,
                 producers: [.task(AndroidRuntimeTaskIDs.aospSourceInputs)],
-                storageClass: .cache,
+                // Source rather than cache. It is a partial-clone Repo tree,
+                // and calling it a cache described how it is used rather than
+                // what it holds -- which is why seventy-three gigabytes of it
+                // sat outside every decision about materialized source.
+                storageClass: .source,
                 root: context.cacheRoot.appending(
                     "android-runtime/aosp-source-inputs"),
                 safetyRoot: context.cacheRoot.appending("android-runtime"),
-                retentionPolicy: .singleWorkingSet),
+                retentionPolicy: .singleWorkingSet,
+                // It exists to materialize the guest workspace and holds
+                // nothing the locked manifest does not name, so host
+                // networking rebuilds it exactly. Collecting it costs a
+                // hydration, not a result.
+                residency: .onDemand(
+                    reconstructedBy: AndroidRuntimeTaskIDs.aospSourceInputs)),
             StorageDeclaration(
                 id: "android-aosp-signing-identity",
                 owner: descriptor.id,

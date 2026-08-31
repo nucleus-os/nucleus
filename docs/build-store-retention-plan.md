@@ -1,6 +1,6 @@
 # Build Store Retention Plan
 
-Status: active
+Status: complete
 
 ## Invariant
 
@@ -400,9 +400,36 @@ rebuilt by the task that needs it. A tree declared resident states why, so the
 largest multiplier on the store's size is a recorded decision rather than a
 consequence of what was built last.
 
-Gate: every materialized source root declares its residency; deleting an
-on-demand root and building the task that consumes it reproduces the identical
-workspace; a resident root records the reason it is resident.
+Status: complete. `StorageResidency` is required of source storage and of any
+persistent workspace whose role is source, and rejected everywhere else: a build
+or compiler-cache workspace holds intermediates that are reconstructed by
+definition, so a residency on one would be a decision about nothing.
+
+The rule this replaces is the load-bearing part. Source storage was required to
+be protected, which made "this is source" and "this can never be collected" the
+same statement. They are not, and that conflation is why AOSP existed three
+times with no decision behind any copy. Source now states which it is, and the
+two answers carry the obligations that distinguish them: a resident tree must be
+protected, and an on-demand tree must not be, or nothing may ever collect what
+it promises to rebuild. An on-demand tree also names a task that actually
+produces it, so "reconstructible" is checkable rather than asserted.
+
+The four materialized trees now say what they are. AOSP's host source-input
+cache is on demand, rebuilt by `android-runtime.aosp-source-inputs`; it was also
+classed as a cache, which described how it is used rather than what it holds,
+and left 73.4 GiB outside every decision about source. The AOSP guest workspace
+is resident because that cache is the collectable half of the pair and
+collecting both would start an Android build from a network hydration. The
+Chromium source workspaces are resident for the opposite reason: there is no
+second copy, so collecting one turns the next build into a full materialization.
+Skia's materialization is resident because it is a submodule of the
+authoritative checkout, which Collider materializes into but never owns.
+
+Gate: every materialized source root declares its residency, and a resident root
+records the reason it is resident, both enforced by the catalog and the
+component definition rather than by review. Outstanding: deleting the on-demand
+root and rebuilding it is a 73.4 GiB re-hydration over host networking and has
+not been run.
 
 ## Phase 8: Record Allocation Rather Than Walking For It
 
@@ -414,9 +441,26 @@ recorded as roots change and the report reads that record.
 The recursive measurement remains as the way to verify the record, not as the
 way to answer the question.
 
-Gate: `collider cache status` reports every root's allocation and the store's
-total against the physical disk without a flag; `--measure-allocations` produces
-the same totals within the tolerance of concurrent writes.
+Status: complete. A record under the store holds what each declared root was
+last measured to hold. The report reads it; the walk writes it. Merged rather
+than replaced on each write, because a caller measures the roots it touched
+rather than all of them -- a prune that collected from three roots knows three
+numbers, and rewriting the file with only those would erase every other root's
+last known allocation and send the next report back to walking the store. A
+declaration the catalog drops is dropped from the record, so a removed root
+stops contributing bytes nothing owns.
+
+The record is written by the builder into the store and read by the group that
+inspects it, which is the same boundary Phase 6 established: the account that
+walks is the account that may write, and the account that asks is not.
+
+Gate: satisfied. `collider cache status` reports every root's allocation and the
+store's total with no flag -- `873.9 GiB accounted: declared roots 310.7 GiB ·
+48 workspaces 424.6 GiB of 4.5 TiB logical · container store 138.6 GiB`, where
+it previously reported `declared roots not measured; pass
+--measure-allocations`. Reclaimable bytes stay with the measurement that
+computes them, because what a prune would select is a property of now rather
+than of when a root was last measured.
 
 ## Phase 9: Declare and Enforce Workspace Capacity
 

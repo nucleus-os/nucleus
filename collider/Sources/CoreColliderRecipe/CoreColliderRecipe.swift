@@ -171,7 +171,10 @@ public enum CoreColliderRecipe: ColliderComponent {
                 storageClass: .source,
                 root: root.appending("third-party/skia"),
                 safetyRoot: root,
-                retentionPolicy: .protected),
+                retentionPolicy: .protected,
+                residency: .resident(
+                    reason: "a submodule of the authoritative checkout, whose "
+                        + "working tree Collider materializes into but never owns")),
             StorageDeclaration(
                 id: "core-android-gradle",
                 owner: descriptor.id,

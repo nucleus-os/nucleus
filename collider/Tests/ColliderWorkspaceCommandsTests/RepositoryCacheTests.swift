@@ -1268,7 +1268,8 @@ private func imageFixtureCatalog(root: URL) throws -> ComponentCatalog {
             storageClass: .source,
             root: FilePath(protected.path),
             safetyRoot: FilePath(workspace.path),
-            retentionPolicy: .protected),
+            retentionPolicy: .protected,
+            residency: .resident(reason: "the fixture's authoritative tree")),
     ]
     let fixture = try ComponentDefinition(
         descriptor: ComponentDescriptor(
@@ -1682,4 +1683,76 @@ private func identityContextFixture(
     #expect(FileManager.default.fileExists(atPath: active.path))
     let remaining = try FileManager.default.contentsOfDirectory(atPath: generations.path)
     #expect(remaining == [active.lastPathComponent])
+}
+
+/// Source is the one class whose cost is worth a decision, and the store held
+/// three copies of AOSP because nothing required one.
+///
+/// The rule this replaces was that source storage must be protected, which made
+/// "this is source" and "this can never be collected" the same statement. They
+/// are not: a tree materialized from a pinned input is source and is
+/// reconstructible.
+@Test func materializedSourceMustSayWhetherItStays() throws {
+    func declaration(
+        retention: StorageRetentionPolicy,
+        residency: StorageResidency?,
+        producers: Set<StorageProducer> = [.task(TaskID(rawValue: "example.rebuild"))]
+    ) -> StorageDeclaration {
+        StorageDeclaration(
+            id: "example-source",
+            owner: ComponentID(rawValue: "example"),
+            producers: producers,
+            storageClass: .source,
+            root: FilePath("/store/example/source"),
+            safetyRoot: FilePath("/store/example"),
+            retentionPolicy: retention,
+            residency: residency)
+    }
+    func catalog(_ declarations: [StorageDeclaration]) throws {
+        try StorageCatalog.validate(declarations, forbiddenRemovalRoots: [])
+    }
+
+    // Undeclared residency is the state this rule exists to reject.
+    #expect(throws: (any Error).self) {
+        try catalog([declaration(retention: .protected, residency: nil)])
+    }
+    // A tree that stays is authoritative for as long as it stays.
+    #expect(throws: Never.self) {
+        try catalog([
+            declaration(retention: .protected, residency: .resident(reason: "the checkout"))
+        ])
+    }
+    #expect(throws: (any Error).self) {
+        try catalog([
+            declaration(
+                retention: .singleWorkingSet,
+                residency: .resident(reason: "the checkout"))
+        ])
+    }
+    // A tree that does not stay must be collectable, or the promise to rebuild
+    // it is never called on.
+    #expect(throws: (any Error).self) {
+        try catalog([
+            declaration(
+                retention: .protected,
+                residency: .onDemand(reconstructedBy: TaskID(rawValue: "example.rebuild")))
+        ])
+    }
+    // And it must name a task that actually produces it, so "reconstructible"
+    // is checkable rather than asserted.
+    #expect(throws: (any Error).self) {
+        try catalog([
+            declaration(
+                retention: .singleWorkingSet,
+                residency: .onDemand(reconstructedBy: TaskID(rawValue: "nobody.rebuilds")),
+                producers: [.task(TaskID(rawValue: "example.rebuild"))])
+        ])
+    }
+    #expect(throws: Never.self) {
+        try catalog([
+            declaration(
+                retention: .singleWorkingSet,
+                residency: .onDemand(reconstructedBy: TaskID(rawValue: "example.rebuild")))
+        ])
+    }
 }

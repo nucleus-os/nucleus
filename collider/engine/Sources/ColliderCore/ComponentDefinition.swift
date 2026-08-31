@@ -125,6 +125,18 @@ public struct ComponentDefinition: Sendable {
                 throw ComponentDefinitionFailure.conflictingPersistentWorkspace(
                     declaration.identity)
             }
+            // A source workspace is the one kind whose cost is worth a
+            // decision, and the store held three copies of AOSP because
+            // nothing required one.
+            if declaration.identity.role == "source" {
+                guard declaration.residency != nil else {
+                    throw ComponentDefinitionFailure.undeclaredWorkspaceResidency(
+                        declaration.identity)
+                }
+            } else if declaration.residency != nil {
+                throw ComponentDefinitionFailure.misplacedWorkspaceResidency(
+                    declaration.identity)
+            }
             workspacesByIdentity[declaration.identity] = declaration
         }
 
@@ -421,6 +433,8 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
     case unknownEntrypointRoot(entrypoint: ComponentEntrypointID, task: TaskID)
     case foreignStorage(component: ComponentID, storage: String, owner: ComponentID)
     case conflictingPersistentWorkspace(PersistentWorkspaceIdentity)
+    case undeclaredWorkspaceResidency(PersistentWorkspaceIdentity)
+    case misplacedWorkspaceResidency(PersistentWorkspaceIdentity)
 
     public var description: String {
         switch self {
@@ -436,6 +450,13 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
             "component entrypoint '\(entrypoint)' names unknown root task '\(task)'"
         case .foreignStorage(let component, let storage, let owner):
             "component '\(component)' contains storage '\(storage)' owned by '\(owner)'"
+        case .undeclaredWorkspaceResidency(let identity):
+            "persistent workspace '\(identity.key)' holds materialized source "
+                + "and must declare whether it stays between builds"
+        case .misplacedWorkspaceResidency(let identity):
+            "persistent workspace '\(identity.key)' declares residency without "
+                + "holding source; build and compiler-cache workspaces hold "
+                + "intermediates that are reconstructed by definition"
         case .conflictingPersistentWorkspace(let identity):
             "component declares conflicting persistent workspace '\(identity.schedulingKey)'"
         }
