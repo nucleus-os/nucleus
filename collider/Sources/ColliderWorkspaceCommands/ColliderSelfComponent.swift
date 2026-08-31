@@ -16,17 +16,28 @@ enum ColliderSelfComponent {
     ) async throws -> ComponentDefinition {
         let packageRoot = context.root.appending("collider")
         let engineRoot = packageRoot.appending("engine")
+        // Release, like every other lane that runs tests. Collider's own
+        // sources declare no `assert`, `assertionFailure`, or
+        // `debugPrecondition`, so optimization elides no check it relies on,
+        // and its sixty preconditions are retained. What debug was buying was
+        // swift-system validating a `FilePath` component view on construction,
+        // which this suite does constantly: one catalog costs 20.0 s debug and
+        // 0.34 s release, and the whole bundle 45.9 s against 6.0 s.
         let cli = testTask(
             id: ColliderSelfTaskIDs.cliTests,
             package: "collider-cli",
             testProduct: "collider-cliPackageTests",
-            invocation: try await context.swiftPMInvocation(packageRoot: packageRoot),
+            invocation: try await context.swiftPMInvocation(
+                packageRoot: packageRoot,
+                configuration: .release),
             environment: context.taskEnvironment)
         let engine = testTask(
             id: ColliderSelfTaskIDs.engineTests,
             package: "engine",
             testProduct: "enginePackageTests",
-            invocation: try await context.swiftPMInvocation(packageRoot: engineRoot),
+            invocation: try await context.swiftPMInvocation(
+                packageRoot: engineRoot,
+                configuration: .release),
             environment: context.taskEnvironment)
         return try ComponentDefinition(
             descriptor: descriptor,

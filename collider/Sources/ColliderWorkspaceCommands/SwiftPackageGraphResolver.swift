@@ -416,6 +416,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         descriptions: [Description],
         headerSearchPaths: [String: [String: [String]]]
     ) throws -> SwiftPackageSourceGraph {
+        let canonicalPath = CanonicalPathCache()
         let canonicalRoot = canonicalPath(root)
         let roots = Set(descriptions.map { canonicalPath(FilePath($0.path)) })
         guard roots.contains(canonicalRoot) else {
@@ -486,10 +487,26 @@ package final class SwiftPackageGraphResolver: Sendable {
     }
 }
 
-private func canonicalPath(_ path: FilePath) -> FilePath {
-    FilePath(
-        URL(fileURLWithPath: path.string).resolvingSymlinksInPath().path
-    ).lexicallyNormalized()
+/// Resolves a path's symbolic links, remembering what it resolved.
+///
+/// `resolvingSymlinksInPath` stats every component of every path it is given,
+/// and reconstructing a package graph asks about the same paths repeatedly: a
+/// package root, then each of its targets beneath that root, then the header
+/// search paths beneath those. Across seventy-odd packages that is thousands of
+/// walks over a few dozen distinct directories. Resolution depends only on the
+/// filesystem, which does not change while one graph is being built, so the
+/// answers are shared for the duration of one reconstruction.
+private final class CanonicalPathCache {
+    private var resolved: [FilePath: FilePath] = [:]
+
+    func callAsFunction(_ path: FilePath) -> FilePath {
+        if let existing = resolved[path] { return existing }
+        let result = FilePath(
+            URL(fileURLWithPath: path.string).resolvingSymlinksInPath().path
+        ).lexicallyNormalized()
+        resolved[path] = result
+        return result
+    }
 }
 
 package enum SwiftPackageGraphFailure: Error, CustomStringConvertible {
