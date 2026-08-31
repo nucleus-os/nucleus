@@ -225,7 +225,7 @@ package struct WorkspaceContext: Sendable {
         self.sourceRevalidation = sourceRevalidation
         requestedOCIConfiguration = ociConfiguration
         swiftPackageGraphs = SwiftPackageGraphResolver(
-            cacheRoot: hostBuildRoot.appending("swift-package-graphs"),
+            cacheRoot: Self.hostPackageGraphRoot(hostBuildRoot: hostBuildRoot),
             environment: normalizedEnvironment,
             identityPathMap: Self.identityPathMap(
                 root: root,
@@ -293,6 +293,30 @@ package struct WorkspaceContext: Sendable {
     /// The container case is different and is left alone: there the checkout is
     /// mounted at a canonical path, so the two genuinely are the same to
     /// SwiftPM and one workspace is correct.
+    /// Where package-graph resolution keeps its workspace state.
+    ///
+    /// Resolving writes: SwiftPM materializes workspace state into the scratch
+    /// and compiled manifests into the cache. The machine build store admits
+    /// one writer, so a resolver rooted there can only be driven by the
+    /// builder, and every other account fails -- not merely when the graph
+    /// changes, which is what made this look intermittent, but whenever
+    /// SwiftPM opens either directory for writing.
+    ///
+    /// So it belongs to the account resolving. That alone is not enough: the
+    /// scratch holds the dependency checkouts, and their paths reach task
+    /// identity, so an undeclared per-account root puts a home directory into
+    /// every identity that names one. It is declared below for the same reason
+    /// the per-checkout SwiftPM scratch is -- two accounts resolve into two
+    /// directories and identity cannot tell them apart.
+    static func hostPackageGraphRoot(hostBuildRoot: FilePath) -> FilePath {
+        #if os(macOS)
+        return MacOSHostStorageLayout.developerOwned().developerRoot
+            .appending("swift-package-graphs")
+        #else
+        return hostBuildRoot.appending("swift-package-graphs")
+        #endif
+    }
+
     static func hostSwiftPMScratchRoot(
         root: FilePath,
         hostBuildRoot: FilePath
@@ -321,6 +345,7 @@ package struct WorkspaceContext: Sendable {
             ("artifacts", artifactRoot), ("identity", identityRoot),
             ("logs", logRoot),
             ("swiftpm-scratch", hostSwiftPMScratchRoot(root: root, hostBuildRoot: hostBuildRoot)),
+            ("package-graphs", hostPackageGraphRoot(hostBuildRoot: hostBuildRoot)),
         ] where seen.insert(path).inserted {
             roots.append(IdentityPathRoot(name: name, path: path))
         }

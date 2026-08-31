@@ -325,10 +325,21 @@ against whatever is producing it. Storage produced by a runtime is therefore
 unreachable, which is also why the component holding it cannot be cleaned as a
 whole. That is cleanup correctness now rather than a blocker.
 
-Remaining for a second machine: dependency checkouts are named beneath the host
-build root, which is not a declared placement root, so their prefix is still
-this machine's. Declaring it also declares a container mount target, so anything
-beneath it that crosses into a container needs a matching mount.
+Dependency checkouts are now named beneath a declared root. They sit in the
+package-graph resolver's scratch, and that scratch had to move for a second
+reason: resolving writes, the machine build store admits one writer, and a
+resolver rooted there could only be driven by the builder -- every other account
+failed the moment SwiftPM opened the scratch or the manifest cache for writing,
+which is what made the documented local iteration path stop working. It is now
+per-account and declared as `package-graphs`, so two accounts resolve into two
+directories and identity cannot tell them apart.
+
+Per-account alone was not enough, and the first attempt proved it: an undeclared
+home-directory root put paths like
+`/Users/…/swift-package-graphs/…/checkouts/swift-crypto/Package.swift` into the
+identities of tasks that name them, and the placement assertion rejected it.
+Declaring the root is what makes a per-account location safe, which is the same
+conclusion the per-checkout SwiftPM scratch reached.
 
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
