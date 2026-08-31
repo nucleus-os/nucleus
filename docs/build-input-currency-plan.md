@@ -199,6 +199,23 @@ recorded for the root package is the one the Collider graph produces. Where the
 two cannot agree, the reason is stated beside the pin rather than left to be
 rediscovered from two `Package.resolved` files.
 
+The container fork is rebased and pushed: 1.3.1 plus its two functional Nucleus
+commits, the offline BuildKit builder support and the XPC file-descriptor
+ownership fix. The third commit is gone deliberately. It existed only to hold
+`scVersion` equal to the containerization version this repository pins, and
+1.3.1 sets that line itself, to 0.42.0 -- so the alignment burden moves to this
+repository's manifests and the fork stops carrying a pin.
+
+That coupling is why the submodule pointer does not move on its own.
+`collider/engine/Package.swift` declares the fork by path and containerization
+by `exact:`, so the fork's `exact: scVersion` and this repository's `exact:` pin
+must name one version or resolution fails outright. Upstream validated 1.3.1
+against 0.42.0; 0.43.0 is two commits further, one of them an EXT4 fix rejecting
+`..` components that escape the image root during unpack, and the other a
+vminitd filesystem-namespace change that also moves the guest agent protocol.
+Taking 0.43.0 means running ahead of the combination upstream tested, and the
+vminit image the runtime boots has to move with it.
+
 Gate: `swift test --package-path collider` for Collider's own host Swift code,
 then `collider build linux` and `collider test linux` for the container
 execution path.
@@ -212,8 +229,18 @@ Two dependencies are compiled from vendored source and are behind upstream.
 well as a library. `swift-tracy/third-party/tracy` is a fork at 0.13.1 against
 upstream 0.14.1 and is rebased rather than repinned.
 
+The tracy half is done. The fork reads as 1,298 commits over v0.13.1, but that
+is upstream master: the Nucleus delta is a single commit changing two `sprintf`
+calls to `snprintf` in `TracySystem.cpp`, still needed because upstream v0.14.1
+has not made the same change. It is replayed onto v0.14.1 and the branch now
+differs from that tag by exactly those two lines. Upstream's public client API
+moved substantially -- 55 files and 6,210 insertions, including `TracyVulkan.hpp`
+-- but none of the changed graphics headers are consumed here: the bridge
+compiles `TracyClient.cpp` as one translation unit behind its own C API.
+
 Achieved state: wayland is at 1.26.0 with regenerated protocol bindings, and the
-tracy fork is rebased onto 0.14.1 with its Nucleus changes replayed.
+tracy fork is rebased onto 0.14.1 with its Nucleus changes replayed. Outstanding:
+the wayland half.
 
 Gate: `collider build linux`, then `collider test linux`, which exercises the
 compositor's Wayland runtime against the regenerated bindings.
@@ -224,11 +251,18 @@ compositor's Wayland runtime against the regenerated bindings.
 compiler that builds it is `2026-08-26-a`. swift-syntax backs the macro plugins
 the root package compiles, and its snapshot is the one host-tooling input that
 should track the compiler rather than lag it. `swift-sdk/source/swift-sdk-generator`
-is a fork at `swift-6.3-RELEASE` against upstream `swift-6.3.3-RELEASE`.
+appeared to be a fork at `swift-6.3-RELEASE` against upstream
+`swift-6.3.3-RELEASE`. It is not behind. Upstream tags every 6.3.x release at
+one commit -- `swift-6.3-RELEASE`, `.1`, `.2`, and `.3` all name `01e610b` with
+an identical tree -- so the version difference is a label on the Swift release
+train rather than generator code. The fork is upstream `main` plus exactly its
+ten Nucleus commits and is missing nothing, so rebasing onto
+`swift-6.3.3-RELEASE` would discard fifteen upstream commits rather than gain
+any. The generator half of this phase is already achieved and needs no change.
 
 Achieved state: swift-syntax is at `2026-08-26-a`, matching the compiler
-snapshot, and the SDK generator fork is rebased onto `swift-6.3.3-RELEASE` with
-its Nucleus changes replayed.
+snapshot. The SDK generator needs no rebase; the reason is recorded above so it
+is not rediscovered.
 
 Gate: `collider build linux` and `collider build swift-sdk --rebuild`, the
 first covering macro expansion under the moved swift-syntax and the second
