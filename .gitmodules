@@ -2,9 +2,6 @@
 	path = core/third-party/skia
 	url = git@github.com:nucleus-os/skia.git
 	branch = nucleus-vulkan-render-pass-dependencies
-[submodule "core/third-party/libxkbcommon"]
-	path = core/third-party/libxkbcommon
-	url = https://github.com/xkbcommon/libxkbcommon.git
 [submodule "third-party/swift-system"]
 	path = third-party/swift-system
 	url = git@github.com:nucleus-os/swift-system.git

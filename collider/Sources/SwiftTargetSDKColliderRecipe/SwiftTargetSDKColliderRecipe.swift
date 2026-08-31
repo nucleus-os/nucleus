@@ -77,9 +77,29 @@ public struct SwiftTargetSDKInputs: Codable, Equatable, Sendable {
         public let url: String
     }
 
+    /// One Ubuntu package, named by where it sits in the archive pool rather
+    /// than by a URL.
+    ///
+    /// A pool path holds exactly the current version of a package and loses the
+    /// file when a new one publishes, so every package resolves through a
+    /// snapshot timestamp instead. That timestamp is one decision about which
+    /// archive this SDK is built from, and repeating it in 208 URLs made it 208
+    /// decisions that could disagree -- which is what the builder image already
+    /// did, installing from two snapshots at once. The package states the part
+    /// that is its own and the inputs state the part they share.
     public struct UbuntuPackage: Codable, Equatable, Sendable {
+        /// The package's location under the archive root, `pool/...`.
+        public let path: String
         public let sha256: String
-        public let url: String
+
+        public init(path: String, sha256: String) {
+            self.path = path
+            self.sha256 = sha256
+        }
+
+        public var fileName: String {
+            String(path.split(separator: "/").last ?? "")
+        }
     }
 
     public struct LinuxTarget: Codable, Equatable, Sendable {
@@ -110,6 +130,14 @@ public struct SwiftTargetSDKInputs: Codable, Equatable, Sendable {
     public let artifacts: Artifacts
     public let linuxTargets: [LinuxTarget]
     public let snapshot: String
+    /// The `snapshot.ubuntu.com` timestamp every Ubuntu package resolves
+    /// through.
+    public let ubuntuSnapshot: String
+
+    /// Where a package is fetched from, for this snapshot.
+    public func url(for package: UbuntuPackage) -> String {
+        "https://snapshot.ubuntu.com/ubuntu/\(ubuntuSnapshot)/\(package.path)"
+    }
 
     public var androidBundleID: String { "\(snapshot)_android" }
     public var linuxBundleID: String { "nucleus-swift-6.4-linux" }
@@ -644,6 +672,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
 
     private static func validate(_ inputs: SwiftTargetSDKInputs) throws {
         guard !inputs.snapshot.isEmpty,
+            !inputs.ubuntuSnapshot.isEmpty,
+            inputs.linuxTargets.allSatisfy({
+                $0.allUbuntuPackages.allSatisfy { $0.path.hasPrefix("pool/") }
+            }),
             inputs.linuxTargets.map(\.architecture).sorted(by: { $0.rawValue < $1.rawValue })
                 == SwiftTargetSDKInputs.LinuxArchitecture.allCases.sorted(by: {
                     $0.rawValue < $1.rawValue
@@ -674,16 +706,15 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 role: String
             ) throws -> [DownloadArtifact] {
                 try packages.enumerated().map { index, package in
-                    let name = try fileName(from: package.url)
-                    return try downloadTask(
+                    try downloadTask(
                         id:
                             "swift-sdk.download-ubuntu-\(target.architecture.rawValue)-\(role)-\(index)",
                         input: SwiftTargetSDKInputs.Input(
                             maximumResponseSize: 32 * 1_024 * 1_024,
                             sha256: package.sha256,
-                            url: package.url),
+                            url: configuration.inputs.url(for: package)),
                         destination: configuration.downloadRoot.appending(
-                            "ubuntu/\(target.architecture.rawValue)/\(name)"))
+                            "ubuntu/\(target.architecture.rawValue)/\(package.fileName)"))
                 }
             }
             let runtimeTasks = try tasks(for: target.runtimeUbuntuPackages, role: "runtime")

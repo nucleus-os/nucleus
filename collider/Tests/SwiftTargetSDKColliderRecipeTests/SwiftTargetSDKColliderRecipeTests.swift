@@ -414,46 +414,63 @@ import Testing
         // graph and requires every undefined symbol in it to be defined
         // somewhere in it, so it descends into host-provided libraries too:
         // their exports are what satisfy the artifacts.
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libbsd0_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libmd0_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libbsd0_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libmd0_") })
         // libwayland needs libffi; libinput needs libevdev, libmtdev, and
         // libwacom; libwacom reaches libgudev and libglib; libcurl reaches its
         // TLS and Kerberos closure; and pam.pc requires audit.pc, which
         // requires libcap-ng.pc.
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libffi8_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libevdev2_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libwacom9_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libaudit-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libcap-ng-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgssapi-krb5-2_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libffi8_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libevdev2_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libwacom9_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libaudit-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libcap-ng-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libgssapi-krb5-2_") })
         // Built from the release the builder image runs.
-        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("libc6_2.43") })
-        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
-        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libicu") })
-        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
-        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("libc++-18-dev") })
-        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("liblzma5_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libvulkan-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libvulkan1_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libpam0g-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libpam0g_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libdrm-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libdrm2_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgbm-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgbm1_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd0_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("x11proto-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libexpat1-dev_") })
-        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libzstd-dev_") })
+        #expect(target.runtimeUbuntuPackages.contains { $0.path.contains("libc6_2.43") })
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.path.contains("libstdc++") })
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.path.contains("libicu") })
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.path.contains("libxml2") })
+        #expect(target.runtimeUbuntuPackages.contains { $0.path.contains("libc++-18-dev") })
+        #expect(target.runtimeUbuntuPackages.contains { $0.path.contains("liblzma5_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libvulkan-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libvulkan1_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libpam0g-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libpam0g_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libdrm-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libdrm2_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libgbm-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libgbm1_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libsystemd-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libsystemd0_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("x11proto-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libexpat1-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.path.contains("libzstd-dev_") })
         #expect(
             target.allUbuntuPackages.allSatisfy {
-                $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")
-                    || $0.url.hasSuffix("_all.deb")
+                $0.path.hasSuffix("_\(target.architecture.debianArchitecture).deb")
+                    || $0.path.hasSuffix("_all.deb")
             })
     }
     #expect(inputs.artifacts.macOSHostPackage.sha256.count == 64)
     #expect(inputs.artifacts.androidSDK.sha256.count == 64)
+
+    // One archive, stated once. A pool path holds only the current version of
+    // a package and loses the file when a new one publishes, so a package that
+    // named a live pool host would stop resolving without anything here
+    // changing -- and the recorded hash would then describe a file nobody can
+    // obtain. The timestamp being a single declared field is what keeps 208
+    // packages from drifting onto different archives, which is the state the
+    // builder image reached while installing from two snapshots at once.
+    #expect(inputs.ubuntuSnapshot.hasSuffix("Z"))
+    let resolved = inputs.linuxTargets
+        .flatMap(\.allUbuntuPackages)
+        .map { inputs.url(for: $0) }
+    #expect(resolved.count == 208)
+    #expect(
+        resolved.allSatisfy {
+            $0.hasPrefix("https://snapshot.ubuntu.com/ubuntu/\(inputs.ubuntuSnapshot)/pool/")
+        })
 }
 
 @Test func discoveryPublicationPreservesADisplacedMutableInstallation() async throws {

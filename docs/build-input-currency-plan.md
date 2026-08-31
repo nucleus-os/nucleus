@@ -60,12 +60,25 @@ sample spanning both architectures and both package lists hashes byte-identical
 to the recorded pins, including the openssl package no longer obtainable from
 the live pool. Both architectures now resolve from one `snapshot.ubuntu.com`
 path, so the split between `ports.ubuntu.com` and `archive.ubuntu.com` is gone.
-What remains is lifting the timestamp out of the individual URLs into a declared
-field the loader applies to pool-relative paths, and the gate below.
+
+The timestamp is now one declared field. `ubuntuSnapshot` sits beside the Swift
+snapshot, matching the name the builder image inputs already use, and each
+package states only its pool-relative path. Which archive this SDK is built from
+was 208 decisions that could disagree; it is one. That is the drift Phase 2 has
+to undo in the builder image, which installs from two snapshots at once, and it
+is no longer expressible here.
+
+Resolution is unchanged by the restructure, and the graph states so rather than
+the reasoning: all 208 download tasks plan clean, which they can only do if
+every resolved URL and hash is what it was. The assembly, validation, and
+publication tasks do move, because they name the inputs file itself and its
+bytes changed. That is one re-assembly of an SDK whose contents are identical,
+and it is the cost of the restructure rather than a change in what is built.
 
 Gate: `collider build swift-sdk --rebuild` produces both Linux target
 architectures from the snapshot host, and the resulting SDK artifact hashes
-match the ones the pool-fetched inputs produced.
+match the ones the pool-fetched inputs produced. Outstanding: the rebuild is a
+deliberate forced production and has not been run.
 
 ## Phase 2: Builder image input currency
 
@@ -97,12 +110,17 @@ The vendored copy is therefore unbuilt source four minor versions behind the ABI
 the products actually link, and it exists only to be mistaken for the source of
 that ABI.
 
-Achieved state: the submodule and its `.gitmodules` entry are gone. xkbcommon
-has exactly one source, the target SDK package set, and its version is visible
-only where that set declares it.
+Status: complete. The submodule and its `.gitmodules` entry are gone, and
+`core/third-party` now holds only Skia. Re-audited against the tree before
+removal: no reference to the path exists outside the plan text itself, and the
+only references to `core/third-party` at all are the two that reach Skia's
+vendored ICU and the one that reaches Skia's sources. xkbcommon has exactly one
+source, the target SDK package set, and its version is visible only where that
+set declares it.
 
 Gate: `collider build linux` links the compositor and window client, confirming
-the pkg-config path never depended on the removed tree.
+the pkg-config path never depended on the removed tree. It runs as part of the
+protected-main verification sweep.
 
 ## Phase 4: Continuous integration action currency
 
@@ -120,14 +138,16 @@ job, no annotation, and a zero-second duration, which reads as a malformed
 workflow rather than as a policy refusal. An attempt to bump the pin alone
 produced exactly that and was reverted.
 
-Achieved state: the repository's selected-actions allowlist names the v7.0.1
-commit and the workflow pins the same commit, in that order. The allowlist entry
-is a repository settings change rather than a tracked file, so this phase is the
-one place in this plan where the change does not live entirely in the tree, and
-the settings change is the prerequisite rather than the follow-up.
+Status: complete. The allowlist was widened to the v7.0.1 commit first and the
+workflow then pinned `3d3c42e5aac5ba805825da76410c181273ba90b1`, in that order,
+which is the ordering the failure mode requires: the reverse produces a
+`startup_failure` with no job and no annotation. The allowlist entry is a
+repository settings change rather than a tracked file, so this phase is the one
+place in this plan where the change does not live entirely in the tree.
 
-Gate: the protected-main verification sweep completes its checkout on the
-upgraded action, and the workflow's Node 20 deprecation warning is gone.
+Gate: satisfied. Protected-main sweeps check out on the upgraded action -- run
+33344723864 completed its checkout step in 19.0 seconds against the v7.0.1
+commit -- and no Node 20 deprecation warning appears in the run.
 
 ## Phase 5: Apple container stack currency
 

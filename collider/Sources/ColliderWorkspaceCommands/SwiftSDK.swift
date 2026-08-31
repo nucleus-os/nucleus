@@ -65,7 +65,9 @@ func swiftTargetSDKNativeSysrootID(
     }) {
         encoder.append(target.architecture.rawValue)
         for package in target.allUbuntuPackages {
-            encoder.append(package.url)
+            // The resolved URL rather than the pool path, so an identity still
+            // moves when the snapshot the packages are fetched from moves.
+            encoder.append(inputs.url(for: package))
             encoder.append(package.sha256)
         }
     }
@@ -85,7 +87,7 @@ func swiftTargetRuntimeBuildID(
     encoder.append(inputs.snapshot)
     encoder.append(target.architecture.rawValue)
     for package in target.runtimeUbuntuPackages {
-        encoder.append(package.url)
+        encoder.append(inputs.url(for: package))
         encoder.append(package.sha256)
     }
     encoder.append(sourceID)
