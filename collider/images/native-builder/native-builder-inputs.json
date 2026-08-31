@@ -8,12 +8,12 @@
     },
     {
       "name": "swift-libxml2-arm64.deb",
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_arm64.deb",
+      "url": "https://snapshot.ubuntu.com/ubuntu/20260829T000000Z/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_arm64.deb",
       "sha256": "f833e07c5dffb9f7a26084522ef58854c4297982439a2affc94e20dbb495c696"
     },
     {
       "name": "swift-libicu74-arm64.deb",
-      "url": "https://snapshot.ubuntu.com/ubuntu/20260730T000000Z/pool/main/i/icu/libicu74_74.2-1ubuntu3_arm64.deb",
+      "url": "https://snapshot.ubuntu.com/ubuntu/20260829T000000Z/pool/main/i/icu/libicu74_74.2-1ubuntu3_arm64.deb",
       "sha256": "041df33ab32c57287a62ba141890a82512bf092854be455259c8034ab7ae9fbc"
     },
     {
@@ -23,13 +23,13 @@
     },
     {
       "name": "node-arm64.tar.xz",
-      "url": "https://nodejs.org/dist/v26.6.0/node-v26.6.0-linux-arm64.tar.xz",
-      "sha256": "974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923"
+      "url": "https://nodejs.org/dist/v26.8.1/node-v26.8.1-linux-arm64.tar.xz",
+      "sha256": "23c1b4d19e2f12a7d06fe8aa3d6e0e4923cf77a47e13c5ccdf32fadaa33960f2"
     },
     {
       "name": "bun-arm64.zip",
-      "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip",
-      "sha256": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b"
+      "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-linux-aarch64.zip",
+      "sha256": "4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e"
     },
     {
       "name": "android-ndk-r30-beta2-linux.zip",

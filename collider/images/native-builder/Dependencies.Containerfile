@@ -119,22 +119,22 @@ RUN echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp
 ENV PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY inputs/archives/node-arm64.tar.xz /tmp/node.tar.xz
-RUN echo '974e6f0332fb26179b34d49c57f35339e089a89faf8b82a81e44c0e1164b7923  /tmp/node.tar.xz' \
+RUN echo '23c1b4d19e2f12a7d06fe8aa3d6e0e4923cf77a47e13c5ccdf32fadaa33960f2  /tmp/node.tar.xz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/node \
     && tar --extract --xz --file /tmp/node.tar.xz \
         --directory /opt/node --strip-components=1 \
     && rm -f /tmp/node.tar.xz \
-    && /opt/node/bin/node --version | grep --fixed-strings 'v26.6.0'
+    && /opt/node/bin/node --version | grep --fixed-strings 'v26.8.1'
 
 COPY inputs/archives/bun-arm64.zip /tmp/bun.zip
-RUN echo 'a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b  /tmp/bun.zip' \
+RUN echo '4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e  /tmp/bun.zip' \
         | sha256sum --check --strict \
     && unzip /tmp/bun.zip -d /tmp/bun \
     && install --directory --mode=0755 /opt/bun/bin \
     && install --mode=0755 /tmp/bun/bun-linux-aarch64/bun /opt/bun/bin/bun \
     && rm -rf /tmp/bun /tmp/bun.zip \
-    && /opt/bun/bin/bun --version | grep --fixed-strings '1.3.14'
+    && /opt/bun/bin/bun --version | grep --fixed-strings '1.4.0'
 
 # Android's NDK host tools remain x86_64. The ARM guest executes them through
 # the same explicit Intel-translation policy used by the Linux amd64 test lane.

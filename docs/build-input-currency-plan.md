@@ -92,12 +92,39 @@ Both corrections land together because each rebuilds the heavyweight builder
 image, and the image is the input whose identity the largest number of
 downstream tasks carry.
 
+One snapshot now governs every package the image installs. The two `.deb`
+archives were fetched through the older view for a reason worth stating: they
+are Ubuntu 24.04-era packages, deliberately older than the resolute base,
+because the Swift toolchain tarball the image installs is built for 24.04 and
+links `libxml2` 2.9 and `libicu74`. Unifying the timestamp does not change which
+versions are installed and cannot: a snapshot is a view over one pool, both
+files resolve at either timestamp, and both hash byte-identical across the two.
+What it removes is the second view, not a second version.
+
+Node moves 26.6.0 to 26.8.1 and Bun 1.3.14 to 1.4.0, each verified against the
+publisher's own checksum file and then against the downloaded bytes. Both the
+inputs file and the Containerfile carry the version and hash, so both change
+together; the Containerfile's version assertion is what makes a mismatch fail
+the image build rather than ship.
+
+The NDK bump is held, and the reason is a fact the plan did not have. The NDK is
+pinned twice: `native-builder-inputs.json` names the archive the image unpacks,
+and `core/android/gradle/libs.versions.toml` names the SDK component Gradle
+resolves on the host. r30-beta3 is `30.0.16138531` and r30-beta2 is
+`30.0.15729638`, so bumping one leaves the container toolchain and the Gradle
+toolchain on different NDKs. No task provisions the host component -- it is an
+out-of-graph prerequisite under the builder-owned Android SDK root -- so
+planning fails outright on a version that is not installed. Both pins move
+together once `30.0.16138531` is installed there.
+
 Achieved state: one Ubuntu snapshot timestamp governs every package the builder
-image installs, and the Node, Bun, and NDK archives sit at the newest published
+image installs, and the Node and Bun archives sit at the newest published
 versions with refreshed hashes. CMake stays at 3.30.2; see Non-goals.
 
 Gate: `collider bootstrap native-builder` rebuilds the image and the SwiftPM
-overlay artifact against it, followed by `collider build linux`.
+overlay artifact against it, followed by `collider build linux`. Outstanding
+with the NDK bump: installing NDK `30.0.16138531` under the builder's Android
+SDK root, then moving both pins in one change.
 
 ## Phase 3: Remove the unbuilt libxkbcommon vendoring
 
