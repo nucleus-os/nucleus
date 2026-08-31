@@ -138,8 +138,8 @@ RUN echo '4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e  /tmp
 
 # Android's NDK host tools remain x86_64. The ARM guest executes them through
 # the same explicit Intel-translation policy used by the Linux amd64 test lane.
-COPY inputs/archives/android-ndk-r30-beta2-linux.zip /tmp/android-ndk.zip
-RUN echo '3827b0acab65a4559d92bc07b05a409d57d1925c835b8e6fd741cda08ca41515  /tmp/android-ndk.zip' \
+COPY inputs/archives/android-ndk-r30-beta3-linux.zip /tmp/android-ndk.zip
+RUN echo '2698cca1e9f161048ecd84e1e70a556e1aa00b78409473d4c1e87969d40c3efc  /tmp/android-ndk.zip' \
         | sha256sum --check --strict \
     && unzip -q /tmp/android-ndk.zip -d /opt \
     && rm -f /tmp/android-ndk.zip
@@ -161,7 +161,7 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-build
 USER nucleus-build
 WORKDIR /src
 
-ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
+ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta3 \
     CCACHE_COMPILERCHECK=content \
     CCACHE_DIR=/ccache \
     HOME=/home/nucleus-build \

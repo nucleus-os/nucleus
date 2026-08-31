@@ -6,7 +6,7 @@ compileSdkMinor = "0"
 minSdk = "24"
 targetSdkApi = "37"
 buildTools = "37.0.0"
-ndk = "30.0.15729638"
+ndk = "30.0.16138531"
 jvm = "17"
 junit = "4.13.2"
 

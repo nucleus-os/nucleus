@@ -32,9 +32,9 @@
       "sha256": "4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e"
     },
     {
-      "name": "android-ndk-r30-beta2-linux.zip",
-      "url": "https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip",
-      "sha256": "3827b0acab65a4559d92bc07b05a409d57d1925c835b8e6fd741cda08ca41515"
+      "name": "android-ndk-r30-beta3-linux.zip",
+      "url": "https://dl.google.com/android/repository/android-ndk-r30-beta3-linux.zip",
+      "sha256": "2698cca1e9f161048ecd84e1e70a556e1aa00b78409473d4c1e87969d40c3efc"
     }
   ],
   "aptRepositories": [
