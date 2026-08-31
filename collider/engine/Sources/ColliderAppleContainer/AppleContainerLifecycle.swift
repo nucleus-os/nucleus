@@ -474,6 +474,26 @@ func appleContainerName(for execution: OCIExecution) -> String {
 }
 
 struct AppleContainerLifecycle: Sendable {
+    /// How image references resolve when a container is configured.
+    ///
+    /// This was `auto`, which the container stack accepted until it removed the
+    /// case, and then rejected at runtime -- inside container creation, as
+    /// `invalidArgument: "unsupported scheme auto"`, rather than at build time.
+    /// Nothing is fetched on this path in practice: Collider prepares every
+    /// image before an execution, and containers reach no network at all. The
+    /// value still has to be one the stack accepts, so it is named once here
+    /// and checked against the stack's own parser by a test.
+    static let registryScheme = "https"
+
+    /// The same value, parsed by the stack that will parse it for real.
+    ///
+    /// Kept here rather than in a test because this module is the one that
+    /// depends on the container stack; a test can ask for it without importing
+    /// that stack itself.
+    static func parsedRegistryScheme() throws -> RequestScheme {
+        try RequestScheme(registryScheme)
+    }
+
     private let client: ContainerClient
     private let cancellation: RuntimeCancellation
     private let configuration: OCIRuntimeConfiguration
@@ -597,7 +617,7 @@ struct AppleContainerLifecycle: Sendable {
             process: flags.process,
             management: flags.management,
             resource: flags.resource,
-            registry: Flags.Registry(scheme: "auto"),
+            registry: Flags.Registry(scheme: Self.registryScheme),
             imageFetch: Flags.ImageFetch(maxConcurrentDownloads: 3),
             containerSystemConfig: systemConfiguration,
             progressUpdate: { _ in },

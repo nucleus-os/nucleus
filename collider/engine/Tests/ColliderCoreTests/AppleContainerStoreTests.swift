@@ -210,3 +210,15 @@ private struct StoreFixture {
     #expect(images.first?.repository == "localhost/example")
     #expect(images.first?.tag == "latest")
 }
+
+/// The registry scheme we hand the container stack has to be one it accepts.
+///
+/// It was `auto` until the stack removed that case, and a string the stack no
+/// longer parses fails inside container creation rather than at build time:
+/// `invalidArgument: "unsupported scheme auto"`, eight tasks into a sweep. The
+/// stack's own parser is the authority, so this asks it directly.
+@Test func theRegistrySchemeIsOneTheContainerStackParses() throws {
+    #expect(throws: Never.self) {
+        _ = try AppleContainerLifecycle.parsedRegistryScheme()
+    }
+}
