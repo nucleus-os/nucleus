@@ -883,6 +883,21 @@ both canonicalize to one name and identity still cannot tell them apart. The
 container case keeps one workspace, because there the checkout is mounted at a
 canonical path and the two genuinely are one path to SwiftPM.
 
+Declaring a root inside another root makes the prefix mapping order-dependent,
+and the two compilers resolve that order in opposite directions. `swiftpm-scratch`
+sits under the build root, and without a machine build store the build, artifact,
+and identity roots all sit under the cache root, so more than one mapping matches
+the same file. Swift applies the first mapping that matches and Clang the last,
+measured against the pinned toolchain, so a single emitted sequence is wrong for
+one of them: in name order the build root reached the scratch first and Swift
+recorded it as `/nucleus-build/swiftpm/<digest of the checkout path>`, putting the
+checkout back into compiled output that the mapping exists to keep out of it. Each
+compiler's flags are therefore ordered so the most specific root wins for that
+compiler. The ranking is containment rather than path length, because length is
+itself placement -- the authoritative checkout's cache path outruns its workspace
+path while the runner work tree's workspace path outruns both, and ordering by it
+emitted one revision's flags in two sequences and lowered it to two identities.
+
 Nothing in the store may outlive the builder's ability to collect it. Content
 staged out of the authoritative checkout arrives carrying that tree's
 inheritable entry denying the builder write and delete, and a copy that

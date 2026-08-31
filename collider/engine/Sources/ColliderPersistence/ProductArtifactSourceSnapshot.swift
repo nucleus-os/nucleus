@@ -37,7 +37,12 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             }
             return relative.string
         }
-        let closure = try await SourceClosureIdentity.digest(
+        // Digesting the closure descends into every submodule under it, so the
+        // per-submodule digests below are the values that walk already
+        // produced. Recomputing them read the whole submodule graph a second
+        // time -- llvm-project's 165,175 paths twice per capture -- for
+        // numbers the first read had in hand.
+        let closure = try await SourceClosureIdentity.capture(
             sourcePaths,
             observe: observe)
         let submodulePaths = try await submodulePaths(repositoryRoot).filter {
@@ -49,12 +54,21 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
         }
         var submodules: [ProductArtifactSourceClosure] = []
         for relative in submodulePaths {
+            // The walk keys nested checkouts by the path Git reported for
+            // the repository, so the lookup has to canonicalize the same way
+            // or it misses and reads the submodule again.
+            let path = canonicalFileSystemPath(repositoryRoot.appending(relative))
+            // A submodule the walk did not reach is one the closure does not
+            // contain, so its digest is not a value this capture already has.
+            let digest: ArtifactDigest
+            if let walked = closure.nested[path] {
+                digest = walked
+            } else {
+                digest = try await SourceClosureIdentity.digest(
+                    [path], observe: observe)
+            }
             submodules.append(
-                ProductArtifactSourceClosure(
-                    relativePath: relative,
-                    digest: try await SourceClosureIdentity.digest(
-                        [repositoryRoot.appending(relative)],
-                        observe: observe)))
+                ProductArtifactSourceClosure(relativePath: relative, digest: digest))
         }
         let head = try await gitText(
             at: repositoryRoot,
@@ -98,7 +112,7 @@ public struct ProductArtifactSourceSnapshot: Codable, Equatable, Sendable {
             provenanceScopes.contains { sourcePath(path, isWithin: $0) }
         }
         return try Self(
-            closure: closure,
+            closure: closure.digest,
             submoduleClosures: submodules,
             provenance: ProductArtifactProvenance(
                 baseCommit: assertedCommit ?? head,

@@ -3118,47 +3118,93 @@ private func artifactInput(
 /// command arguments and stay green, because only the lanes someone runs are
 /// ever encoded. The packaging and qualification lanes reached exactly that
 /// state.
-/// The prefix-mapping flags are placement, and their order must not be.
+/// The prefix-mapping flags are placement, and their order must not be --
+/// and the order still has to reach each compiler the way that compiler reads
+/// it.
 ///
-/// The identity path map sorts its roots by path length so a nested root is
-/// canonicalized before the root containing it, which makes the order a
-/// property of where a checkout sits. Emitting the flags in that order put the
-/// sequence into identity even though every value canonicalized: one checkout
-/// whose cache path outruns its workspace path sorts the cache first, another
-/// whose workspace path outruns both sorts the workspace first, and the same
-/// revision lowered to two different SwiftPM identities in one shared store.
-@Test func prefixMappingFlagOrderDoesNotFollowCheckoutPathLength() {
-    func flags(workspace: String, cache: String) -> (swift: [String], clang: [String]) {
+/// Declared roots overlap, so more than one mapping matches the same file.
+/// Swift applies the first match and Clang the last, measured against the
+/// pinned toolchain, which means one emitted sequence is wrong for one of
+/// them: in name order the build root reached the per-checkout SwiftPM scratch
+/// before the scratch's own root, and Swift recorded the scratch as
+/// `/nucleus-build/swiftpm/<digest of the checkout path>`. Every value
+/// canonicalized and the placement came back anyway.
+///
+/// Ranking by path length would put the most specific root first, but length
+/// is itself placement: one checkout's cache path outruns its workspace path,
+/// another's workspace path outruns both, and the same revision lowered to two
+/// identities in one shared store. Containment is the structural version of
+/// the same ranking.
+@Test func prefixMappingResolvesTheMostSpecificRootForEachCompiler() {
+    func context(workspace: String, cache: String, build: String?) -> WorkspaceContext {
         WorkspaceContext(
             root: FilePath(workspace),
             environment: [:],
             runtime: ColliderRuntime(),
-            cacheRoot: FilePath(cache)
-        ).filePrefixMapFlags
+            cacheRoot: FilePath(cache),
+            hostBuildRoot: build.map { FilePath($0) })
     }
-    // The cache path outruns the workspace path, so the map's own sort reaches
-    // the cache first.
-    let cacheFirst = flags(
-        workspace: "/Library/Nucleus/checkout",
-        cache: "/Library/Nucleus/Collider/cache")
-    // A workspace path longer than either, so that sort reaches it first.
-    let workspaceFirst = flags(
-        workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
-        cache: "/Library/Nucleus/Collider/cache")
-
     func names(_ values: [String]) -> [String] {
         values.compactMap { value in
             guard let range = value.range(of: "=/nucleus-") else { return nil }
             return String(value[range.upperBound...])
         }
     }
-    #expect(names(cacheFirst.swift) == names(workspaceFirst.swift))
-    #expect(names(cacheFirst.clang) == names(workspaceFirst.clang))
-    // Name order is the one order neither placement can influence. Asserting
-    // the sequence rather than a fixed list keeps the property stated when the
-    // set of declared roots changes.
-    #expect(names(cacheFirst.swift) == names(cacheFirst.swift).sorted())
-    #expect(Set(names(cacheFirst.swift)).isSuperset(of: ["cache", "workspace"]))
+    // Swift stops at the first mapping that matches; Clang keeps going and
+    // takes the last. Applying a list the way its compiler does is the only
+    // way this asserts what reaches the recorded path.
+    func applying(_ mapping: String, to path: String) -> String? {
+        let parts = mapping.split(separator: "=", maxSplits: 1).map(String.init)
+        guard path.hasPrefix(parts[0]) else { return nil }
+        return parts[1] + path.dropFirst(parts[0].count)
+    }
+    func swiftMapped(_ path: String, _ flags: [String]) -> String {
+        let mappings = flags.filter { $0 != "-file-prefix-map" }
+        return mappings.lazy.compactMap { applying($0, to: path) }.first ?? path
+    }
+    func clangMapped(_ path: String, _ flags: [String]) -> String {
+        let mappings = flags.map { String($0.dropFirst("-ffile-prefix-map=".count)) }
+        return mappings.compactMap { applying($0, to: path) }.last ?? path
+    }
+
+    // The store layout, where the build root sits beside the cache root and
+    // the per-checkout scratch sits under the build root.
+    let stored = context(
+        workspace: "/Users/builder/Library/Developer/Nucleus/Collider/work/nucleus/nucleus",
+        cache: "/Library/Nucleus/Collider/cache",
+        build: "/Library/Nucleus/Collider/state/build")
+    let flags = stored.filePrefixMapFlags
+    let scratch = WorkspaceContext.hostSwiftPMScratchRoot(
+        root: stored.root,
+        hostBuildRoot: stored.hostBuildRoot)
+    let file = scratch.appending("unsanitized/out/module.pcm").string
+
+    // The scratch path contains a digest of the checkout path, so a mapping
+    // that resolves through the build root instead carries the checkout into
+    // the recorded path.
+    #expect(swiftMapped(file, flags.swift) == "/nucleus-swiftpm-scratch/unsanitized/out/module.pcm")
+    #expect(clangMapped(file, flags.clang) == "/nucleus-swiftpm-scratch/unsanitized/out/module.pcm")
+
+    // The same requirement in the layout with no machine store, where the
+    // build, artifact, and identity roots are all inside the cache root.
+    let unstored = context(
+        workspace: "/Library/Nucleus/checkout",
+        cache: "/Library/Nucleus/Collider/cache",
+        build: nil)
+    let plain = unstored.filePrefixMapFlags
+    let identityFile = unstored.identityRoot.appending("record").string
+    #expect(swiftMapped(identityFile, plain.swift) == "/nucleus-identity/record")
+    #expect(clangMapped(identityFile, plain.clang) == "/nucleus-identity/record")
+
+    // And the sequence itself stays out of identity: two placements of one
+    // revision emit the same roots in the same order.
+    let elsewhere = context(
+        workspace: "/opt/n", cache: "/var/tmp/collider-store", build: nil
+    ).filePrefixMapFlags
+    #expect(names(plain.swift) == names(elsewhere.swift))
+    #expect(names(plain.clang) == names(elsewhere.clang))
+    #expect(names(plain.clang) == names(plain.swift).reversed())
+    #expect(Set(names(plain.swift)).isSuperset(of: ["cache", "workspace", "swiftpm-scratch"]))
 }
 
 /// Placement independence is an equality between two placements, not the

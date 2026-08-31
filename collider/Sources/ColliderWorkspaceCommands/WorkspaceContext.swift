@@ -339,25 +339,54 @@ package struct WorkspaceContext: Sendable {
     }
 
     /// Swift and Clang spellings of that mapping, in the order each expects.
+    ///
+    /// Declared roots overlap. Without a machine build store the build,
+    /// artifact, and identity roots all sit under the cache root; with one
+    /// they move beside it, but the per-checkout SwiftPM scratch sits under
+    /// the build root in both. So more than one mapping matches the same file,
+    /// and which one applies is decided by order -- in opposite directions:
+    ///
+    ///     swiftc -file-prefix-map A=/A -file-prefix-map A/b=/B   -> /A/b/t
+    ///     swiftc -file-prefix-map A/b=/B -file-prefix-map A=/A   -> /B/t
+    ///     clang -ffile-prefix-map=A=/A -ffile-prefix-map=A/b=/B  -> /B/t
+    ///     clang -ffile-prefix-map=A/b=/B -ffile-prefix-map=A=/A  -> /A/b/t
+    ///
+    /// Swift takes the first match and Clang the last, so one sequence cannot
+    /// serve both and emitting one was emitting it wrong for one of them. In
+    /// name order the containing root reached the scratch first, and Swift
+    /// recorded it as `/nucleus-build/swiftpm/<digest of the checkout path>`:
+    /// the placement this mapping exists to erase, reintroduced by the order
+    /// rather than by any value. Each list is therefore built to put the most
+    /// specific root where that compiler looks for it.
+    ///
+    /// The ranking is containment, not path length. Length is a property of
+    /// where a checkout sits -- the authoritative checkout's cache path
+    /// outruns its workspace path while a runner work tree's workspace path
+    /// outruns both, so ordering by it emitted the same revision's flags in
+    /// two sequences and lowered it to two identities in one shared store.
+    /// Containment is structural: the scratch is inside the build root in
+    /// every checkout. Roots that do not overlap are ranked by name, where the
+    /// sequence is arbitrary and only has to be fixed.
     package var filePrefixMapFlags: (swift: [String], clang: [String]) {
-        var swift: [String] = []
-        var clang: [String] = []
-        // Emitted in name order rather than in the map's own order. The map
-        // sorts by path length, descending, so a nested root is canonicalized
-        // before the root that contains it -- a property of the paths
-        // themselves, and therefore of where this checkout happens to sit.
-        // The authoritative checkout's cache path is the longer of the two, so
-        // the cache sorts first there; a runner work tree's workspace path is
-        // longer than either, so the workspace sorts first instead. Each
-        // flag's value canonicalizes, so no placement survives in what is
-        // emitted, but the sequence would carry it: the same revision in two
-        // checkouts produced the same flags in two orders, and two identities.
-        for root in identityPathMap.roots.sorted(by: { $0.name < $1.name }) {
-            let mapping = "\(root.path.string)=\(Self.mappedPrefix(for: root))"
-            swift += ["-file-prefix-map", mapping]
-            clang.append("-ffile-prefix-map=\(mapping)")
-        }
-        return (swift, clang)
+        let ranked = identityPathMap.roots
+            .map { root in
+                (
+                    root: root,
+                    depth: identityPathMap.roots.count(where: { other in
+                        other.path != root.path
+                            && root.path.starts(with: other.path)
+                    })
+                )
+            }
+            .sorted {
+                $0.depth != $1.depth
+                    ? $0.depth > $1.depth : $0.root.name < $1.root.name
+            }
+            .map { "\($0.root.path.string)=\(Self.mappedPrefix(for: $0.root))" }
+        return (
+            swift: ranked.flatMap { ["-file-prefix-map", $0] },
+            clang: ranked.reversed().map { "-ffile-prefix-map=\($0)" }
+        )
     }
 
     package var stateRoot: FilePath { hostBuildRoot.appending("state") }

@@ -14,10 +14,39 @@ public enum SourceClosureIdentity {
         _ paths: [FilePath],
         observe: SourceCaptureObserver? = nil
     ) async throws -> ArtifactDigest {
-        try await GitSourceCheckoutHasher.digest(
+        try await capture(paths, observe: observe).digest
+    }
+
+    /// The same digest, plus the digest of every nested checkout it descended
+    /// into on the way.
+    ///
+    /// Digesting a closure already digests each nested checkout inside it --
+    /// that is what makes the outer value depend on them -- and then discards
+    /// those values. A caller that needs them per checkout was re-deriving
+    /// what this walk had just computed, which meant reading every submodule
+    /// twice: 165,175 paths of llvm-project, 31,220 of swift, 12,374 of
+    /// hermes, once to reach the closure digest and once more to name it.
+    ///
+    /// Keeping them is not a second source of truth. Each value is the one the
+    /// nested walk produced, so a per-checkout digest and the closure digest
+    /// that contains it cannot disagree about what was read.
+    public static func capture(
+        _ paths: [FilePath],
+        observe: SourceCaptureObserver? = nil
+    ) async throws -> (digest: ArtifactDigest, nested: [FilePath: ArtifactDigest]) {
+        let nested = Mutex<[FilePath: ArtifactDigest]>([:])
+        let digest = try await GitSourceCheckoutHasher.digest(
             paths,
-            digestNestedCheckout: { try await digest([$0], observe: observe) },
+            digestNestedCheckout: { checkout in
+                let inner = try await capture([checkout], observe: observe)
+                nested.withLock {
+                    $0[checkout] = inner.digest
+                    $0.merge(inner.nested) { existing, _ in existing }
+                }
+                return inner.digest
+            },
             observe: observe)
+        return (digest, nested.withLock { $0 })
     }
 }
 

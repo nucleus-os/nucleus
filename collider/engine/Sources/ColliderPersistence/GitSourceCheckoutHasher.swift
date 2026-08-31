@@ -374,7 +374,7 @@ extension String {
     }
 }
 
-private func canonicalFileSystemPath(_ path: FilePath) -> FilePath {
+func canonicalFileSystemPath(_ path: FilePath) -> FilePath {
     FilePath(
         URL(fileURLWithPath: path.string)
             .resolvingSymlinksInPath()
