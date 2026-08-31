@@ -29,6 +29,11 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
     case persistentWorkspaceConfigurationMismatch(name: String, reason: String)
     case persistentWorkspaceResolutionMissing(PersistentWorkspaceIdentity)
     case persistentWorkspaceDeletionRefused(String)
+    case persistentWorkspaceExhausted(
+        name: String,
+        allocatedBytes: UInt64,
+        capacityBytes: UInt64,
+        thresholdBytes: UInt64)
     case unsupportedTerminalOutput
 
     var description: String {
@@ -54,6 +59,18 @@ enum AppleContainerFailure: Error, CustomStringConvertible {
             "Apple container volume \(name) does not match its persistent workspace declaration: \(reason)"
         case .persistentWorkspaceResolutionMissing(let identity):
             "Apple container persistent workspace was not resolved: \(identity.key)"
+        case .persistentWorkspaceExhausted(
+            let name, let allocated, let capacity, let threshold):
+            // Named here rather than discovered inside the container. A
+            // workspace is a filesystem in an image that cannot grow, so the
+            // alternative to this sentence is ENOSPC reported against whatever
+            // write happened to be next.
+            "persistent workspace \(name) is out of room: "
+                + "\(allocated) bytes allocated of \(capacity), "
+                + "past the \(threshold) byte threshold. Its declared capacity "
+                + "is below the working set of the operation that mounts it; "
+                + "raise the declared capacity or reduce what the operation "
+                + "retains."
         case .persistentWorkspaceDeletionRefused(let name):
             "refusing to delete Apple container volume not owned by this checkout: \(name)"
         case .unsupportedTerminalOutput:

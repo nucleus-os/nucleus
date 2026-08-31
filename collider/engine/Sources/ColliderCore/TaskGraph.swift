@@ -302,6 +302,26 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
         self.journal = journal
         self.retentionPolicy = retentionPolicy
     }
+
+    /// The allocation past which this workspace is treated as out of room.
+    ///
+    /// One policy rather than a number on each of forty-eight declarations,
+    /// because the question every one of them answers is the same: is there
+    /// enough left for the operation about to mount it. A workspace is a
+    /// filesystem inside an image that cannot grow, so the alternative to
+    /// stopping here is ENOSPC from inside a container, where the message
+    /// describes a write -- `mkdtemp` failing, or a linker taking SIGBUS on an
+    /// mmap'd output -- rather than a store that is full.
+    ///
+    /// Four fifths, because what remains has to hold one more operation rather
+    /// than one more file. The sweep that filled this host's arm64 SwiftPM
+    /// workspace was writing roughly twelve gigabytes per SwiftPM context
+    /// against a hundred, so a ceiling reached at ninety-five percent would
+    /// have been reported for the first time by the failure it exists to
+    /// replace.
+    public var exhaustionThresholdBytes: UInt64 {
+        capacityBytes - capacityBytes / 5
+    }
 }
 
 public struct OCIPersistentWorkspaceMount: Hashable, Sendable {

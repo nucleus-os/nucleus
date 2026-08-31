@@ -72,6 +72,15 @@ public actor ColliderRuntime {
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
     let ociBackend: (any OCIRuntimeBackend)?
+    /// Reads the container store without the service that writes it.
+    ///
+    /// Separate from the backend because inspection and mutation have
+    /// different requirements. Mutation needs the service, which runs in one
+    /// account's launchd domain; inspection needs only the store, which is on
+    /// disk and group-readable. Routing both through the backend made every
+    /// preview unavailable to the account that owns the checkout.
+    let ociStore: (any OCIStoreInspection)?
+    public nonisolated var hasOCIStoreInspection: Bool { ociStore != nil }
     /// Whether this runtime can run containers at all.
     ///
     /// Derived rather than stored: one fact, in one place. A host with no
@@ -91,7 +100,8 @@ public actor ColliderRuntime {
             taskOutputObserver: taskOutputObserver,
             downloadCacheRoot: defaultColliderDownloadCacheRoot(),
             ociConfiguration: .engineDefault,
-            ociBackend: nil)
+            ociBackend: nil,
+            ociStore: nil)
     }
 
     public init(
@@ -100,7 +110,8 @@ public actor ColliderRuntime {
         taskOutputObserver: TaskOutputObserver = TaskOutputObserver(),
         downloadCacheRoot: FilePath,
         ociConfiguration: OCIRuntimeConfiguration,
-        ociBackend: (any OCIRuntimeBackend)? = nil
+        ociBackend: (any OCIRuntimeBackend)? = nil,
+        ociStore: (any OCIStoreInspection)? = nil
     ) {
         self.logging = logging
         self.taskOutputObserver = taskOutputObserver
@@ -108,6 +119,51 @@ public actor ColliderRuntime {
         self.cancellation = cancellation
         self.ociConfiguration = ociConfiguration
         self.ociBackend = ociBackend
+        self.ociStore = ociStore
+    }
+
+    /// The container store reader, or a failure that says it is missing.
+    func requireOCIStore() throws -> any OCIStoreInspection {
+        guard let ociStore else { throw OCIExecutorFailure.noRuntimeBackend }
+        return ociStore
+    }
+
+    public func ociExecutionLiveness() async -> OCIExecutionLiveness {
+        guard let ociStore else { return .idle }
+        return await ociStore.executionLiveness()
+    }
+
+    /// What the store holds, read from the store.
+    ///
+    /// These shadow the backend's answers deliberately: the same questions,
+    /// answered without the service, so a preview is available to whoever asks
+    /// rather than only to the account that runs builds.
+    public func storedOCIPersistentWorkspaces() async throws
+        -> [OCIPersistentWorkspaceState]
+    {
+        try await requireOCIStore().persistentWorkspaces(configuration: ociConfiguration)
+    }
+
+    public func storedOCIContainers() async throws -> [OCIContainerState] {
+        try await requireOCIStore().containers()
+    }
+
+    public func storedOCIImages() async throws -> [OCIImageState] {
+        try await requireOCIStore().images()
+    }
+
+    public func storedOrphanedOCIImageContent() async throws -> OCIOrphanedImageContent {
+        try await requireOCIStore().orphanedImageContent()
+    }
+
+    public func storedOCIInfrastructureImages() async throws
+        -> OCIInfrastructureImages
+    {
+        try await requireOCIStore().infrastructureImages()
+    }
+
+    public func storedOCIDiskUsage() async throws -> OCIRuntimeDiskUsage {
+        try await requireOCIStore().diskUsage(configuration: ociConfiguration)
     }
 
     /// The container backend, or a failure that says it is missing.

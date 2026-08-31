@@ -454,7 +454,22 @@ struct MacOSBuilderDoctor {
                 // reach, because the identity that executes is the one that signs.
                 let identity = try? fileManager.attributesOfItem(
                     atPath: store.appending("state/identity").string),
-                identity[.posixPermissions] as? NSNumber == 0o700
+                identity[.posixPermissions] as? NSNumber == 0o700,
+                // Inspection answers from the container store rather than from
+                // the service that writes it, so the reading group must reach
+                // that subtree. The service creates it, which is why this is
+                // asserted here rather than set by provisioning: a store the
+                // group cannot traverse sends every preview back to the
+                // launchd domain only one account can reach.
+                let containers = try? fileManager.attributesOfItem(
+                    atPath: MacOSHostStorageLayout(
+                        buildStore: store,
+                        libraryDirectory: store
+                    ).appleContainerApplicationRoot.string),
+                containers[.groupOwnerAccountName] as? String
+                    == contract.builder.buildStateGroup,
+                ((containers[.posixPermissions] as? NSNumber)?.intValue ?? 0) & 0o050
+                    == 0o050
             else { return nil }
             return "\(store), written by \(owner) and read by \(group)"
         }

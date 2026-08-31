@@ -123,8 +123,19 @@ public struct ColliderCommand: AsyncParsableCommand {
         let cacheLayout = nucleusCacheLayout(environment: environment)
         #if os(macOS)
         let ociBackend: (any OCIRuntimeBackend)? = AppleContainerRuntimeBackend()
+        // Reading the store needs no service and no admission, so it is
+        // constructed for every invocation rather than for the ones that can
+        // reach the builder's launchd domain. That is the whole point: the
+        // account that owns the checkout can ask what the store holds.
+        let ociStore: (any OCIStoreInspection)? = (try? MacOSHostStorageLayout.current())
+            .map {
+                AppleContainerStore(
+                    applicationRoot: $0.appleContainerApplicationRoot,
+                    executionLease: provisionedHostExecutionLease)
+            }
         #else
         let ociBackend: (any OCIRuntimeBackend)? = nil
+        let ociStore: (any OCIStoreInspection)? = nil
         #endif
         let ociConfiguration = nucleusOCIRuntimeConfiguration(workspaceRoot: workspace)
         let runtime = ColliderRuntime(
@@ -136,7 +147,8 @@ public struct ColliderCommand: AsyncParsableCommand {
                 terminalDidEnd: { try? console.terminalDidResume() }),
             downloadCacheRoot: cacheLayout.downloads,
             ociConfiguration: ociConfiguration,
-            ociBackend: ociBackend)
+            ociBackend: ociBackend,
+            ociStore: ociStore)
         let signals = RuntimeSignalHandlers(
             cancellation: cancellation,
             terminal: RuntimeTerminalSignalCallbacks(

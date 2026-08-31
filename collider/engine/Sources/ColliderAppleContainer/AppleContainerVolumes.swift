@@ -162,6 +162,19 @@ struct ApplePersistentWorkspaceManager: Sendable {
                         name: name,
                         reason: reason))
             }
+            // A workspace that has been recreated in this pass is empty, so
+            // there is nothing to measure and nothing that could be full.
+            if !created.contains(where: { $0.workspace.identity == declaration.identity }) {
+                let allocated = try await operations.allocatedBytes(name)
+                let threshold = declaration.exhaustionThresholdBytes
+                guard allocated < threshold else {
+                    throw AppleContainerFailure.persistentWorkspaceExhausted(
+                        name: name,
+                        allocatedBytes: allocated,
+                        capacityBytes: declaration.capacityBytes,
+                        thresholdBytes: threshold)
+                }
+            }
             names[declaration.identity] = name
         }
         return ApplePersistentWorkspaceResolution(
@@ -302,13 +315,19 @@ struct ApplePersistentWorkspaceManager: Sendable {
     }
 
     private func isOwned(_ volume: VolumeConfiguration) throws -> Bool {
-        let namespace = configuration.managedLabelNamespace
-        let expectedOwner = try owner()
-        return volume.labels["\(namespace).persistent-workspace"] == "true"
-            && volume.labels["\(namespace).persistent-workspace.owner"] == expectedOwner
+        try isOwned(labels: volume.labels)
     }
 
-    private func identity(
+    /// Ownership read from labels alone, so the same decision serves the
+    /// service's answer and the entity record on disk that produced it.
+    func isOwned(labels: [String: String]) throws -> Bool {
+        let namespace = configuration.managedLabelNamespace
+        let expectedOwner = try owner()
+        return labels["\(namespace).persistent-workspace"] == "true"
+            && labels["\(namespace).persistent-workspace.owner"] == expectedOwner
+    }
+
+    func identity(
         from labels: [String: String]
     ) -> PersistentWorkspaceIdentity? {
         let namespace = configuration.managedLabelNamespace

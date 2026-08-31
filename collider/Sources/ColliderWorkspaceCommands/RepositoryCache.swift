@@ -159,7 +159,22 @@ private struct PersistentWorkspaceStatusRecord: Codable {
     /// a workspace; the sum of declared ceilings across workspaces is not,
     /// because an unclaimed ceiling on a sparse image occupies nothing.
     var isNearCapacity: Bool {
-        capacityBytes > 0 && allocatedBytes >= capacityBytes - capacityBytes / 5
+        capacityBytes > 0 && allocatedBytes >= exhaustionThresholdBytes
+    }
+
+    /// What remains before the run that mounts this workspace is refused.
+    ///
+    /// Measured against the threshold rather than against the ceiling, so the
+    /// number a reader sees is the number enforcement acts on. Reporting the
+    /// distance to a ceiling nothing is allowed to reach would say a workspace
+    /// had room left at the moment it stopped admitting work.
+    var headroomBytes: UInt64 {
+        let threshold = exhaustionThresholdBytes
+        return allocatedBytes >= threshold ? 0 : threshold - allocatedBytes
+    }
+
+    private var exhaustionThresholdBytes: UInt64 {
+        capacityBytes - capacityBytes / 5
     }
 }
 
@@ -408,22 +423,23 @@ struct RepositoryCache {
             "Apple Container disk usage",
             timeout: observationTimeout
         ) {
-            try await context.runtime.ociRuntimeDiskUsage()
+            try await context.runtime.storedOCIDiskUsage()
         }
         async let imageRetention = boundedObservation(
             "Apple Container images",
             timeout: observationTimeout
         ) {
-            let images = try await context.runtime.ociImages()
+            let images = try await context.runtime.storedOCIImages()
             return containerImageRetention(
                 images: images,
-                infrastructure: try await context.runtime.ociInfrastructureImages())
+                infrastructure:
+                    try await context.runtime.storedOCIInfrastructureImages())
         }
         async let persistentWorkspaces = boundedObservation(
             "Apple Container persistent workspaces",
             timeout: observationTimeout
         ) {
-            try await context.runtime.ociPersistentWorkspaces().map { workspace in
+            try await context.runtime.storedOCIPersistentWorkspaces().map { workspace in
                 let declaration = declaredWorkspaces[workspace.identity]
                 return PersistentWorkspaceStatusRecord(
                     name: workspace.name,
@@ -529,11 +545,16 @@ struct RepositoryCache {
             targetRecords = try resolvedPruneTargets(pruneDeclarations).records
             workspaceRecords = try await persistentWorkspaceTargets(
                 matching: orphanedWorkspaceIdentities)
-            // Collection is left without a figure rather than reported as
-            // zero. What it would return is a property of the runtime's own
-            // reachability over content this command never enumerates, so the
-            // honest plan states that it runs.
+            // Reachability over blobs and snapshots is computed from the store
+            // here, so a preview states what collection would return rather
+            // than stating that it runs. It used to be a property only the
+            // service could answer, and only by performing the collection.
             images = await reclaimableImages()
+            if images.unavailable == nil {
+                images.collectedBytes =
+                    try? await context.runtime
+                    .storedOrphanedOCIImageContent().totalBytes
+            }
             containers = await reclaimableContainers()
         } else {
             var locks = Set<TaskLock>()
@@ -726,7 +747,9 @@ struct RepositoryCache {
     func reclaim(dryRun: Bool) async throws {
         try validateStorageDeclarations()
         let declared = try persistentWorkspaceUsage()
-        let present = try await context.runtime.ociPersistentWorkspaces()
+        // Read from the store. A preview must be available to whoever asks,
+        // and the reclamation itself is what needs the service.
+        let present = try await context.runtime.storedOCIPersistentWorkspaces()
         let allocationBefore = Dictionary(
             present.map { ($0.identity, $0.allocatedBytes) },
             uniquingKeysWith: { first, _ in first })
@@ -750,7 +773,7 @@ struct RepositoryCache {
                     dryRun: true))
             return
         }
-        let images = try await context.runtime.ociImages()
+        let images = try await context.runtime.storedOCIImages()
         guard
             let image = Self.reclamationImageRepositories.lazy.compactMap({ repository in
                 images.first { $0.repository == repository }
@@ -779,7 +802,7 @@ struct RepositoryCache {
             try? await context.hostPhases.fail(phase)
             throw error
         }
-        let after = try await context.runtime.ociPersistentWorkspaces()
+        let after = try await context.runtime.storedOCIPersistentWorkspaces()
         var records: [ReclaimedWorkspaceRecord] = []
         var reclaimed: UInt64 = 0
         for state in after {
@@ -1210,12 +1233,12 @@ struct RepositoryCache {
     /// The runtime's own builder container is excluded, because the runtime
     /// creates it and the next image build expects it.
     private func reclaimableContainers() async -> ContainerPruneOutcome {
-        guard context.runtime.hasOCIRuntimeBackend else {
+        guard context.runtime.hasOCIStoreInspection else {
             return ContainerPruneOutcome(
-                unavailable: "no container runtime backend is configured")
+                unavailable: "no container store is configured")
         }
         do {
-            let containers = try await context.runtime.ociContainers()
+            let containers = try await context.runtime.storedOCIContainers()
             return ContainerPruneOutcome(
                 selected:
                     containers
@@ -1232,13 +1255,14 @@ struct RepositoryCache {
         // not a failure of the store, and reporting it as a caught error made
         // "there is no container backend here" read as a claim that the host
         // could not support one.
-        guard context.runtime.hasOCIRuntimeBackend else {
+        guard context.runtime.hasOCIStoreInspection else {
             return ImagePruneOutcome(
-                unavailable: "no container runtime backend is configured")
+                unavailable: "no container store is configured")
         }
         do {
-            let images = try await context.runtime.ociImages()
-            let infrastructure = try await context.runtime.ociInfrastructureImages()
+            let images = try await context.runtime.storedOCIImages()
+            let infrastructure =
+                try await context.runtime.storedOCIInfrastructureImages()
             return ImagePruneOutcome(
                 selected: containerImageRetention(
                     images: images,
@@ -1407,7 +1431,7 @@ struct RepositoryCache {
         [OCIPersistentWorkspaceState], any Error
     > {
         do {
-            return .success(try await context.runtime.ociPersistentWorkspaces())
+            return .success(try await context.runtime.storedOCIPersistentWorkspaces())
         } catch {
             return .failure(error)
         }
@@ -1417,7 +1441,7 @@ struct RepositoryCache {
         matching identities: Set<PersistentWorkspaceIdentity>
     ) async throws -> [PersistentWorkspaceRemovalTarget] {
         guard !identities.isEmpty else { return [] }
-        return try await context.runtime.ociPersistentWorkspaces()
+        return try await context.runtime.storedOCIPersistentWorkspaces()
             .filter { identities.contains($0.identity) }
             .map {
                 PersistentWorkspaceRemovalTarget(
@@ -1598,7 +1622,8 @@ struct RepositoryCache {
                 lines.append(
                     "persistent-workspace:\(workspace.identity.key): \(workspace.state)\(warning), "
                         + "\(formatted(workspace.allocatedBytes)) allocated / "
-                        + "\(formatted(workspace.capacityBytes)) logical")
+                        + "\(formatted(workspace.capacityBytes)) logical, "
+                        + "\(formatted(workspace.headroomBytes)) headroom")
                 let target = workspace.identity.artifactTarget
                 lines.append(
                     "  "
@@ -1712,8 +1737,14 @@ struct RepositoryCache {
         if let reason = result.appleContainerImagesUnavailable {
             lines.append("  apple-container images unavailable: \(reason)")
         } else if let collected = result.appleContainerCollectedBytes {
+            // A preview states the size. Reachability over blobs and snapshots
+            // is computed from the store, so the question "how much would this
+            // return" has an answer before anything is deleted rather than
+            // only after.
             lines.append(
-                "  \(formatted(collected)) collected from orphaned image content")
+                "  \(formatted(collected)) "
+                    + (result.dryRun ? "collectable from" : "collected from")
+                    + " orphaned image content")
         } else {
             lines.append("  orphaned image content is collected on execution")
         }

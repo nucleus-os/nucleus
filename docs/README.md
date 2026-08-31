@@ -69,16 +69,14 @@ reuse.
    to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
    the exact version-bearing cohorts, assemble signed repository snapshots
    offline, and remove Collider's remaining product-installation commands.
-6. Complete Phases 6 through 9 of the
+6. Complete Phases 7 and 8 of the
    [build store retention plan](build-store-retention-plan.md). Phases 1 through
-   5 already bound SwiftPM identity contexts on every run and brought the
-   container store under collection; the first collecting prune returned 411.9
-   GiB. Make interactive inspection read the store directly, declare residency
-   for every materialized source root, and report recorded allocation before the
-   long-running qualification matrices begin. Phase 9 is the one with a deadline
-   the schedule does not set: the arm64 Linux SwiftPM workspace holds 97.5 GiB
-   against a 100 GiB image, and the lane the verification sweep depends on most
-   fails on ENOSPC when it fills.
+   6 and 9 are complete: identity contexts are bound on every run, the container
+   store is under collection, inspection answers from the store rather than from
+   the service that writes it, and every workspace declares a capacity whose
+   threshold refuses a mount instead of reaching ENOSPC inside a container. What
+   remains is declaring residency for every materialized source root and
+   recording allocation rather than walking 1.4 TiB for it.
 7. Complete Phases 1 through 5 of the
    [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
    Protected-main packaging does not wait for this reliability work. Measure the

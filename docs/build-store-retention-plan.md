@@ -13,11 +13,16 @@ a failure rather than an empty result.
 
 ## Current State
 
-The store holds 1.4 TiB against a 1.8 TiB disk: declared roots 485.1 GiB,
-48 persistent workspaces 511.9 GiB of 4.3 TiB logical, and the container store
-467.2 GiB. Returning every workspace's freed blocks to the host recovers
-37.2 GiB, and an explicit prune selects 54.4 GiB. Neither reaches the two
-largest accumulations, because neither is expressible as a thing to collect.
+Phases 1 through 5 have run, and the figures below are what they left. The
+store now holds 575.4 GiB: 48 persistent workspaces at 424.0 GiB of 4.5 TiB
+logical, and the container store at 151.4 GiB. The state this section originally
+described -- 1.4 TiB, with 156.6 GiB in one misdeclared root and 436.6 GiB of
+unreachable image content -- is the state those phases removed.
+
+The accumulation they did not remove is 78.3 GiB of image content nothing
+reaches: 20.5 GiB across 116 blobs and 57.8 GiB across 11 unpacked filesystems,
+against 20 snapshots and 213 blobs in total. It is collectable, and until Phase 6
+no inspection run from the interactive account could see or report it.
 
 Two roots hold one context per SwiftPM task identity while declaring
 `singleWorkingSet`, whose contract is that the producer replaces one working set
@@ -349,12 +354,39 @@ Reading them directly is also what lets a plan state a size. Once reachability
 over blobs and snapshots is computed here, a dry run reports what collection
 would return rather than reporting that collection runs.
 
-Gate: `collider cache reclaim --dry-run`, `collider cache prune --dry-run`, and
-`collider cache status` report complete results from the interactive account,
-including orphaned workspaces, image classification, and the allocation
-collection would return; all three report what the builder identity reports;
-none starts a container; the group-readability every one of these reads depends
-on is asserted by provisioning rather than assumed.
+Status: complete. Inspection and mutation are separate protocols now, because
+they have separate requirements of the host rather than because they describe
+separate stores: `OCIStoreInspection` reads volume entity records and their
+sparse images, container configuration records, the image state record, the blob
+store, and the snapshot directories, while the runtime backend keeps every
+operation that writes. The three previews answer from the interactive account.
+`cache status` reports 48 workspaces at 424.0 GiB where it reported `workspaces
+unavailable without the container service`, and `prune --dry-run` states
+`78.3 GiB collectable from orphaned image content` where it stated that
+collection runs on execution.
+
+One premise of this phase was wrong and the correction is the load-bearing part.
+Whether a workspace is active is *not* in the mount list of each container
+record: those records are configuration, they carry no status, and they outlive
+the containers that wrote them -- the one on this host is four days older than
+the last container that ran. Reading liveness out of a record's existence would
+pin every workspace it mounted and every image it referenced against collection
+permanently, which is the failure the runtime's own image listing already avoids
+by asking which containers are *running*. Liveness is a property of the
+machine's single execution admission instead: while that lease is free no
+Collider container is running and every record is history, and while it is held
+the records describe what is running now. The lease names the process holding
+it, so the question is answered by asking whether that process exists, which is
+a read -- probing the lock itself is not, because acquiring it even momentarily
+can fail a concurrent non-blocking acquisition.
+
+Gate: satisfied. `collider cache reclaim --dry-run`, `collider cache prune
+--dry-run`, and `collider cache status` report complete results from the
+interactive account, including orphaned workspaces, image classification, and
+the allocation collection would return; none starts a container; the
+group-readability they depend on is asserted by the builder doctor's build-store
+prerequisite, which now requires the container application root to be readable
+and traversable by the reading group.
 
 ## Phase 7: Declare Residency for Materialized Source
 
@@ -460,8 +492,24 @@ inside a container where the message describes a write instead of a store.
 Enforcement reads what the builder already has and does not wait on Phase 6;
 reporting the same headroom from the interactive account arrives with it.
 
-Gate: `collider cache status` reports capacity, allocation, and headroom for
-every workspace; a workspace driven past its threshold fails with that statement
-and not with ENOSPC; the arm64 Linux SwiftPM workspace is returned below its
-threshold, and the reason its allocation exceeded its sibling's is recorded
-rather than absorbed by growing the image.
+Status: complete. Capacity is declared beside the role that justifies it, and
+the threshold is one policy rather than a number repeated across forty-eight
+declarations: four fifths of capacity, because what remains has to hold one more
+operation rather than one more file. The sweep that filled this workspace was
+writing roughly twelve gigabytes per SwiftPM context, so a ceiling reached at
+ninety-five percent would have been reported for the first time by the failure
+it exists to replace. Resolving a mount measures the workspace and refuses it
+past that threshold, naming the workspace, its allocation, its capacity, and the
+threshold, rather than letting the run reach ENOSPC inside a container where the
+message describes a write.
+
+The arm64 Linux SwiftPM workspace is below its threshold: 24.3 GiB allocated
+against a 200 GiB ceiling, with 135.7 GiB of headroom. The reason it exceeded
+its sibling is recorded beside the declaration rather than absorbed -- that lane
+resolves eight SwiftPM contexts to the sibling's one, because it runs the Linux
+test products and the sibling only builds.
+
+Gate: satisfied. `collider cache status` reports capacity, allocation, and
+headroom for every workspace; headroom is measured against the threshold
+enforcement acts on rather than against a ceiling nothing may reach, so the
+number a reader sees is the number that stops the run.

@@ -85,7 +85,13 @@ private struct ReconstructFixtureAction: ColliderAction {
     }
 }
 
-private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
+/// One double for both surfaces.
+///
+/// Inspection and mutation are separate protocols because they have separate
+/// requirements of the host, not because they describe separate stores. A
+/// fixture that answered them differently would be testing a disagreement that
+/// cannot occur.
+private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend, OCIStoreInspection {
     private var workspaces: [OCIPersistentWorkspaceState]
     private var imageStates: [OCIImageState]
     private var deletedNames: [String] = []
@@ -96,6 +102,8 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
 
     private let imageListingFailure: String?
     private let infrastructure: OCIInfrastructureImages
+    private let liveness: OCIExecutionLiveness
+    private let orphanedContent: OCIOrphanedImageContent
 
     init(
         workspaces: [OCIPersistentWorkspaceState],
@@ -103,13 +111,21 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
         imageListingFailure: String? = nil,
         infrastructure: OCIInfrastructureImages = OCIInfrastructureImages(
             currentByRepository: [:]),
-        containers: [OCIContainerState] = []
+        containers: [OCIContainerState] = [],
+        liveness: OCIExecutionLiveness = .idle,
+        orphanedContent: OCIOrphanedImageContent = OCIOrphanedImageContent(
+            orphanedBlobs: 0,
+            orphanedBlobBytes: 0,
+            orphanedSnapshots: 0,
+            orphanedSnapshotBytes: 0)
     ) {
         self.workspaces = workspaces
         imageStates = images
         self.imageListingFailure = imageListingFailure
         self.infrastructure = infrastructure
         containerStates = containers
+        self.liveness = liveness
+        self.orphanedContent = orphanedContent
     }
 
     func prepareImage(_: OCIImagePreparation) async throws -> String {
@@ -150,6 +166,15 @@ private actor RecordingPersistentWorkspaceBackend: OCIRuntimeBackend {
     }
 
     func reclamations() -> [(key: String, imageReference: String)] { reclaimed }
+
+    func executionLiveness() async -> OCIExecutionLiveness { liveness }
+
+    func orphanedImageContent() async throws -> OCIOrphanedImageContent {
+        if let imageListingFailure {
+            throw WorkspaceFailure.message(imageListingFailure)
+        }
+        return orphanedContent
+    }
 
     func diskUsage(
         configuration _: OCIRuntimeConfiguration
@@ -247,7 +272,8 @@ private func workspaceRuntime(
     ColliderRuntime(
         downloadCacheRoot: FilePath(root.appendingPathComponent("downloads").path),
         ociConfiguration: .engineDefault,
-        ociBackend: backend)
+        ociBackend: backend,
+        ociStore: backend)
 }
 
 private func repositoryContext(
@@ -268,7 +294,7 @@ private func repositoryContext(
         logRoot: FilePath(root.appendingPathComponent("host-logs").path))
 }
 
-private actor SlowObservationBackend: OCIRuntimeBackend {
+private actor SlowObservationBackend: OCIRuntimeBackend, OCIStoreInspection {
     func prepareImage(_: OCIImagePreparation) async throws -> String {
         throw WorkspaceFailure.message("unused fixture operation")
     }
@@ -277,6 +303,13 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
         _: OCIRuntimeExecutionRequest
     ) async throws -> OCIRuntimeExecutionOutcome {
         throw WorkspaceFailure.message("unused fixture operation")
+    }
+
+    func executionLiveness() async -> OCIExecutionLiveness { .idle }
+
+    func orphanedImageContent() async throws -> OCIOrphanedImageContent {
+        try await Task.sleep(for: .seconds(60))
+        throw CancellationError()
     }
 
     func diskUsage(
@@ -380,7 +413,8 @@ private actor SlowObservationBackend: OCIRuntimeBackend {
     let runtime = ColliderRuntime(
         downloadCacheRoot: FilePath(cache.appendingPathComponent("downloads").path),
         ociConfiguration: .engineDefault,
-        ociBackend: SlowObservationBackend())
+        ociBackend: SlowObservationBackend(),
+        ociStore: SlowObservationBackend())
     let repository = RepositoryCache(
         context: repositoryContext(
             root: root,
