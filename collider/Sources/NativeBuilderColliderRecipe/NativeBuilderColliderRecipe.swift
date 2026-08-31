@@ -324,7 +324,8 @@ public enum NativeBuilderColliderRecipe {
             ccache: ccache,
             environment: environment,
             swiftPMOverlayRevision:
-                overlayManifest.swiftPackageManagerRevision)
+                overlayManifest.swiftPackageManagerRevision,
+            androidNDKRoot: try manifest.androidNDKRoot)
         return NativeBuilderArtifacts(
             component: try ComponentDefinition(
                 descriptor: descriptor,

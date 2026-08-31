@@ -787,7 +787,8 @@ private func fixtureNativeBuilder(
             ccache: ccache,
             environment: environment,
             swiftPMOverlayRevision:
-                "5f40ba93598ca18b00c114e6dad28acdeebbbb60"),
+                "5f40ba93598ca18b00c114e6dad28acdeebbbb60",
+            androidNDKRoot: "/opt/android-ndk-r30-beta3"),
         swiftSDK: swiftSDK,
         nativeSysroot: swiftSDK,
         packageRootViews: ["checkout": packageRootView])
@@ -2116,13 +2117,13 @@ private func artifactInput(
     #expect(
         androidExecutions[0].command.contains {
             $0.contains(
-                #"target_cc="/usr/bin/clang --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
+                #"target_cc="/usr/bin/clang --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta3/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
             )
         })
     #expect(
         androidExecutions[0].command.contains {
             $0.contains(
-                #"target_cxx="/usr/bin/clang++ --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
+                #"target_cxx="/usr/bin/clang++ --target=aarch64-linux-android24 --sysroot=/opt/android-ndk-r30-beta3/toolchains/llvm/prebuilt/linux-x86_64/sysroot -fno-addrsig""#
             )
         })
     for task in [linuxTask, androidTask] {
@@ -3382,4 +3383,43 @@ private func artifactInput(
             == key(
                 workspace: FilePath("/Users/builder/actions/_work/nucleus/nucleus"),
                 cache: FilePath("/Library/Nucleus/Collider/cache")))
+}
+
+/// The image's NDK is named in two files, and they have to agree.
+///
+/// `native-builder-inputs.json` names the archive the image downloads, and the
+/// Containerfile copies that archive by name, unpacks it, and exports
+/// `ANDROID_NDK_HOME` at the directory it expands to. A bump that moved one and
+/// not the other left a build compiling against a directory the image no longer
+/// contained -- which is a container failure, discovered late, for a mistake
+/// visible in the tree.
+///
+/// The Skia Android build reads the path from the manifest rather than spelling
+/// the release again, so this asserts the two files that must still be written
+/// by hand.
+@Test func theImageAndItsManifestNameOneAndroidNDK() throws {
+    let root = fixtureRepositoryRoot.appending("collider/images/native-builder")
+    let inputs = try JSONSerialization.jsonObject(
+        with: Data(
+            contentsOf: URL(
+                fileURLWithPath: root.appending("native-builder-inputs.json").string)))
+    let archives =
+        ((inputs as? [String: Any])?["archives"] as? [[String: Any]]) ?? []
+    let archive = try #require(
+        archives.compactMap { $0["name"] as? String }.first {
+            $0.hasPrefix("android-ndk-") && $0.hasSuffix("-linux.zip")
+        })
+    let release = String(archive.dropLast("-linux.zip".count))
+
+    let containerfile = try String(
+        contentsOf: URL(
+            fileURLWithPath: root.appending("Dependencies.Containerfile").string),
+        encoding: .utf8)
+    // The archive it copies, and the directory it then points the build at.
+    #expect(containerfile.contains("inputs/archives/\(archive)"))
+    #expect(containerfile.contains("ANDROID_NDK_HOME=/opt/\(release)"))
+    // And no other NDK release survives anywhere in either file.
+    for line in containerfile.split(separator: "\n") where line.contains("android-ndk-") {
+        #expect(line.contains(release), "stale NDK reference: \(line)")
+    }
 }

@@ -398,7 +398,9 @@ public enum CoreColliderRecipe: ColliderComponent {
         sources: SkiaSourceArtifacts,
         builder: NativeOCIConfiguration
     ) throws -> SkiaBuildArtifacts {
-        let ndk = "/opt/android-ndk-r30-beta2"
+        // The image's own NDK, named by the manifest that puts it there. This
+        // was a literal, and an NDK bump moved the directory out from under it.
+        let ndk = builder.base.androidNDKRoot
         let target = "aarch64-linux-android\(minimumAndroidAPI)"
         let sysroot = "\(ndk)/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
         return try skiaTask(

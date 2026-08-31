@@ -76,19 +76,25 @@ package struct NativeOCIBaseConfiguration: Sendable {
     package let ccache: FilePath
     package let environment: [String: String]
     package let swiftPMOverlayRevision: String
+    /// Where this image unpacks the Android NDK, as its inputs manifest names
+    /// it. A build that compiles against the NDK reads it from here rather
+    /// than spelling the release into a path of its own.
+    package let androidNDKRoot: String
 
     package init(
         image: ArtifactReference,
         swiftPMOverlay: ArtifactReference,
         ccache: FilePath,
         environment: [String: String],
-        swiftPMOverlayRevision: String
+        swiftPMOverlayRevision: String,
+        androidNDKRoot: String
     ) {
         self.image = image
         self.swiftPMOverlay = swiftPMOverlay
         self.ccache = ccache
         self.environment = environment
         self.swiftPMOverlayRevision = swiftPMOverlayRevision
+        self.androidNDKRoot = androidNDKRoot
     }
 
     package var imageID: FilePath { image.path }

@@ -18,6 +18,26 @@ struct NativeBuilderInputManifest: Decodable, Hashable, Sendable {
     let archives: [Archive]
     let aptRepositories: [APTRepository]
 
+    /// Where the image unpacks the Android NDK.
+    ///
+    /// Derived from the archive this manifest already names rather than
+    /// written down a second time. The release is spelled into the path -- the
+    /// zip expands to a directory named for it -- so a bump that changed the
+    /// archive and left a literal behind pointed a build at a directory the
+    /// image no longer contains. Deriving it means the manifest is the only
+    /// place the release appears outside the Containerfile that consumes this
+    /// same name.
+    var androidNDKRoot: String {
+        get throws {
+            guard
+                let archive = archives.first(where: {
+                    $0.name.hasPrefix("android-ndk-") && $0.name.hasSuffix("-linux.zip")
+                })
+            else { throw NativeBuilderInputFailure.invalidManifest }
+            return "/opt/\(archive.name.dropLast("-linux.zip".count))"
+        }
+    }
+
     static func load(from path: FilePath) throws -> Self {
         let data = try Data(contentsOf: URL(filePath: path.string))
         let manifest = try JSONDecoder().decode(Self.self, from: data)
