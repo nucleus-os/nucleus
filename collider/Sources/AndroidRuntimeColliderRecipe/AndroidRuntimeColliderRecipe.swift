@@ -314,6 +314,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 root: protobuf.verificationRoot,
                 safetyRoot: context.buildRoot,
                 retentionPolicy: .singleWorkingSet),
+            // The object store and the state describing it are separate
+            // declarations because they answer differently. One is seventy-three
+            // gigabytes of Repo objects that host networking can rebuild
+            // exactly; the other is two small files naming the revisions it was
+            // built against. A single declaration over both could only carry
+            // one residency, and rooting it at the parent made "a declared
+            // output exists under this root" true of the object store on the
+            // strength of a manifest file beside it.
             StorageDeclaration(
                 id: "android-aosp-source-inputs",
                 owner: descriptor.id,
@@ -324,7 +332,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 // sat outside every decision about materialized source.
                 storageClass: .source,
                 root: context.cacheRoot.appending(
-                    "android-runtime/aosp-source-inputs"),
+                    "android-runtime/aosp-source-inputs/repository"),
                 safetyRoot: context.cacheRoot.appending("android-runtime"),
                 retentionPolicy: .singleWorkingSet,
                 // It exists to materialize the guest workspace and holds
@@ -333,6 +341,15 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 // hydration, not a result.
                 residency: .onDemand(
                     reconstructedBy: AndroidRuntimeTaskIDs.aospSourceInputs)),
+            StorageDeclaration(
+                id: "android-aosp-source-input-state",
+                owner: descriptor.id,
+                producers: [.task(AndroidRuntimeTaskIDs.aospSourceInputs)],
+                storageClass: .incremental,
+                root: context.cacheRoot.appending(
+                    "android-runtime/aosp-source-inputs/locks"),
+                safetyRoot: context.cacheRoot.appending("android-runtime"),
+                retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
                 id: "android-aosp-signing-identity",
                 owner: descriptor.id,
@@ -684,6 +701,23 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             "provenance",
             path: state.appending("source-provenance.json"),
             validation: .json)
+        // The object store itself, and not only the two files describing it.
+        //
+        // It was declared as scratch, so nothing validated it: deleting
+        // seventy-three gigabytes of Repo objects left this task clean, and the
+        // materialization that mounts them read-only would have run against an
+        // empty directory. A root nothing can observe as missing is a root
+        // nothing can promise to rebuild, which is exactly what its on-demand
+        // residency promises.
+        //
+        // Non-empty is the whole check. What the objects are is already
+        // established by the locked revisions the hydration resolves against,
+        // and digesting a tree this size to learn that it exists would cost
+        // more than the hydration it guards.
+        let _: ArtifactReference = try builder.output(
+            "source-inputs",
+            path: sourceInputs,
+            validation: .nonEmptyDirectory)
         let task = builder.build(
             inputs: [
                 .file(lockPath),

@@ -1756,3 +1756,74 @@ private func identityContextFixture(
         ])
     }
 }
+
+/// An on-demand root promises that deleting it costs a rebuild rather than a
+/// result. Only a declared output covering that root makes the promise
+/// checkable.
+///
+/// AOSP's host object store was written as scratch, so nothing validated it:
+/// deleting seventy-three gigabytes left its producing task clean, and the
+/// materialization that mounts it read-only would have run against an empty
+/// directory. Declaring the residency without this rule would have been a
+/// sentence nothing enforced.
+@Test func onDemandStorageMustBeObservableAsMissing() throws {
+    let owner = ComponentID(rawValue: "example")
+    let reconstructor = TaskID(rawValue: "example.materialize")
+    let root = FilePath("/store/example/source")
+    let declaration = StorageDeclaration(
+        id: "example-source",
+        owner: owner,
+        producers: [.task(reconstructor)],
+        storageClass: .source,
+        root: root,
+        safetyRoot: FilePath("/store/example"),
+        retentionPolicy: .singleWorkingSet,
+        residency: .onDemand(reconstructedBy: reconstructor))
+    // Built through the builder, which is how a task states an output slot at
+    // all: the slot type's initializer is deliberately not reachable from
+    // outside it.
+    func task(outputPaths: [FilePath] = []) throws -> TaskDeclaration {
+        var builder = TaskBuilder(id: reconstructor, component: owner)
+        for (index, path) in outputPaths.enumerated() {
+            let _: ArtifactReference = try builder.output(
+                OutputSlotID(rawValue: "slot-\(index)"),
+                path: path,
+                validation: .nonEmptyDirectory)
+        }
+        return builder.build(locks: [.checkout("example")])
+    }
+    func validate(_ task: TaskDeclaration) throws {
+        try StorageCatalog.validateProducers([declaration], tasks: [task])
+    }
+
+    // Scratch: nothing declared at all.
+    #expect(throws: (any Error).self) { try validate(try task()) }
+
+    // An output beside the root does not vouch for it. This is the shape that
+    // hid the defect: two small files under AOSP's source-input root, and the
+    // object store next to them unwatched.
+    #expect(throws: (any Error).self) {
+        try validate(try task(outputPaths: [root.appending("locks/manifest.xml")]))
+    }
+
+    // The root itself, stated as a slot, which is how a task states most of
+    // its outputs -- checking only the other spelling made this rule vacuous
+    // for every task that uses this one.
+    #expect(throws: Never.self) {
+        try validate(try task(outputPaths: [root]))
+    }
+
+    // Or an output containing the root, which observes it just as well.
+    #expect(throws: Never.self) {
+        try validate(
+            TaskDeclaration(
+                id: reconstructor,
+                component: owner,
+                outputs: [
+                    OutputDeclaration(
+                        path: FilePath("/store/example"),
+                        validation: .nonEmptyDirectory)
+                ],
+                locks: [.checkout("example")]))
+    }
+}

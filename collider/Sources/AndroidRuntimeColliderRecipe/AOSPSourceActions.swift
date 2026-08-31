@@ -172,7 +172,7 @@ struct PrepareAOSPSourceInputsAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .input(preparation.launcher)),
                 ActionEffect(.read, scope: .input(preparation.hydrationScript)),
-                ActionEffect(.readWrite, scope: .scratch(preparation.sourceInputs)),
+                ActionEffect(.readWrite, scope: .output(preparation.sourceInputs)),
                 ActionEffect(
                     .readWrite,
                     scope: .output(preparation.resolvedManifest)),

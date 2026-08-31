@@ -458,6 +458,46 @@ public enum StorageCatalog {
                             + "\(declaration.id), \(taskID)")
                 }
             }
+            // An on-demand root promises that deleting it costs a rebuild
+            // rather than a result, and only a declared output makes that
+            // promise checkable. A root its producer writes as scratch is
+            // invisible to cleanliness: deleting it leaves the task clean, so
+            // nothing rebuilds it and whatever consumes it runs against an
+            // empty directory. AOSP's seventy-three gigabyte object store was
+            // exactly that, and its residency would have been a sentence
+            // nothing enforced.
+            guard case .onDemand(let reconstructor) = declaration.residency else {
+                continue
+            }
+            guard let task = tasksByID[reconstructor] else {
+                throw StorageCatalogFailure.invalid(
+                    "on-demand storage names an unknown reconstructing task: "
+                        + "\(declaration.id), \(reconstructor)")
+            }
+            let root = declaration.root.normalizedForComparison()
+            // Both spellings of a declared output. A task states most of them
+            // as slots, through the builder call that also hands back an
+            // artifact reference; a few are stated directly. Checking only one
+            // made this rule vacuous for every task that uses the other.
+            let declaredOutputs =
+                task.outputSlots.map(\.path) + task.outputs.map(\.path)
+            guard
+                declaredOutputs.contains(where: {
+                    // The root itself, or something that contains it. An
+                    // output merely sitting under the root is not enough: two
+                    // small files under AOSP's source-input root would
+                    // otherwise vouch for the seventy-three gigabyte object
+                    // store beside them, which is the exact gap this rule
+                    // exists to close.
+                    let output = $0.normalizedForComparison()
+                    return output == root || root.isContained(in: output)
+                })
+            else {
+                throw StorageCatalogFailure.invalid(
+                    "on-demand storage must be a declared output of the task that "
+                        + "rebuilds it, or nothing observes it as missing: "
+                        + "\(declaration.id), \(reconstructor)")
+            }
         }
     }
 

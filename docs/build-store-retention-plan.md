@@ -425,11 +425,32 @@ second copy, so collecting one turns the next build into a full materialization.
 Skia's materialization is resident because it is a submodule of the
 authoritative checkout, which Collider materializes into but never owns.
 
-Gate: every materialized source root declares its residency, and a resident root
-records the reason it is resident, both enforced by the catalog and the
-component definition rather than by review. Outstanding: deleting the on-demand
-root and rebuilding it is a 73.4 GiB re-hydration over host networking and has
-not been run.
+Declaring the residency was not enough on its own, and the gap is worth
+recording because the declaration read as true. AOSP's object store was declared
+as scratch, so nothing validated it: deleting it left `aosp-source-inputs` clean,
+and the materialization that mounts it read-only would have run against an empty
+directory. Running this phase's gate as written would have destroyed 73.4 GiB
+that nothing then rebuilt. The store is now a declared output of the task that
+hydrates it, validated as a non-empty directory -- what it contains is already
+established by the locked revisions, and digesting a tree that size to learn it
+exists would cost more than the hydration it guards.
+
+An on-demand root must therefore be covered by a declared output of its
+reconstructing task. Two weaker readings were tried and rejected by the
+codebase: checking only `outputs` made the rule vacuous, because a task states
+outputs as slots through the builder call that also returns an artifact
+reference; and accepting any output *under* the root let two small manifest
+files vouch for the object store beside them. That second reading is why the
+declaration is now rooted at the object store itself, with the lock and
+provenance state declared separately -- one root could carry only one residency,
+and these two answer differently.
+
+Gate: every materialized source root declares its residency, a resident root
+records why, and an on-demand root is observable as missing -- all enforced by
+the catalog rather than by review, and confirmed by removing the output
+declaration and watching catalog construction reject it. Outstanding: deleting
+the on-demand root and rebuilding it is a 73.4 GiB re-hydration over host
+networking and has not been run. It is now a safe thing to run.
 
 ## Phase 8: Record Allocation Rather Than Walking For It
 
