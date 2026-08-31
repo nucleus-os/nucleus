@@ -216,9 +216,26 @@ vminitd filesystem-namespace change that also moves the guest agent protocol.
 Taking 0.43.0 means running ahead of the combination upstream tested, and the
 vminit image the runtime boots has to move with it.
 
+Status: complete. containerization is at 0.43.0 in both Collider manifests and
+in the fork's `scVersion`, which also feeds `CZ_VERSION` and therefore the
+`vminit` image tag, so the guest agent moves with the library rather than being
+pinned separately. The fork is 1.3.1 plus its two functional commits and one
+alignment commit, and it builds against 0.43.0.
+
+The swift-crypto disagreement is stated rather than forced. 0.43.0 still
+declares swift-crypto `from: "3.0.0"`, which excludes 4.x, so the root package
+resolved alone still takes 4.5.1 while the Collider graph produces 3.15.1.
+Declaring swift-crypto in the root to force agreement would add a dependency it
+does not use, so the reason sits beside the root's dependency list instead.
+
 Gate: `swift test --package-path collider` for Collider's own host Swift code,
 then `collider build linux` and `collider test linux` for the container
-execution path.
+execution path. The host tests could not run from the interactive account for
+this change: planning writes SwiftPM's package-graph cache, that cache lives in
+the builder-owned store, and a changed graph therefore fails with `invalid
+access` for any other account. `swift test --package-path collider/engine`
+passed, the fork builds against 0.43.0, and both resolutions were confirmed;
+the rest is the sweep's.
 
 ## Phase 6: Source-built native dependency currency
 

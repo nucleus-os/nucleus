@@ -18,7 +18,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../third-party/container"),
-        .package(url: "https://github.com/apple/containerization.git", exact: "0.40.2"),
+        .package(url: "https://github.com/apple/containerization.git", exact: "0.43.0"),
         .package(
             url: "https://github.com/nucleus-os/swift-system.git",
             revision: "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"),

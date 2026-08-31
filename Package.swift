@@ -55,6 +55,19 @@ let products: [Product] = [
     .executable(name: "SwiftWaylandGen", targets: ["SwiftWaylandGen"]),
     .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidDeployment"]),
 ]
+// swift-crypto is deliberately absent here, and this package's own
+// `Package.resolved` records a version no supported build produces.
+//
+// It arrives transitively and, resolved alone, this package takes 4.5.1 --
+// nothing here constrains it. The supported path never resolves this package
+// alone: `collider/Package.swift` includes it by path, and Collider's engine
+// pins swift-crypto at exactly 3.15.1, so delivered products are built against
+// that. Upgrading containerization does not converge the two; 0.43.0 still
+// declares swift-crypto `from: "3.0.0"`, which excludes 4.x.
+//
+// Declaring it here to force agreement would add a dependency this package does
+// not use, so the disagreement is stated instead of hidden: read the version
+// from the Collider graph, not from the file beside this one.
 let dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-binary-parsing.git", exact: "0.0.2"),
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.6.0"),
