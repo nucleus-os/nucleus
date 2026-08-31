@@ -49,13 +49,15 @@ func aospSourceWorkspace(apiLevel: UInt32) -> PersistentWorkspaceDeclaration {
         // anything the host does not, so it is expensive to rebuild rather
         // than authoritative.
         retentionPolicy: .explicitClean,
-        // Resident: the host input cache it materializes from is the
-        // collectable half of this pair, and collecting both would make an
-        // Android build start from a network hydration rather than from a
-        // checkout.
+        // Resident, and not the collectable half of a pair: this volume holds
+        // the working trees and per-project git directories, and reaches the
+        // objects behind them through a symlink into the host store rather
+        // than copying them. The two are one checkout split across a mount
+        // boundary, so what is reconstructible is the object store, and what
+        // is expensive is this.
         residency: .resident(
-            reason: "the case-sensitive working tree AOSP builds against; its "
-                + "host input cache is the collectable half of the pair"))
+            reason: "the case-sensitive working trees AOSP builds against, "
+                + "checked out once and updated in place"))
 }
 
 struct AOSPProductSourceOverlay: Hashable, Sendable {

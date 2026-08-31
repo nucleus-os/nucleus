@@ -335,10 +335,15 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     "android-runtime/aosp-source-inputs/repository"),
                 safetyRoot: context.cacheRoot.appending("android-runtime"),
                 retentionPolicy: .singleWorkingSet,
-                // It exists to materialize the guest workspace and holds
-                // nothing the locked manifest does not name, so host
-                // networking rebuilds it exactly. Collecting it costs a
-                // hydration, not a result.
+                // Reconstructible, but not spare. The guest volume holds
+                // working trees and per-project git directories and reaches
+                // this store through a symlink rather than copying it, so
+                // these objects stay load-bearing for as long as that volume
+                // exists -- they are not a staging area that materialization
+                // finishes with. What makes them on demand is that the locked
+                // manifest names every one of them, so host networking
+                // rebuilds the store exactly: collecting it costs a hydration
+                // rather than a result.
                 residency: .onDemand(
                     reconstructedBy: AndroidRuntimeTaskIDs.aospSourceInputs)),
             StorageDeclaration(

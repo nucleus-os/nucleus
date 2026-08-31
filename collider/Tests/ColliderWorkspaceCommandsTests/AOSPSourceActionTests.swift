@@ -243,7 +243,11 @@ import Testing
     let commands = try String(contentsOf: commandLog, encoding: .utf8)
     #expect(
         commands.contains(
-            "init --quiet --partial-clone --clone-filter=blob:limit=10M "
+            // The platform is stated rather than detected: repo's default
+            // reads the machine acquiring the source, which is this macOS
+            // host, while every AOSP build runs in a Linux container.
+            "init --quiet --platform=linux --partial-clone "
+                + "--clone-filter=blob:limit=10M "
                 + "--no-clone-bundle --use-superproject "
                 + "--repo-url=repo://fixture --repo-rev=refs/tags/v2.65 "
                 + "-u manifest://fixture -b refs/heads/platform"))

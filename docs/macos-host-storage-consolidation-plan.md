@@ -126,9 +126,12 @@ source-materialization action.
 The host owns all network access. It downloads the exact manifest, Git objects,
 and repository inputs into a content-addressed cache under the standard Caches
 directory. An offline source-materialization container consumes those inputs
-and updates the case-sensitive source volume. The host cache is reconstructible
-and prunable after the source volume contains the required locked revisions.
-No container performs network access.
+and updates the case-sensitive source volume. The host object store is
+reconstructible from the locked manifest, which is what makes it collectable;
+it is not spare once the source volume exists, because that volume symlinks its
+`.repo/project-objects` at the host store rather than copying it, and so reaches
+through the mount for every object it reads. No container performs network
+access.
 
 Apply the same invariant to future Linux source workspaces. A loose checkout on
 the case-insensitive macOS Data volume is never a Linux build source merely

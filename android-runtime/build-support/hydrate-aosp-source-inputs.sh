@@ -67,3 +67,70 @@ PY
       exit 65
     fi
   ' _ "$source_root"
+
+# Object stores the locked manifest no longer names.
+#
+# `repo` creates a store per project it has ever synced and never removes one,
+# so a manifest that drops a project, or a sync that selected a different
+# platform's host prebuilts, leaves its objects behind reachable from nothing.
+# This host carried 5.3 GiB of Darwin toolchain objects that way: no checkout
+# names them, no gitdir points at them, and the guest volume that reads this
+# store through a symlink never asks for them.
+#
+# Membership in the locked manifest is the test, and an existing project
+# gitdir is a second one. A store is removed only when both agree it is
+# unreferenced, because a store still backing a checkout would take the
+# checkout with it.
+python3 - "$source_root" "$resolved_manifest" <<'PY'
+import os
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+
+source_root, resolved_manifest = sys.argv[1], sys.argv[2]
+objects_root = os.path.join(source_root, ".repo", "project-objects")
+projects_root = os.path.join(source_root, ".repo", "projects")
+if not os.path.isdir(objects_root):
+    raise SystemExit(0)
+
+named = {
+    project.get("name")
+    for project in ET.parse(resolved_manifest).getroot().findall("project")
+    if project.get("name")
+}
+if not named:
+    raise SystemExit("resolved manifest names no project")
+
+unreferenced = []
+for directory, entries, _ in os.walk(objects_root):
+    for entry in list(entries):
+        if not entry.endswith(".git"):
+            continue
+        entries.remove(entry)
+        store = os.path.join(directory, entry)
+        name = os.path.relpath(store, objects_root)[: -len(".git")]
+        if name in named:
+            continue
+        if os.path.exists(os.path.join(projects_root, name + ".git")):
+            continue
+        unreferenced.append((name, store))
+
+collected = 0
+for name, store in sorted(unreferenced):
+    size = 0
+    for path, _, files in os.walk(store):
+        for file in files:
+            try:
+                size += os.lstat(os.path.join(path, file)).st_size
+            except OSError:
+                pass
+    try:
+        shutil.rmtree(store)
+    except OSError as error:
+        print(f"could not collect {name}: {error}", file=sys.stderr)
+        continue
+    collected += size
+    print(f"collected unreferenced object store {name} ({size} bytes)", file=sys.stderr)
+if unreferenced:
+    print(f"collected {collected} bytes of unreferenced object stores", file=sys.stderr)
+PY

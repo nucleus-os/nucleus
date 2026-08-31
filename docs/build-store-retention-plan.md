@@ -68,11 +68,14 @@ boots, the builder shim every image build runs, and the digest-pinned base of
 all four Containerfiles. `unknown` is what currently protects them, and the
 runtime's own deletion path refuses them by name.
 
-AOSP exists three times: a host source-input cache of 73.4 GiB, a materialized
-guest source workspace of 106.5 GiB, and an output workspace of 142.7 GiB. That
-is the design working — containers require case-sensitive source materialized
-offline — but no residency decision states which of the three stays resident
-between builds.
+AOSP occupies three roots: a host object store of 73.4 GiB, a guest source
+workspace of 106.5 GiB, and an output workspace of 142.7 GiB. It is not three
+copies. Materialization symlinks the guest's `.repo/project-objects` at the host
+store rather than copying it, so the objects exist once: the host root is
+essentially all objects, and the guest root is working trees and per-project git
+directories that reach through that link. The output workspace is build output
+and not source at all. What was missing is a residency decision stating which of
+them stays resident between builds.
 
 Reclamation cannot be previewed from the account that owns the checkout.
 `collider cache reclaim --dry-run` fails with `failed to list containers`
@@ -444,6 +447,22 @@ files vouch for the object store beside them. That second reading is why the
 declaration is now rooted at the object store itself, with the lock and
 provenance state declared separately -- one root could carry only one residency,
 and these two answer differently.
+
+Two structural corrections came out of measuring the roots rather than reasoning
+about them. The host store held 5.3 GiB of Darwin toolchain objects -- Clang, Go,
+and Rust host prebuilts -- that no project in the locked manifest names and no
+project git directory points at. `repo init` stated no platform, and its default
+reads the machine running it: acquisition runs on this macOS host while every
+AOSP build runs in a Linux container, so the acquiring host's platform decided
+what was fetched for a Linux target. The platform is now stated, and hydration
+collects object stores the locked manifest does not name, checked twice --
+against manifest membership and against the absence of a project git directory
+-- so a store still backing a checkout can never be taken with it.
+
+What remains is not reducible by collection. Hydration fetches each project at
+`--depth=1`, so the store holds one snapshot of each of 1,084 projects with no
+history to prune; the remaining roughly 68 GiB is a single copy of AOSP source
+as git objects, and it moves only by fetching fewer projects.
 
 Gate: every materialized source root declares its residency, a resident root
 records why, and an on-demand root is observable as missing -- all enforced by

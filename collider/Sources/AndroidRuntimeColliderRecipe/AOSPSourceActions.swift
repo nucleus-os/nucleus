@@ -562,6 +562,14 @@ private struct AOSPSourceWorkflow {
         let initArguments = [
             "init",
             "--quiet",
+            // The platform this source is built for, not the one acquiring it.
+            // Repo defaults to `auto`, which reads the machine running it --
+            // and that machine is this macOS host, while every AOSP build runs
+            // in a Linux container. The default therefore selected Darwin host
+            // prebuilts: 5.3 GiB of Clang, Go, and Rust toolchains for a
+            // platform nothing here builds on, fetched into a store the guest
+            // volume reads through a symlink and never asks for.
+            "--platform=linux",
             "--partial-clone",
             "--clone-filter=blob:limit=10M",
             "--no-clone-bundle",
