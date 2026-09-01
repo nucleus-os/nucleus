@@ -251,11 +251,6 @@ package final class CommandConsole: @unchecked Sendable {
         }
     }
 
-    /// The recorded label for a task, for a caller composing its own line.
-    package func displayName(for task: TaskID) -> String {
-        state.withLock { Self.displayName(task, labels: $0.taskLabels) }
-    }
-
     package func progress(_ text: String) throws {
         let lines = safeLogicalLines(text)
         try updateProgress(lines, snapshot: nil)

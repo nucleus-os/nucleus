@@ -111,7 +111,7 @@ actor RunProgressReporter {
         switch console.progressPresentation {
         case .dynamic:
             try? console.progress(snapshot)
-        case .appendOnly:
+        case .appendOnly, .githubActions:
             presentSemanticChange(snapshot, at: date)
             if let pendingAppendSnapshot,
                 canEmit(at: date)
@@ -121,28 +121,17 @@ actor RunProgressReporter {
             } else if pendingAppendSnapshot == nil,
                 let lastEmissionDate,
                 date.timeIntervalSince(lastEmissionDate) >= livenessInterval,
-                let task = snapshot.activeRows.first?.task
+                !snapshot.activeRows.isEmpty
             {
-                try? console.progress(
-                    "still running  \(console.displayName(for: task))")
-                self.lastEmissionDate = date
-            }
-        case .githubActions:
-            presentSemanticChange(snapshot, at: date)
-            if let pendingAppendSnapshot,
-                canEmit(at: date)
-            {
-                self.pendingAppendSnapshot = nil
-                emit(pendingAppendSnapshot, at: date)
-            } else if pendingAppendSnapshot == nil,
-                let lastEmissionDate,
-                date.timeIntervalSince(lastEmissionDate) >= livenessInterval,
-                let task = snapshot.activeRows.first?.task
-            {
-                // Transitions alone can leave hours of silence while one task
-                // compiles, which is indistinguishable from a hang.
-                try? console.progress(
-                    "still running  \(console.displayName(for: task))")
+                // Transitions alone leave hours of silence while one task
+                // compiles, which is indistinguishable from a hang. Render the
+                // snapshot rather than composing a bare name: a row is drawn
+                // against that task's most recent output, so the periodic line
+                // reports where the task has reached and not merely that it is
+                // alive. This is the only sampling of running output the
+                // appending sinks do, and once a liveness interval it costs a
+                // line rather than a stream.
+                try? console.progress(snapshot)
                 self.lastEmissionDate = date
             }
         case .disabled, .machine:
@@ -156,13 +145,7 @@ actor RunProgressReporter {
         switch console.progressPresentation {
         case .dynamic:
             try? console.progress(snapshot)
-        case .appendOnly:
-            let semantic = semanticState(snapshot)
-            if semantic != lastSemanticState || pendingAppendSnapshot != nil {
-                pendingAppendSnapshot = nil
-                emit(snapshot, at: date)
-            }
-        case .githubActions:
+        case .appendOnly, .githubActions:
             let semantic = semanticState(snapshot)
             if semantic != lastSemanticState || pendingAppendSnapshot != nil {
                 pendingAppendSnapshot = nil
@@ -182,14 +165,7 @@ actor RunProgressReporter {
         switch console.progressPresentation {
         case .dynamic:
             break
-        case .appendOnly:
-            if canEmit(at: date) {
-                pendingAppendSnapshot = nil
-                emit(snapshot, at: date)
-            } else {
-                pendingAppendSnapshot = snapshot
-            }
-        case .githubActions:
+        case .appendOnly, .githubActions:
             if canEmit(at: date) {
                 pendingAppendSnapshot = nil
                 emit(snapshot, at: date)

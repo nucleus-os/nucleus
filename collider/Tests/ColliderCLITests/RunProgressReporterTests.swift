@@ -52,7 +52,8 @@ private final class ProgressCapture: Sendable {
     await reporter.pulse(at: start.addingTimeInterval(29))
     #expect(capture.text == afterChange)
     await reporter.pulse(at: start.addingTimeInterval(30))
-    #expect(capture.text.hasSuffix("still running  fixture.build\n"))
+    #expect(capture.text != afterChange)
+    #expect(capture.text.hasSuffix("fixture.build [oci]  compile\n"))
 }
 
 @Test func dynamicReporterCoalescesEventsUntilItsPulse() async {
@@ -407,9 +408,13 @@ private func snapshot(
     await reporter.pulse(at: start.addingTimeInterval(13))
     #expect(capture.text == afterStart)
 
-    // Silence still has to be distinguishable from a hang.
+    // Silence still has to be distinguishable from a hang, and the line that
+    // breaks it reports where the task has reached. `link` never triggered an
+    // emission of its own, so its presence here is the liveness line rendering
+    // current state rather than a stale transition being replayed.
     await reporter.pulse(at: start.addingTimeInterval(21))
-    #expect(capture.text.hasSuffix("still running  fixture.build\n"))
+    #expect(capture.text != afterStart)
+    #expect(capture.text.hasSuffix("fixture.build [oci]  link\n"))
 
     // Finishing the task is a transition, so it does reach the log.
     let liveness = capture.text
