@@ -112,6 +112,37 @@ Fidelity is the risk worth naming: the Chromium tree carries symlinks,
 hardlinks, and executable bits that the image must preserve exactly. Prove the
 image against the tree Phase 1 materializes before moving any consumer to it.
 
+## Phase 3: Build each generation from its predecessor
+
+Phases 1 and 2 reduce how many times the tree is materialized and what it
+costs to read each file. Neither reduces how many files are read, which stays
+at the whole tree for every source revision.
+
+That is the dominant cost in practice, because the common revision is small.
+Rolling one dependency changes a handful of files and produces a new source id,
+and the id is what selects the tree: generation `fd51051519b837fadac158bb`
+became `10255f992ea45e6120f7966e` for a one-line change to a single Dawn
+source file, and the whole tree was checked out and materialized again for it.
+During a milestone bring-up that is the normal iteration, not an unusual one.
+
+Content-addressed identity does not require wholesale construction. A new
+generation can be cloned from the previous one and then reconciled: on APFS
+`clonefile` copies a tree copy-on-write without reading it, so only the files
+that actually differ are written. The identity stays derived from content; only
+the construction becomes incremental.
+
+This composes with Phase 2 rather than competing with it. An immutable image
+resists patching in place, so the delta belongs in construction: the new image
+is built from a cloned predecessor and the differing files, not from a fresh
+walk of the host tree. Where no predecessor exists the full path from Phase 2
+still applies.
+
+The property to hold onto is that a generation built incrementally must be
+indistinguishable from one built whole. Reconciliation has to account for
+deletions and mode changes, not only content, and it is worth proving by
+building one generation both ways and comparing them before trusting the fast
+path.
+
 ## Non-goals
 
 - The build does not read the source through the host mount. AOSP references
@@ -120,9 +151,6 @@ image against the tree Phase 1 materializes before moving any consumer to it.
   hours, so the copy into block-backed storage is what buys build throughput.
   The defect was never that the tree is copied; it was that an immutable tree
   was copied twice into mutable per-target volumes.
-- Materialization is not made incremental. The source generation is
-  content-addressed, so any change produces a new id and a new tree. An
-  incremental refill would optimize a case that does not arise.
 
 ## Risk surface
 
