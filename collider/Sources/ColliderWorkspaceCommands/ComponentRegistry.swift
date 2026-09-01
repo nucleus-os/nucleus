@@ -757,6 +757,25 @@ package struct ComponentRegistry {
                 ComponentEntrypointRequest(
                     entrypoint: ReleaseGateEntrypoints.test,
                     selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
+            // Packaging belongs to verification rather than after it. Building
+            // and testing prove the products compile and behave; packaging is
+            // what proves they assemble and qualify into the cohorts actually
+            // delivered, and a lane no automated run selects is one whose
+            // breakage is found by whoever next tries to ship. It is requested
+            // last because it consumes what the other two produce.
+            //
+            // The browser prerequisite is checked the way the packaging command
+            // checks it. `checkBrowserPrerequisites` answers only to a
+            // selection naming the browser, and this selection names
+            // everything, so asking it about "all" skips the check packaging
+            // depends on.
+            try await checkBrowserPrerequisites(
+                selection: "browser",
+                controls: controls)
+            requests.append(
+                ComponentEntrypointRequest(
+                    entrypoint: LinuxEntrypoints.packageRuntime,
+                    selection: "linux-runtime"))
         }
         try await context.execute(
             catalog: catalog,

@@ -930,10 +930,21 @@ the declared recovery gate completes.
 
 ## Phase 6: Define One Complete Verification Graph
 
-Status: active. The host-contract, provenance, build, and test lanes run as one
-prepared `collider verify all` graph on protected main, and their evidence
-outlives ordinary local work. Linux-runtime packaging, product-store
-qualification, and delivery remain pending.
+Status: active. The host-contract, provenance, build, test, and Linux-runtime
+packaging lanes run as one prepared `collider verify all` graph on protected
+main, and their evidence outlives ordinary local work. Product-store
+qualification and delivery remain pending.
+
+Packaging is requested by the same function that requests building and testing,
+last, because it consumes what they produce. It carries the browser prerequisite
+check explicitly: that check answers only to a selection naming the browser, and
+a verification names everything, so the graph would otherwise skip a
+prerequisite the packaging lane depends on.
+
+Adding it takes the graph from 55 tasks to 148 -- the runtime artifact, the
+browser and Chromium construction beneath it, both architectures' package
+payloads and adapters, and the cohorts. The first sweep to run it pays for all
+of that at once.
 
 Adding it found what a build-only graph had been hiding. Neither staged native
 SDK could be read where it is used: the render SDK and the React Native SDK

@@ -250,8 +250,9 @@ beside their amd64 counterparts, alongside `nucleus`, `nucleus-runtime`,
 `nucleus-browser`, `nucleus-development-host`, and `nucleus-session` in all
 three families.
 
-The remaining half is the verification graph running it on protected `main`,
-which no run has done.
+The remaining half is the verification graph running it on protected `main`.
+`collider verify all` now requests the packaging entrypoint, so the graph
+includes it; what remains is a sweep completing it.
 
 ## Phase 6: Qualify the arm64 Guest on Hardware
 
