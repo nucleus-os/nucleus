@@ -42,7 +42,7 @@ actor GitHubActionsRunReporter {
         }
 
         let path = await registry.stageLogPath(for: task, in: run).string
-        try? console.githubTaskLog(task: task, path: path)
+        try? console.githubTaskLog(task: task, path: path, failed: failure != nil)
         if let failure {
             let logPath = failure.logPath ?? path
             try? console.githubFailure(

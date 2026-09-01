@@ -382,27 +382,50 @@ package final class CommandConsole: @unchecked Sendable {
         }
     }
 
-    package func githubTaskLog(task: TaskID, path: String) throws {
+    /// Publish a task's durable output as a collapsible group.
+    ///
+    /// A stage log exists only once a task writes to it, and plenty of tasks do
+    /// real work while saying nothing: publication symlinks, manifest writes,
+    /// retention. Opening a group over a log that was never created promises
+    /// output the reader will not find, and in a recent sweep fourteen of
+    /// twenty-six groups were exactly that. So the group is opened only when
+    /// there is something to put in it.
+    ///
+    /// A failure is the one case where the absence is itself worth reporting:
+    /// a container that died before Collider captured anything leaves no log,
+    /// and saying so is more useful than saying nothing.
+    package func githubTaskLog(
+        task: TaskID,
+        path: String,
+        failed: Bool = false
+    ) throws {
         guard progressPresentation == .githubActions else { return }
+        let data = try? Data(
+            contentsOf: URL(fileURLWithPath: path),
+            options: .mappedIfSafe)
+        guard let data, !data.isEmpty else {
+            guard failed else { return }
+            try state.withLock { state in
+                let title = githubCommandMessage(
+                    Self.qualifiedName(task, labels: state.taskLabels))
+                try standardError(Data("::group::\(title)\n".utf8))
+                try standardError(
+                    Data("stage log unavailable: \(safeTerminalText(path))\n".utf8))
+                try standardError(Data("::endgroup::\n".utf8))
+            }
+            return
+        }
         try state.withLock { state in
             let title = githubCommandMessage(
                 Self.qualifiedName(task, labels: state.taskLabels))
             try standardError(Data("::group::\(title)\n".utf8))
-            if let data = try? Data(
-                contentsOf: URL(fileURLWithPath: path),
-                options: .mappedIfSafe)
+            let text = safeTerminalText(String(decoding: data, as: UTF8.self))
+            for line in text.split(
+                separator: "\n",
+                omittingEmptySubsequences: false)
             {
-                let text = safeTerminalText(String(decoding: data, as: UTF8.self))
-                for line in text.split(
-                    separator: "\n",
-                    omittingEmptySubsequences: false)
-                {
-                    let value = line.hasPrefix("::") ? " \(line)" : String(line)
-                    try standardError(Data((value + "\n").utf8))
-                }
-            } else {
-                try standardError(
-                    Data("stage log unavailable: \(safeTerminalText(path))\n".utf8))
+                let value = line.hasPrefix("::") ? " \(line)" : String(line)
+                try standardError(Data((value + "\n").utf8))
             }
             try standardError(Data("::endgroup::\n".utf8))
         }

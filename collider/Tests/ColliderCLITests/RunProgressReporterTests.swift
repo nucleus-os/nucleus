@@ -427,3 +427,55 @@ private func snapshot(
     await reporter.pulse(at: start.addingTimeInterval(41))
     #expect(capture.text != liveness)
 }
+
+/// A stage log exists only once a task writes to it, and plenty of tasks do
+/// real work while saying nothing. A group opened over a log that was never
+/// created promises output the reader will not find, so a task that succeeds
+/// silently gets no group at all. A failure keeps one, because a container that
+/// died before anything was captured leaves no log and saying so is the useful
+/// report.
+@Test func githubReporterOmitsGroupsForTasksThatWroteNothing() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-github-silent-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "build", "fixture"])
+    let silent = TaskID(rawValue: "fixture.publish")
+    let capture = ProgressCapture()
+    let console = CommandConsole(
+        progress: .always,
+        environment: ["GITHUB_ACTIONS": "true"],
+        standardOutput: { _ in },
+        standardError: capture.write)
+    let reporter = GitHubActionsRunReporter(
+        console: console,
+        registry: registry,
+        run: run,
+        workspaceRoot: FilePath(directory.path))
+
+    await reporter.consume(
+        .event(
+            RunEvent(
+                sequence: 1,
+                timestamp: "2026-08-17T00:00:00Z",
+                runID: run.id,
+                payload: .task(.succeeded(silent)))))
+    #expect(capture.text.isEmpty)
+
+    // The same absence under a failure is worth reporting rather than hiding.
+    let failed = TaskID(rawValue: "fixture.image")
+    let failure = ExecutionFailure(
+        task: failed,
+        logPath: await registry.stageLogPath(for: failed, in: run).string,
+        reason: "image preparation failed")
+    await reporter.consume(
+        .event(
+            RunEvent(
+                sequence: 2,
+                timestamp: "2026-08-17T00:00:01Z",
+                runID: run.id,
+                payload: .task(.failed(task: failed, failure: failure)))))
+    #expect(capture.text.contains("::group::fixture.image"))
+    #expect(capture.text.contains("stage log unavailable"))
+    try await registry.finish(run, status: .failed, failedTask: failed)
+}
