@@ -1783,6 +1783,22 @@ private final class DisplaySeatHandler:
                 y: y))
     }
 
+    /// The pointer's surface-local position changed without the device moving.
+    ///
+    /// Sent when the surface under the pointer moved, or when the compositor
+    /// repositioned the pointer itself. It carries no timestamp and the
+    /// protocol forbids it in the same frame as an enter or a motion, because
+    /// it is not input: the tracked position moves, and no move is reported to
+    /// the sink, which would otherwise deliver travel the user never made.
+    func warp(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>,
+        surface_x: Double,
+        surface_y: Double
+    ) {
+        x = surface_x
+        y = surface_y
+    }
+
     func button(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>,
         serial: UInt32,

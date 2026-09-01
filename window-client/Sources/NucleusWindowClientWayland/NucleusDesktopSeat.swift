@@ -617,6 +617,24 @@ final class WindowClientPointerListener: WlPointerEvents {
         seat.emit(event)
     }
 
+    /// The pointer's surface-local position changed without the device moving.
+    ///
+    /// The compositor sends this when the surface under the pointer moved, or
+    /// when it repositioned the pointer itself -- leaving pointer confinement,
+    /// for instance. It carries no timestamp, and the protocol forbids it in
+    /// the same frame as an enter or a motion, because it is not input.
+    ///
+    /// So it records the position and emits nothing. A button or axis event
+    /// arriving afterwards reads this cached location, which is what has to be
+    /// current; synthesizing a motion here would report travel the user never
+    /// made, and anything measuring drag distance would believe it.
+    func warp(
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, surface_x: Double,
+        surface_y: Double
+    ) {
+        seat.notePointerPosition(x: surface_x, y: surface_y)
+    }
+
     func button(
         _ proxy: WaylandBorrowedProxy<WlPointerClient>, serial: UInt32,
         time: UInt32, button: UInt32, state: WlPointerButtonState
