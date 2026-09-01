@@ -81,6 +81,14 @@ architecture, halving both the resident storage and the traversals that
 exhausted the file table. `collider verify all` plans 138 tasks with no error
 under protected-main and local-development authority alike.
 
+The lock costs wall clock, and more of it than the reasoning above accounted
+for. A task lock serializes whole tasks, so the two Chromium builds no longer
+overlap: on 2026-09-01 the x86_64 build took 3h55m and the arm64 build began
+only after it finished, putting a cold sweep past the six-hour job timeout the
+workflow had been inheriting by default. Halving the storage bought serializing
+the two longest tasks in the graph, and that trade holds only until Phase 2
+retires the lock. The timeout is now set explicitly to bound the cold case.
+
 Status: complete.
 
 ## Phase 2: The prepared tree becomes an artifact
@@ -107,6 +115,8 @@ containerization stack already clones block images.
 This phase deletes `materialize-source`, the `.nucleus-source-id` protocol, the
 `rm -rf`, the source lock Phase 1 introduced, and the residency justification
 below, because a reproducible content-addressed artifact needs none of them.
+Retiring the lock is what restores concurrent product builds, so this phase
+recovers the wall clock Phase 1 spent as well as the reads it was aimed at.
 
 Fidelity is the risk worth naming: the Chromium tree carries symlinks,
 hardlinks, and executable bits that the image must preserve exactly. Prove the
