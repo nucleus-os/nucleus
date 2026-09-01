@@ -118,6 +118,13 @@ reuse.
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor-input contract reuses portable identity primitives without
     becoming a product package, CI cache, release object, or publication path.
+19. Complete Phase 2 of
+    [Chromium source materialization](chromium-source-materialization-plan.md),
+    which makes the prepared Chromium tree a content-addressed read-only image
+    rather than a mutable workspace refilled per build. Phase 1 already reduced
+    two materialized trees to one; Phase 2 removes the wipe-and-refill, the
+    hand-maintained cache key, and the lock that serializes the two Chromium
+    builds while the tree stays mutable.
 
 ### Component implementation plans
 

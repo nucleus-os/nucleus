@@ -178,13 +178,21 @@ package func chromiumCompilerCacheWorkspace(
         retentionPolicy: .toolManagedLimit(maximumBytes: 30 * 1_024 * 1_024 * 1_024))
 }
 
-package func chromiumSourceWorkspace(
-    target: ChromiumLinuxTarget
-) -> PersistentWorkspaceDeclaration {
+/// One materialized tree for every Chromium product and architecture.
+///
+/// The tree is a pure function of the pinned source revision: every consumer
+/// mounts it read-only, and the only writer is the materialization step, which
+/// copies the same bytes whatever target asked for it. Keying this workspace by
+/// artifact target therefore bought nothing and cost a second full copy --
+/// around half a million files each, read through the host mount, with both
+/// architectures materializing at once. That is what exhausted the host's
+/// system-wide file table and failed the build. `artifactTarget` is optional
+/// precisely so source can say it belongs to no single target.
+package func chromiumSourceWorkspace() -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
             key: "chromium-source",
-            artifactTarget: target.artifactTarget,
+            artifactTarget: nil,
             role: "source"),
         capacityBytes: 64 * 1_024 * 1_024 * 1_024,
         filesystem: .ext4,

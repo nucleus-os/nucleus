@@ -42,8 +42,7 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
             buildManifest: FilePath(
                 metadata.appendingPathComponent("build-manifest.json").path),
             inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
-            sourceWorkspace: chromiumSourceWorkspace(
-                target: target),
+            sourceWorkspace: chromiumSourceWorkspace(),
             outputWorkspace: chromiumOutputWorkspace(
                 product: .browser,
                 target: target),
@@ -158,8 +157,7 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
         target: target,
         chromiumSource: FilePath(source.path),
         buildManifest: FilePath(buildManifest.path),
-        sourceWorkspace: chromiumSourceWorkspace(
-            target: target),
+        sourceWorkspace: chromiumSourceWorkspace(),
         outputWorkspace: chromiumOutputWorkspace(
             product: .browser,
             target: target),
@@ -359,8 +357,7 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         target: target,
         chromiumSource: FilePath(chromium.path),
         buildManifest: FilePath(buildManifest.path),
-        sourceWorkspace: chromiumSourceWorkspace(
-            target: target),
+        sourceWorkspace: chromiumSourceWorkspace(),
         outputWorkspace: chromiumOutputWorkspace(
             product: .cef,
             target: target),

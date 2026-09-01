@@ -520,7 +520,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 let metadata = buildMetadata.appending(
                     "\(target.identifier)/\(product.rawValue)")
                 let manifest = metadata.appending("build-manifest.json")
-                let sourceWorkspace = chromiumSourceWorkspace(target: target)
+                let sourceWorkspace = chromiumSourceWorkspace()
                 let outputWorkspace = chromiumOutputWorkspace(
                     product: product,
                     target: target)
@@ -569,7 +569,19 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 cache.appending(
                                     "locks/\(product.rawValue)-"
                                         + "\(target.architecture.rawValue)-build.lock"
-                                ))
+                                )),
+                            // One materialized tree now serves every product
+                            // and architecture, and materialization wipes it
+                            // before refilling it. That is not atomic, so a
+                            // second build starting while the first refills
+                            // would read a half-written tree. Holding one lock
+                            // across the whole build is coarse -- it serializes
+                            // the Chromium builds outright -- but the tree is
+                            // only safe to share while nothing else can be
+                            // rebuilding it. Making the materialized tree an
+                            // immutable content-addressed artifact is what
+                            // removes this lock rather than widening it.
+                            .shared(cache.appending("locks/chromium-source.lock")),
                         ],
                         action:
                             try AnyColliderAction(
@@ -789,8 +801,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                             .removingLastComponent()
                                             .appending("inputs"),
                                         sourceWorkspace:
-                                            chromiumSourceWorkspace(
-                                                target: target),
+                                            chromiumSourceWorkspace(),
                                         outputWorkspace: workspace,
                                         compilerCacheWorkspace:
                                             chromiumCompilerCacheWorkspace(
