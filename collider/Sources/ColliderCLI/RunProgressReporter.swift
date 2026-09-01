@@ -15,7 +15,13 @@ struct RunProgressSemanticState: Equatable, Sendable {
     let activeRows: [RunProgressRow]
     let residualActiveRowCount: Int
 
-    init(_ snapshot: RunProgressSnapshot) {
+    /// `includingRowDetail: false` keeps which tasks are running but drops what
+    /// each is currently doing, so a transition means a task started or
+    /// finished rather than a task emitted a line. Sinks that append rather
+    /// than repaint need that coarser notion: the detail changes continuously
+    /// for the whole life of a long compile, and every change would otherwise
+    /// become another permanent line.
+    init(_ snapshot: RunProgressSnapshot, includingRowDetail: Bool = true) {
         runID = snapshot.runID
         phase = snapshot.phase
         let quantum = 0.05
@@ -25,7 +31,16 @@ struct RunProgressSemanticState: Equatable, Sendable {
         completedTaskCount = snapshot.completedTaskCount
         totalTaskCount = snapshot.totalTaskCount
         hostPhase = snapshot.hostPhase
-        activeRows = snapshot.activeRows
+        activeRows =
+            includingRowDetail
+            ? snapshot.activeRows
+            : snapshot.activeRows.map {
+                RunProgressRow(
+                    task: $0.task,
+                    lane: $0.lane,
+                    startedAt: $0.startedAt,
+                    detail: .running)
+            }
         residualActiveRowCount = snapshot.residualActiveRowCount
     }
 }
@@ -119,6 +134,16 @@ actor RunProgressReporter {
             {
                 self.pendingAppendSnapshot = nil
                 emit(pendingAppendSnapshot, at: date)
+            } else if pendingAppendSnapshot == nil,
+                let lastEmissionDate,
+                date.timeIntervalSince(lastEmissionDate) >= livenessInterval,
+                let task = snapshot.activeRows.first?.task
+            {
+                // Transitions alone can leave hours of silence while one task
+                // compiles, which is indistinguishable from a hang.
+                try? console.progress(
+                    "still running  \(console.displayName(for: task))")
+                self.lastEmissionDate = date
             }
         case .disabled, .machine:
             break
@@ -132,13 +157,13 @@ actor RunProgressReporter {
         case .dynamic:
             try? console.progress(snapshot)
         case .appendOnly:
-            let semantic = RunProgressSemanticState(snapshot)
+            let semantic = semanticState(snapshot)
             if semantic != lastSemanticState || pendingAppendSnapshot != nil {
                 pendingAppendSnapshot = nil
                 emit(snapshot, at: date)
             }
         case .githubActions:
-            let semantic = RunProgressSemanticState(snapshot)
+            let semantic = semanticState(snapshot)
             if semantic != lastSemanticState || pendingAppendSnapshot != nil {
                 pendingAppendSnapshot = nil
                 emit(snapshot, at: date)
@@ -152,7 +177,7 @@ actor RunProgressReporter {
         _ snapshot: RunProgressSnapshot,
         at date: Date
     ) {
-        let semantic = RunProgressSemanticState(snapshot)
+        let semantic = semanticState(snapshot)
         guard semantic != lastSemanticState else { return }
         switch console.progressPresentation {
         case .dynamic:
@@ -180,13 +205,25 @@ actor RunProgressReporter {
         }
     }
 
+    /// GitHub Actions renders an append-only log, so a repaint there is a new
+    /// permanent line. Task output must not drive emissions in that sink: the
+    /// completed output of every task already reaches the log in full, inside
+    /// the collapsible group `GitHubActionsRunReporter` writes when the task
+    /// finishes, so sampling it again at the top level only duplicates it where
+    /// nothing can fold it away.
+    private func semanticState(_ snapshot: RunProgressSnapshot) -> RunProgressSemanticState {
+        RunProgressSemanticState(
+            snapshot,
+            includingRowDetail: console.progressPresentation != .githubActions)
+    }
+
     private func canEmit(at date: Date) -> Bool {
         guard let lastEmissionDate else { return true }
         return date.timeIntervalSince(lastEmissionDate) >= minimumAppendInterval
     }
 
     private func emit(_ snapshot: RunProgressSnapshot, at date: Date) {
-        lastSemanticState = RunProgressSemanticState(snapshot)
+        lastSemanticState = semanticState(snapshot)
         lastEmissionDate = date
         try? console.progress(snapshot)
     }

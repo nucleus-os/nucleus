@@ -368,3 +368,62 @@ private func snapshot(
         ],
         residualActiveRowCount: 0)
 }
+
+/// GitHub Actions renders an append-only log, so every repaint is a permanent
+/// line. A running task producing output is therefore not a progress transition
+/// there: its complete output already arrives inside the collapsible group
+/// written when it finishes, so resampling it at the top level only duplicates
+/// it where nothing can fold it away. Only starting and finishing may emit, and
+/// a quiet stretch is reported by the liveness line instead.
+@Test func githubReporterEmitsTaskTransitionsRatherThanTaskOutput() async {
+    let capture = ProgressCapture()
+    let console = CommandConsole(
+        progress: .always,
+        standardErrorIsTerminal: false,
+        environment: ["GITHUB_ACTIONS": "true"],
+        standardOutput: { _ in },
+        standardError: capture.write)
+    #expect(console.progressPresentation == ConsoleProgressPresentation.githubActions)
+    let reporter = RunProgressReporter(
+        console: console,
+        minimumAppendInterval: 10,
+        livenessInterval: 20)
+    let start = Date(timeIntervalSince1970: 1_000)
+
+    await reporter.present(snapshot(elapsed: 0, detail: .running), at: start)
+    let afterStart = capture.text
+    #expect(!afterStart.isEmpty)
+
+    // The task is still the same task, just further along. Under the appending
+    // sink that is not worth another line, however long it goes on.
+    await reporter.present(
+        snapshot(elapsed: 2_000_000_000, detail: .operation("compile")),
+        at: start.addingTimeInterval(1))
+    await reporter.pulse(at: start.addingTimeInterval(11))
+    #expect(capture.text == afterStart)
+    await reporter.present(
+        snapshot(elapsed: 5_000_000_000, detail: .operation("link")),
+        at: start.addingTimeInterval(12))
+    await reporter.pulse(at: start.addingTimeInterval(13))
+    #expect(capture.text == afterStart)
+
+    // Silence still has to be distinguishable from a hang.
+    await reporter.pulse(at: start.addingTimeInterval(21))
+    #expect(capture.text.hasSuffix("still running  fixture.build\n"))
+
+    // Finishing the task is a transition, so it does reach the log.
+    let liveness = capture.text
+    await reporter.present(
+        RunProgressSnapshot(
+            runID: RunID(rawValue: "fixture"),
+            phase: .executing,
+            completionFraction: 1,
+            completedTaskCount: 1,
+            totalTaskCount: 1,
+            elapsedNanoseconds: 6_000_000_000,
+            activeRows: [],
+            residualActiveRowCount: 0),
+        at: start.addingTimeInterval(40))
+    await reporter.pulse(at: start.addingTimeInterval(41))
+    #expect(capture.text != liveness)
+}
