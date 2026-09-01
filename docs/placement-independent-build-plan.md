@@ -239,6 +239,23 @@ host path reaching an identity is then a defect that stops a build, not a
 string quietly corrected in one of the several places that must remember to
 correct it.
 
+The prefix-mapping half is done. Container Swift and Clang invocations carry no
+mapping and the reason sits beside the switch that omits it: a container is
+already given the canonical location, so a mapping there would map a prefix that
+never appears and would put the host's own directory into the identity through
+the flag itself. Host-tool compilation keeps its mapping, as this phase says it
+should while Phase 2 is deferred.
+
+The encoding half is not done. `ProductArtifactManifest` still canonicalizes
+`semanticBuildArguments` through a map its one caller supplies, so a host path
+reaching a product manifest is still corrected rather than refused. Inverting it
+is a small change -- the assertion already exists, since validation re-checks
+those arguments against the empty map -- but its consequence is not small: a
+product whose arguments still carry a declared root would begin to fail, and
+product manifests are written by packaging, which the protected-main sweep does
+not yet run. So the inversion needs the packaging lane in the sweep, or a check
+that runs against a produced manifest, before it can be made safely.
+
 Gate: product identity encoding rejects a host path rather than canonicalizing
 it; no product compiler invocation carries a prefix mapping; and every product
 task identity is unchanged by relocating the checkout or the store.
@@ -340,6 +357,21 @@ home-directory root put paths like
 identities of tasks that name them, and the placement assertion rejected it.
 Declaring the root is what makes a per-account location safe, which is the same
 conclusion the per-checkout SwiftPM scratch reached.
+
+Automated-to-local warm-state reuse measures 38 of 55 tasks clean on a revision
+the sweep had just verified, with 14 declared to run every time, 2 declared to
+leave incrementality to SwiftPM, and one that genuinely diverges:
+`swift.package.dependencies` for the root package plans a different input digest
+locally than the sweep recorded, deterministically across repeated runs. Its
+identity is not the problem -- every path in it canonicalizes to a declared
+root, `${workspace}` and `${cache}` and nothing else -- so what differs is the
+digest of what the task reads rather than the encoding of what it is.
+
+That distinction is where the tooling stops. `--explain-identity` exists because
+two plans that disagree should report where rather than only that, and it does
+that for identities; there is no equivalent for inputs, so a divergence in the
+input digest reports only that it happened. Closing this gate needs that
+explanation first.
 
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
