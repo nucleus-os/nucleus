@@ -1,66 +1,66 @@
 {
-  "cefBranch": "7922",
-  "chromiumVersion": "151.0.7922.19",
+  "cefBranch": "7977",
+  "chromiumVersion": "152.0.7977.54",
   "buildHostPlatform": "linux-x86_64",
   "devtoolsRollupPlatform": "linux-x64-gnu",
   "repositories": [
     {
       "checkoutPath": "chromium/src",
-      "commit": "3bdd6908edfb2cd047ba1d6fe61ea6217a4bc9e7",
+      "commit": "b3e5216f90bfaee87c023dd8c2e56a24f500c2da",
       "name": "chromium",
       "remote": "https://github.com/nucleus-os/chromium.git",
-      "tree": "95ad3bdbb0645db77287053cb4b372044512abcb",
-      "upstreamCommit": "8f914546f6536ee67a34edb3607f946616f55994",
+      "tree": "5e5a3b4b36c99d15aa8b8beae4fce720fa9f7e70",
+      "upstreamCommit": "24072c1aa400ec4a89dc738b6b6acd12a8589b6f",
       "upstreamRemote": "https://chromium.googlesource.com/chromium/src.git"
     },
     {
       "checkoutPath": "chromium/src/cef",
-      "commit": "a3b223695c3b1d0867c6e7da27f4c0d4790c4f32",
+      "commit": "2c5142deafb1586980e63ca84cf07b9c39b641ba",
       "name": "cef",
       "remote": "https://github.com/nucleus-os/cef.git",
-      "tree": "3770b40c1257011fdedb593032d402b99386ffe0",
-      "upstreamCommit": "6c664b86a4ef3be5c95b1290068f5e5d52b72db3",
+      "tree": "6b769e848cd13592196d5dc841310fea9950a74b",
+      "upstreamCommit": "b129680e4084ebea0429a1c289fb7c24ac604b36",
       "upstreamRemote": "https://github.com/chromiumembedded/cef.git"
     },
     {
       "checkoutPath": "chromium/src/third_party/angle",
-      "commit": "48910f210ec32f22ec21e48936afd4a2c547514a",
+      "commit": "213d799999a8dbe8f6c271e5ca5c79752fd97e6b",
       "name": "angle",
       "remote": "https://github.com/nucleus-os/angle.git",
-      "tree": "3a46f5ef58e547f3a35349a35043c24a0a78c804",
-      "upstreamCommit": "6dab7c7e742b528fd52233d3cc926e61b1e7d70d",
+      "tree": "228acf77bb1db0d549dde59cf288a2b388a38036",
+      "upstreamCommit": "e68ad989e7b507ceb28ec1b2a272b20a289be60f",
       "upstreamRemote": "https://chromium.googlesource.com/angle/angle.git"
     },
     {
       "checkoutPath": "chromium/src/third_party/skia",
-      "commit": "fdc1f06fc4bf1721fbb8b36891c192a73be6c2e1",
+      "commit": "7a1f4f537562e4781367ac10a7439a2e767eee56",
       "name": "skia",
       "remote": "https://github.com/nucleus-os/skia.git",
-      "tree": "231be80a1506ba228e7492af26c9202f5d1faeb1",
-      "upstreamCommit": "0208108c7aed5f4e0faa525cbba52c238005a1ef",
+      "tree": "3f0360536a28de32b275b2bb860c996a541daa77",
+      "upstreamCommit": "b6d106297ff9ef2ff8094033695d045e87775581",
       "upstreamRemote": "https://skia.googlesource.com/skia.git"
     },
     {
       "checkoutPath": "chromium/src/v8",
-      "commit": "a5423b52e73a9d651ec9aeefa1cad55c9213e1af",
+      "commit": "aede3068a87ada37623e4fdaa76dec3a92d88bd1",
       "name": "v8",
       "remote": "https://github.com/nucleus-os/v8.git",
-      "tree": "e1ce86ae1bcc32893dfaef1d649c96aa6e0315e0",
-      "upstreamCommit": "61ac84bde33f6df3e53df05742de164a26a1ae66",
+      "tree": "e0e78e45b297566d64867bf59d46308abc62d295",
+      "upstreamCommit": "8ec91943739dc102471544c77ec9c864f185af5b",
       "upstreamRemote": "https://chromium.googlesource.com/v8/v8.git"
     },
     {
       "checkoutPath": "chromium/src/third_party/dawn",
-      "commit": "46e228a52427554281e0eda17230a913babca4cb",
+      "commit": "3070331c87e227fc8548322f720fbf10972bca12",
       "name": "dawn",
       "remote": "https://github.com/nucleus-os/dawn.git",
-      "tree": "ea5b6983bdb89e9a9720156446310a78d47a6ee2",
-      "upstreamCommit": "583f3600453cc982a3dac39308cac8939875d7af",
+      "tree": "f1d1ff224a121db4dbc71cd841348b57d03274d7",
+      "upstreamCommit": "571752c9cb3ed36a3194854374984427794c4dda",
       "upstreamRemote": "https://dawn.googlesource.com/dawn.git"
     }
   ],
   "depotTools": {
-    "commit": "35892a9e24190cc5f3a511d3954319c93445926c",
+    "commit": "cb70c994a656601dc6a0d423f49ff57503bd70bc",
     "remote": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
   }
 }

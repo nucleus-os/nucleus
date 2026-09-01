@@ -26,6 +26,13 @@ contract that pins them. They are not in scope below.
 - `swift-sdk/source/libxml2` at `v2.11.5`, which is the value upstream's own
   `utils/update_checkout/update-checkout-config.json` pins for every 6.x scheme.
 - The AOSP source graph at `android-17.0.0_r1` with Repo 2.65.
+- The browser stack at Chromium milestone 152. `chromium/source.lock.json`
+  pins Chromium `152.0.7977.54` with CEF `152.0.5+gb129680`, and the angle,
+  dawn, v8, and skia forks each sit one commit ahead of the exact revision that
+  milestone's `DEPS` names, zero behind. `core/third-party/skia` sits one commit
+  ahead of the head of Skia's `chrome/m152` branch, which is that same revision,
+  so both Skia consumers build one upstream tree. `DEPS` keeps upstream URLs and
+  release revisions; the gitlinks alone select the forked trees.
 
 ## Phase 1: Immutable target SDK package acquisition
 
