@@ -337,7 +337,8 @@ package struct ComponentRegistry {
                     "product-store"),
                 sessionPackage: context.layout.compositorSessionPackage,
                 placement: context.identityPathMap,
-                environment: productEnvironment)
+                environment: productEnvironment,
+                buildEnvironment: recipeEnvironment)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,

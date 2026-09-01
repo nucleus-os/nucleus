@@ -3423,3 +3423,44 @@ private func artifactInput(
         #expect(line.contains(release), "stale NDK reference: \(line)")
     }
 }
+
+/// Both the build lane and the packaging lane compile the Linux runtime
+/// products. Product provenance names what triggered a run, not anything a
+/// compilation reads, so a product carrying it in one lane and not the other
+/// gets two identities: the lanes stop reusing each other's compiled output,
+/// and planning both at once fails outright because a lowering group admits one
+/// environment per product. Only a run that supplies provenance can observe
+/// this, which is why a locally initiated plan never sees it.
+@Test func packagingCompilesRuntimeProductsWithoutProductProvenance() async throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let provenance = [
+        "NUCLEUS_PRODUCT_SOURCE_AUTHORITY": "protected-main",
+        "NUCLEUS_PRODUCT_SOURCE_COMMIT": String(repeating: "a", count: 40),
+        "NUCLEUS_PRODUCT_SOURCE_REF": "refs/heads/main",
+        "NUCLEUS_PRODUCT_PRODUCER_TRUST_DOMAIN": "nucleus-builder",
+    ]
+    let catalog = try await ComponentRegistry(
+        context: WorkspaceContext(
+            root: root,
+            environment: [:],
+            runtime: ColliderRuntime())
+    ).componentCatalog(
+        environment: provenance,
+        hostAugmentation: HostCatalogAugmentation.none)
+
+    let requirements = catalog.tasks.flatMap(\.swiftProducts)
+        .filter { $0.package == "nucleus" }
+    #expect(!requirements.isEmpty)
+    for name in provenance.keys {
+        #expect(
+            requirements.allSatisfy { $0.environment[name] == nil },
+            "\(name) reached a Swift product requirement")
+    }
+
+    // The supervisor is one of the products both lanes name, so it is where the
+    // two environments are actually compared rather than merely filtered.
+    let supervisor = requirements.filter { $0.product == "NucleusSessionSupervisor" }
+    #expect(supervisor.count > 1)
+    #expect(Set(supervisor.map(\.environment)).count == 1)
+}

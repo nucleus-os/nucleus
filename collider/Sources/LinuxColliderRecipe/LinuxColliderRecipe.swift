@@ -166,7 +166,17 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
     package let sessionPackage: FilePath
     /// Where declared placement roots put every path these executions name.
     package let placement: IdentityPathMap
+    /// Carries the product provenance this lane stamps into what it publishes.
+    /// It reaches actions and typed task inputs, never a compilation.
     package let environment: [String: String]
+    /// The same environment with the provenance removed, for everything that
+    /// compiles. Provenance names what triggered a build, not what the build
+    /// reads, so letting them into a Swift product requirement would give one
+    /// product two identities: the one the build lane requests and the one this
+    /// lane requests. Those lanes then never share a compiled product, and
+    /// planning both at once fails outright because a lowering group requires
+    /// one environment per product.
+    package let buildEnvironment: [String: String]
 
     package init(
         lanes: [PlatformArchitecture: LinuxRuntimeArtifactLane],
@@ -178,7 +188,8 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
         productStoreRoot: FilePath,
         sessionPackage: FilePath,
         placement: IdentityPathMap,
-        environment: [String: String]
+        environment: [String: String],
+        buildEnvironment: [String: String]
     ) {
         self.lanes = lanes
         self.browserPackageInputs = browserPackageInputs
@@ -189,6 +200,7 @@ package struct LinuxRuntimeArtifactConfiguration: RecipeConfiguration {
         self.sessionPackage = sessionPackage
         self.placement = placement
         self.environment = environment
+        self.buildEnvironment = buildEnvironment
     }
 }
 
@@ -662,7 +674,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 package: "nucleus",
                 product: product,
                 packageRoot: lane.runtimeSwiftPM.context.packageRoot,
-                environment: configuration.environment,
+                environment: configuration.buildEnvironment,
                 expectedOutputs: [
                     PathPostcondition(
                         path: lane.runtimeSwiftPM.executable(product),
@@ -673,7 +685,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-runtime-publisher",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -745,7 +757,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-assembler",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -816,7 +828,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-assembler",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -874,7 +886,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-assembler",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -940,7 +952,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-assembler",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -1002,7 +1014,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-assembler",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
@@ -1109,7 +1121,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "collider-cli",
             product: "nucleus-linux-package-qualifier",
             packageRoot: configuration.assemblerSwiftPM.context.packageRoot,
-            environment: configuration.environment,
+            environment: configuration.buildEnvironment,
             expectedOutputs: [
                 PathPostcondition(
                     path: configuration.assemblerSwiftPM.executable(
