@@ -14,7 +14,7 @@ package extension WlKeyboardRequests {
 }
 package enum WlKeyboardServer: WaylandServerInterface {
     package typealias Requests = any WlKeyboardRequests
-    package nonisolated static let maximumVersion: Int32 = 10
+    package nonisolated static let maximumVersion: Int32 = 11
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_keyboard_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_keyboard_requests(

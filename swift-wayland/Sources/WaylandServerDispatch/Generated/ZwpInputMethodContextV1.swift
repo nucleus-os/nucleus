@@ -136,7 +136,7 @@ package enum ZwpInputMethodContextV1Server: WaylandServerInterface {
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        unsafe h.grabKeyboard(WaylandRequest<ZwpInputMethodContextV1Server>(res), keyboard: WlNewId<WlKeyboardServer>(client: client, id: keyboard, version: Swift::min(wl_resource_get_version(res), Int32(10))))
+        unsafe h.grabKeyboard(WaylandRequest<ZwpInputMethodContextV1Server>(res), keyboard: WlNewId<WlKeyboardServer>(client: client, id: keyboard, version: Swift::min(wl_resource_get_version(res), Int32(11))))
     }
     private static let key_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UInt32, UInt32, UInt32) -> Void = { _, res, serial, time, key, state in
         guard let res = unsafe res, let h = unsafe handler(res) else {

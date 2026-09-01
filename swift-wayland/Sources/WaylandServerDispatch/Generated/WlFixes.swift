@@ -3,9 +3,11 @@
 
 import WaylandServerC
 package import WaylandServer
+package import WaylandProtocolTypes
 @MainActor package protocol WlFixesRequests: AnyObject {
     func destroy(_ request: WaylandRequest<WlFixesServer>)
     func destroyRegistry(_ request: WaylandRequest<WlFixesServer>, registry: WaylandBorrowedObject<WlRegistryServer>)
+    func ackGlobalRemove(_ request: WaylandRequest<WlFixesServer>, registry: WaylandBorrowedObject<WlRegistryServer>, name: UInt32)
 }
 package extension WlFixesRequests {
     func destroy(_ request: WaylandRequest<WlFixesServer>) {
@@ -14,12 +16,13 @@ package extension WlFixesRequests {
 }
 package enum WlFixesServer: WaylandServerInterface {
     package typealias Requests = any WlFixesRequests
-    package nonisolated static let maximumVersion: Int32 = 1
+    package nonisolated static let maximumVersion: Int32 = 2
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_fixes_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_fixes_requests(
             destroy: destroy_impl,
-            destroy_registry: destroyRegistry_impl
+            destroy_registry: destroyRegistry_impl,
+            ack_global_remove: ackGlobalRemove_impl
         ))
         return UnsafeRawPointer(vtable)
     }()
@@ -47,6 +50,23 @@ package enum WlFixesServer: WaylandServerInterface {
             return
         }
         unsafe h.destroyRegistry(WaylandRequest<WlFixesServer>(res), registry: WaylandBorrowedObject<WlRegistryServer>(registry!))
+    }
+    private static let ackGlobalRemove_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, res, registry, name in
+        guard let res = unsafe res, let h = unsafe handler(res) else {
+            return
+        }
+        unsafe h.ackGlobalRemove(WaylandRequest<WlFixesServer>(res), registry: WaylandBorrowedObject<WlRegistryServer>(registry!), name: name)
+    }
+}
+package extension WaylandRequest where Interface == WlFixesServer {
+    func postError(_ code: WlFixesError, message: String) {
+        postError(code: code.rawValue, message: message)
+    }
+}
+package extension WaylandResourceHandle where Interface == WlFixesServer {
+    @discardableResult
+    func postError(_ code: WlFixesError, message: String) -> Bool {
+        postError(code: code.rawValue, message: message)
     }
 }
 package extension WlNewId where Interface == WlFixesServer {

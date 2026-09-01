@@ -6,7 +6,7 @@ package import WaylandProtocolTypes
 package enum WlShmClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shm())
-    package nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 3
 }
 package extension WaylandProxy where Interface == WlShmClient {
     func createPool(fd: consuming WaylandClientOwnedFileDescriptor, size: Int32) throws(WaylandProxyError) -> WaylandProxy<WlShmPoolClient> {

@@ -503,6 +503,7 @@ typedef struct swift_wayland_wl_subsurface_requests {
 typedef struct swift_wayland_wl_fixes_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *destroy)(struct wl_client *, struct wl_resource *);
     void (NUCLEUS_WL_MAIN_ACTOR *destroy_registry)(struct wl_client *, struct wl_resource *, struct wl_resource *);
+    void (NUCLEUS_WL_MAIN_ACTOR *ack_global_remove)(struct wl_client *, struct wl_resource *, struct wl_resource *, uint32_t);
 } swift_wayland_wl_fixes_requests;
 typedef struct swift_wayland_zwp_input_method_v2_requests {
     void (NUCLEUS_WL_MAIN_ACTOR *commit_string)(struct wl_client *, struct wl_resource *, const char *);

@@ -1257,12 +1257,16 @@ private func commonCMakeArguments(
 ) -> [String] {
     let sysroot = target.containerSwiftSDKRoot
     let definitions = compileDefinitions.map { "-D\($0)" }.joined(separator: " ")
+    // Compile flags only. `-stdlib=libc++` and `-fuse-ld=lld` live on the link
+    // lines below and nowhere else: the first selects a C++ header set that
+    // `-nostdinc++` has already switched off and the explicit `-isystem`
+    // replaces, and the second selects a linker. CMake forwards these variables
+    // to every compile, so each one there costs a
+    // `-Wunused-command-line-argument` per translation unit and buys nothing.
     let cxxFlags =
         [
-            "-stdlib=libc++",
             "-nostdinc++",
             "-isystem\(target.containerLibCXXIncludeRoot)",
-            "-fuse-ld=lld",
             "-idirafter/usr/include",
             "-idirafter/usr/include/\(target.gnuArchitecture)",
             definitions,
@@ -1280,7 +1284,7 @@ private func commonCMakeArguments(
         "-DCMAKE_CXX_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_ASM_COMPILER_TARGET=\(target.targetTriple)",
         "-DCMAKE_SYSROOT=\(sysroot)",
-        "-DCMAKE_C_FLAGS=-fuse-ld=lld -idirafter/usr/include -idirafter/usr/include/\(target.gnuArchitecture)",
+        "-DCMAKE_C_FLAGS=-idirafter/usr/include -idirafter/usr/include/\(target.gnuArchitecture)",
         "-DCMAKE_CXX_FLAGS=\(joinedCXXFlags)",
         "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
         "-DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",

@@ -5,7 +5,7 @@ package import WaylandClientC
 package enum WlTouchClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_touch())
-    package nonisolated static let maximumVersion: UInt32 = 10
+    package nonisolated static let maximumVersion: UInt32 = 11
 }
 package extension WaylandProxy where Interface == WlTouchClient {
     func release() throws(WaylandProxyError) {

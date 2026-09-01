@@ -767,6 +767,15 @@ swift_wayland_client_request_wl_fixes_destroy_registry(
 }
 
 static inline void
+swift_wayland_client_request_wl_fixes_ack_global_remove(
+    struct wl_proxy *swift_wayland_proxy, struct wl_proxy * swift_wayland_arg_registry, uint32_t swift_wayland_arg_name
+) {
+    wl_proxy_marshal_flags(
+        swift_wayland_proxy, 2, NULL,
+        wl_proxy_get_version(swift_wayland_proxy), 0, swift_wayland_arg_registry, swift_wayland_arg_name);
+}
+
+static inline void
 swift_wayland_client_request_zwp_input_method_v2_commit_string(
     struct wl_proxy *swift_wayland_proxy, const char * swift_wayland_arg_text
 ) {
@@ -5456,6 +5465,7 @@ struct swift_wayland_wl_pointer_events {
     void (NUCLEUS_WL_MAIN_ACTOR *axis_discrete)(void *, struct wl_proxy *, uint32_t, int32_t);
     void (NUCLEUS_WL_MAIN_ACTOR *axis_value120)(void *, struct wl_proxy *, uint32_t, int32_t);
     void (NUCLEUS_WL_MAIN_ACTOR *axis_relative_direction)(void *, struct wl_proxy *, uint32_t, uint32_t);
+    void (NUCLEUS_WL_MAIN_ACTOR *warp)(void *, struct wl_proxy *, wl_fixed_t, wl_fixed_t);
 };
 _Static_assert(sizeof(struct swift_wayland_wl_pointer_events) == sizeof(struct wl_pointer_listener), "wl_pointer listener layout mismatch");
 struct swift_wayland_wl_keyboard_events {

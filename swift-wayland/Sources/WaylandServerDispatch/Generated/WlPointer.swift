@@ -15,7 +15,7 @@ package extension WlPointerRequests {
 }
 package enum WlPointerServer: WaylandServerInterface {
     package typealias Requests = any WlPointerRequests
-    package nonisolated static let maximumVersion: Int32 = 10
+    package nonisolated static let maximumVersion: Int32 = 11
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_pointer_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_pointer_requests(
@@ -59,6 +59,9 @@ package enum WlPointerServer: WaylandServerInterface {
     }
     package static func sendAxisRelativeDirection(_ target: UnsafeMutablePointer<wl_resource>, axis: WlPointerAxis, direction: WlPointerAxisRelativeDirection) {
         unsafe wl_pointer_send_axis_relative_direction(target, axis.rawValue, direction.rawValue)
+    }
+    package static func sendWarp(_ target: UnsafeMutablePointer<wl_resource>, surface_x: Double, surface_y: Double) {
+        unsafe wl_pointer_send_warp(target, swift_wayland_fixed_from_double(surface_x), swift_wayland_fixed_from_double(surface_y))
     }
     @MainActor private static func handler(_ res: UnsafeMutablePointer<wl_resource>) -> any WlPointerRequests? {
         guard let ud = unsafe wl_resource_get_user_data(res) else {
@@ -119,6 +122,12 @@ package extension WaylandResourceHandle where Interface == WlPointerServer {
             return false
         }
         return version >= 9
+    }
+    var supportsWarp: Bool {
+        guard let version else {
+            return false
+        }
+        return version >= 11
     }
     @discardableResult
     func sendEnter(serial: UInt32, surface: WaylandResourceHandle<WlSurfaceServer>, surface_x: Double, surface_y: Double) -> Bool {
@@ -218,6 +227,15 @@ package extension WaylandResourceHandle where Interface == WlPointerServer {
         }
         precondition(supportsAxisRelativeDirection, "wl_pointer.axis_relative_direction requires version 9")
         unsafe wl_pointer_send_axis_relative_direction(target, axis.rawValue, direction.rawValue)
+        return true
+    }
+    @discardableResult
+    func sendWarp(surface_x: Double, surface_y: Double) -> Bool {
+        guard let target = unsafe resource else {
+            return false
+        }
+        precondition(supportsWarp, "wl_pointer.warp requires version 11")
+        unsafe wl_pointer_send_warp(target, swift_wayland_fixed_from_double(surface_x), swift_wayland_fixed_from_double(surface_y))
         return true
     }
 }

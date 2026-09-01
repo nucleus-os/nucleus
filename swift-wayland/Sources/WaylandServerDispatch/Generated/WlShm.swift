@@ -15,7 +15,7 @@ package extension WlShmRequests {
 }
 package enum WlShmServer: WaylandServerInterface {
     package typealias Requests = any WlShmRequests
-    package nonisolated static let maximumVersion: Int32 = 2
+    package nonisolated static let maximumVersion: Int32 = 3
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_shm_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_shm_requests(
@@ -40,7 +40,7 @@ package enum WlShmServer: WaylandServerInterface {
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        unsafe h.createPool(WaylandRequest<WlShmServer>(res), id: WlNewId<WlShmPoolServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(2))), fd: WaylandOwnedFileDescriptor(fd), size: size)
+        unsafe h.createPool(WaylandRequest<WlShmServer>(res), id: WlNewId<WlShmPoolServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(3))), fd: WaylandOwnedFileDescriptor(fd), size: size)
     }
     private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {

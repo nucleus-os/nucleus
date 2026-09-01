@@ -6,7 +6,7 @@ package import WaylandProtocolTypes
 package enum WlKeyboardClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_keyboard())
-    package nonisolated static let maximumVersion: UInt32 = 10
+    package nonisolated static let maximumVersion: UInt32 = 11
 }
 package extension WaylandProxy where Interface == WlKeyboardClient {
     func release() throws(WaylandProxyError) {

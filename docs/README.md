@@ -42,14 +42,11 @@ reuse.
    builder-domain container and runner services without an interactive login.
    Prove the corrected local-to-automated warm-state reuse, exercise a real host
    restart, and complete the container-network, quarantine, and recovery gates.
-2. Complete the [build input currency plan](build-input-currency-plan.md).
-   Its first phase is the only work in this inventory whose failure arrives
-   without a Nucleus change: the target SDK acquires its Ubuntu packages from
-   mutable pool paths that lose each file when a new version publishes.
-   Establish immutable acquisition, retire the inputs nothing builds, and bring
-   the container substrate and source-built dependencies current before the
-   packaging, distribution, and qualification chain binds artifact digests to
-   inputs that cannot be re-obtained.
+2. The [build input currency plan](build-input-currency-plan.md) is complete
+   except for one gate: `collider build swift-sdk --rebuild`, a deliberate
+   forced production proving the target SDK builds from the snapshot host. The
+   availability risk that gate covered is already retired, since every Ubuntu
+   package now resolves through a declared `snapshot.ubuntu.com` timestamp.
 3. Complete the product-execution portions of the
    [placement-independent build plan](placement-independent-build-plan.md) so
    that no delivered-product build tool receives a host path, remove the

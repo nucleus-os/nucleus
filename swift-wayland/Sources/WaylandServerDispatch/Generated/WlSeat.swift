@@ -17,7 +17,7 @@ package extension WlSeatRequests {
 }
 package enum WlSeatServer: WaylandServerInterface {
     package typealias Requests = any WlSeatRequests
-    package nonisolated static let maximumVersion: Int32 = 10
+    package nonisolated static let maximumVersion: Int32 = 11
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_seat_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_seat_requests(
@@ -47,19 +47,19 @@ package enum WlSeatServer: WaylandServerInterface {
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        unsafe h.getPointer(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlPointerServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
+        unsafe h.getPointer(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlPointerServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(11))))
     }
     private static let getKeyboard_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        unsafe h.getKeyboard(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlKeyboardServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
+        unsafe h.getKeyboard(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlKeyboardServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(11))))
     }
     private static let getTouch_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { client, res, id in
         guard let res = unsafe res, let client = unsafe client, let h = unsafe handler(res) else {
             return
         }
-        unsafe h.getTouch(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlTouchServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(10))))
+        unsafe h.getTouch(WaylandRequest<WlSeatServer>(res), id: WlNewId<WlTouchServer>(client: client, id: id, version: Swift::min(wl_resource_get_version(res), Int32(11))))
     }
     private static let release_impl: @MainActor @Sendable @convention(c) (OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, res in
         guard let res = unsafe res else {

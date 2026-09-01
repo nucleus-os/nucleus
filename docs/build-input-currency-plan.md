@@ -255,9 +255,25 @@ moved substantially -- 55 files and 6,210 insertions, including `TracyVulkan.hpp
 -- but none of the changed graphics headers are consumed here: the bridge
 compiles `TracyClient.cpp` as one translation unit behind its own C API.
 
-Achieved state: wayland is at 1.26.0 with regenerated protocol bindings, and the
-tracy fork is rebased onto 0.14.1 with its Nucleus changes replayed. Outstanding:
-the wayland half.
+Wayland 1.26.0 moves the protocol itself, not just the library: `wl_shm` and
+`wl_shm_pool` go to version 3, `wl_seat`, `wl_pointer`, `wl_keyboard`, and
+`wl_touch` to 11, and `wl_fixes` to 2. Only one of those additions is a request,
+`wl_fixes.ack_global_remove`, and `WlFixesServer` is generated but never
+advertised, so nothing conforms to the protocol it is added to. The rest are
+events and enumerations, which a server sends rather than implements. Advertised
+versions are a separate, explicit decision -- `wl_seat` is advertised at 9 --
+so the contract clients see does not move with the definition.
+
+Regeneration and adoption are two commands because they run as two identities:
+`collider generate wayland` executes into the build store, which only the
+builder writes, and `collider adopt wayland` copies that output into the
+checkout, which only the developer writes. Neither account can do both. The
+regenerated bindings carry the new surface -- `WlFixes.ackGlobalRemove` and
+`wl_pointer.warp` behind its version-11 precondition -- across 214 files.
+
+Status: complete. Achieved state: wayland is at 1.26.0 with regenerated protocol
+bindings, and the tracy fork is rebased onto 0.14.1 with its Nucleus changes
+replayed.
 
 Gate: `collider build linux`, then `collider test linux`, which exercises the
 compositor's Wayland runtime against the regenerated bindings.
@@ -321,6 +337,25 @@ override matching what 0.87.1 itself depends on, and the C++ submodules left
 alone because 0.87.1's catalog does not move them.
 
 Gate: `collider build linux` and the React Native test surface.
+
+## Warnings the sweep emits that are not defects
+
+`aarch64-linux-gnu-ld.bfd: warning: … has a LOAD segment with RWX permissions`
+appears about thirty times per sweep and is not worth chasing. Every occurrence
+names a `*-manifest` binary: SwiftPM builds a temporary executable in `/tmp`
+from each `Package.swift` to evaluate it, then discards it. No delivered
+artifact carries an RWX segment, and the link line belongs to SwiftPM rather
+than to anything declared here, so removing the warning would mean changing the
+builder image's default linker for a binary that lives for milliseconds.
+
+`argument unused during compilation: '-stdlib=libc++'` and `'-fuse-ld=lld'` were
+defects and are fixed. `-fuse-ld` selects a linker and sat in React Native's
+`CMAKE_C_FLAGS` and `CMAKE_CXX_FLAGS`; `-stdlib=libc++` selects a C++ header set
+that the `-nostdinc++` beside it had already switched off. Both were already on
+the link lines, so both were removed from the compile-flag variables in the
+React Native, Skia, and Android recipes -- one warning per translation unit,
+buying nothing. The shell recipe keeps `-stdlib=libc++` in its compile flags
+because it passes no `-nostdinc++`, so there the flag does its job.
 
 ## Non-goals
 

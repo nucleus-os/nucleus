@@ -6,7 +6,7 @@ package import WaylandProtocolTypes
 package enum WlShmPoolClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shm_pool())
-    package nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 3
 }
 package extension WaylandProxy where Interface == WlShmPoolClient {
     func createBuffer(offset: Int32, width: Int32, height: Int32, stride: Int32, format: WlShmFormat) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {

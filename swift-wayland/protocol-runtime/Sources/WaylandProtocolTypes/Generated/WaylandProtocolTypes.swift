@@ -53,6 +53,24 @@
     case destroy = 1
     case resize = 2
 }
+@frozen package struct WlShmPoolError: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let invalidFormat = Self(rawValue: 0)
+    package static let invalidStride = Self(rawValue: 1)
+    package var knownName: String? {
+        switch self {
+        case .invalidFormat:
+            "invalid_format"
+        case .invalidStride:
+            "invalid_stride"
+        default:
+            nil
+        }
+    }
+}
 @frozen package enum WlShmRequestOpcode: UInt16, WaylandRequestOpcode {
     case createPool = 0
     case release = 1
@@ -229,6 +247,11 @@
     package static let s016 = Self(rawValue: 0x36313053)
     package static let s216 = Self(rawValue: 0x36313253)
     package static let s416 = Self(rawValue: 0x36313453)
+    package static let xvuy2101010 = Self(rawValue: 0x30335958)
+    package static let p230 = Self(rawValue: 0x30333250)
+    package static let t430 = Self(rawValue: 0x30333454)
+    package static let y8 = Self(rawValue: 0x59455247)
+    package static let xyyy2101010 = Self(rawValue: 0x34415059)
     package var knownName: String? {
         switch self {
         case .argb8888:
@@ -517,6 +540,16 @@
             "s216"
         case .s416:
             "s416"
+        case .xvuy2101010:
+            "xvuy2101010"
+        case .p230:
+            "p230"
+        case .t430:
+            "t430"
+        case .y8:
+            "y8"
+        case .xyyy2101010:
+            "xyyy2101010"
         default:
             nil
         }
@@ -822,6 +855,7 @@
     case axisDiscrete = 8
     case axisValue120 = 9
     case axisRelativeDirection = 10
+    case warp = 11
 }
 @frozen package struct WlPointerError: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
@@ -1116,6 +1150,22 @@
 @frozen package enum WlFixesRequestOpcode: UInt16, WaylandRequestOpcode {
     case destroy = 0
     case destroyRegistry = 1
+    case ackGlobalRemove = 2
+}
+@frozen package struct WlFixesError: WaylandProtocolErrorValue, Hashable, Sendable {
+    package let rawValue: UInt32
+    package init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    package static let invalidAckRemove = Self(rawValue: 0)
+    package var knownName: String? {
+        switch self {
+        case .invalidAckRemove:
+            "invalid_ack_remove"
+        default:
+            nil
+        }
+    }
 }
 @frozen package enum ZwpInputMethodV2RequestOpcode: UInt16, WaylandRequestOpcode {
     case commitString = 0

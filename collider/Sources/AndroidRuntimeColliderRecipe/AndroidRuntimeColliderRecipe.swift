@@ -1424,7 +1424,7 @@ private func gfxstreamExecution(
             "CCACHE_DIR": "/ccache",
             "CXX": "/usr/bin/clang++",
             "CXXFLAGS":
-                "-stdlib=libc++ -nostdinc++ -isystem\(target.containerLibCXXIncludeRoot)",
+                "-nostdinc++ -isystem\(target.containerLibCXXIncludeRoot)",
             "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld -L\(target.containerLibCXXLibraryRoot)",
             "LD_LIBRARY_PATH":
                 "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",

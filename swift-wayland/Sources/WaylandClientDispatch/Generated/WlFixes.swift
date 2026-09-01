@@ -5,7 +5,7 @@ import WaylandClientC
 package enum WlFixesClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_fixes())
-    package nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
 package extension WaylandProxy where Interface == WlFixesClient {
     func destroy() throws(WaylandProxyError) {
@@ -21,6 +21,16 @@ package extension WaylandProxy where Interface == WlFixesClient {
         let _proxy = try unsafe requireNativeProxy()
         let _registryProxy = try unsafe registry.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_fixes_destroy_registry(_proxy, _registryProxy)
+        return
+    }
+    func ackGlobalRemove(registry: WaylandProxy<WlRegistryClient>, name: UInt32) throws(WaylandProxyError) {
+        guard version >= 2 else {
+            throw .unsupportedVersion(
+                required: 2, actual: version)
+        }
+        let _proxy = try unsafe requireNativeProxy()
+        let _registryProxy = try unsafe registry.requireNativeProxy()
+        unsafe swift_wayland_client_request_wl_fixes_ack_global_remove(_proxy, _registryProxy, name)
         return
     }
 }

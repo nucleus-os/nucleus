@@ -13,7 +13,7 @@ package extension WlTouchRequests {
 }
 package enum WlTouchServer: WaylandServerInterface {
     package typealias Requests = any WlTouchRequests
-    package nonisolated static let maximumVersion: Int32 = 10
+    package nonisolated static let maximumVersion: Int32 = 11
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_touch_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_touch_requests(

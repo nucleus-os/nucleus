@@ -1322,7 +1322,7 @@ private func linuxGNArguments(_ target: NativeLinuxTarget) -> [String] {
         "skia_use_partition_alloc=false",
         "skia_use_fontconfig=true",
         #"extra_cflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
-        #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-nostdinc++","-isystem\#(target.containerLibCXXIncludeRoot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
+        #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-nostdinc++","-isystem\#(target.containerLibCXXIncludeRoot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
         #"extra_asmflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)"]"#,
         #"extra_ldflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-fuse-ld=lld","-L\#(target.containerLibCXXLibraryRoot)"]"#,
         #"cc="/usr/bin/clang""#,

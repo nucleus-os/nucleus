@@ -6,7 +6,7 @@ package import WaylandProtocolTypes
 package enum WlPointerClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_pointer())
-    package nonisolated static let maximumVersion: UInt32 = 10
+    package nonisolated static let maximumVersion: UInt32 = 11
 }
 package extension WaylandProxy where Interface == WlPointerClient {
     func setCursor(serial: UInt32, surface: WaylandProxy<WlSurfaceClient>?, hotspot_x: Int32, hotspot_y: Int32) throws(WaylandProxyError) {
@@ -42,6 +42,7 @@ package protocol WlPointerEvents: AnyObject {
     func axisDiscrete(_ proxy: WaylandBorrowedProxy<WlPointerClient>, axis: WlPointerAxis, discrete: Int32)
     func axisValue120(_ proxy: WaylandBorrowedProxy<WlPointerClient>, axis: WlPointerAxis, value120: Int32)
     func axisRelativeDirection(_ proxy: WaylandBorrowedProxy<WlPointerClient>, axis: WlPointerAxis, direction: WlPointerAxisRelativeDirection)
+    func warp(_ proxy: WaylandBorrowedProxy<WlPointerClient>, surface_x: Double, surface_y: Double)
 }
 package extension WlPointerClient {
     @MainActor static let listener: UnsafeMutablePointer<swift_wayland_wl_pointer_events> = {
@@ -58,6 +59,7 @@ package extension WlPointerClient {
         unsafe p.pointee.axis_discrete = axisDiscrete_impl
         unsafe p.pointee.axis_value120 = axisValue120_impl
         unsafe p.pointee.axis_relative_direction = axisRelativeDirection_impl
+        unsafe p.pointee.warp = warp_impl
         return unsafe p
     }()
     private static func handler(_ context: WaylandClientListenerContext) -> any WlPointerEvents? {
@@ -172,6 +174,16 @@ package extension WlPointerClient {
             return
         }
         unsafe h.axisRelativeDirection(WaylandBorrowedProxy<WlPointerClient>(proxy), axis: WlPointerAxis(rawValue: axis), direction: WlPointerAxisRelativeDirection(rawValue: direction))
+    }
+    private static let warp_impl: @MainActor @Sendable @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, surface_x, surface_y in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        unsafe h.warp(WaylandBorrowedProxy<WlPointerClient>(proxy), surface_x: swift_wayland_fixed_to_double(surface_x), surface_y: swift_wayland_fixed_to_double(surface_y))
     }
 }
 package extension WaylandProxy where Interface == WlPointerClient {

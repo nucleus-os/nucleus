@@ -16,7 +16,7 @@ package extension WlShmPoolRequests {
 }
 package enum WlShmPoolServer: WaylandServerInterface {
     package typealias Requests = any WlShmPoolRequests
-    package nonisolated static let maximumVersion: Int32 = 2
+    package nonisolated static let maximumVersion: Int32 = 3
     nonisolated(unsafe) package static let nativeRequestVtable: UnsafeRawPointer = {
         let vtable = UnsafeMutablePointer<swift_wayland_wl_shm_pool_requests>.allocate(capacity: 1)
         unsafe vtable.initialize(to: swift_wayland_wl_shm_pool_requests(
@@ -56,6 +56,17 @@ package enum WlShmPoolServer: WaylandServerInterface {
             return
         }
         unsafe h.resize(WaylandRequest<WlShmPoolServer>(res), size: size)
+    }
+}
+package extension WaylandRequest where Interface == WlShmPoolServer {
+    func postError(_ code: WlShmPoolError, message: String) {
+        postError(code: code.rawValue, message: message)
+    }
+}
+package extension WaylandResourceHandle where Interface == WlShmPoolServer {
+    @discardableResult
+    func postError(_ code: WlShmPoolError, message: String) -> Bool {
+        postError(code: code.rawValue, message: message)
     }
 }
 package extension WlNewId where Interface == WlShmPoolServer {
