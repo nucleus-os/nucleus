@@ -336,17 +336,62 @@ public struct SwiftPMLowering: TaskPlanLowering {
         return false
     }
 
+    /// Names the fields two requirements for one product disagree on. A
+    /// lowering group is a set of requirements the graph expected to be
+    /// identical, so the useful question on failure is never that they differ
+    /// but which producer disagreed and about what. Reporting the field is what
+    /// distinguishes two lanes asking for one product under different
+    /// invocations from a single lane whose environment is not stable.
+    private static func difference(
+        between lhs: SwiftProductRequirement,
+        and rhs: SwiftProductRequirement
+    ) -> String {
+        var fields: [String] = []
+        if lhs.invocation.context != rhs.invocation.context {
+            fields.append("build context")
+        }
+        if lhs.invocation.scratchPath != rhs.invocation.scratchPath {
+            fields.append(
+                "scratch path (\(lhs.invocation.scratchPath) "
+                    + "vs \(rhs.invocation.scratchPath))")
+        }
+        if lhs.invocation.swiftExecutable != rhs.invocation.swiftExecutable {
+            fields.append("swift executable")
+        }
+        if lhs.invocation.dependencyLock != rhs.invocation.dependencyLock {
+            fields.append("dependency lock")
+        }
+        if lhs.invocation.dependencyConfigurationFiles
+            != rhs.invocation.dependencyConfigurationFiles
+        {
+            fields.append("dependency configuration files")
+        }
+        if lhs.invocation.sourceGraph != rhs.invocation.sourceGraph {
+            fields.append("source graph")
+        }
+        if lhs.environment != rhs.environment {
+            let names = Set(lhs.environment.keys)
+                .union(rhs.environment.keys)
+                .filter { lhs.environment[$0] != rhs.environment[$0] }
+                .sorted()
+            fields.append("environment (\(names.joined(separator: ", ")))")
+        }
+        return fields.joined(separator: "; ")
+    }
+
     private func buildTask(
         _ requirements: [SwiftProductRequirement],
         owners: [TaskDeclaration]
     ) throws -> LoweredTask {
-        guard let first = requirements.first,
-            requirements.allSatisfy({
-                $0.invocation == first.invocation
-                    && $0.environment == first.environment
-            })
-        else {
-            throw SwiftPMLoweringFailure.incompatibleBuildContexts
+        guard let first = requirements.first else {
+            throw SwiftPMLoweringFailure.emptyInvocation
+        }
+        if let mismatch = requirements.first(where: {
+            $0.invocation != first.invocation || $0.environment != first.environment
+        }) {
+            throw SwiftPMLoweringFailure.incompatibleBuildContexts(
+                product: first.qualifiedProduct,
+                detail: Self.difference(between: first, and: mismatch))
         }
 
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
@@ -377,7 +422,10 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let requestedProducts = Array(Set(requirements.map(\.product))).sorted()
         guard requestedProducts.count == 1, let requestedProduct = requestedProducts.first
         else {
-            throw SwiftPMLoweringFailure.incompatibleBuildContexts
+            throw SwiftPMLoweringFailure.incompatibleBuildContexts(
+                product: first.qualifiedProduct,
+                detail: "one group names several products: "
+                    + requestedProducts.joined(separator: ", "))
         }
         let buildOperation = SwiftPMOperation.buildProduct(requestedProduct)
         var builder = TaskBuilder(
@@ -1224,7 +1272,7 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
 }
 
 public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
-    case incompatibleBuildContexts
+    case incompatibleBuildContexts(product: String, detail: String)
     case incompatibleTestContexts
     case emptyInvocation
     case invalidDependencyMaterialization
@@ -1233,8 +1281,11 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
 
     public var description: String {
         switch self {
-        case .incompatibleBuildContexts:
-            "Swift product requirements in one lowering group have incompatible contexts"
+        case .incompatibleBuildContexts(let product, let detail):
+            """
+            Swift product requirements for \(product) in one lowering group \
+            have incompatible contexts: \(detail)
+            """
         case .incompatibleTestContexts:
             "Swift test requirements in one lowering group have incompatible contexts"
         case .emptyInvocation:
