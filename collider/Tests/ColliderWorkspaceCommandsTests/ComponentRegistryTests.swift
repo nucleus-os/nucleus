@@ -3464,3 +3464,50 @@ private func artifactInput(
     #expect(supervisor.count > 1)
     #expect(Set(supervisor.map(\.environment)).count == 1)
 }
+
+/// Every image that layers snapshot packages onto the pinned Ubuntu base must
+/// name the same snapshot as the others sharing that base. A base digest
+/// carries its own package versions, so a snapshot older than the base offers
+/// downgrades, and `apt-get --yes` refuses to install those rather than
+/// silently reverting a security update. Advancing the base digest in the
+/// Containerfiles without advancing every manifest that feeds them is what
+/// produces that state, and nothing else in the graph notices until the image
+/// is next rebuilt -- which can be many commits later, blaming whatever change
+/// happened to dirty it.
+@Test func everyImageLayersOneUbuntuSnapshotOntoOneUbuntuBase() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let containerfiles = [
+        "chromium/build-container/Dependencies.Containerfile",
+        "chromium/build-container/Resolver.Containerfile",
+        "collider/images/native-builder/Dependencies.Containerfile",
+        "collider/images/native-builder/Resolver.Containerfile",
+    ]
+    var bases: Set<String> = []
+    for relative in containerfiles {
+        let text = try String(
+            contentsOf: URL(fileURLWithPath: root.appending(relative).string),
+            encoding: .utf8)
+        let from = try #require(
+            text.split(separator: "\n").first { $0.hasPrefix("FROM ") },
+            "\(relative) declares no FROM")
+        bases.insert(String(from))
+    }
+    #expect(bases.count == 1, "container bases disagree: \(bases.sorted())")
+
+    let manifests = [
+        "chromium/build-container/builder-inputs.json",
+        "collider/images/native-builder/native-builder-inputs.json",
+    ]
+    var snapshots: [String: String] = [:]
+    for relative in manifests {
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: root.appending(relative).string))
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        snapshots[relative] = try #require(object["ubuntuSnapshot"] as? String)
+    }
+    #expect(
+        Set(snapshots.values).count == 1,
+        "Ubuntu package snapshots disagree: \(snapshots.sorted { $0.key < $1.key })")
+}
