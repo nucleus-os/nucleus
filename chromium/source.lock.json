@@ -6,10 +6,10 @@
   "repositories": [
     {
       "checkoutPath": "chromium/src",
-      "commit": "b3e5216f90bfaee87c023dd8c2e56a24f500c2da",
+      "commit": "9d05cfd2d4f3705f12869f18f647aac39981888f",
       "name": "chromium",
       "remote": "https://github.com/nucleus-os/chromium.git",
-      "tree": "5e5a3b4b36c99d15aa8b8beae4fce720fa9f7e70",
+      "tree": "186bceec82d21e6c27ad42bbb8c235256343d15c",
       "upstreamCommit": "24072c1aa400ec4a89dc738b6b6acd12a8589b6f",
       "upstreamRemote": "https://chromium.googlesource.com/chromium/src.git"
     },
@@ -51,10 +51,10 @@
     },
     {
       "checkoutPath": "chromium/src/third_party/dawn",
-      "commit": "3070331c87e227fc8548322f720fbf10972bca12",
+      "commit": "c1c7a6972328864f3de8b35b5da40cff105fc806",
       "name": "dawn",
       "remote": "https://github.com/nucleus-os/dawn.git",
-      "tree": "f1d1ff224a121db4dbc71cd841348b57d03274d7",
+      "tree": "376a2b670110325910b20473603c2ef43d8ac6c9",
       "upstreamCommit": "571752c9cb3ed36a3194854374984427794c4dda",
       "upstreamRemote": "https://dawn.googlesource.com/dawn.git"
     }
