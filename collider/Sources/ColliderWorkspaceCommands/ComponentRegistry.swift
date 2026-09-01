@@ -754,6 +754,16 @@ package struct ComponentRegistry {
                 selection: selection),
         ]
         if selection == nil || selection == "all" {
+            // The browser lane answers to its own spelling. `.build` under
+            // "all" reaches the runtime components, and packaging pulls in only
+            // the Chromium product it consumes, so neither one reaches the CEF
+            // binary distribution. Naming "browser" is what builds it, and
+            // without that the lane assembling what actually ships is verified
+            // by nobody until someone tries to ship.
+            requests.append(
+                ComponentEntrypointRequest(
+                    entrypoint: .build,
+                    selection: "browser"))
             requests.append(
                 ComponentEntrypointRequest(
                     entrypoint: ReleaseGateEntrypoints.test,
@@ -765,11 +775,11 @@ package struct ComponentRegistry {
             // breakage is found by whoever next tries to ship. It is requested
             // last because it consumes what the other two produce.
             //
-            // The browser prerequisite is checked the way the packaging command
-            // checks it. `checkBrowserPrerequisites` answers only to a
-            // selection naming the browser, and this selection names
-            // everything, so asking it about "all" skips the check packaging
-            // depends on.
+            // The browser prerequisite is checked the way the packaging and
+            // browser commands check it. `checkBrowserPrerequisites` answers
+            // only to a selection naming the browser, and this selection names
+            // everything, so asking it about "all" skips the check both lanes
+            // depend on.
             try await checkBrowserPrerequisites(
                 selection: "browser",
                 controls: controls)
