@@ -114,10 +114,13 @@ reuse.
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-18. Complete Phases 3 through 10 of the
+18. Complete Phases 3 through 13 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
-    The contributor-input contract reuses portable identity primitives without
-    becoming a product package, CI cache, release object, or publication path.
+    The contributor workflow adds backend-neutral execution, a private
+    content-addressed action cache for Siso, Swift, and qualified compiler
+    actions, and signed OCI bootstrap inputs. Mutable build workspaces remain
+    host-local, cache results confer no CI or release authority, and Linux
+    remains capable of a complete uncached build.
 19. Complete Phases 2 and 3 of
     [Chromium source materialization](chromium-source-materialization-plan.md).
     Phase 1 already reduced two materialized trees to one. Phase 2 makes the

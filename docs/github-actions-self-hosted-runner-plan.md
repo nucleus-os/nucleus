@@ -1294,11 +1294,14 @@ reconstruction.
 - Do not use a persistent Linux development machine as a runner or gateway.
 - Do not add `collider ci`, `collider dev`, `collider remote`, a worker daemon,
   source-snapshot service, or remote-execution protocol.
-- Do not add a generic remote artifact or cache backend. Immutable GitHub
-  Releases store only final qualified native package objects and their release
-  index at the publication boundary. The allowlisted GHCR inputs owned by the
+- Do not make CI the owner of a generic remote artifact or cache backend.
+  Immutable GitHub Releases store only final qualified native package objects
+  and their release index at the publication boundary. The private action CAS,
+  trust-separated mappings, and allowlisted GHCR inputs owned by the
   [Linux x86_64 development host
-  plan](linux-x86-64-development-host-plan.md) are a separate contributor-input
-  contract, not CI cache state.
+  plan](linux-x86-64-development-host-plan.md) are development build
+  accelerators, not CI provenance, qualification, release objects, or
+  publication state. Protected-main may populate its own mapping namespace but
+  never consumes developer-authority mappings.
 - Do not treat Intel translation, QEMU, or software rendering as native
   qualification.
