@@ -94,6 +94,78 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
     }
 }
 
+/// Chromium compiles every translation unit with `-fmodules`, and ccache
+/// refuses to cache such a command unless depend mode is on and `modules`
+/// sloppiness is granted -- it reports `could_not_use_modules` and runs the
+/// compiler. A cache directory configured without those two therefore stores
+/// nothing at all while looking configured, which is what a 30 GiB volume
+/// holding 68 MiB after four complete builds looked like. The inherited
+/// environment must not be able to take them back off, either.
+@Test func chromiumBuildCachesModuleCompilationsAndKeepsThatSettingItself()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-chromium-ccache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("source")
+    let chromium = source.appendingPathComponent("chromium/src")
+    let clang = chromium.appendingPathComponent(
+        "third_party/llvm-build/Linux_x64/bin/clang")
+    let metadata = directory.appendingPathComponent("metadata")
+    let imageID = directory.appendingPathComponent("image-id")
+    try FileManager.default.createDirectory(
+        at: clang.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: metadata,
+        withIntermediateDirectories: true)
+    try Data("clang".utf8).write(to: clang)
+    try Data("fixture-image".utf8).write(to: imageID)
+    let entrypoint = try fixtureEntrypoint(imageID: imageID)
+    try JSONSerialization.data(
+        withJSONObject: ["sourceID": "0123456789abcdef01234567"],
+        options: [.sortedKeys]
+    ).write(to: source.appendingPathComponent("source-provenance.json"))
+
+    let target = ChromiumLinuxTarget(architecture: .arm64)
+    let action = BuildChromiumProductAction(
+        build: ChromiumProductBuild(
+            product: .cef,
+            target: target,
+            sourceRoot: FilePath(source.path),
+            buildManifest: FilePath(
+                metadata.appendingPathComponent("build-manifest.json").path),
+            inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
+            sourceWorkspace: chromiumSourceWorkspace(),
+            outputWorkspace: chromiumOutputWorkspace(
+                product: .cef,
+                target: target),
+            compilerCacheWorkspace: chromiumCompilerCacheWorkspace(
+                target: target),
+            entrypoint: entrypoint,
+            gnArguments: "is_debug=false",
+            targets: ["libcef"],
+            jobs: 12,
+            environment: [
+                "PATH": "/usr/bin:/bin",
+                "CCACHE_DEPEND": "0",
+                "CCACHE_SLOPPINESS": "",
+            ]))
+    let executions = OCIExecutionRecorder()
+    try await execute(
+        action,
+        recording: executions,
+        containerRun: { _ in CommandResult(status: 0) })
+
+    let build = try #require(
+        await executions.values().first { $0.command.first == "build" })
+    #expect(build.environment["CCACHE_DIR"] == "/ccache")
+    #expect(build.environment["CCACHE_DEPEND"] == "1")
+    #expect(build.environment["CCACHE_SLOPPINESS"] == "modules")
+    #expect(build.environment["CCACHE_COMPILERCHECK"] == "content")
+    #expect(build.persistentWorkspaceMounts.contains { $0.target == "/ccache" })
+}
+
 @Test(arguments: PlatformArchitecture.allCases)
 func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
     architecture: PlatformArchitecture

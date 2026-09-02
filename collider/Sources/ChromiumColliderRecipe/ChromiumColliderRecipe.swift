@@ -526,13 +526,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     target: target)
                 let compilerCacheWorkspace = chromiumCompilerCacheWorkspace(
                     target: target)
-                let productEnvironment = childEnvironment.merging([
-                    "NUCLEUS_CHROMIUM_TARGET_ARCHITECTURE":
-                        target.architecture.rawValue,
-                    "CCACHE_DIR": "/ccache",
-                    "CCACHE_MAXSIZE": "30G",
-                    "CCACHE_COMPILERCHECK": "content",
-                ]) { _, required in required }
+                let productEnvironment = childEnvironment.merging(
+                    chromiumCompilerCacheEnvironment.merging([
+                        "NUCLEUS_CHROMIUM_TARGET_ARCHITECTURE":
+                            target.architecture.rawValue
+                    ]) { _, required in required }
+                ) { _, required in required }
                 let productBuild = ChromiumProductBuild(
                     product: product,
                     target: target,
@@ -1428,17 +1427,14 @@ private func chromiumBuildExecution(
         processFilesystemPolicy: .standard,
         executableRequirements: chromiumBuildExecutableRequirements,
         resourceLimits: .parallelBuild,
-        containerEnvironment: [
+        containerEnvironment: chromiumCompilerCacheEnvironment.merging([
             "DEPOT_TOOLS_UPDATE": "0",
             "HOME": "/tmp/nucleus-home",
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
             "PYTHONDONTWRITEBYTECODE": "1",
             "TZ": "UTC",
-            "CCACHE_DIR": "/ccache",
-            "CCACHE_MAXSIZE": "30G",
-            "CCACHE_COMPILERCHECK": "content",
-        ],
+        ]) { _, required in required },
         imageEntrypointOverride: entrypoint.containerPath,
         command: command ?? ["build", String(jobs)] + targets,
         environment: environment,

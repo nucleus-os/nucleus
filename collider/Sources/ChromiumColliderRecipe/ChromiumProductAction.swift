@@ -107,11 +107,9 @@ package struct BuildChromiumProductAction: ColliderAction {
     }
 
     private var chromiumEnvironment: [String: String] {
-        var value = build.environment
-        value["CCACHE_DIR"] = "/ccache"
-        value["CCACHE_MAXSIZE"] = "30G"
-        value["CCACHE_COMPILERCHECK"] = "content"
-        return value
+        build.environment.merging(chromiumCompilerCacheEnvironment) {
+            _, required in required
+        }
     }
 
     private func stagedGNArguments(files: ActionFileSystem) throws -> String {

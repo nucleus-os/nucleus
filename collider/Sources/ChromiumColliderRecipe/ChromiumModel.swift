@@ -164,6 +164,30 @@ package func chromiumOutputWorkspace(
         journal: .writeback64MiB)
 }
 
+/// Compiler cache settings shared by every Chromium container invocation.
+///
+/// Chromium compiles with clang modules, and ccache refuses to cache any
+/// command carrying `-fmodules` unless depend mode is on and `modules`
+/// sloppiness is granted. It says so itself -- "unsupported without direct
+/// depend mode", then "you have to specify \"modules\" sloppiness" -- and
+/// without both, every compilation is uncacheable. That is why a 30 GiB cache
+/// held 68 MiB after four complete builds.
+///
+/// Depend mode hashes the compiler's own `-MMD -MF` output, which Chromium
+/// already emits, rather than preprocessing the source. Sloppiness means the
+/// module artifacts are not hashed and the headers behind a module never reach
+/// the dependency file, so what keys them has to come from elsewhere: Chromium
+/// puts `CR_LIBCXX_REVISION` and `CR_SYSROOT_KEY` on every command line, which
+/// covers the two module sources by revision, and `content` compiler checking
+/// covers clang's own builtin modules.
+package let chromiumCompilerCacheEnvironment: [String: String] = [
+    "CCACHE_DIR": "/ccache",
+    "CCACHE_MAXSIZE": "30G",
+    "CCACHE_COMPILERCHECK": "content",
+    "CCACHE_DEPEND": "1",
+    "CCACHE_SLOPPINESS": "modules",
+]
+
 package func chromiumCompilerCacheWorkspace(
     target: ChromiumLinuxTarget
 ) -> PersistentWorkspaceDeclaration {
