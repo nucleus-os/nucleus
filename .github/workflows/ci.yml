@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    # Documentation has its own GitHub-hosted validation workflow. Suppressing
+    # a docs-only heavy run is what prevents it from joining this concurrency
+    # group and cancelling useful M2 Ultra work already in flight. Any path not
+    # ignored here, including a source path in a mixed push, still runs the
+    # complete protected-main graph.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**/*.txt'
   workflow_dispatch:
     inputs:
       revision:
@@ -17,9 +25,11 @@ permissions:
 # Protected main has one tip and the machine has one execution admission, so
 # only the newest revision is worth running: a superseded one holds the
 # admission the run that replaced it is waiting for, and reports on a commit
-# nobody is on. Every push therefore shares one group and cancels the run in
-# flight. Keying this on the revision made the group per-commit, so it only ever
-# cancelled a duplicate of the same commit and never a superseded one.
+# nobody is on. Every admitted non-documentation push therefore shares one group
+# and cancels the run in flight. Documentation-only pushes never instantiate
+# this workflow and cannot enter its concurrency group. Keying this on the
+# revision made the group per-commit, so it only ever cancelled a duplicate of
+# the same commit and never a superseded one.
 #
 # A dispatch keeps its own per-revision group. It names an exact ancestor
 # deliberately, which is how a revision a supersession skipped is verified after
@@ -128,8 +138,6 @@ jobs:
         run: collider doctor ci-macos-builder
       - name: Verify protected main provenance
         run: collider check protected-main-source
-      - name: Verify documentation layout
-        run: python3 tools/check-documentation-layout.py
       - name: Verify the catalog
         run: collider verify all
       # The durable evidence is the builder-owned run record, not this log.

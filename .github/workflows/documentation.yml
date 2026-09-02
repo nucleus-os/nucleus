@@ -1,0 +1,31 @@
+name: documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.md'
+      - 'docs/**/*.txt'
+      - 'tools/check-documentation-layout.py'
+
+permissions:
+  contents: read
+
+# Documentation validation is independent of protected-main build admission.
+# A newer documentation check may replace an older one, but this group never
+# intersects the M2 Ultra verification group in ci.yml.
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify documentation layout
+        run: python3 tools/check-documentation-layout.py

@@ -384,19 +384,22 @@ because dependency mirroring resolves version requirements against the
 first-party submodules and each must carry the tag it resolves to. Shallowing
 this checkout fails at resolution rather than at provenance.
 
-Gate evidence: a `main` push and an exact-`main` manual invocation both reached
+Gate evidence: a non-documentation `main` push and an exact-`main` manual
+invocation both reached
 the M2 Ultra and passed provenance verification, with the recorded source
 revision equal to the commit the event selected. The negative half holds by
-construction and is verified live: the repository contains one workflow, whose
-only triggers are `push` to `main` and exact-revision `workflow_dispatch`, so no
-pull-request, fork, or branch-push context can start it; the runner group
-reports `visibility: selected`, `restricted_to_workflows: true`, a single
-selected workflow of `ci.yml@refs/heads/main`, and a single allowed repository;
-and every run recorded against the repository is a `main` push or manual
-dispatch. Local probes rejected foreign-repository, mutable-revision, and
-non-main-ref forms before any API request. A live branch or pull-request probe
-would exercise GitHub's trigger evaluation rather than a Nucleus contract, so
-none is required.
+construction and is verified live: the M2 workflow's only triggers are a
+non-documentation `push` to `main` and exact-revision `workflow_dispatch`, so no
+pull-request, fork, branch push, or documentation-only push can start it; the
+separate GitHub-hosted documentation workflow accepts only `main` pushes that
+touch Markdown, repository documentation text, or the layout checker; the
+runner group reports `visibility: selected`, `restricted_to_workflows: true`, a
+single selected workflow of `ci.yml@refs/heads/main`, and a single allowed
+repository; and every M2 run recorded against the repository is a `main` push
+or manual dispatch. Local probes rejected foreign-repository, mutable-revision,
+and non-main-ref forms before any API request. A live branch or pull-request
+probe would exercise GitHub's trigger evaluation rather than a Nucleus
+contract, so none is required.
 
 
 ## Phase 3: Provision One Trusted Builder Identity
@@ -1084,10 +1087,12 @@ signing, or version allocation.
 
 ## Phase 7: Cut Over Main CI/CD
 
-Status: active. Protected-main pushes share one concurrency group and a newer
-revision cancels a superseded run. Signal forwarding reaches live child process
-groups synchronously, a watchdog recovers a connected-but-deaf listener, and a
-root boot coordinator restores the builder-domain container and runner services
+Status: active. Protected-main pushes containing a non-documentation change
+share one concurrency group and a newer admitted revision cancels a superseded
+run. Documentation-only pushes use a separate GitHub-hosted workflow and never
+enter M2 admission. Signal forwarding reaches live child process groups
+synchronously, a watchdog recovers a connected-but-deaf listener, and a root
+boot coordinator restores the builder-domain container and runner services
 without an interactive login. Protected-main supersession and host-restart
 acceptance remain pending. A dispatch keeps its own per-revision group, so it is
 neither cancelled by the tip nor able to cancel it, and it remains how a
@@ -1190,12 +1195,15 @@ concurrency, and preservation of run and artifact references. It contains no
 package-manager commands, component dependency graph, build flags, retry
 policy, cache wiping, or artifact layout knowledge.
 
-Use one GitHub concurrency group for protected `main`. A newer `main` revision
-cancels a superseded queued or running revision; Collider performs cooperative
+Use one GitHub concurrency group for protected `main` build verification. A
+newer admitted revision containing any non-documentation path cancels a
+superseded queued or running revision; Collider performs cooperative
 cancellation, cleanup, run finalization, and admission release without deleting
-valid persistent state. GitHub manual reruns and locally initiated branch,
-dirty, debug, and release builds join the same machine admission and cache
-domain without becoming CI events.
+valid persistent state. A documentation-only push never creates that workflow
+run. Its dedicated GitHub-hosted workflow validates documentation layout under
+a distinct concurrency group and never requests the M2 runner. GitHub manual
+reruns and locally initiated branch, dirty, debug, and release builds join the
+same machine admission and cache domain without becoming CI events.
 
 Nightly finalization accepts only exact artifacts and qualification records from
 a successful supported `main` run plus an immutable version reservation bound
@@ -1205,11 +1213,14 @@ finalized cohort. A branch artifact, pull-request artifact, locally dirty
 artifact, failed or superseded run, missing reservation, or mismatched binding
 cannot enter signing or publication.
 
-Gate: a `main` push and authorized `main` rerun execute the complete graph on
-the M2 Ultra with warm-state reuse; branch and pull-request activity schedules
-no build; a deliberately misrouted invocation fails before checkout; and only a
-successful exact-`main` artifact cohort can receive a nightly reservation, reach
-finalization, and then reach delivery without changing its reserved version.
+Gate: a non-documentation `main` push and authorized `main` rerun execute the
+complete graph on the M2 Ultra with warm-state reuse; a documentation-only push
+runs only the layout check and does not cancel an active M2 build; a mixed push
+runs both workflows and supersedes the older M2 build; branch and pull-request
+activity schedules no build; a deliberately misrouted invocation fails before
+checkout; and only a successful exact-`main` artifact cohort can receive a
+nightly reservation, reach finalization, and then reach delivery without
+changing its reserved version.
 
 ## Phase 8: Complete Acceptance
 
