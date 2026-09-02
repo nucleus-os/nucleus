@@ -82,12 +82,18 @@ exhausted the file table. `collider verify all` plans 138 tasks with no error
 under protected-main and local-development authority alike.
 
 The lock costs wall clock, and more of it than the reasoning above accounted
-for. A task lock serializes whole tasks, so the two Chromium builds no longer
-overlap: on 2026-09-01 the x86_64 build took 3h55m and the arm64 build began
-only after it finished, putting a cold sweep past the six-hour job timeout the
-workflow had been inheriting by default. Halving the storage bought serializing
-the two longest tasks in the graph, and that trade holds only until Phase 2
-retires the lock. The timeout is now set explicitly to bound the cold case.
+for. A task lock serializes whole tasks, so the Chromium builds no longer
+overlap -- and there are four of them, browser and CEF for each architecture,
+not the two this reasoning first counted. Measured on 2026-09-02 they were
+4h04m, 4h08m, and a CEF build still running at 3h38m, against under nine
+minutes for every artifact and packaging task in the sweep combined. A cold
+sweep is about seventeen hours.
+
+Serializing them is deliberate rather than merely tolerated: each build asks
+for twelve jobs on a twenty-four core host, so two at a time would divide the
+machine rather than double the throughput. What the serialization does require
+is that a cold sweep be bounded by measurement instead of by GitHub's
+360-minute default, which is what cancelled the runs on 907fa51e and 3579b208.
 
 Status: complete.
 
@@ -115,8 +121,11 @@ containerization stack already clones block images.
 This phase deletes `materialize-source`, the `.nucleus-source-id` protocol, the
 `rm -rf`, the source lock Phase 1 introduced, and the residency justification
 below, because a reproducible content-addressed artifact needs none of them.
-Retiring the lock is what restores concurrent product builds, so this phase
-recovers the wall clock Phase 1 spent as well as the reads it was aimed at.
+Retiring the lock makes concurrent product builds possible again, though on a
+twenty-four core host that is a scheduling choice rather than an automatic
+gain. The wall clock that is actually recoverable is in the compiler cache and
+in Phase 3: a cold sweep is four full builds, and almost every sweep should be
+finding most of its objects already compiled.
 
 Fidelity is the risk worth naming: the Chromium tree carries symlinks,
 hardlinks, and executable bits that the image must preserve exactly. Prove the

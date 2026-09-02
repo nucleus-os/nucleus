@@ -90,12 +90,16 @@ jobs:
       labels: nucleus-m2-ultra
     # A job that sets no timeout gets GitHub's 360-minute default, which is
     # unrelated to the runner being self-hosted and is far shorter than a cold
-    # sweep. The two Chromium product builds are serialized by the shared
-    # source lock until the prepared tree becomes an immutable artifact, and
-    # one of them measured 3h55m alone, so a cold graph needs upwards of ten
-    # hours before artifacts and packaging. Warm runs finish in minutes; this
-    # bounds the cold case with headroom rather than describing the normal one.
-    timeout-minutes: 720
+    # sweep. The sweep contains four Chromium-scale builds -- browser and CEF,
+    # each for x86_64 and arm64 -- and the shared source lock runs them one at
+    # a time, which is deliberate: each gets the whole machine. Measured on
+    # 2026-09-02, they were 4h04m, 4h08m, and a CEF build still going at 3h38m,
+    # against under nine minutes for every artifact and packaging task
+    # combined. A cold sweep is therefore about seventeen hours.
+    #
+    # Nothing here should normally be cold. This bounds the case where
+    # everything is, so raising it is not the answer to a sweep that got slower.
+    timeout-minutes: 1200
     env:
       NUCLEUS_PRODUCT_SOURCE_AUTHORITY: protected-main
       NUCLEUS_PRODUCT_SOURCE_COMMIT: ${{ needs.admission.outputs.revision }}
