@@ -15,10 +15,10 @@
     },
     {
       "checkoutPath": "chromium/src/cef",
-      "commit": "2c5142deafb1586980e63ca84cf07b9c39b641ba",
+      "commit": "df94f844ce2ed1efe461c03b5388dcbde697d9ae",
       "name": "cef",
       "remote": "https://github.com/nucleus-os/cef.git",
-      "tree": "6b769e848cd13592196d5dc841310fea9950a74b",
+      "tree": "06fa3803dc331f128ae2763ccf80a4d072eedc46",
       "upstreamCommit": "b129680e4084ebea0429a1c289fb7c24ac604b36",
       "upstreamRemote": "https://github.com/chromiumembedded/cef.git"
     },
