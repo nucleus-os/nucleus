@@ -303,7 +303,10 @@ one error annotation with the task, reason, and stage-log path for each failed
 task, and appends one markdown run summary to `GITHUB_STEP_SUMMARY` when that
 path exists. Unrecognized non-terminal environments retain the plain
 append-only bytes. Artifact upload remains workflow policy; Collider only
-exports the run directory and logs.
+exports the run directory and logs. Apple-container image preparation runs in
+quiet mode: successful BuildKit, package-install, export, and unpack progress
+is mechanical implementation detail rather than a second live output channel,
+while a preparation failure still fails and annotates its owning task.
 
 Planning, task inventory, runs, logs, cache state, and active status are
 read-only views of the task graph and run records. They do not implement a

@@ -557,6 +557,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             "Containerfile"),
                         imageID: testRuntimeImageID,
                         imageName: "localhost/nucleus-chromium-test-runtime",
+                        baseImageSource: .local,
+                        localBaseImageID: builderDependencyImageID,
                         environment: childEnvironment))))
         let buildTool = OCIMountedEntrypoint(
             image: dependencyImage,
@@ -1036,23 +1038,27 @@ private struct PrepareChromiumDependencyImageAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: [
-                // The resolver mounts this context whole and both image
-                // preparations build from it, so the directory is what this
-                // reaches rather than the files it reads out of it.
-                ActionEffect(.read, scope: .input(sourceContext)),
-                ActionEffect(.readWrite, scope: .scratch(inputRoot)),
-                ActionEffect(.readWrite, scope: .scratch(generatedContext)),
-                ActionEffect(.readWrite, scope: .scratch(candidateContext)),
-                ActionEffect(.readWrite, scope: .scratch(resolverOutput)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .scratch(resolverPreparation.imageID)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .output(dependencyPreparation.imageID)),
-            ],
+        var effects = [
+            // The resolver mounts this context whole and both image
+            // preparations build from it, so the directory is what this
+            // reaches rather than the files it reads out of it.
+            ActionEffect(.read, scope: .input(sourceContext)),
+            ActionEffect(.readWrite, scope: .scratch(inputRoot)),
+            ActionEffect(.readWrite, scope: .scratch(generatedContext)),
+            ActionEffect(.readWrite, scope: .scratch(candidateContext)),
+            ActionEffect(.readWrite, scope: .scratch(resolverOutput)),
+            ActionEffect(
+                .readWrite,
+                scope: .scratch(resolverPreparation.imageID)),
+            ActionEffect(
+                .readWrite,
+                scope: .output(dependencyPreparation.imageID)),
+        ]
+        if let localBaseImageID = dependencyPreparation.localBaseImageID {
+            effects.append(ActionEffect(.read, scope: .input(localBaseImageID)))
+        }
+        return ActionRequirements(
+            effects: effects,
             lane: .hostExclusive,
             networkAccess: .contentAddressed,
             executionPlatform: .linuxARM64OCI)
@@ -1162,9 +1168,39 @@ private struct PrepareChromiumDependencyImageAction: ColliderAction {
     ) throws {
         try files.remove(candidateContext)
         try files.createDirectory(candidateContext)
-        try files.copy(
-            from: sourceContext.appending("Dependencies.Containerfile"),
-            to: candidateContext.appending("Containerfile"))
+        let sourceContainerFile = sourceContext.appending("Dependencies.Containerfile")
+        let destinationContainerFile = candidateContext.appending("Containerfile")
+        if let localBaseImageID = dependencyPreparation.localBaseImageID {
+            let source = String(decoding: try files.read(sourceContainerFile), as: UTF8.self)
+            let identifier = String(
+                decoding: try files.read(localBaseImageID), as: UTF8.self
+            ).split(whereSeparator: \.isNewline).map(String.init)
+            guard identifier.count == 2,
+                identifier[0].hasPrefix("localhost/"),
+                !identifier[0].contains(":"),
+                !identifier[0].contains(where: { $0.isWhitespace || $0 == "@" }),
+                identifier[1].hasPrefix("sha256:"),
+                identifier[1].count == 71,
+                identifier[1].dropFirst("sha256:".count).allSatisfy(\.isHexDigit)
+            else {
+                throw ChromiumRecipeFailure.invalidLocalBaseImage
+            }
+            let sentinel = identifier[0] + ":verified-local-base"
+            guard
+                source.split(whereSeparator: \.isNewline).contains(where: {
+                    $0.trimmingCharacters(in: .whitespaces) == "FROM \(sentinel)"
+                })
+            else {
+                throw ChromiumRecipeFailure.invalidLocalBaseImage
+            }
+            let digestTag =
+                identifier[0] + ":digest-"
+                + String(identifier[1].dropFirst("sha256:".count))
+            let resolved = source.replacingOccurrences(of: sentinel, with: digestTag)
+            try files.write(Array(resolved.utf8), to: destinationContainerFile)
+        } else {
+            try files.copy(from: sourceContainerFile, to: destinationContainerFile)
+        }
         for download in packageDownloads {
             guard case .aptPackage(let digest) = download.placement else { continue }
             let destination = candidateContext.appending(
@@ -1520,6 +1556,7 @@ private func chromiumBuildExecution(
 }
 
 private enum ChromiumRecipeFailure: Error {
+    case invalidLocalBaseImage
     case invalidSourceLock
 }
 

@@ -99,6 +99,16 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             == ["/source", "/build", "/ccache"])
     #expect(
         test.dependencies.contains(ChromiumTaskIDs.testRuntimeDependencies))
+    let testRuntime = try #require(
+        tasks.first { $0.id == ChromiumTaskIDs.testRuntimeDependencies })
+    let runtimeImage = try #require(
+        testRuntime.action?.imagePreparations.first {
+            $0.imageName == "localhost/nucleus-chromium-test-runtime"
+        })
+    #expect(runtimeImage.baseImageSource == .local)
+    #expect(
+        runtimeImage.localBaseImageID
+            == FilePath("/cache/cef/build-container/dependency-image-id"))
 
     let buildIDs = chromiumLinuxTargets.flatMap { target in
         ChromiumProduct.allCases.map { product in

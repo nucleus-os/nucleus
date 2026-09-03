@@ -43,6 +43,11 @@ func appleContainerBuildArguments(
     var arguments = [
         "--platform", ociPlatformName(preparation.executionPlatform),
         "--network", "none",
+        // Successful BuildKit, package-install, export, and unpack progress is
+        // mechanical task detail. In append-only CI it otherwise bypasses the
+        // task reporter and permanently expands one catalog step by thousands
+        // of lines. Build failures still propagate through the owning task.
+        "--quiet",
     ]
     if preparation.baseImageSource == .registry {
         arguments.append("--pull")

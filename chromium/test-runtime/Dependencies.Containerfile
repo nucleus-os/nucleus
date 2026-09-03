@@ -1,4 +1,6 @@
-FROM localhost/nucleus-chromium-build-dependencies
+# Collider replaces this sentinel with the content-addressed tag it verified
+# against browser.builder-dependencies before handing the context to BuildKit.
+FROM localhost/nucleus-chromium-build-dependencies:verified-local-base
 
 USER root
 
