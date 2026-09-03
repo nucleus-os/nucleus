@@ -3,6 +3,32 @@ set -euo pipefail
 
 mkdir -p "$HOME"
 
+target_runtime() {
+  local architecture="$1"
+  local triple loader
+  case "$architecture" in
+    arm64)
+      triple="aarch64-linux-gnu"
+      loader="/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+      ;;
+    x86_64)
+      triple="x86_64-linux-gnu"
+      loader="/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+      ;;
+    *)
+      echo "error: unsupported Chromium Linux architecture: $architecture" >&2
+      return 64
+      ;;
+  esac
+
+  if [[ ! -x "$loader" ]]; then
+    echo "error: Chromium $architecture runtime loader is unavailable: $loader" >&2
+    return 1
+  fi
+
+  printf '%s\n%s\n' "$loader" "/build:/lib/$triple:/usr/lib/$triple"
+}
+
 case "${1:-}" in
   materialize-source)
     if [[ $# -ne 2 \
@@ -127,11 +153,6 @@ case "${1:-}" in
     exit "$status"
     ;;
   test-ozone)
-    # The architecture argument is still required and no longer read. It
-    # selected a sysroot to run against, which is what these suites stopped
-    # doing; it stays because running an x86_64 suite in this arm64 container
-    # is a separate question from building one, and that is where the answer
-    # will have to go.
     if [[ $# -ne 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
       echo "error: test-ozone requires a positive job count and architecture" >&2
       exit 64
@@ -140,33 +161,19 @@ case "${1:-}" in
       ninja --offline -local_jobs="$2" -C /build \
       ui/ozone:ozone_unittests \
       components/viz/service:output_presenter_ozone_unittests
-    # Run these the way the artifact validators run theirs: the binary
-    # directly, on the container's own loader, with only the build directory
-    # on the library path.
-    #
-    # They were invoked through the loader found inside Chromium's sysroot,
-    # with that sysroot's library directories ahead of everything. Both suites
-    # then died of SIGSEGV before `--gtest_list_tests` could enumerate a single
-    # test, which is process startup rather than anything a test does. The
-    # sysroots are stripped compile and link inputs and are not runtime roots;
-    # `validate-browser` and `validate-cef` both execute against the product's
-    # own runtime for that reason, and both pass. A binary built against an
-    # older sysroot runs on the newer glibc above it, which is the ordinary
-    # arrangement and the one these suites now use.
+    runtime_output="$(target_runtime "$3")"
+    mapfile -t runtime <<<"$runtime_output"
+    loader="${runtime[0]}"
+    library_path="${runtime[1]}"
+
+    # The Chromium sysroot remains a compile-and-link input. Execution uses
+    # the pinned multiarch runtime installed in the builder image and selects
+    # the target loader and library directories explicitly, so a translated
+    # x86_64 process never inherits the ARM64 container's runtime search path.
     run_suite() {
         local name="$1" filter="$2" status=0
-        # `stdbuf` preloads into the process it starts, which now is the test
-        # itself rather than a foreign loader, so line buffering takes effect
-        # and gtest's output survives a signal.
-        if command -v stdbuf >/dev/null 2>&1; then
-            stdbuf -oL -eL env LD_LIBRARY_PATH=/build \
-                "/build/$name" "--gtest_filter=$filter" \
-                --single-process-tests || status=$?
-        else
-            env LD_LIBRARY_PATH=/build \
-                "/build/$name" "--gtest_filter=$filter" \
-                --single-process-tests || status=$?
-        fi
+        "$loader" --library-path "$library_path" "/build/$name" \
+            "--gtest_filter=$filter" --single-process-tests || status=$?
         if [[ "$status" -ne 0 ]]; then
             # A signal reads as 128 + n and is otherwise an unexplained number.
             if [[ "$status" -gt 128 ]]; then
@@ -186,7 +193,7 @@ case "${1:-}" in
     # else, and buffered output does not survive one.
     probe_start() {
         local name="$1" status=0
-        env LD_LIBRARY_PATH=/build "/build/$name" \
+        "$loader" --library-path "$library_path" "/build/$name" \
             --gtest_list_tests >/dev/null 2>&1 || status=$?
         if [[ "$status" -eq 0 ]]; then
             echo "probe: $name starts and enumerates its tests"

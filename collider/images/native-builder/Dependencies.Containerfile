@@ -44,6 +44,10 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
     && ln -s libc++abi.so.1.0 /usr/lib/x86_64-linux-gnu/libc++abi.so.1 \
     && ln -s libunwind.so.1.0 /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
     && ln -s libinput.so.10 /usr/lib/x86_64-linux-gnu/libinput.so \
+    && test -x /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 \
+    && test -e /usr/lib/aarch64-linux-gnu/libxkbcommon.so.0 \
+    && test -x /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+    && test -e /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0 \
     && rm -rf \
         /tmp/nucleus-amd64-libcxx \
         /tmp/nucleus-apt \
