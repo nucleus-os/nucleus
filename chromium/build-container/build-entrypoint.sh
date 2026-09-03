@@ -190,13 +190,56 @@ case "${1:-}" in
     sysroot="${runtime[0]}"
     loader="${runtime[2]}"
     library_path="$(runtime_library_path "$sysroot" /build)"
-    "$loader" --library-path "$library_path" /build/ozone_unittests \
-      '--gtest_filter=*OzonePresenter*' \
-      --single-process-tests
-    exec "$loader" --library-path "$library_path" \
-      /build/output_presenter_ozone_unittests \
-      '--gtest_filter=OutputPresenterOzoneTest.*' \
-      --single-process-tests
+    # Line-buffered, because this output is captured through a pipe and a
+    # suite that dies on a signal loses whatever is still sitting in a block
+    # buffer. `ozone_unittests` segfaulted here reporting nothing at all, and
+    # the absence of output said nothing about where it died -- gtest had
+    # named the running test, and the buffer went down with the process.
+    run_suite() {
+        local name="$1" filter="$2" status=0
+        if command -v stdbuf >/dev/null 2>&1; then
+            stdbuf -oL -eL "$loader" --library-path "$library_path" \
+                "/build/$name" "--gtest_filter=$filter" \
+                --single-process-tests || status=$?
+        else
+            "$loader" --library-path "$library_path" \
+                "/build/$name" "--gtest_filter=$filter" \
+                --single-process-tests || status=$?
+        fi
+        if [[ "$status" -ne 0 ]]; then
+            # A signal reads as 128 + n and is otherwise an unexplained number.
+            if [[ "$status" -gt 128 ]]; then
+                echo "error: $name terminated by signal $((status - 128))" >&2
+            else
+                echo "error: $name exited $status" >&2
+            fi
+            return "$status"
+        fi
+        echo "$name passed"
+    }
+    # Whether the binary can start at all, asked separately from whether its
+    # tests pass. `--gtest_list_tests` enumerates and exits without running a
+    # test body, so a crash here means the process dies before any test does,
+    # and a clean listing means the crash belongs to a test. The previous
+    # failure could not distinguish those: it reported a signal and nothing
+    # else, and buffered output does not survive one.
+    probe_start() {
+        local name="$1" status=0
+        "$loader" --library-path "$library_path" "/build/$name" \
+            --gtest_list_tests >/dev/null 2>&1 || status=$?
+        if [[ "$status" -eq 0 ]]; then
+            echo "probe: $name starts and enumerates its tests"
+        elif [[ "$status" -gt 128 ]]; then
+            echo "probe: $name dies before running anything," \
+                "signal $((status - 128))" >&2
+        else
+            echo "probe: $name cannot enumerate its tests, exit $status" >&2
+        fi
+    }
+    probe_start ozone_unittests
+    probe_start output_presenter_ozone_unittests
+    run_suite ozone_unittests '*OzonePresenter*'
+    run_suite output_presenter_ozone_unittests 'OutputPresenterOzoneTest.*'
     ;;
   *)
     echo "error: expected Chromium build command" >&2
