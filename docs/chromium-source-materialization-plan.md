@@ -173,6 +173,17 @@ path.
 
 ## Risk surface
 
+Sharing one source workspace also widened what a leaked container costs. A
+cancelled run could leave its container alive and reparented to init, still
+holding every workspace it mounted, because container cleanup is deferred to an
+asynchronous call that a killed process never makes. With a workspace per
+target that stranded one architecture; with one shared tree it strands
+everything, and the symptom is an invalid storage attachment several minutes
+into the next run rather than anything naming the cause. Reclaiming containers
+when a run takes the machine's execution admission is what bounds this, since
+holding the admission means any container that exists was left by a run that is
+already over.
+
 The host's `kern.maxfiles` is 491,520 and a desktop session already holds
 around nineteen thousand descriptors. Phase 1 halves the traversals but a
 single cold materialization still approaches that ceiling, so the limit is

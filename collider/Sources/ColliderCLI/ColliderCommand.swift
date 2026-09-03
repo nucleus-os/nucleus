@@ -191,6 +191,12 @@ public struct ColliderCommand: AsyncParsableCommand {
                     run: run,
                     registry: registry,
                     cancellation: cancellation)
+                await reclaimOrphanedContainers(
+                    listing: { try await application.runtime.ociContainers() },
+                    deleting: {
+                        try await application.runtime.deleteOCIContainer(named: $0)
+                    },
+                    console: console)
             }
             // Planning resolves every declared tool, so the pinned host tools
             // must exist before it runs rather than being produced by it.
@@ -300,6 +306,59 @@ public struct ColliderCommand: AsyncParsableCommand {
             throw commandExitCode(
                 status: status,
                 interruptionSignal: interruptionSignal)
+        }
+    }
+}
+
+/// Removes containers that outlived the run that created them.
+///
+/// Holding the machine's single execution admission means no other Collider
+/// execution is in flight, so a container existing at this moment was left
+/// behind by a run that is already over. `AppleContainerStore` states the same
+/// invariant from the other side, where a container record only names a
+/// running image while the admission is held.
+///
+/// Cancellation is the ordinary way one is left. Child process groups are
+/// signalled synchronously from the signal handler precisely because a
+/// deferred cleanup may never get its turn, but a container is deleted through
+/// the runtime's asynchronous API, so its cleanup is deferred and a process
+/// killed before that turn arrives never makes the call. The container keeps
+/// running, reparented to init, still attached to every workspace it mounted.
+/// Since one materialized Chromium source tree now serves every product, one
+/// survivor holding it read-only is enough to stop the next run from
+/// materializing source at all, which is a storage attachment failure several
+/// minutes into a run rather than anything that names the cause.
+///
+/// Reclaiming here rather than at cancellation is what makes this hold: no
+/// signal-time cleanup can survive SIGKILL, and this does not have to.
+///
+/// Infrastructure containers belong to the runtime rather than to any run, so
+/// they are left alone. A failure to reclaim is reported and not raised: the
+/// command may not need containers at all, and if it does, the diagnostic is
+/// already above whatever it fails with.
+func reclaimOrphanedContainers(
+    listing: @Sendable () async throws -> [OCIContainerState],
+    deleting: @Sendable (String) async throws -> Void,
+    console: CommandConsole
+) async {
+    let containers: [OCIContainerState]
+    do {
+        containers = try await listing()
+    } catch {
+        try? console.diagnostic(
+            "could not inspect containers to reclaim: \(error)")
+        return
+    }
+    let orphaned = containers.filter { !$0.infrastructure }
+    guard !orphaned.isEmpty else { return }
+    for container in orphaned {
+        do {
+            try await deleting(container.name)
+            try? console.diagnostic(
+                "reclaimed container left by an earlier run: \(container.name)")
+        } catch {
+            try? console.diagnostic(
+                "could not reclaim container \(container.name): \(error)")
         }
     }
 }
