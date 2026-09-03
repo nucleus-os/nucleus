@@ -985,12 +985,15 @@ private func chromiumDependencyImageInputs(
     sourceContext: FilePath,
     inputManifest: FilePath? = nil
 ) -> [ArtifactInput] {
-    let inputs = [
+    let filenames = [
         "Dependencies.Containerfile",
         "Resolver.Containerfile",
         "packages.txt",
         "resolve-apt-packages.sh",
-    ].map { .file(sourceContext.appending($0)) }
+    ]
+    let inputs = filenames.map {
+        ArtifactInput.file(sourceContext.appending($0))
+    }
     return inputs + [
         .file(inputManifest ?? sourceContext.appending("builder-inputs.json"))
     ]
