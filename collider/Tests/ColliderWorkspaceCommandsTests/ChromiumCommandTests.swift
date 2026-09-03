@@ -77,37 +77,26 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         Issue.record("Chromium test task must have an action")
         return
     }
-    let executions = try await ociExecutions(in: test.action)
-    let buildExecution = try #require(executions.first)
-    let runExecution = try #require(executions.last)
-    #expect(executions.count == 2)
+    let execution = try #require(
+        try await ociExecutions(in: test.action).first)
     #expect(testAction.kind == "browser.run-tests")
     // The layout above asks for 16 jobs, which is what a product build gets
     // because the source lock gives it the host. The two ozone runs overlap
     // each other instead, one per architecture, so each is bounded by the
     // twelve CPUs its own container is actually given.
     #expect(
-        buildExecution.command == ["build-ozone-tests", "12"])
-    #expect(
-        runExecution.command == [
-            "run-ozone-tests", x86Target.architecture.rawValue,
+        execution.command == [
+            "test-ozone", "12", x86Target.architecture.rawValue,
         ])
-    #expect(buildExecution.resourceLimits == .parallelBuild)
-    #expect(!buildExecution.mounts.contains { $0.target == "/build" })
-    #expect(!buildExecution.mounts.contains { $0.target == "/source" })
+    #expect(execution.resourceLimits == .parallelBuild)
+    #expect(!execution.mounts.contains { $0.target == "/build" })
+    #expect(!execution.mounts.contains { $0.target == "/source" })
     #expect(
-        buildExecution.imageEntrypointOverride
-            == "/collider-entrypoints/chromium-build/build-entrypoint.sh")
-    #expect(
-        buildExecution.persistentWorkspaceMounts.map(\.target)
-            == ["/source", "/build", "/ccache"])
-    #expect(
-        runExecution.imageEntrypointOverride
+        execution.imageEntrypointOverride
             == "/collider-entrypoints/chromium-test/build-entrypoint.sh")
     #expect(
-        runExecution.persistentWorkspaceMounts.map(\.target) == ["/build"])
-    #expect(
-        test.dependencies.contains(ChromiumTaskIDs.builderDependencies))
+        execution.persistentWorkspaceMounts.map(\.target)
+            == ["/source", "/build", "/ccache"])
     #expect(
         test.dependencies.contains(ChromiumTaskIDs.testRuntimeDependencies))
 

@@ -855,11 +855,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 component: ComponentID(rawValue: "browser"))
             testBuilder.consume(publication)
             testBuilder.consume(manifest)
-            testBuilder.consume(buildTool.image)
             testBuilder.consume(testRuntimeTool.image)
             testTasks.append(
                 testBuilder.build(
-                    inputs: [buildTool.input],
+                    inputs: [testRuntimeTool.input],
                     assessmentPolicy: .always,
                     action:
                         try AnyColliderAction(
@@ -867,7 +866,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 executions: [
                                     chromiumBuildExecution(
                                         target: target,
-                                        entrypoint: buildTool,
+                                        entrypoint: testRuntimeTool,
                                         source: source,
                                         inputRoot: manifest.path
                                             .removingLastComponent()
@@ -881,21 +880,11 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         jobs: parallelJobs,
                                         targets: [],
                                         command: [
-                                            "build-ozone-tests",
+                                            "test-ozone",
                                             String(parallelJobs),
-                                        ],
-                                        environment: childEnvironment),
-                                    chromiumTestExecution(
-                                        target: target,
-                                        entrypoint: testRuntimeTool,
-                                        hostWorkingDirectory: source.appending(
-                                            "chromium/src"),
-                                        outputWorkspace: workspace,
-                                        command: [
-                                            "run-ozone-tests",
                                             target.architecture.rawValue,
                                         ],
-                                        environment: childEnvironment),
+                                        environment: childEnvironment)
                                 ]))))
         }
         return PreparedTasks(
@@ -1526,45 +1515,6 @@ private func chromiumBuildExecution(
         ]) { _, required in required },
         imageEntrypointOverride: entrypoint.containerPath,
         command: command ?? ["build", String(jobs)] + targets,
-        environment: environment,
-        output: .logged)
-}
-
-private func chromiumTestExecution(
-    target: ChromiumLinuxTarget,
-    entrypoint: OCIMountedEntrypoint,
-    hostWorkingDirectory: FilePath,
-    outputWorkspace: PersistentWorkspaceDeclaration,
-    command: [String],
-    environment: [String: String]
-) -> OCIExecution {
-    OCIExecution(
-        executionPlatform: .linuxARM64OCI,
-        artifactTarget: target.artifactTarget,
-        imageID: entrypoint.image.path,
-        hostname: "chromium-test",
-        workingDirectory: "/build",
-        hostWorkingDirectory: hostWorkingDirectory,
-        mounts: [entrypoint.mount],
-        persistentWorkspaceMounts: [
-            OCIPersistentWorkspaceMount(
-                workspace: outputWorkspace,
-                target: "/build",
-                access: .readOnly)
-        ],
-        userPolicy: .builder,
-        capabilityPolicy: .dropAll,
-        privilegePolicy: .prohibitAcquisition,
-        processFilesystemPolicy: .standard,
-        resourceLimits: chromiumToolResourceLimits,
-        containerEnvironment: [
-            "HOME": "/tmp/nucleus-home",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "TZ": "UTC",
-        ],
-        imageEntrypointOverride: entrypoint.containerPath,
-        command: command,
         environment: environment,
         output: .logged)
 }

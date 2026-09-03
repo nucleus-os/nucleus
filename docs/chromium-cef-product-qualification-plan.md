@@ -31,9 +31,9 @@ and architecture; each product has independent persistent Linux arm64 and
 x86_64 output workspaces, and each architecture one compiler cache shared by
 both products. Compilation, packaging,
 artifact validation, and focused executable tests run offline without a host
-source mount. The focused test task compiles in the stable builder image, then
-executes from a separate target-runtime image that mounts only the completed GN
-output workspace. Hardware qualification runs on the target system.
+source mount. The focused test task compiles and executes in a separate
+target-runtime image derived from the stable builder image. Hardware
+qualification runs on the target system.
 
 The Chromium lane owns two independently content-addressed dependency images.
 The stable builder image owns compilers, build tools, and checked-in x86_64 host

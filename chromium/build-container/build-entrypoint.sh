@@ -152,22 +152,16 @@ case "${1:-}" in
       || echo "  no statistics available"
     exit "$status"
     ;;
-  build-ozone-tests)
-    if [[ $# -ne 2 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-      echo "error: build-ozone-tests requires a positive job count" >&2
+  test-ozone)
+    if [[ $# -ne 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
+      echo "error: test-ozone requires a positive job count and architecture" >&2
       exit 64
     fi
-    exec /source/chromium/src/third_party/siso/cipd/siso \
+    /source/chromium/src/third_party/siso/cipd/siso \
       ninja --offline -local_jobs="$2" -C /build \
       ui/ozone:ozone_unittests \
       components/viz/service:output_presenter_ozone_unittests
-    ;;
-  run-ozone-tests)
-    if [[ $# -ne 2 ]]; then
-      echo "error: run-ozone-tests requires an architecture" >&2
-      exit 64
-    fi
-    runtime_output="$(target_runtime "$2")"
+    runtime_output="$(target_runtime "$3")"
     mapfile -t runtime <<<"$runtime_output"
     loader="${runtime[0]}"
     library_path="${runtime[1]}"
