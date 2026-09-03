@@ -15,7 +15,12 @@ package struct BuildChromiumProductAction: ColliderAction {
                 nested: OCIMountedEntrypointActionIdentity(build.entrypoint))
             encoder.appendOptional(build.gnArguments) { $0.append($1) }
             encoder.appendSequence(build.targets) { $0.append($1) }
-            encoder.append(UInt64(build.jobs))
+            // The job count is deliberately absent. How many compilations ran
+            // at once does not change what they produced, and the count now
+            // follows the host's processor count, so including it would make
+            // two machines disagree about the identity of the same build and
+            // share nothing. `SwiftBuildContext` states the same rule for its
+            // own parallelism.
             encoder.append(build.outputWorkspace.identity.key)
             encoder.append(build.outputWorkspace.capacityBytes)
             encoder.append(build.compilerCacheWorkspace.identity.key)

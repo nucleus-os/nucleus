@@ -144,12 +144,24 @@ public struct SwiftBuildContext: Hashable, Sendable {
     /// the jobs that matter. A compiler process is memory-hungry, and this is
     /// the count at which they still fit.
     ///
-    /// Neither value reaches an identity: how many jobs ran does not change
-    /// what they produced, so raising this rebuilds nothing.
+    /// Both values reach task identity, and that is why they are constants
+    /// rather than being read from the machine the way container allocation
+    /// now is. `SwiftPMDriverRequest` carries the job count and is JSON
+    /// encoded wholesale into `SwiftPMInvocationAction.Identity`, so a count
+    /// derived from the host would give the same package build a different
+    /// identity on every differently sized machine, and a CI builder and a
+    /// developer would share nothing. Raising either therefore does rebuild:
+    /// it is a deliberate cost, not a free tuning knob.
+    ///
+    /// Making these follow the allocation means first taking the job count out
+    /// of what a Swift build *is*, as the Chromium product build does. Until
+    /// then a host with a different processor count runs these at the counts
+    /// below and its containers are sized separately.
     public static let defaultMaximumParallelism: UInt32 = 16
-    /// Left where it is. Container work is bounded by memory across concurrent
-    /// virtual machines rather than by host cores, and nothing here has
-    /// measured it.
+    /// Matches `OCIResourceLimits.parallelBuild` on a twenty-four core host,
+    /// which is the machine these were tuned on. Container work is bounded by
+    /// memory across concurrent virtual machines rather than by host cores,
+    /// and nothing here has measured it.
     public static let concurrentOCIMaximumParallelism: UInt32 = 12
 
     public let packageRoot: FilePath

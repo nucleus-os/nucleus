@@ -81,7 +81,8 @@ struct ValidateAOSPProductAction: ColliderAction {
                 ActionEffect(.read, scope: .input(build.sourceProvenance)),
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-            ] + build.sourceOverlays.map {
+            ]
+            + build.sourceOverlays.map {
                 ActionEffect(.read, scope: .input($0.source))
             }).uniqued()
         return ActionRequirements(
@@ -247,7 +248,7 @@ private struct AOSPProductValidationWorkflow {
                 "--release-certificate", releaseCertificate.string,
                 "--vbmeta-image", imagesRoot.appending("vbmeta.img").string,
                 "--minimum-sdk", String(build.expectedPlatformSDK),
-                "--workers", String(build.buildJobs),
+                "--workers", String(build.effectiveBuildJobs),
                 "--summary", summary.string,
             ],
             in: validationRoot,

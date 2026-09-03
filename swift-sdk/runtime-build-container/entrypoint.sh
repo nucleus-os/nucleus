@@ -50,7 +50,7 @@ cmake -S /src/libxml2 -B "$libxml_build" -G Ninja \
   -DLIBXML2_WITH_PYTHON=OFF \
   -DLIBXML2_WITH_TESTS=OFF \
   -DLIBXML2_WITH_ZLIB=OFF
-cmake --build "$libxml_build" --parallel "${NUCLEUS_BUILD_JOBS:-16}"
+cmake --build "$libxml_build" --parallel "${NUCLEUS_BUILD_JOBS:-$(nproc)}"
 DESTDIR="$libxml_install" cmake --install "$libxml_build"
 test -f "$libxml_install/usr/include/libxml2/libxml/parser.h"
 test -f "$libxml_install/usr/lib/$NUCLEUS_TARGET_GNU_ARCHITECTURE/libxml2.so"
@@ -59,7 +59,7 @@ python3 /src/swift/utils/build-script \
   --preset-file /src/swift/utils/build-presets.ini \
   --preset-file /recipe/nucleus-target-runtime-presets.ini \
   --preset=nucleus_linux_target_runtime \
-  --jobs "${NUCLEUS_BUILD_JOBS:-16}" \
+  --jobs "${NUCLEUS_BUILD_JOBS:-$(nproc)}" \
   toolchain_path=/opt/swift/usr/bin \
   install_destdir=/output \
   target_architecture="$NUCLEUS_TARGET_ARCHITECTURE" \
@@ -89,7 +89,7 @@ cmake -S /src/swift-testing -B "$swift_testing_build" -G Ninja \
   -Ddispatch_DIR="/build/Ninja-Release/libdispatch-linux-$NUCLEUS_TARGET_ARCHITECTURE/cmake/modules" \
   -DSwiftTesting_MODULE_ABI_NAME_SUFFIX=_toolchain \
   -DSwiftTesting_MACRO=NO
-cmake --build "$swift_testing_build" --parallel "${NUCLEUS_BUILD_JOBS:-16}"
+cmake --build "$swift_testing_build" --parallel "${NUCLEUS_BUILD_JOBS:-$(nproc)}"
 DESTDIR=/output cmake --install "$swift_testing_build"
 test -f "/output/usr/lib/swift/linux/Testing.swiftmodule/$NUCLEUS_TARGET_TRIPLE.swiftinterface"
 test -f /output/usr/lib/swift/linux/libTesting.so
