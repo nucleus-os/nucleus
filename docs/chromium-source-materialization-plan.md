@@ -89,6 +89,16 @@ not the two this reasoning first counted. Measured on 2026-09-02 they were
 minutes for every artifact and packaging task in the sweep combined. A cold
 sweep is about seventeen hours.
 
+The workspaces this phase replaced are still resident. Retiring the per-target
+identity left `chromium-source-linux-arm64-glibc-source` and
+`chromium-source-linux-x86-64-glibc-source` claimed by no declaration, holding
+38 and 39 GiB beside the 45 GiB of the shared tree that replaced them. Nothing
+reclaims them on its own: a `StorageDeclaration` governs a host directory, and
+these are container volumes, which `collider cache prune` collects once no
+declared identity claims them. That is deliberate -- discarding forty gigabytes
+should not be a side effect of a build -- so it is a step to be taken, not a
+defect to be fixed.
+
 Serializing them is deliberate rather than merely tolerated: each build asks
 for twelve jobs on a twenty-four core host, so two at a time would divide the
 machine rather than double the throughput. What the serialization does require

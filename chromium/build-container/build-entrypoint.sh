@@ -151,8 +151,22 @@ case "${1:-}" in
     jobs="$4"
     shift 4
     configure_build "$source_id" "$gn_arguments"
-    exec /source/chromium/src/third_party/siso/cipd/siso \
-      ninja --offline -local_jobs="$jobs" -C /build "$@"
+    # Counters are cumulative and persist in the cache, so zeroing here makes
+    # the report below describe this build rather than every build since the
+    # workspace was created.
+    ccache -z >/dev/null 2>&1 || true
+    status=0
+    /source/chromium/src/third_party/siso/cipd/siso \
+      ninja --offline -local_jobs="$jobs" -C /build "$@" || status=$?
+    # Say what the cache did. Without this there is no signal at all: a cache
+    # storing nothing looks exactly like one that is working, and this one held
+    # 68 MiB of a 30 GiB allowance for months while every compilation missed
+    # it. `Could not use modules` is the count clang modules made uncacheable,
+    # which is the specific failure that hid here.
+    echo "compiler cache after this build:"
+    ccache -s -v 2>/dev/null || ccache -s 2>/dev/null \
+      || echo "  no statistics available"
+    exit "$status"
     ;;
   test-ozone)
     if [[ $# -ne 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
