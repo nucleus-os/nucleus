@@ -143,6 +143,12 @@ public struct ColliderCommand: AsyncParsableCommand {
             cancellation: cancellation,
             taskOutputObserver: TaskOutputObserver(
                 output: { try? console.taskOutput($0) },
+                unstructuredOutputWillBegin: {
+                    try? console.unstructuredOutputWillBegin(task: $0)
+                },
+                unstructuredOutputDidEnd: {
+                    try? console.unstructuredOutputDidEnd(task: $0)
+                },
                 terminalWillBegin: { try? console.terminalWillSuspend() },
                 terminalDidEnd: { try? console.terminalDidResume() }),
             downloadCacheRoot: cacheLayout.downloads,

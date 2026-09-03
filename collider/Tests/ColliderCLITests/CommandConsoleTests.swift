@@ -183,6 +183,28 @@ private struct FixtureReport: Codable, Equatable {
     #expect(standardError.text.contains("stage log: "))
 }
 
+@Test func githubActionsGroupsUnstructuredImagePreparationOutput() throws {
+    let standardError = ConsoleCapture()
+    let console = CommandConsole(
+        progress: .always,
+        environment: ["GITHUB_ACTIONS": "true"],
+        standardOutput: { _ in },
+        standardError: standardError.write)
+    let task = TaskID(rawValue: "fixture.image")
+
+    try console.unstructuredOutputWillBegin(task: task)
+    try console.progress("must not interleave with BuildKit")
+    standardError.write(Data("#1 resolving image\n".utf8))
+    try console.unstructuredOutputDidEnd(task: task)
+    try console.progress("visible after image preparation")
+
+    #expect(
+        standardError.text.contains(
+            "::group::fixture.image image preparation\n#1 resolving image\n::endgroup::\n"))
+    #expect(!standardError.text.contains("must not interleave with BuildKit"))
+    #expect(standardError.text.contains("visible after image preparation"))
+}
+
 /// The two halves of a workflow command are escaped by different rules, and a
 /// task named by a digest exercises both: `:` ends a property list, so it is
 /// escaped in `title=`, and means nothing in a message, so it is not.

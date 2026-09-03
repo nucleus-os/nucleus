@@ -74,6 +74,7 @@ package final class CommandConsole: @unchecked Sendable {
         var renderedLineCount = 0
         var cursorHidden = false
         var suspended = false
+        var unstructuredOutputDepth = 0
         var githubSummaryWritten = false
     }
 
@@ -323,7 +324,8 @@ package final class CommandConsole: @unchecked Sendable {
                 try repaint(&state)
             }
         case .githubActions:
-            try state.withLock { _ in
+            try state.withLock { state in
+                guard state.unstructuredOutputDepth == 0 else { return }
                 try standardError(Data((lines.joined(separator: "\n") + "\n").utf8))
             }
         case .machine:
@@ -481,6 +483,43 @@ package final class CommandConsole: @unchecked Sendable {
         try state.withLock { state in
             state.suspended = false
             try repaint(&state)
+        }
+    }
+
+    /// Delimit output written directly by an in-process dependency which does
+    /// not expose bytes to Collider's ordinary task logger. GitHub receives one
+    /// folded section instead of thousands of permanently expanded BuildKit
+    /// lines, while terminal progress stays out of the dependency's stream.
+    package func unstructuredOutputWillBegin(task: TaskID?) throws {
+        try state.withLock { state in
+            try eraseRenderedRegion(&state)
+            state.unstructuredOutputDepth += 1
+            state.suspended = true
+            guard progressPresentation == .githubActions,
+                state.unstructuredOutputDepth == 1
+            else { return }
+            let name =
+                task.map {
+                    Self.qualifiedName($0, labels: state.taskLabels)
+                } ?? "Collider dependency"
+            let title = githubCommandMessage("\(name) image preparation")
+            try standardError(Data("::group::\(title)\n".utf8))
+        }
+    }
+
+    package func unstructuredOutputDidEnd(task _: TaskID?) throws {
+        try state.withLock { state in
+            guard state.unstructuredOutputDepth > 0 else { return }
+            state.unstructuredOutputDepth -= 1
+            if progressPresentation == .githubActions,
+                state.unstructuredOutputDepth == 0
+            {
+                try standardError(Data("::endgroup::\n".utf8))
+            }
+            if state.unstructuredOutputDepth == 0 {
+                state.suspended = false
+                try repaint(&state)
+            }
         }
     }
 

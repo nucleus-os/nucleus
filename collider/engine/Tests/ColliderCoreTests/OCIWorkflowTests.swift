@@ -728,7 +728,6 @@ import Testing
     let networkIndex = try #require(buildArguments.firstIndex(of: "--network"))
     #expect(buildArguments[networkIndex + 1] == "none")
     #expect(buildArguments.contains("--pull"))
-    #expect(buildArguments.contains("--quiet"))
     #expect(buildArguments.contains("plain"))
     #expect(buildArguments.contains(preparation.imageName))
     #expect(buildArguments.contains(preparation.containerFile.string))

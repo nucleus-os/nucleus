@@ -45,6 +45,13 @@ extension ColliderRuntime {
         try FileManager.default.createDirectory(
             atPath: parent.string,
             withIntermediateDirectories: true)
+        // Apple's in-process build command writes BuildKit progress directly
+        // to stderr instead of exposing a stream Collider can capture. Give
+        // presentation consumers an explicit boundary around that output; the
+        // command must not use its `quiet` mode because that mode drops the
+        // protocol acknowledgement attached to every stdio packet.
+        taskOutputObserver.unstructuredOutputWillBegin(stage)
+        defer { taskOutputObserver.unstructuredOutputDidEnd(stage) }
         let imageID = try await requireOCIBackend().prepareImage(preparation)
         guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(

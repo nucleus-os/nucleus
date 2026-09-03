@@ -40,15 +40,21 @@ public enum TaskOutputEvent: Sendable {
 
 public struct TaskOutputObserver: Sendable {
     public let output: @Sendable (TaskOutputEvent) -> Void
+    public let unstructuredOutputWillBegin: @Sendable (TaskID?) -> Void
+    public let unstructuredOutputDidEnd: @Sendable (TaskID?) -> Void
     public let terminalWillBegin: @Sendable () -> Void
     public let terminalDidEnd: @Sendable () -> Void
 
     public init(
         output: @escaping @Sendable (TaskOutputEvent) -> Void = { _ in },
+        unstructuredOutputWillBegin: @escaping @Sendable (TaskID?) -> Void = { _ in },
+        unstructuredOutputDidEnd: @escaping @Sendable (TaskID?) -> Void = { _ in },
         terminalWillBegin: @escaping @Sendable () -> Void = {},
         terminalDidEnd: @escaping @Sendable () -> Void = {}
     ) {
         self.output = output
+        self.unstructuredOutputWillBegin = unstructuredOutputWillBegin
+        self.unstructuredOutputDidEnd = unstructuredOutputDidEnd
         self.terminalWillBegin = terminalWillBegin
         self.terminalDidEnd = terminalDidEnd
     }
