@@ -164,6 +164,14 @@ case "${1:-}" in
     # it. `Could not use modules` is the count clang modules made uncacheable,
     # which is the specific failure that hid here.
     echo "compiler cache after this build:"
+    # The settings, not just the counters. A build that compiles nothing
+    # reports no counters at all, so the configuration is the only evidence
+    # available on such a run -- and configuration is what was wrong twice:
+    # once because `-fmodules` needs depend mode and modules sloppiness to be
+    # cacheable, and once because none of it was reaching the process.
+    ccache --show-config 2>/dev/null \
+      | grep -E "^\((environment|.*ccache\.conf)\) (depend_mode|sloppiness|max_size|compiler_check|cache_dir) " \
+      || echo "  configuration unavailable"
     ccache -s -v 2>/dev/null || ccache -s 2>/dev/null \
       || echo "  no statistics available"
     exit "$status"
