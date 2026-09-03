@@ -896,6 +896,13 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             "NUCLEUS_TARGET_GNU_ARCHITECTURE": architecture.gnuArchitecture,
             "NUCLEUS_TARGET_TRIPLE": architecture.triple,
         ]
+        // A job count must not be planted here. This environment reaches the
+        // task identity, so a value derived from the host would give the same
+        // runtime build a different identity on every differently sized
+        // machine and nothing either produced could be shared. The entrypoint
+        // reads the processor count of the container it is already inside,
+        // which is the allocation, and needs nothing passed in. An explicit
+        // value still wins, for a machine that has to be told something else.
         if let jobs = configuration.environment["NUCLEUS_BUILD_JOBS"],
             !jobs.isEmpty
         {

@@ -53,7 +53,8 @@ struct CompileAOSPProductAction: ColliderAction {
                 ActionEffect(.read, scope: .input(build.deviceSource)),
                 ActionEffect(.read, scope: .input(build.sourceProvenance)),
                 ActionEffect(.readWrite, scope: .scratch(build.artifactRoot)),
-            ] + build.sourceOverlays.map {
+            ]
+            + build.sourceOverlays.map {
                 ActionEffect(.read, scope: .input($0.source))
             }).uniqued()
         return ActionRequirements(
@@ -154,7 +155,7 @@ private struct AOSPProductCompileWorkflow {
                 command: [
                     "/src/build/soong/soong_ui.bash",
                     "--make-mode",
-                    "-j\(build.buildJobs)",
+                    "-j\(build.effectiveBuildJobs)",
                     "target-files-package",
                     "otatools",
                 ],

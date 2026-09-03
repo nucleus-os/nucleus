@@ -745,36 +745,7 @@ package struct ComponentRegistry {
     ) async throws {
         try await checkBrowserPrerequisites(selection: selection, controls: controls)
         let catalog = try await componentCatalog()
-        var requests = [
-            ComponentEntrypointRequest(
-                entrypoint: .build,
-                selection: selection),
-            ComponentEntrypointRequest(
-                entrypoint: .testDefault,
-                selection: selection),
-        ]
-        if selection == nil || selection == "all" {
-            // The browser lane answers to its own spelling. `.build` under
-            // "all" reaches the runtime components, and packaging pulls in only
-            // the Chromium product it consumes, so neither one reaches the CEF
-            // binary distribution. Naming "browser" is what builds it, and
-            // without that the lane assembling what actually ships is verified
-            // by nobody until someone tries to ship.
-            requests.append(
-                ComponentEntrypointRequest(
-                    entrypoint: .build,
-                    selection: "browser"))
-            requests.append(
-                ComponentEntrypointRequest(
-                    entrypoint: ReleaseGateEntrypoints.test,
-                    selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
-            // Packaging belongs to verification rather than after it. Building
-            // and testing prove the products compile and behave; packaging is
-            // what proves they assemble and qualify into the cohorts actually
-            // delivered, and a lane no automated run selects is one whose
-            // breakage is found by whoever next tries to ship. It is requested
-            // last because it consumes what the other two produce.
-            //
+        if Self.verificationCoversEveryLane(selection) {
             // The browser prerequisite is checked the way the packaging and
             // browser commands check it. `checkBrowserPrerequisites` answers
             // only to a selection naming the browser, and this selection names
@@ -783,15 +754,68 @@ package struct ComponentRegistry {
             try await checkBrowserPrerequisites(
                 selection: "browser",
                 controls: controls)
-            requests.append(
-                ComponentEntrypointRequest(
-                    entrypoint: LinuxEntrypoints.packageRuntime,
-                    selection: "linux-runtime"))
         }
         try await context.execute(
             catalog: catalog,
-            requests: requests,
+            requests: Self.verificationRequests(selection: selection),
             controls: controls)
+    }
+
+    static func verificationCoversEveryLane(_ selection: String?) -> Bool {
+        selection == nil || selection == "all"
+    }
+
+    /// The entrypoints a verification sweep asks for.
+    ///
+    /// Separated from executing them because which lanes a sweep covers is a
+    /// policy worth stating on its own. Requesting `.build` for the browser
+    /// without `.testDefault` left its focused suites absent from the plan
+    /// rather than skipped as clean, and nothing anywhere failed to say so.
+    static func verificationRequests(
+        selection: String?
+    ) -> [ComponentEntrypointRequest] {
+        var requests = [
+            ComponentEntrypointRequest(
+                entrypoint: .build,
+                selection: selection),
+            ComponentEntrypointRequest(
+                entrypoint: .testDefault,
+                selection: selection),
+        ]
+        guard verificationCoversEveryLane(selection) else { return requests }
+        // The browser lane answers to its own spelling. `.build` under "all"
+        // reaches the runtime components, and packaging pulls in only the
+        // Chromium product it consumes, so neither one reaches the CEF binary
+        // distribution. Naming "browser" is what builds it, and without that
+        // the lane assembling what actually ships is verified by nobody until
+        // someone tries to ship.
+        requests.append(
+            ComponentEntrypointRequest(
+                entrypoint: .build,
+                selection: "browser"))
+        // And its tests, for the same reason and by the same spelling. This
+        // was missing, which is the exact condition that had already let three
+        // defects sit in the CEF build lane until something finally compiled
+        // it.
+        requests.append(
+            ComponentEntrypointRequest(
+                entrypoint: .testDefault,
+                selection: "browser"))
+        requests.append(
+            ComponentEntrypointRequest(
+                entrypoint: ReleaseGateEntrypoints.test,
+                selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
+        // Packaging belongs to verification rather than after it. Building and
+        // testing prove the products compile and behave; packaging is what
+        // proves they assemble and qualify into the cohorts actually
+        // delivered, and a lane no automated run selects is one whose breakage
+        // is found by whoever next tries to ship. It is last because it
+        // consumes what the other two produce.
+        requests.append(
+            ComponentEntrypointRequest(
+                entrypoint: LinuxEntrypoints.packageRuntime,
+                selection: "linux-runtime"))
+        return requests
     }
 
     func generate(

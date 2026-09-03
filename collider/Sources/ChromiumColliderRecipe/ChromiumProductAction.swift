@@ -15,7 +15,12 @@ package struct BuildChromiumProductAction: ColliderAction {
                 nested: OCIMountedEntrypointActionIdentity(build.entrypoint))
             encoder.appendOptional(build.gnArguments) { $0.append($1) }
             encoder.appendSequence(build.targets) { $0.append($1) }
-            encoder.append(UInt64(build.jobs))
+            // The job count is deliberately absent. How many compilations ran
+            // at once does not change what they produced, and the count now
+            // follows the host's processor count, so including it would make
+            // two machines disagree about the identity of the same build and
+            // share nothing. `SwiftBuildContext` states the same rule for its
+            // own parallelism.
             encoder.append(build.outputWorkspace.identity.key)
             encoder.append(build.outputWorkspace.capacityBytes)
             encoder.append(build.compilerCacheWorkspace.identity.key)
@@ -106,14 +111,6 @@ package struct BuildChromiumProductAction: ColliderAction {
         build.sourceRoot.appending("chromium/src")
     }
 
-    private var chromiumEnvironment: [String: String] {
-        var value = build.environment
-        value["CCACHE_DIR"] = "/ccache"
-        value["CCACHE_MAXSIZE"] = "30G"
-        value["CCACHE_COMPILERCHECK"] = "content"
-        return value
-    }
-
     private func stagedGNArguments(files: ActionFileSystem) throws -> String {
         try files.createDirectory(build.inputRoot)
         guard build.target.architecture == .x86_64 else {
@@ -170,18 +167,29 @@ package struct BuildChromiumProductAction: ColliderAction {
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
             executableRequirements: chromiumBuildExecutableRequirements,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: [
+            // The source lock serializes every Chromium product build, so this
+            // one has the host to itself and asking for half of it leaves the
+            // other half idle for four hours. Resource limits are outside task
+            // identity, so this changes what a build is given, not what it is.
+            resourceLimits: .build,
+            // The compiler cache settings belong here and nowhere else: this
+            // is the dictionary the container process is given. Declared as
+            // `environment` they were accepted, recorded, and never delivered,
+            // so every compilation ran a ccache with no `CCACHE_DIR`, which
+            // fell back to a directory under the container's own ephemeral
+            // HOME and was discarded when the container exited. The `/ccache`
+            // workspace was mounted for months and never written to.
+            containerEnvironment: chromiumCompilerCacheEnvironment.merging([
                 "DEPOT_TOOLS_UPDATE": "0",
                 "HOME": "/tmp/nucleus-home",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TZ": "UTC",
-            ],
+            ]) { _, required in required },
             imageEntrypointOverride: build.entrypoint.containerPath,
             command: command,
-            environment: chromiumEnvironment,
+            environment: build.environment,
             output: output)
     }
 

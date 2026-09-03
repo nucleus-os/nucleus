@@ -439,3 +439,27 @@ private func inertActionFileSystem() -> ActionFileSystem {
 
     #expect(incremental == ordered)
 }
+
+/// Allocation used to be one machine's capacity transcribed by hand, correct
+/// on that machine and wrong on every other. What matters is not the numbers
+/// but the relationships: a task with the machine gets the machine, a task
+/// that may be sharing gets half the cores, and two of the latter together
+/// still leave the host memory to run in. Reading the machine at all is
+/// only safe because allocation stays outside task identity, which
+/// `ociResourceLimitsDoNotInvalidateActionResults` above asserts directly.
+@Test func allocationTiersFollowTheMachineRatherThanOneMachinesNumbers() {
+    let whole = OCIResourceLimits.build
+    let shared = OCIResourceLimits.parallelBuild
+    let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
+
+    #expect(whole.cpuCount == processors)
+    #expect(whole.memoryBytes == ProcessInfo.processInfo.physicalMemory)
+    #expect(shared.cpuCount == max(1, processors / 2))
+    #expect((shared.cpuCount ?? 0) >= 1)
+
+    let sharedMemory = try! #require(shared.memoryBytes)
+    let wholeMemory = try! #require(whole.memoryBytes)
+    // Two sharing tasks must not commit the host's last byte.
+    #expect(sharedMemory * 2 <= wholeMemory)
+    #expect(sharedMemory >= 1_024 * 1_024 * 1_024)
+}

@@ -94,6 +94,87 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
     }
 }
 
+/// Chromium compiles every translation unit with `-fmodules`, and ccache
+/// refuses to cache such a command unless depend mode is on and `modules`
+/// sloppiness is granted -- it reports `could_not_use_modules` and runs the
+/// compiler. A cache directory configured without those two therefore stores
+/// nothing at all while looking configured, which is what a 30 GiB volume
+/// holding 68 MiB after four complete builds looked like. The inherited
+/// environment must not be able to take them back off, either.
+@Test func chromiumBuildCachesModuleCompilationsAndKeepsThatSettingItself()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-chromium-ccache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("source")
+    let chromium = source.appendingPathComponent("chromium/src")
+    let clang = chromium.appendingPathComponent(
+        "third_party/llvm-build/Linux_x64/bin/clang")
+    let metadata = directory.appendingPathComponent("metadata")
+    let imageID = directory.appendingPathComponent("image-id")
+    try FileManager.default.createDirectory(
+        at: clang.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: metadata,
+        withIntermediateDirectories: true)
+    try Data("clang".utf8).write(to: clang)
+    try Data("fixture-image".utf8).write(to: imageID)
+    let entrypoint = try fixtureEntrypoint(imageID: imageID)
+    try JSONSerialization.data(
+        withJSONObject: ["sourceID": "0123456789abcdef01234567"],
+        options: [.sortedKeys]
+    ).write(to: source.appendingPathComponent("source-provenance.json"))
+
+    let target = ChromiumLinuxTarget(architecture: .arm64)
+    let action = BuildChromiumProductAction(
+        build: ChromiumProductBuild(
+            product: .cef,
+            target: target,
+            sourceRoot: FilePath(source.path),
+            buildManifest: FilePath(
+                metadata.appendingPathComponent("build-manifest.json").path),
+            inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
+            sourceWorkspace: chromiumSourceWorkspace(),
+            outputWorkspace: chromiumOutputWorkspace(
+                product: .cef,
+                target: target),
+            compilerCacheWorkspace: chromiumCompilerCacheWorkspace(
+                target: target),
+            entrypoint: entrypoint,
+            gnArguments: "is_debug=false",
+            targets: ["libcef"],
+            jobs: 12,
+            environment: [
+                "PATH": "/usr/bin:/bin",
+                "CCACHE_DEPEND": "0",
+                "CCACHE_SLOPPINESS": "",
+            ]))
+    let executions = OCIExecutionRecorder()
+    try await execute(
+        action,
+        recording: executions,
+        containerRun: { _ in CommandResult(status: 0) })
+
+    let build = try #require(
+        await executions.values().first { $0.command.first == "build" })
+    // Asserted on `containerEnvironment`, which is the only environment the
+    // container process is given. The first version of this test read
+    // `environment` and passed against a build whose ccache was receiving no
+    // configuration at all.
+    #expect(build.containerEnvironment["CCACHE_DIR"] == "/ccache")
+    #expect(build.containerEnvironment["CCACHE_DEPEND"] == "1")
+    #expect(build.containerEnvironment["CCACHE_SLOPPINESS"] == "modules")
+    #expect(build.containerEnvironment["CCACHE_COMPILERCHECK"] == "content")
+    #expect(build.persistentWorkspaceMounts.contains { $0.target == "/ccache" })
+
+    // The source lock serializes the product builds, so each one has the host
+    // to itself. Half an allocation would leave the other half idle for hours.
+    #expect(build.resourceLimits == .build)
+    #expect(build.resourceLimits != .parallelBuild)
+}
+
 @Test(arguments: PlatformArchitecture.allCases)
 func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
     architecture: PlatformArchitecture
@@ -423,8 +504,15 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
             $0.executionPlatform == .linuxARM64OCI
                 && $0.artifactTarget == target.artifactTarget
         })
+    // Assembling and archiving move files and need no translation. Validation
+    // compiles a consumer against the SDK, with Chromium's checked-in x86_64
+    // clang, and without declaring that it got no translation and no compiler:
+    // the step failed with `/usr/bin/clang: No such file or directory`.
     #expect(recorded[0].executableRequirements.isEmpty)
-    #expect(recorded[1].executableRequirements.isEmpty)
+    #expect(
+        recorded[1].executableRequirements.contains {
+            $0.architecture == .x86_64 && $0.executable.hasSuffix("clang++")
+        })
     #expect(recorded[2].executableRequirements.isEmpty)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(

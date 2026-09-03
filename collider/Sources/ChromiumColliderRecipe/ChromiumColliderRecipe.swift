@@ -119,7 +119,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 artifactRoot: context.artifactRoot.appending("browser"),
                 logRoot: context.logRoot.appending("browser"),
                 jobs: Int(context.environment["NUCLEUS_CHROMIUM_JOBS"] ?? "")
-                    ?? 12))
+                    ?? Int(OCIResourceLimits.build.cpuCount ?? 12)))
         let tasks = preparedTasks.tasks
         func producers(_ ids: TaskID...) -> Set<StorageProducer> {
             Set(ids.map(StorageProducer.task))
@@ -526,13 +526,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     target: target)
                 let compilerCacheWorkspace = chromiumCompilerCacheWorkspace(
                     target: target)
-                let productEnvironment = childEnvironment.merging([
-                    "NUCLEUS_CHROMIUM_TARGET_ARCHITECTURE":
-                        target.architecture.rawValue,
-                    "CCACHE_DIR": "/ccache",
-                    "CCACHE_MAXSIZE": "30G",
-                    "CCACHE_COMPILERCHECK": "content",
-                ]) { _, required in required }
+                let productEnvironment = childEnvironment.merging(
+                    chromiumCompilerCacheEnvironment.merging([
+                        "NUCLEUS_CHROMIUM_TARGET_ARCHITECTURE":
+                            target.architecture.rawValue
+                    ]) { _, required in required }
+                ) { _, required in required }
                 let productBuild = ChromiumProductBuild(
                     product: product,
                     target: target,
@@ -774,6 +773,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 safetyRoot: artifacts,
                                 rules: artifactRetentionRules),
                         ])))
+        // A product build holds the source lock and so has the host to itself,
+        // but the two ozone test runs overlap each other, one per architecture.
+        // They are bounded by the allocation their container actually gets
+        // rather than by what a lone build may take.
+        let parallelJobs = min(
+            layout.jobs,
+            Int(OCIResourceLimits.parallelBuild.cpuCount ?? 12))
         var testTasks: [TaskDeclaration] = []
         for target in chromiumLinuxTargets {
             let publication = try required(browserPublications[target])
@@ -806,11 +812,11 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         compilerCacheWorkspace:
                                             chromiumCompilerCacheWorkspace(
                                                 target: target),
-                                        jobs: layout.jobs,
+                                        jobs: parallelJobs,
                                         targets: [],
                                         command: [
                                             "test-ozone",
-                                            String(layout.jobs),
+                                            String(parallelJobs),
                                             target.architecture.rawValue,
                                         ],
                                         environment: childEnvironment)
@@ -1428,17 +1434,14 @@ private func chromiumBuildExecution(
         processFilesystemPolicy: .standard,
         executableRequirements: chromiumBuildExecutableRequirements,
         resourceLimits: .parallelBuild,
-        containerEnvironment: [
+        containerEnvironment: chromiumCompilerCacheEnvironment.merging([
             "DEPOT_TOOLS_UPDATE": "0",
             "HOME": "/tmp/nucleus-home",
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
             "PYTHONDONTWRITEBYTECODE": "1",
             "TZ": "UTC",
-            "CCACHE_DIR": "/ccache",
-            "CCACHE_MAXSIZE": "30G",
-            "CCACHE_COMPILERCHECK": "content",
-        ],
+        ]) { _, required in required },
         imageEntrypointOverride: entrypoint.containerPath,
         command: command ?? ["build", String(jobs)] + targets,
         environment: environment,

@@ -412,17 +412,55 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
         self.openFileCount = openFileCount
     }
 
+    /// What one machine keeps for itself while a container has the rest.
+    ///
+    /// A guest sized to the whole host leaves the host nothing to run the
+    /// supervising process, the container service, and the file sharing the
+    /// guest itself reads through.
+    static let hostReserveBytes: UInt64 = 16 * 1_024 * 1_024 * 1_024
+
+    /// Everything the machine has, for a task that has the machine.
+    ///
+    /// These were transcribed by hand -- twenty-four CPUs and 128 GiB, which
+    /// is one particular Mac Studio and no other host. Reading the machine
+    /// instead is safe because resource limits are outside task identity,
+    /// which `TaskReferenceTests` asserts directly: how much a task was given
+    /// does not change what it produced, so two machines still agree on what a
+    /// build is while disagreeing about how much of themselves to spend on it.
     public static let build = OCIResourceLimits(
-        cpuCount: 24,
-        memoryBytes: 128 * 1_024 * 1_024 * 1_024,
+        cpuCount: hostProcessorCount,
+        memoryBytes: hostMemoryBytes,
         processCount: 32_768,
         openFileCount: 131_072)
 
+    /// Half a machine, for a task that may be sharing it.
+    ///
+    /// Half the cores, and half of what is left of memory once the host keeps
+    /// its reserve, so that two such tasks together still leave the host able
+    /// to run. On a twenty-four core, 128 GiB host that is the twelve CPUs and
+    /// 56 GiB these were previously written as.
     public static let parallelBuild = OCIResourceLimits(
-        cpuCount: 12,
-        memoryBytes: 56 * 1_024 * 1_024 * 1_024,
+        cpuCount: max(1, hostProcessorCount / 2),
+        memoryBytes: parallelBuildMemoryBytes,
         processCount: 16_384,
         openFileCount: 65_536)
+
+    /// Half of what is left once the host keeps its reserve. A machine too
+    /// small to spare the reserve splits what it has rather than wrapping past
+    /// zero and claiming the whole address space.
+    static var parallelBuildMemoryBytes: UInt64 {
+        let total = hostMemoryBytes
+        let shareable = total > hostReserveBytes ? total - hostReserveBytes : total
+        return max(1_024 * 1_024 * 1_024, shareable / 2)
+    }
+
+    static var hostProcessorCount: UInt32 {
+        UInt32(max(1, ProcessInfo.processInfo.activeProcessorCount))
+    }
+
+    static var hostMemoryBytes: UInt64 {
+        max(1_024 * 1_024 * 1_024, ProcessInfo.processInfo.physicalMemory)
+    }
 }
 
 public struct OCIExecution: Hashable, Sendable {
@@ -440,9 +478,15 @@ public struct OCIExecution: Hashable, Sendable {
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
     public let executableRequirements: Set<OCIExecutableRequirement>
     public let resourceLimits: OCIResourceLimits
+    /// The environment the container process is given.
     public let containerEnvironment: [String: String]
     public let imageEntrypointOverride: String?
     public let command: [String]
+    /// The environment of the host-side work around an execution, not of the
+    /// execution. Nothing here reaches the container process: that comes from
+    /// `containerEnvironment` alone. A recipe that puts a variable the build
+    /// needs into this one is accepted and has no effect, which is how the
+    /// Chromium compiler cache spent months mounted and unwritten.
     public let environment: [String: String]
     public let output: CommandSpec.Output
 
