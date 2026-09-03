@@ -152,24 +152,30 @@ case "${1:-}" in
       || echo "  no statistics available"
     exit "$status"
     ;;
-  test-ozone)
-    if [[ $# -ne 3 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-      echo "error: test-ozone requires a positive job count and architecture" >&2
+  build-ozone-tests)
+    if [[ $# -ne 2 || ! "$2" =~ ^[1-9][0-9]*$ ]]; then
+      echo "error: build-ozone-tests requires a positive job count" >&2
       exit 64
     fi
-    /source/chromium/src/third_party/siso/cipd/siso \
+    exec /source/chromium/src/third_party/siso/cipd/siso \
       ninja --offline -local_jobs="$2" -C /build \
       ui/ozone:ozone_unittests \
       components/viz/service:output_presenter_ozone_unittests
-    runtime_output="$(target_runtime "$3")"
+    ;;
+  run-ozone-tests)
+    if [[ $# -ne 2 ]]; then
+      echo "error: run-ozone-tests requires an architecture" >&2
+      exit 64
+    fi
+    runtime_output="$(target_runtime "$2")"
     mapfile -t runtime <<<"$runtime_output"
     loader="${runtime[0]}"
     library_path="${runtime[1]}"
 
     # The Chromium sysroot remains a compile-and-link input. Execution uses
-    # the pinned multiarch runtime installed in the builder image and selects
-    # the target loader and library directories explicitly, so a translated
-    # x86_64 process never inherits the ARM64 container's runtime search path.
+    # the pinned multiarch runtime installed in the test-runtime image. It
+    # selects the target loader and library directories explicitly, so a
+    # translated x86_64 process never inherits the ARM64 runtime search path.
     run_suite() {
         local name="$1" filter="$2" status=0
         "$loader" --library-path "$library_path" "/build/$name" \

@@ -30,14 +30,18 @@ process-boundary contracts differ. One source workspace serves every product
 and architecture; each product has independent persistent Linux arm64 and
 x86_64 output workspaces, and each architecture one compiler cache shared by
 both products. Compilation, packaging,
-artifact validation, and focused executable tests run offline in the selected
-rootless `chromium-builder` without a host source mount. Hardware qualification
-runs on the target system.
+artifact validation, and focused executable tests run offline without a host
+source mount. The focused test task compiles in the stable builder image, then
+executes from a separate target-runtime image that mounts only the completed GN
+output workspace. Hardware qualification runs on the target system.
 
-The builder is two content-addressed images. A stable dependency image owns the
-Linux package closure and tool environment. A thin operational image adds only
-the current entrypoint onto the exact local dependency-image digest. Container
-orchestration changes cannot invalidate dependency installation.
+The Chromium lane owns two independently content-addressed dependency images.
+The stable builder image owns compilers, build tools, and checked-in x86_64 host
+tool runtime dependencies. The test-runtime image derives from that builder and
+adds only the target-execution closure. Runtime dependency changes therefore
+invalidate runtime materialization and focused tests without changing product
+build or artifact identities. Operational entrypoints remain mounted inputs;
+container orchestration changes do not invalidate dependency installation.
 
 The fork migration, source materialization, containerized compilation,
 packaging, immutable publication, and focused source-level tests are
@@ -74,9 +78,11 @@ Statically validate the x86_64 consumer's ELF architecture and direct dependency
 closure because Apple Intel translation cannot load CEF's relocation table. Run
 each browser artifact validator and each target's focused Ozone and Viz presenter
 suite. Chromium's stripped sysroots remain compile/link inputs and are never
-used as runtime roots. Verify dynamic-library resolution, sandbox ownership,
-product metadata, source provenance, launcher syntax, and absence of SwiftShader
-and unsupported renderer fallbacks.
+used as runtime roots. Each test executes through the target architecture's
+loader with the test-runtime image's explicit multiarch library path. Verify
+dynamic-library resolution, sandbox ownership, product metadata, source
+provenance, launcher syntax, and absence of SwiftShader and unsupported renderer
+fallbacks.
 
 Gate: every published architecture is executable on the qualifier and bound to
 the selected source, target, GN, compiler, sysroot, PGO, and builder identities.
@@ -94,6 +100,15 @@ absent from the plan rather than skipped as clean, and no run reported their
 absence. Both entrypoints are now requested, and
 `verifyingEverythingSelectsBothHalvesOfTheBrowserLane` fails if either is
 dropped again.
+
+The first execution attempt incorrectly selected Chromium's stripped sysroot as
+a runtime and both suites died during process startup. The next attempt used the
+container's implicit native runtime; arm64 passed, while x86_64 could not resolve
+`libxkbcommon.so.0`. The test lane now separates compilation from execution and
+owns a dedicated runtime image whose construction asserts both target loaders
+and both `libxkbcommon.so.0` objects. The runtime package closure is not part of
+the repository-wide native-builder image or the Chromium product-builder
+identity.
 
 ## Phase 3 — Prove bounded incremental reuse
 

@@ -7,6 +7,8 @@ package enum ChromiumTaskIDs {
     package static let source = TaskID(rawValue: "browser.source")
     package static let builderDependencies = TaskID(
         rawValue: "browser.builder-dependencies")
+    package static let testRuntimeDependencies = TaskID(
+        rawValue: "browser.test-runtime-dependencies")
     package static let retention = TaskID(rawValue: "browser.retention")
 
     package static func build(
@@ -177,6 +179,15 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     ChromiumTaskIDs.builderDependencies),
                 storageClass: .cache,
                 root: cacheRoot.appending("build-container"),
+                safetyRoot: cacheRoot,
+                retentionPolicy: .singleWorkingSet),
+            StorageDeclaration(
+                id: "browser-test-runtime-metadata",
+                owner: descriptor.id,
+                producers: producers(
+                    ChromiumTaskIDs.testRuntimeDependencies),
+                storageClass: .cache,
+                root: cacheRoot.appending("test-runtime"),
                 safetyRoot: cacheRoot,
                 retentionPolicy: .singleWorkingSet),
             StorageDeclaration(
@@ -357,6 +368,17 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let builderResolverImageID = builderCache.appending("resolver-image-id")
         let builderDependencyImageID = builderCache.appending(
             "dependency-image-id")
+        let testRuntimeContext = chromium.appending("test-runtime")
+        let testRuntimeCache = cache.appending("test-runtime")
+        let testRuntimeInputRoot = testRuntimeCache.appending("inputs")
+        let generatedTestRuntimeContext = testRuntimeCache.appending(
+            "dependency-context")
+        let testRuntimeResolverOutput = testRuntimeCache.appending(
+            "apt-resolution")
+        let testRuntimeResolverImageID = testRuntimeCache.appending(
+            "resolver-image-id")
+        let testRuntimeImageID = testRuntimeCache.appending(
+            "dependency-image-id")
         let builderInputManifest = try ChromiumBuilderInputManifest.load(
             from: builderContext.appending("builder-inputs.json"))
         let childEnvironment = environment.merging([
@@ -466,12 +488,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 path: builderDependencyImageID,
                 validation: .regularFile)
         let builderDependencyTask = dependencyImageBuilder.build(
-            inputs: chromiumBuilderDependencyInputs(
+            inputs: chromiumDependencyImageInputs(
                 sourceContext: builderContext),
             locks: [.shared(cache.appending("locks/builder.lock"))],
             action:
                 try AnyColliderAction(
-                    PrepareChromiumBuilderDependencyImageAction(
+                    PrepareChromiumDependencyImageAction(
                         sourceContext: builderContext,
                         inputRoot: builderInputRoot,
                         generatedContext: generatedBuilderDependencyContext,
@@ -497,10 +519,53 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             imageName:
                                 "localhost/nucleus-chromium-build-dependencies",
                             environment: childEnvironment))))
+        var testRuntimeBuilder = TaskBuilder(
+            id: ChromiumTaskIDs.testRuntimeDependencies,
+            component: ComponentID(rawValue: "browser"))
+        testRuntimeBuilder.consume(dependencyImage)
+        let testRuntimeImage: ArtifactReference = try testRuntimeBuilder.output(
+            "image-id",
+            path: testRuntimeImageID,
+            validation: .regularFile)
+        let testRuntimeTask = testRuntimeBuilder.build(
+            inputs: chromiumDependencyImageInputs(
+                sourceContext: testRuntimeContext,
+                inputManifest: builderContext.appending("builder-inputs.json")),
+            locks: [.shared(testRuntimeCache.appending("builder.lock"))],
+            action: try AnyColliderAction(
+                PrepareChromiumDependencyImageAction(
+                    sourceContext: testRuntimeContext,
+                    inputRoot: testRuntimeInputRoot,
+                    generatedContext: generatedTestRuntimeContext,
+                    resolverOutput: testRuntimeResolverOutput,
+                    ubuntuSnapshot: builderInputManifest.ubuntuSnapshot,
+                    ubuntuSuites: builderInputManifest.aptRepositories.map(\.suite),
+                    initialDownloads: builderInputManifest.downloads(
+                        root: testRuntimeInputRoot),
+                    resolverPreparation: OCIImagePreparation(
+                        executionPlatform: .linuxARM64OCI,
+                        context: testRuntimeContext,
+                        containerFile: testRuntimeContext.appending(
+                            "Resolver.Containerfile"),
+                        imageID: testRuntimeResolverImageID,
+                        imageName: "localhost/nucleus-chromium-test-apt-resolver",
+                        environment: childEnvironment),
+                    dependencyPreparation: OCIImagePreparation(
+                        executionPlatform: .linuxARM64OCI,
+                        context: generatedTestRuntimeContext,
+                        containerFile: generatedTestRuntimeContext.appending(
+                            "Containerfile"),
+                        imageID: testRuntimeImageID,
+                        imageName: "localhost/nucleus-chromium-test-runtime",
+                        environment: childEnvironment))))
         let buildTool = OCIMountedEntrypoint(
             image: dependencyImage,
             executable: builderContext.appending("build-entrypoint.sh"),
             containerDirectory: "/collider-entrypoints/chromium-build")
+        let testRuntimeTool = OCIMountedEntrypoint(
+            image: testRuntimeImage,
+            executable: builderContext.appending("build-entrypoint.sh"),
+            containerDirectory: "/collider-entrypoints/chromium-test")
         let artifactTool = OCIMountedEntrypoint(
             image: dependencyImage,
             executable: builderContext.appending("artifact-entrypoint.sh"),
@@ -791,6 +856,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             testBuilder.consume(publication)
             testBuilder.consume(manifest)
             testBuilder.consume(buildTool.image)
+            testBuilder.consume(testRuntimeTool.image)
             testTasks.append(
                 testBuilder.build(
                     inputs: [buildTool.input],
@@ -815,17 +881,27 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         jobs: parallelJobs,
                                         targets: [],
                                         command: [
-                                            "test-ozone",
+                                            "build-ozone-tests",
                                             String(parallelJobs),
+                                        ],
+                                        environment: childEnvironment),
+                                    chromiumTestExecution(
+                                        target: target,
+                                        entrypoint: testRuntimeTool,
+                                        hostWorkingDirectory: source.appending(
+                                            "chromium/src"),
+                                        outputWorkspace: workspace,
+                                        command: [
+                                            "run-ozone-tests",
                                             target.architecture.rawValue,
                                         ],
-                                        environment: childEnvironment)
+                                        environment: childEnvironment),
                                 ]))))
         }
         return PreparedTasks(
             tasks: [
                 depotToolsTask, depotBootstrap,
-                sourceTask, builderDependencyTask,
+                sourceTask, builderDependencyTask, testRuntimeTask,
             ] + buildTasks + artifactTasks + packageInputTasks + [retention]
                 + testTasks,
             packageInputs: preparedPackageInputs)
@@ -905,19 +981,22 @@ public enum ChromiumColliderRecipe: ColliderComponent {
     }
 }
 
-private func chromiumBuilderDependencyInputs(
-    sourceContext: FilePath
+private func chromiumDependencyImageInputs(
+    sourceContext: FilePath,
+    inputManifest: FilePath? = nil
 ) -> [ArtifactInput] {
-    [
+    let inputs = [
         "Dependencies.Containerfile",
         "Resolver.Containerfile",
-        "builder-inputs.json",
         "packages.txt",
         "resolve-apt-packages.sh",
     ].map { .file(sourceContext.appending($0)) }
+    return inputs + [
+        .file(inputManifest ?? sourceContext.appending("builder-inputs.json"))
+    ]
 }
 
-private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
+private struct PrepareChromiumDependencyImageAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let sourceContext: FilePath
         let inputRoot: FilePath
@@ -940,7 +1019,7 @@ private struct PrepareChromiumBuilderDependencyImageAction: ColliderAction {
         }
     }
 
-    static let kind: ActionKind = "browser.prepare-builder-dependency-image"
+    static let kind: ActionKind = "browser.prepare-dependency-image"
 
     let sourceContext: FilePath
     let inputRoot: FilePath
@@ -1444,6 +1523,45 @@ private func chromiumBuildExecution(
         ]) { _, required in required },
         imageEntrypointOverride: entrypoint.containerPath,
         command: command ?? ["build", String(jobs)] + targets,
+        environment: environment,
+        output: .logged)
+}
+
+private func chromiumTestExecution(
+    target: ChromiumLinuxTarget,
+    entrypoint: OCIMountedEntrypoint,
+    hostWorkingDirectory: FilePath,
+    outputWorkspace: PersistentWorkspaceDeclaration,
+    command: [String],
+    environment: [String: String]
+) -> OCIExecution {
+    OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: target.artifactTarget,
+        imageID: entrypoint.image.path,
+        hostname: "chromium-test",
+        workingDirectory: "/build",
+        hostWorkingDirectory: hostWorkingDirectory,
+        mounts: [entrypoint.mount],
+        persistentWorkspaceMounts: [
+            OCIPersistentWorkspaceMount(
+                workspace: outputWorkspace,
+                target: "/build",
+                access: .readOnly)
+        ],
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: chromiumToolResourceLimits,
+        containerEnvironment: [
+            "HOME": "/tmp/nucleus-home",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "TZ": "UTC",
+        ],
+        imageEntrypointOverride: entrypoint.containerPath,
+        command: command,
         environment: environment,
         output: .logged)
 }

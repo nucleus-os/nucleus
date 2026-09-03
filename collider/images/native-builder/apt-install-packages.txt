@@ -110,7 +110,6 @@ libxcb-res0-dev:amd64
 libxcb-xfixes0-dev:amd64
 libxcb1-dev:amd64
 libxkbcommon-dev:amd64
-libxkbcommon0:amd64
 libxml2-dev:amd64
 libzstd-dev:amd64
 mesa-vulkan-drivers:amd64

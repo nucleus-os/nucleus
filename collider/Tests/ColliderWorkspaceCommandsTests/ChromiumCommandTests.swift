@@ -39,6 +39,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
                 ChromiumTaskIDs.source,
                 ChromiumTaskIDs.retention,
                 ChromiumTaskIDs.builderDependencies,
+                ChromiumTaskIDs.testRuntimeDependencies,
             ] + chromiumLinuxTargets.map(ChromiumTaskIDs.test)
                 + chromiumLinuxTargets.map(ChromiumTaskIDs.packageInput)))
     let orderedBuildTasks = try graph.orderedTasks(selecting: [
@@ -71,30 +72,44 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     let x86Target = ChromiumLinuxTarget(architecture: .x86_64)
     let test = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.test(x86Target) })
-    guard let testAction = test.action,
-        let execution = try await ociExecutions(in: test.action).first
+    guard let testAction = test.action
     else {
-        Issue.record("Chromium test compilation must use the builder")
+        Issue.record("Chromium test task must have an action")
         return
     }
+    let executions = try await ociExecutions(in: test.action)
+    let buildExecution = try #require(executions.first)
+    let runExecution = try #require(executions.last)
+    #expect(executions.count == 2)
     #expect(testAction.kind == "browser.run-tests")
     // The layout above asks for 16 jobs, which is what a product build gets
     // because the source lock gives it the host. The two ozone runs overlap
     // each other instead, one per architecture, so each is bounded by the
     // twelve CPUs its own container is actually given.
     #expect(
-        execution.command == [
-            "test-ozone", "12", x86Target.architecture.rawValue,
-        ])
-    #expect(execution.resourceLimits == .parallelBuild)
-    #expect(!execution.mounts.contains { $0.target == "/build" })
-    #expect(!execution.mounts.contains { $0.target == "/source" })
+        buildExecution.command == ["build-ozone-tests", "12"])
     #expect(
-        execution.imageEntrypointOverride
+        runExecution.command == [
+            "run-ozone-tests", x86Target.architecture.rawValue,
+        ])
+    #expect(buildExecution.resourceLimits == .parallelBuild)
+    #expect(!buildExecution.mounts.contains { $0.target == "/build" })
+    #expect(!buildExecution.mounts.contains { $0.target == "/source" })
+    #expect(
+        buildExecution.imageEntrypointOverride
             == "/collider-entrypoints/chromium-build/build-entrypoint.sh")
     #expect(
-        execution.persistentWorkspaceMounts.map(\.target)
+        buildExecution.persistentWorkspaceMounts.map(\.target)
             == ["/source", "/build", "/ccache"])
+    #expect(
+        runExecution.imageEntrypointOverride
+            == "/collider-entrypoints/chromium-test/build-entrypoint.sh")
+    #expect(
+        runExecution.persistentWorkspaceMounts.map(\.target) == ["/build"])
+    #expect(
+        test.dependencies.contains(ChromiumTaskIDs.builderDependencies))
+    #expect(
+        test.dependencies.contains(ChromiumTaskIDs.testRuntimeDependencies))
 
     let buildIDs = chromiumLinuxTargets.flatMap { target in
         ChromiumProduct.allCases.map { product in
