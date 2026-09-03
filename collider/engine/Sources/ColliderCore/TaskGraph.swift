@@ -478,9 +478,15 @@ public struct OCIExecution: Hashable, Sendable {
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
     public let executableRequirements: Set<OCIExecutableRequirement>
     public let resourceLimits: OCIResourceLimits
+    /// The environment the container process is given.
     public let containerEnvironment: [String: String]
     public let imageEntrypointOverride: String?
     public let command: [String]
+    /// The environment of the host-side work around an execution, not of the
+    /// execution. Nothing here reaches the container process: that comes from
+    /// `containerEnvironment` alone. A recipe that puts a variable the build
+    /// needs into this one is accepted and has no effect, which is how the
+    /// Chromium compiler cache spent months mounted and unwritten.
     public let environment: [String: String]
     public let output: CommandSpec.Output
 

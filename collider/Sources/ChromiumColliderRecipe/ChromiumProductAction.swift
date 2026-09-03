@@ -111,12 +111,6 @@ package struct BuildChromiumProductAction: ColliderAction {
         build.sourceRoot.appending("chromium/src")
     }
 
-    private var chromiumEnvironment: [String: String] {
-        build.environment.merging(chromiumCompilerCacheEnvironment) {
-            _, required in required
-        }
-    }
-
     private func stagedGNArguments(files: ActionFileSystem) throws -> String {
         try files.createDirectory(build.inputRoot)
         guard build.target.architecture == .x86_64 else {
@@ -178,17 +172,24 @@ package struct BuildChromiumProductAction: ColliderAction {
             // other half idle for four hours. Resource limits are outside task
             // identity, so this changes what a build is given, not what it is.
             resourceLimits: .build,
-            containerEnvironment: [
+            // The compiler cache settings belong here and nowhere else: this
+            // is the dictionary the container process is given. Declared as
+            // `environment` they were accepted, recorded, and never delivered,
+            // so every compilation ran a ccache with no `CCACHE_DIR`, which
+            // fell back to a directory under the container's own ephemeral
+            // HOME and was discarded when the container exited. The `/ccache`
+            // workspace was mounted for months and never written to.
+            containerEnvironment: chromiumCompilerCacheEnvironment.merging([
                 "DEPOT_TOOLS_UPDATE": "0",
                 "HOME": "/tmp/nucleus-home",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TZ": "UTC",
-            ],
+            ]) { _, required in required },
             imageEntrypointOverride: build.entrypoint.containerPath,
             command: command,
-            environment: chromiumEnvironment,
+            environment: build.environment,
             output: output)
     }
 

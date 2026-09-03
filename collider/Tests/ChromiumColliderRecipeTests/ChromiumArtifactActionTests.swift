@@ -159,10 +159,14 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
 
     let build = try #require(
         await executions.values().first { $0.command.first == "build" })
-    #expect(build.environment["CCACHE_DIR"] == "/ccache")
-    #expect(build.environment["CCACHE_DEPEND"] == "1")
-    #expect(build.environment["CCACHE_SLOPPINESS"] == "modules")
-    #expect(build.environment["CCACHE_COMPILERCHECK"] == "content")
+    // Asserted on `containerEnvironment`, which is the only environment the
+    // container process is given. The first version of this test read
+    // `environment` and passed against a build whose ccache was receiving no
+    // configuration at all.
+    #expect(build.containerEnvironment["CCACHE_DIR"] == "/ccache")
+    #expect(build.containerEnvironment["CCACHE_DEPEND"] == "1")
+    #expect(build.containerEnvironment["CCACHE_SLOPPINESS"] == "modules")
+    #expect(build.containerEnvironment["CCACHE_COMPILERCHECK"] == "content")
     #expect(build.persistentWorkspaceMounts.contains { $0.target == "/ccache" })
 
     // The source lock serializes the product builds, so each one has the host
