@@ -157,7 +157,10 @@ case "${1:-}" in
 #include "include/cef_version_info.h"
 int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }
 EOF
-    /usr/bin/clang \
+    # Chromium's own toolchain, which is on PATH and is what built the SDK
+    # being validated. No image here installs a compiler, and the checked-in
+    # one is x86_64, so the execution declares that and is given translation.
+    clang \
       --target="$triple" \
       --sysroot="$sysroot" \
       -fuse-ld=lld \

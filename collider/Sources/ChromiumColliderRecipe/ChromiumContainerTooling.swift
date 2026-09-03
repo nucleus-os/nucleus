@@ -27,6 +27,7 @@ func chromiumToolExecution(
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
+    executableRequirements: Set<OCIExecutableRequirement> = [],
     command: [String],
     environment: [String: String],
     output: CommandSpec.Output = .logged
@@ -44,6 +45,7 @@ func chromiumToolExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
+        executableRequirements: executableRequirements,
         resourceLimits: chromiumToolResourceLimits,
         containerEnvironment: [
             "DEPOT_TOOLS_UPDATE": "0",

@@ -504,8 +504,15 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
             $0.executionPlatform == .linuxARM64OCI
                 && $0.artifactTarget == target.artifactTarget
         })
+    // Assembling and archiving move files and need no translation. Validation
+    // compiles a consumer against the SDK, with Chromium's checked-in x86_64
+    // clang, and without declaring that it got no translation and no compiler:
+    // the step failed with `/usr/bin/clang: No such file or directory`.
     #expect(recorded[0].executableRequirements.isEmpty)
-    #expect(recorded[1].executableRequirements.isEmpty)
+    #expect(
+        recorded[1].executableRequirements.contains {
+            $0.architecture == .x86_64 && $0.executable.hasSuffix("clang++")
+        })
     #expect(recorded[2].executableRequirements.isEmpty)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(

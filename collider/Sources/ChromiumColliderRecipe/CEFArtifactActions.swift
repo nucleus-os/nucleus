@@ -255,6 +255,11 @@ private func validateCEFSDK(
                 OCIMount(boundedExport: smoke, target: "/smoke"),
             ],
             persistentWorkspaceMounts: [assembly.readOnlySourceMount],
+            // Unlike every other tool execution, this one compiles: it builds
+            // a consumer against the SDK to prove the SDK is consumable. The
+            // compiler is Chromium's checked-in x86_64 clang, so this is the
+            // one artifact execution that needs translation.
+            executableRequirements: chromiumBuildExecutableRequirements,
             command: ["validate-cef", assembly.target.architecture.rawValue],
             environment: environment,
             output: .logged))
