@@ -164,6 +164,11 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
     #expect(build.environment["CCACHE_SLOPPINESS"] == "modules")
     #expect(build.environment["CCACHE_COMPILERCHECK"] == "content")
     #expect(build.persistentWorkspaceMounts.contains { $0.target == "/ccache" })
+
+    // The source lock serializes the product builds, so each one has the host
+    // to itself. Half an allocation would leave the other half idle for hours.
+    #expect(build.resourceLimits == .build)
+    #expect(build.resourceLimits != .parallelBuild)
 }
 
 @Test(arguments: PlatformArchitecture.allCases)

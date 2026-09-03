@@ -78,10 +78,15 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         return
     }
     #expect(testAction.kind == "browser.run-tests")
+    // The layout above asks for 16 jobs, which is what a product build gets
+    // because the source lock gives it the host. The two ozone runs overlap
+    // each other instead, one per architecture, so each is bounded by the
+    // twelve CPUs its own container is actually given.
     #expect(
         execution.command == [
-            "test-ozone", "16", x86Target.architecture.rawValue,
+            "test-ozone", "12", x86Target.architecture.rawValue,
         ])
+    #expect(execution.resourceLimits == .parallelBuild)
     #expect(!execution.mounts.contains { $0.target == "/build" })
     #expect(!execution.mounts.contains { $0.target == "/source" })
     #expect(

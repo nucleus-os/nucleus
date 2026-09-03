@@ -168,7 +168,11 @@ package struct BuildChromiumProductAction: ColliderAction {
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
             executableRequirements: chromiumBuildExecutableRequirements,
-            resourceLimits: .parallelBuild,
+            // The source lock serializes every Chromium product build, so this
+            // one has the host to itself and asking for half of it leaves the
+            // other half idle for four hours. Resource limits are outside task
+            // identity, so this changes what a build is given, not what it is.
+            resourceLimits: .build,
             containerEnvironment: [
                 "DEPOT_TOOLS_UPDATE": "0",
                 "HOME": "/tmp/nucleus-home",
