@@ -18,6 +18,7 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
 
 - The user may edit concurrently. Never revert changes without explicit permission, even if they break builds.
 - When asked to commit or push, do it on the current branch (including `main`). Create a new branch only when the user explicitly asks for one; do not branch off `main` by default.
+- When the current branch has unpublished local commits and its upstream has advanced, rebase the local commits onto upstream by default to preserve linear history. Create a merge commit only when the user explicitly requests one or when integrating already-published history that must not be rewritten.
 - Run build and test verification through the installed `collider` command. Its workspace launcher derives the host environment and refreshes the release Collider executable whenever the current Git/toolchain source fingerprint changes. Do not source `tools/host-env.sh` manually or invoke `collider/.build/.../collider` directly. On a host with a machine build store, a command that executes a task graph re-runs itself as `nucleus-builder` through the root launcher and says so on standard error; inspection and dry runs stay in the invoking account. Do not invoke `nucleus-builder-run` by hand, and do not add an operation to its grammar to reach one: Collider decides what must cross.
 - Protected `main` CI is the verification sweep, and it runs the full build and
   test graph on the newest pushed revision containing a non-documentation
