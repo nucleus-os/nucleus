@@ -27,13 +27,12 @@ private struct NativeSDKCompilerConfiguration {
 }
 
 package struct ComponentRegistry {
-    /// Names the package-root view every Swift build lane mounts.
-    ///
-    /// One view, not one per lane. What a container reads from the checkout is
-    /// decided by a manifest rather than by a target architecture, and the
-    /// package-input assembly runs two lanes in a single container, where two
-    /// views claiming the same package root would be a conflicting mount.
-    static let packageRootViewIdentifier = "checkout"
+    /// Package projections are separated by semantic consumer. Architecture
+    /// variants of one product share a view, while the runtime assembler gets
+    /// its own superset: changing build-tool source or manifest-only inputs
+    /// must not invalidate Nucleus product compilation.
+    static let nucleusPackageRootViewIdentifier = "nucleus"
+    static let assemblerPackageRootViewIdentifier = "assembler"
 
     package let context: WorkspaceContext
 
@@ -76,15 +75,18 @@ package struct ComponentRegistry {
             ).appending("android/gfxstream"),
             placement: context.identityPathMap
         ).checkoutIncludeRoots
-        // Both derivations share their package roots so that coalescing stops
-        // at the same places and the assembler set stays a superset of the
-        // Nucleus one, which is what lets one view hold both.
-        let packageRoots =
-            (nucleusGraph.manifestPaths
-            + assemblerGraph.manifestPaths).map {
+        let nucleusPackageRoots = nucleusGraph.manifestPaths.map {
+            $0.removingLastComponent()
+        }
+        let assemblerPackageRoots =
+            (nucleusGraph.manifestPaths + assemblerGraph.manifestPaths).map {
                 $0.removingLastComponent()
             }
-        let sharedExactRoots =
+        let pkgConfigRoot = context.layout.swiftSDK.appending("pkgconfig")
+        let assemblerPkgConfigFiles = try FileManager.default.contentsOfDirectory(
+            atPath: pkgConfigRoot.string
+        ).filter { $0.hasSuffix(".pc") }.map { pkgConfigRoot.appending($0) }
+        let nucleusExactRoots =
             nucleusIncludeRoots + nucleusGraph.headerSearchRoots
             // Not everything a container reads from the checkout is in
             // the package graph. These directories hold data a product is
@@ -101,12 +103,6 @@ package struct ComponentRegistry {
             + [
                 context.layout.compositorSessionPackage,
                 context.layout.androidRuntime.appending("container"),
-                // SwiftPM evaluates every system-library declaration while it
-                // loads the root manifest, including when this view builds
-                // only Collider's runtime tools. Make the first-party
-                // pkg-config contracts visible so graph evaluation does not
-                // diagnose valid libraries as absent.
-                context.layout.swiftSDK.appending("pkgconfig"),
             ]
         // What a Nucleus build reads. Collider's own source is not among it:
         // the assembler is the only product compiled from that package, and a
@@ -114,16 +110,16 @@ package struct ComponentRegistry {
         // change to the build tool.
         let checkoutRoots = checkoutSourceRoots(
             root: context.root,
-            packageRoots: packageRoots,
+            packageRoots: nucleusPackageRoots,
             widened: nucleusGraph.targetRoots,
-            exact: sharedExactRoots)
+            exact: nucleusExactRoots)
         // The assembler compiles Collider's source and the Nucleus packages it
         // depends on, so it reads both.
         let assemblerCheckoutRoots = checkoutSourceRoots(
             root: context.root,
-            packageRoots: packageRoots,
+            packageRoots: assemblerPackageRoots,
             widened: nucleusGraph.targetRoots + assemblerGraph.targetRoots,
-            exact: sharedExactRoots + assemblerGraph.headerSearchRoots)
+            exact: nucleusExactRoots + assemblerGraph.headerSearchRoots)
         let packageRootViewRoot = nativeBuilderCache.appending("package-root-views")
         let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
             repositoryRoot: context.root,
@@ -134,10 +130,10 @@ package struct ComponentRegistry {
             identityPathMap: context.identityPathMap,
             packageRootViews: [
                 try PackageRootViewRequest(
-                    identifier: Self.packageRootViewIdentifier,
+                    identifier: Self.nucleusPackageRootViewIdentifier,
                     root: context.root,
                     view: packageRootViewRoot.appending(
-                        Self.packageRootViewIdentifier),
+                        Self.nucleusPackageRootViewIdentifier),
                     // A resolved graph names every package it contains,
                     // including external dependencies checked out into the
                     // build store. Those reach a container through the
@@ -145,12 +141,10 @@ package struct ComponentRegistry {
                     // so the view carries only the manifests that are part of
                     // the checkout it projects. `checkoutSourceRoots` applies
                     // the same cut to directories.
-                    files: (nucleusGraph.manifestPaths
-                        + assemblerGraph.manifestPaths)
+                    files: nucleusGraph.manifestPaths
                         .filter { $0.starts(with: context.root) }
                         + [
                             context.root.appending("Package.resolved"),
-                            assemblerRoot.appending("Package.resolved"),
                             context.root.appending(
                                 "swift-sdk/linux-builder-toolset.json"),
                         ]
@@ -160,12 +154,37 @@ package struct ComponentRegistry {
                         // it resolved against. Without it a container sees
                         // `Package.resolved` naming a location the manifest
                         // does not declare and fetches it.
+                        + [context.root]
+                        .map { swiftPMMirrorConfiguration(under: $0) }
+                        .filter {
+                            FileManager.default.fileExists(atPath: $0.string)
+                        },
+                    nestedDirectories: checkoutRoots),
+                try PackageRootViewRequest(
+                    identifier: Self.assemblerPackageRootViewIdentifier,
+                    root: context.root,
+                    view: packageRootViewRoot.appending(
+                        Self.assemblerPackageRootViewIdentifier),
+                    files: (nucleusGraph.manifestPaths + assemblerGraph.manifestPaths)
+                        .filter { $0.starts(with: context.root) }
+                        // The assembler parses the root manifest but does not
+                        // consume the target SDK that normally supplies these
+                        // first-party pkg-config contracts. Copying the files
+                        // into only this view makes their contents declared
+                        // inputs without widening Nucleus build identities.
+                        + assemblerPkgConfigFiles
+                        + [
+                            context.root.appending("Package.resolved"),
+                            assemblerRoot.appending("Package.resolved"),
+                            context.root.appending(
+                                "swift-sdk/linux-builder-toolset.json"),
+                        ]
                         + [context.root, assemblerRoot]
                         .map { swiftPMMirrorConfiguration(under: $0) }
                         .filter {
                             FileManager.default.fileExists(atPath: $0.string)
                         },
-                    nestedDirectories: assemblerCheckoutRoots)
+                    nestedDirectories: assemblerCheckoutRoots),
             ])
         let androidToolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
@@ -1082,7 +1101,7 @@ package struct ComponentRegistry {
         checkoutRoots: [FilePath]
     ) async throws -> SwiftPMInvocation {
         let packageRootView = try builder.packageRootView(
-            ComponentRegistry.packageRootViewIdentifier)
+            ComponentRegistry.nucleusPackageRootViewIdentifier)
         let root = context.layout.root
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
@@ -1250,7 +1269,7 @@ package struct ComponentRegistry {
         checkoutRoots: [FilePath]
     ) async throws -> SwiftPMInvocation {
         let assemblerView = try builder.packageRootView(
-            ComponentRegistry.packageRootViewIdentifier)
+            ComponentRegistry.assemblerPackageRootViewIdentifier)
         let root = context.layout.root
         let packageRoot = root.appending("collider")
         let scratchRoot = context.cacheRoot.appending(

@@ -572,12 +572,18 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 execution.containerEnvironment["PKG_CONFIG_PATH"]
                     == fixturePlacement.executionPath(
                         fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")))
+            let assemblerView = try #require(
+                execution.inputArtifacts.first {
+                    $0.producer.rawValue == "native.package-root-view.assembler"
+                })
+            #expect(
+                !execution.inputArtifacts.contains {
+                    $0.producer.rawValue == "native.package-root-view.nucleus"
+                })
             #expect(
                 execution.mounts.contains {
-                    $0.source == fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")
-                        && $0.target
-                            == fixturePlacement.executionPath(
-                                fixtureRepositoryRoot.appending("swift-sdk/pkgconfig"))
+                    $0.source == assemblerView.path
+                        && $0.target == fixturePlacement.executionPath(fixtureRepositoryRoot)
                 })
         } else {
             Issue.record("the runtime assembler must execute in OCI")
@@ -788,12 +794,19 @@ private func fixtureNativeBuilder(
         "active-sdk",
         path: swiftSDKRoot,
         validation: .symlinkTarget)
-    var viewProducer = TaskBuilder(
-        id: TaskID(rawValue: "native.package-root-view.checkout"),
+    var nucleusViewProducer = TaskBuilder(
+        id: TaskID(rawValue: "native.package-root-view.nucleus"),
         component: ComponentID(rawValue: "native"))
-    let packageRootView: ArtifactReference = try viewProducer.output(
+    let nucleusPackageRootView: ArtifactReference = try nucleusViewProducer.output(
         "view",
-        path: imageID.removingLastComponent().appending("package-root-views/checkout"),
+        path: imageID.removingLastComponent().appending("package-root-views/nucleus"),
+        validation: .nonEmptyDirectory)
+    var assemblerViewProducer = TaskBuilder(
+        id: TaskID(rawValue: "native.package-root-view.assembler"),
+        component: ComponentID(rawValue: "native"))
+    let assemblerPackageRootView: ArtifactReference = try assemblerViewProducer.output(
+        "view",
+        path: imageID.removingLastComponent().appending("package-root-views/assembler"),
         validation: .nonEmptyDirectory)
     return NativeOCIConfiguration(
         base: NativeOCIBaseConfiguration(
@@ -806,7 +819,10 @@ private func fixtureNativeBuilder(
             androidNDKRoot: "/opt/android-ndk-r30-beta3"),
         swiftSDK: swiftSDK,
         nativeSysroot: swiftSDK,
-        packageRootViews: ["checkout": packageRootView])
+        packageRootViews: [
+            ComponentRegistry.nucleusPackageRootViewIdentifier: nucleusPackageRootView,
+            ComponentRegistry.assemblerPackageRootViewIdentifier: assemblerPackageRootView,
+        ])
 }
 
 private func fixtureICULibrary(
@@ -910,7 +926,7 @@ private func fixtureReactNativeNodeModules(
     // The package-root view is an input artifact, not just a mount: that is
     // what makes the task producing it run before the build that reads it.
     let view = try builder.packageRootView(
-        ComponentRegistry.packageRootViewIdentifier)
+        ComponentRegistry.nucleusPackageRootViewIdentifier)
     #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay, view])
     #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay, view])
     #expect(
