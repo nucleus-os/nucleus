@@ -567,6 +567,21 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 "collider-cli:nucleus-linux-assembler"
             ])
         let assembler = try #require(task.swiftProducts.first)
+        if case .oci(let execution) = assembler.invocation.context.execution {
+            #expect(
+                execution.containerEnvironment["PKG_CONFIG_PATH"]
+                    == fixturePlacement.executionPath(
+                        fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")))
+            #expect(
+                execution.mounts.contains {
+                    $0.source == fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")
+                        && $0.target
+                            == fixturePlacement.executionPath(
+                                fixtureRepositoryRoot.appending("swift-sdk/pkgconfig"))
+                })
+        } else {
+            Issue.record("the runtime assembler must execute in OCI")
+        }
         #expect(
             assembler.inputs.contains {
                 artifactInput($0, containsPathComponent: "LinuxPackageAssembly")
@@ -1173,6 +1188,10 @@ private func fixtureReactNativeNodeModules(
             ColliderSelfTaskIDs.cliTests,
             ColliderSelfTaskIDs.engineTests,
         ])
+    for id in [ColliderSelfTaskIDs.cliTests, ColliderSelfTaskIDs.engineTests] {
+        let task = try #require(catalog.tasks.first { $0.id == id })
+        #expect(task.swiftTests.first?.invocation.context.debugInformationFormat == .none)
+    }
     #expect(
         try selectedTestTasks(in: catalog, selection: "runtime").map(\.rawValue) == [
             "linux.arm64.test"

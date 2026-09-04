@@ -29,7 +29,13 @@ enum ColliderSelfComponent {
             testProduct: "collider-cliPackageTests",
             invocation: try await context.swiftPMInvocation(
                 packageRoot: packageRoot,
-                configuration: .release),
+                configuration: .release,
+                // These products are execution-only CI gates. Keeping DWARF
+                // makes the linker chase explicit Clang modules through the
+                // placement-independent prefix map after SwiftPM has removed
+                // them, producing hundreds of missing-PCM diagnostics without
+                // making the test binaries more useful.
+                debugInformationFormat: .none),
             environment: context.taskEnvironment)
         let engine = testTask(
             id: ColliderSelfTaskIDs.engineTests,
@@ -37,7 +43,8 @@ enum ColliderSelfComponent {
             testProduct: "enginePackageTests",
             invocation: try await context.swiftPMInvocation(
                 packageRoot: engineRoot,
-                configuration: .release),
+                configuration: .release,
+                debugInformationFormat: .none),
             environment: context.taskEnvironment)
         return try ComponentDefinition(
             descriptor: descriptor,

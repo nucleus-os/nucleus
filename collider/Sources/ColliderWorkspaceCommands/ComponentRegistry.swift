@@ -101,6 +101,12 @@ package struct ComponentRegistry {
             + [
                 context.layout.compositorSessionPackage,
                 context.layout.androidRuntime.appending("container"),
+                // SwiftPM evaluates every system-library declaration while it
+                // loads the root manifest, including when this view builds
+                // only Collider's runtime tools. Make the first-party
+                // pkg-config contracts visible so graph evaluation does not
+                // diagnose valid libraries as absent.
+                context.layout.swiftSDK.appending("pkgconfig"),
             ]
         // What a Nucleus build reads. Collider's own source is not among it:
         // the assembler is the only product compiled from that package, and a
@@ -1284,6 +1290,8 @@ package struct ComponentRegistry {
                     "HOME": "/home/nucleus-build",
                     "LD_LIBRARY_PATH":
                         "/opt/swift/usr/lib/swift/linux:/opt/swift-compat/arm64",
+                    "PKG_CONFIG_PATH": context.identityPathMap.executionPath(
+                        context.layout.swiftSDK.appending("pkgconfig")),
                     "SWIFTPM_CUSTOM_BIN_DIR": "/opt/swift/usr/bin",
                     "PATH":
                         "/swiftpm-overlay/usr/bin:/opt/swift/usr/bin:"
