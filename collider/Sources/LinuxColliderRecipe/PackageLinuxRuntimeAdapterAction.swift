@@ -69,7 +69,9 @@ package struct PackageLinuxRuntimeAdapterAction: ColliderAction {
         let containerPath = placement.executionPath
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
-        var mounts = assemblerOCI.mounts.filter { $0.source != repositoryRoot }
+        var mounts = assemblerOCI.mounts.filter {
+            $0.target != containerPath(repositoryRoot)
+        }
         for mount in [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,

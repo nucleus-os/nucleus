@@ -70,13 +70,15 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
 
         // Every path this execution names is the path the container sees.
         let containerPath = placement.executionPath
-        var mounts = assemblerOCI.mounts
+        let repositoryRoot = assemblerSwiftPM.context.packageRoot.removingLastComponent()
+        let repositoryTarget = containerPath(repositoryRoot)
+        var mounts = assemblerOCI.mounts.filter { $0.target != repositoryTarget }
         // The signing key is a file, and a mount names a directory, so its
         // holding directory crosses read-only. The key never leaves the
         // container: the tool derives its public half to verify the image
         // chain the AOSP build already signed.
         let signingKeyRoot = aospSigningKey.removingLastComponent()
-        for mount in runtimeInputMounts + [
+        for mount in runtimeInputMounts.filter({ $0.target != repositoryTarget }) + [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
                 target: containerPath(assemblerSwiftPM.productsDirectory),

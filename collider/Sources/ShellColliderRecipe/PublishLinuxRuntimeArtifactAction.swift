@@ -45,7 +45,9 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
         // their host locations would make one artifact's identity depend on
         // where this checkout and cache happen to sit.
         let containerPath = placement.executionPath
-        var mounts = runtimeOCI.mounts
+        var mounts = runtimeOCI.mounts.filter {
+            $0.target != containerPath(runtimeSwiftPM.context.packageRoot)
+        }
         let runtimeProducts = OCIMount(
             source: runtimeSwiftPM.productsDirectory,
             target: containerPath(runtimeSwiftPM.productsDirectory),

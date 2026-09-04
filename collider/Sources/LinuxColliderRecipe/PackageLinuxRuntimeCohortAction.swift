@@ -50,7 +50,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter {
-            $0.source != repositoryRoot
+            $0.target != containerPath(repositoryRoot)
         }
         let sourceSnapshotRoot = sourceSnapshot.removingLastComponent()
         try appendMount(

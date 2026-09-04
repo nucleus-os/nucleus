@@ -638,8 +638,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                     access: .readOnly)))
         #expect(
             !execution.mounts.contains {
-                $0.source == root
-                    && $0.target == fixturePlacement.executionPath(root)
+                $0.target == fixturePlacement.executionPath(root)
             })
         #expect(
             !execution.mounts.contains {
@@ -726,7 +725,7 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
             #expect(outputMount.purpose == .boundedExport)
             #expect(
                 !qualificationExecution.mounts.contains {
-                    $0.source == root && $0.target == root.string
+                    $0.target == fixturePlacement.executionPath(root)
                 })
         }
     }

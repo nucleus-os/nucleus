@@ -40,7 +40,10 @@ package struct PublishAOSPSigningIdentityAction: ColliderAction {
         // Every path this execution names is the path the container sees.
         let containerPath = placement.executionPath
         let identityRoot = preparation.destination.removingLastComponent()
-        var mounts = assemblerOCI.mounts
+        let repositoryRoot = assemblerSwiftPM.context.packageRoot.removingLastComponent()
+        var mounts = assemblerOCI.mounts.filter {
+            $0.target != containerPath(repositoryRoot)
+        }
         for mount in [
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,

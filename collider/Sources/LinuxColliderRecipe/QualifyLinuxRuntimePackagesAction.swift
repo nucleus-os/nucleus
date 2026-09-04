@@ -46,7 +46,7 @@ package struct QualifyLinuxRuntimePackagesAction: ColliderAction {
         let repositoryRoot = assemblerSwiftPM.context.packageRoot
             .removingLastComponent()
         var mounts = assemblerOCI.mounts.filter {
-            $0.source != repositoryRoot
+            $0.target != containerPath(repositoryRoot)
         }
         try appendQualificationMount(
             OCIMount(
