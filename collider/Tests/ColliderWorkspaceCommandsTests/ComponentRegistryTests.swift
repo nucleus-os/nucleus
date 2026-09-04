@@ -1190,7 +1190,9 @@ private func fixtureReactNativeNodeModules(
         ])
     for id in [ColliderSelfTaskIDs.cliTests, ColliderSelfTaskIDs.engineTests] {
         let task = try #require(catalog.tasks.first { $0.id == id })
-        #expect(task.swiftTests.first?.invocation.context.debugInformationFormat == .none)
+        #expect(
+            task.swiftTests.first?.invocation.context.debugInformationFormat
+                == SwiftDebugInformationFormat.none)
     }
     #expect(
         try selectedTestTasks(in: catalog, selection: "runtime").map(\.rawValue) == [

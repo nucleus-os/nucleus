@@ -35,7 +35,7 @@ enum ColliderSelfComponent {
                 // placement-independent prefix map after SwiftPM has removed
                 // them, producing hundreds of missing-PCM diagnostics without
                 // making the test binaries more useful.
-                debugInformationFormat: .none),
+                debugInformationFormat: SwiftDebugInformationFormat.none),
             environment: context.taskEnvironment)
         let engine = testTask(
             id: ColliderSelfTaskIDs.engineTests,
@@ -44,7 +44,7 @@ enum ColliderSelfComponent {
             invocation: try await context.swiftPMInvocation(
                 packageRoot: engineRoot,
                 configuration: .release,
-                debugInformationFormat: .none),
+                debugInformationFormat: SwiftDebugInformationFormat.none),
             environment: context.taskEnvironment)
         return try ComponentDefinition(
             descriptor: descriptor,
