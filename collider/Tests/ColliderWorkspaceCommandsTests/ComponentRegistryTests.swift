@@ -574,11 +574,11 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                         fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")))
             let assemblerView = try #require(
                 execution.inputArtifacts.first {
-                    $0.producer.rawValue == "native.package-root-view.assembler"
+                    $0.path.string.hasSuffix("/package-root-views/assembler")
                 })
             #expect(
                 !execution.inputArtifacts.contains {
-                    $0.producer.rawValue == "native.package-root-view.nucleus"
+                    $0.path.string.hasSuffix("/package-root-views/nucleus")
                 })
             #expect(
                 execution.mounts.contains {
