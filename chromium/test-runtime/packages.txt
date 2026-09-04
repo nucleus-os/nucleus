@@ -1,1 +1,2 @@
+libgbm1:amd64
 libxkbcommon0:amd64

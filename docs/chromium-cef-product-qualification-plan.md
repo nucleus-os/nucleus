@@ -108,9 +108,10 @@ a runtime and both suites died during process startup. The next attempt used the
 container's implicit native runtime; arm64 passed, while x86_64 could not resolve
 `libxkbcommon.so.0`. The test lane now separates compilation from execution and
 owns a dedicated runtime image whose construction asserts both target loaders
-and both `libxkbcommon.so.0` objects. The runtime package closure is not part of
-the repository-wide native-builder image or the Chromium product-builder
-identity.
+and the target libraries required by the focused binaries, including x86_64
+`libgbm.so.1` and both `libxkbcommon.so.0` objects. The runtime package closure
+is not part of the repository-wide native-builder image or the Chromium
+product-builder identity.
 
 ## Phase 3 — Prove bounded incremental reuse
 

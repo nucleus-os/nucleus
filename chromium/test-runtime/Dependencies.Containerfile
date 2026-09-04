@@ -16,6 +16,7 @@ RUN mkdir -p /tmp/nucleus-empty-apt-sources \
     && test -x /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 \
     && test -e /usr/lib/aarch64-linux-gnu/libxkbcommon.so.0 \
     && test -x /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+    && test -e /usr/lib/x86_64-linux-gnu/libgbm.so.1 \
     && test -e /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0 \
     && test -x /lib64/ld-linux-x86-64.so.2 \
     && rm -rf \
