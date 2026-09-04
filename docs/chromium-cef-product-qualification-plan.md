@@ -79,7 +79,9 @@ closure because Apple Intel translation cannot load CEF's relocation table. Run
 each browser artifact validator and each target's focused Ozone and Viz presenter
 suite. Chromium's stripped sysroots remain compile/link inputs and are never
 used as runtime roots. Each test executes through the target architecture's
-loader with the test-runtime image's explicit multiarch library path. Verify
+kernel-selected loader with the test-runtime image's explicit multiarch library
+path. This preserves Chromium's `/proc/self/exe` contract for locating runtime
+data while keeping translated x86_64 processes out of arm64 directories. Verify
 dynamic-library resolution, sandbox ownership, product metadata, source
 provenance, launcher syntax, and absence of SwiftShader and unsupported renderer
 fallbacks.

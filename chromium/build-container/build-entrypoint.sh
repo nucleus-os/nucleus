@@ -26,7 +26,7 @@ target_runtime() {
     return 1
   fi
 
-  printf '%s\n%s\n' "$loader" "/build:/lib/$triple:/usr/lib/$triple"
+  printf '%s\n' "/build:/lib/$triple:/usr/lib/$triple"
 }
 
 case "${1:-}" in
@@ -161,18 +161,16 @@ case "${1:-}" in
       ninja --offline -local_jobs="$2" -C /build \
       ui/ozone:ozone_unittests \
       components/viz/service:output_presenter_ozone_unittests
-    runtime_output="$(target_runtime "$3")"
-    mapfile -t runtime <<<"$runtime_output"
-    loader="${runtime[0]}"
-    library_path="${runtime[1]}"
+    library_path="$(target_runtime "$3")"
 
     # The Chromium sysroot remains a compile-and-link input. Execution uses
     # the pinned multiarch runtime installed in the test-runtime image. It
-    # selects the target loader and library directories explicitly, so a
-    # translated x86_64 process never inherits the ARM64 runtime search path.
+    # lets the kernel select the target loader so Chromium still observes its
+    # own executable through /proc/self/exe, while the explicit library path
+    # keeps a translated x86_64 process out of the ARM64 runtime directories.
     run_suite() {
         local name="$1" filter="$2" status=0
-        "$loader" --library-path "$library_path" "/build/$name" \
+        env LD_LIBRARY_PATH="$library_path" "/build/$name" \
             "--gtest_filter=$filter" --single-process-tests || status=$?
         if [[ "$status" -ne 0 ]]; then
             # A signal reads as 128 + n and is otherwise an unexplained number.
@@ -193,7 +191,7 @@ case "${1:-}" in
     # else, and buffered output does not survive one.
     probe_start() {
         local name="$1" status=0
-        "$loader" --library-path "$library_path" "/build/$name" \
+        env LD_LIBRARY_PATH="$library_path" "/build/$name" \
             --gtest_list_tests >/dev/null 2>&1 || status=$?
         if [[ "$status" -eq 0 ]]; then
             echo "probe: $name starts and enumerates its tests"
