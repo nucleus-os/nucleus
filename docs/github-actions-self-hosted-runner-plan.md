@@ -761,8 +761,10 @@ completed, but the following automated plan selected the prior CI identity for
 two plans isolated a physical checkout path in environment values and host
 SwiftPM arguments, which now resolves through the declared placement map. The
 next local-to-automated pair establishes these corrected identities and measures
-the placement gate. Tests, packaging, qualification, and delivery join the
-workflow only after that measurement passes.
+the placement gate. Tests, packaging, and package lifecycle qualification now
+run in the protected-main sweep; product-store qualification and delivery
+remain pending. Their execution does not establish the reverse-order cache
+reuse gate.
 
 Read-only commands no longer create durable run records, reconcile abandoned
 builder runs, create task-state directories, or persist planning digest indexes.
@@ -937,6 +939,11 @@ Status: active. The host-contract, provenance, build, test, and Linux-runtime
 packaging lanes run as one prepared `collider verify all` graph on protected
 main, and their evidence outlives ordinary local work. Product-store
 qualification and delivery remain pending.
+
+Gate evidence: [protected-main run 33831059003](https://github.com/nucleus-os/nucleus/actions/runs/33831059003)
+verified revision `f1fa6fcbea5a471386661c7937326ad82aed2fcd` with 102 clean
+tasks, 30 executed tasks, and no failures. Both architectures' native package
+cohorts and package lifecycle qualification completed in the same graph.
 
 Packaging is requested by the same function that requests building and testing,
 last, because it consumes what they produce. It carries the browser prerequisite

@@ -237,7 +237,7 @@ Gate: `collider package linux-runtime` assembles and qualifies both
 architectures' complete cohorts, including `nucleus-android`, from graph-produced
 inputs alone, and the complete verification graph runs it on protected `main`.
 
-Status: active. Each architecture's Android payload consumes its package-input
+Status: complete. Each architecture's Android payload consumes its package-input
 artifact, and the synthesized default input path is gone along with
 `--android-arm64`, `--android-x86-64`, and the path-supplied
 `collider android-runtime package-input` command.
@@ -250,9 +250,11 @@ beside their amd64 counterparts, alongside `nucleus`, `nucleus-runtime`,
 `nucleus-browser`, `nucleus-development-host`, and `nucleus-session` in all
 three families.
 
-The remaining half is the verification graph running it on protected `main`.
-`collider verify all` now requests the packaging entrypoint, so the graph
-includes it; what remains is a sweep completing it.
+The protected-main gate passed in
+[verification run 33831059003](https://github.com/nucleus-os/nucleus/actions/runs/33831059003)
+at revision `f1fa6fcbea5a471386661c7937326ad82aed2fcd`. The complete graph
+finished with 102 clean tasks, 30 executed tasks, and no failures, including
+both architectures' package cohorts and package lifecycle qualification.
 
 ## Phase 6: Qualify the arm64 Guest on Hardware
 

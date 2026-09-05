@@ -6,7 +6,8 @@ Execution position: the protected-main CI build is this plan's second-checkout
 gate. The launcher admits only the authoritative checkout locally, and planning
 another checkout requires host network resolution, so placement independence
 and the first bounded CI build are one operation. The complete verification
-graph expands only after that run demonstrates warm-state reuse.
+graph now includes tests and Linux-runtime packaging. The remaining reuse
+acceptance gate is the local-to-automated ordering documented in Phase 4.
 
 ## Invariant
 
@@ -227,7 +228,7 @@ same toolchain.
 
 ## Phase 3: Remove the Interim Corrections
 
-Status: active
+Status: complete
 
 Delete the file-prefix mapping applied to container Swift and Clang invocations,
 and the argument and path canonicalization applied while encoding product task
@@ -255,10 +256,13 @@ performs validation only; the rewriting API is removed. Tests cover identity
 stability across payload and archive locations and reject checkout, cache, home,
 output, include, and file-URL paths.
 
-Protected-main verification now includes Linux-runtime packaging, which makes
-this boundary observable through real product producers. The implementation
-awaits that sweep before this phase closes; the checkout/store relocation gate
-remains part of Phase 4.
+Gate evidence: [protected-main run 33985000262](https://github.com/nucleus-os/nucleus/actions/runs/33985000262)
+verified revision `9fd675f0df53274830a0244d1ff7ed3bfeb87992` with 76 clean
+tasks, 81 executed tasks, no failures, and no cancellations. The seven absolute
+path rejection cases, semantic-input identity tests, and payload/archive
+relocation test passed. Linux-runtime packaging and both architectures' package
+lifecycle qualification passed in the same sweep. The broader checkout/store
+relocation acceptance remains owned by Phase 4.
 
 Gate: product identity encoding rejects a host path rather than canonicalizing
 it; no product compiler invocation carries a prefix mapping; and every product
