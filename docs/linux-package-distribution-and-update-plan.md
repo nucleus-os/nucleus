@@ -383,6 +383,29 @@ completed product-store retention.
 
 ## Phase 5: Finalize Versioned Cohorts and Assemble Signed Repository Snapshots
 
+Status: active
+
+The first increment implements the offline reservation contract and authority
+store in `NightlyReleaseContracts` and `NightlyReleaseReservations`, with the
+standalone `nucleus-nightly-reservation` executable. The allocator binds a
+request UUID to an exact source commit, verification run, immutable input
+manifest digest, and UTC `YYYY.MM.DD.N` version. A kernel lock serializes
+processes; a synchronized atomic ledger replacement commits the binding before
+the command returns it. Same-request retries retain the binding across midnight
+and re-establish durability after an uncertain commit. Abandoned reservations
+remain allocated. Missing, malformed, or inconsistent state fails closed;
+normal allocation cannot initialize an absent ledger or reset its sequence.
+
+This executable is not exposed by Collider's build grammar or a remote workflow.
+Its selection validates data shape, not GitHub authority. The next increment
+authenticates the successful protected-main run and its immutable qualified
+input manifest at the separate reservation identity, then passes the exported
+reservation into version-bearing finalization. Authority provisioning and
+state backup, final package lifecycle qualification, package-manager ordering
+checks, deterministic repository assembly, and signing remain pending. The
+reservation concurrency, retry, calendar, corruption, and process-boundary tests
+await protected-main CI.
+
 Add protected nightly finalization after content-derived native package
 production and qualification. Select one exact successfully verified `main`
 revision, atomically reserve its `YYYY.MM.DD.N` version, and persist the binding

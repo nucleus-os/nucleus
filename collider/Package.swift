@@ -27,6 +27,9 @@ let package = Package(
     products: [
         .executable(name: "collider", targets: ["Collider"]),
         .executable(
+            name: "nucleus-nightly-reservation",
+            targets: ["NucleusNightlyReservation"]),
+        .executable(
             name: "nucleus-linux-assembler",
             targets: ["NucleusLinuxAssembler"]),
         .executable(
@@ -41,6 +44,23 @@ let package = Package(
     ],
     dependencies: packageDependencies,
     targets: [
+        .target(
+            name: "NightlyReleaseContracts",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(name: "NightlyReservationStorageC"),
+        .target(
+            name: "NightlyReleaseReservations",
+            dependencies: ["NightlyReleaseContracts", "NightlyReservationStorageC"]),
+        .executableTarget(
+            name: "NucleusNightlyReservation",
+            dependencies: ["NightlyReleaseContracts", "NightlyReleaseReservations"]),
+        .testTarget(
+            name: "NightlyReleaseReservationTests",
+            dependencies: [
+                "NightlyReleaseContracts", "NightlyReleaseReservations",
+                "NucleusNightlyReservation",
+                .product(name: "ColliderCore", package: "engine"),
+            ]),
         .executableTarget(
             name: "Collider",
             dependencies: ["ColliderCLI"]),
