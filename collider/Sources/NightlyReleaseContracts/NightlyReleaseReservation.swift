@@ -81,8 +81,14 @@ package struct NightlyReleaseVersion: Codable, Hashable, Comparable, Sendable,
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let components = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(
-            format: "%04d.%02d.%02d", components.year!, components.month!, components.day!)
+        func padded(_ value: Int, to width: Int) -> String {
+            let digits = String(value)
+            return String(repeating: "0", count: max(0, width - digits.count)) + digits
+        }
+        return [
+            padded(components.year!, to: 4), padded(components.month!, to: 2),
+            padded(components.day!, to: 2),
+        ].joined(separator: ".")
     }
 }
 
