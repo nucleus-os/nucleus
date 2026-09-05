@@ -371,8 +371,7 @@ private func assembleLifecycleFixture(
             executables: [],
             producerTrustDomain: baseEnvelope.manifest.producerTrustDomain,
             requiredQualificationRoles: [.bundleIntegrity],
-            provenance: baseEnvelope.provenance,
-            identityPathMap: .empty)
+            provenance: baseEnvelope.provenance)
         let stored = try store.publish(
             envelope,
             payloadRoot: payload,

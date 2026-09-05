@@ -5,7 +5,7 @@ import Testing
 
 @testable import ColliderPersistence
 
-@Test func productArtifactIdentityIsPortableAcrossEveryPlacementRoot() throws {
+@Test func productArtifactIdentityIsPortableAcrossPayloadAndArchiveLocations() throws {
     let directory = temporaryDirectory(named: "collider-product-portability")
     defer { try? FileManager.default.removeItem(at: directory) }
     let first = try productFixture(in: directory.appendingPathComponent("first"))
@@ -14,22 +14,18 @@ import Testing
 
     let firstEnvelope = try productEnvelope(
         fixture: first,
-        placement: first.root,
         provenance: provenance)
     let secondEnvelope = try productEnvelope(
         fixture: second,
-        placement: second.root,
         provenance: provenance)
 
     #expect(firstEnvelope.identity == secondEnvelope.identity)
     #expect(firstEnvelope.manifest == secondEnvelope.manifest)
     #expect(
         firstEnvelope.manifest.semanticBuildArguments == [
-            "--cache=${cache}",
-            "--checkout=${checkout}",
-            "--home=${home}",
-            "--output=${output}",
-            "--workspace=${workspace}",
+            "family=deb",
+            "package=nucleus",
+            "version=2026.09.05.1",
         ])
 }
 
@@ -40,36 +36,29 @@ import Testing
     let provenance = try localProvenance()
     let baseline = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance)
     let changedSource = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         sourceSeed: "changed-source")
     let changedToolchain = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         toolchainSeed: "changed-toolchain")
     let changedConfiguration = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         configuration: .debug)
     let changedTarget = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         artifactTarget: .linuxX86_64)
     let changedArgument = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         additionalArgument: "--lto=thin")
     let changedTargetRoot = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: provenance,
         targetFilesystemRoots: [FilePath("/opt/nucleus")])
 
@@ -85,7 +74,16 @@ import Testing
         ]).count == 7)
 }
 
-@Test func productArtifactIdentityRejectsUnknownAbsoluteHostPaths() throws {
+@Test(arguments: [
+    "--source=/srv/someone/other-checkout",
+    "--cache=/Library/Nucleus/Collider/cache",
+    "--checkout=/Users/builder/nucleus",
+    "--home=/home/builder",
+    "--output=/tmp/product",
+    "-I/opt/build/include",
+    "file:///Users/builder/nucleus",
+])
+func productArtifactIdentityRejectsAbsoluteHostPaths(argument: String) throws {
     let directory = temporaryDirectory(named: "collider-product-host-path")
     defer { try? FileManager.default.removeItem(at: directory) }
     let fixture = try productFixture(in: directory)
@@ -93,9 +91,8 @@ import Testing
     #expect(throws: PortableIdentityPathFailure.self) {
         _ = try productEnvelope(
             fixture: fixture,
-            placement: directory,
             provenance: localProvenance(),
-            additionalArgument: "--source=/srv/someone/other-checkout")
+            additionalArgument: argument)
     }
 }
 
@@ -111,12 +108,10 @@ import Testing
     #expect(throws: PortableIdentityPathFailure.self) {
         _ = try productEnvelope(
             fixture: fixture,
-            placement: directory,
             provenance: localProvenance())
     }
     let envelope = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: localProvenance(),
         targetFilesystemRoots: [FilePath("/opt/nucleus")])
     #expect(envelope.manifest.targetFilesystemRoots == ["/opt/nucleus"])
@@ -132,7 +127,6 @@ import Testing
     let fixture = try productFixture(in: producer)
     let envelope = try productEnvelope(
         fixture: fixture,
-        placement: producer,
         provenance: localProvenance(),
         requiredRoles: [.bundleIntegrity])
     let store = LocalProductArtifactStore(
@@ -180,7 +174,6 @@ import Testing
     let fixture = try productFixture(in: directory)
     let envelope = try productEnvelope(
         fixture: fixture,
-        placement: directory,
         provenance: localProvenance())
 
     try ProductArtifactBuilder.validateEnvelope(
@@ -210,11 +203,9 @@ import Testing
     let provenance = try localProvenance()
     let first = try productEnvelope(
         fixture: firstFixture,
-        placement: firstFixture.root,
         provenance: provenance)
     let second = try productEnvelope(
         fixture: secondFixture,
-        placement: secondFixture.root,
         provenance: provenance)
     let store = LocalProductArtifactStore(
         root: FilePath(directory.appendingPathComponent("store").path))
@@ -244,7 +235,6 @@ import Testing
     let fixture = try productFixture(in: directory.appendingPathComponent("producer"))
     let envelope = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: localProvenance())
     let storeRoot = directory.appendingPathComponent("store")
     let store = LocalProductArtifactStore(root: FilePath(storeRoot.path))
@@ -286,11 +276,9 @@ import Testing
     let provenance = try localProvenance()
     let first = try productEnvelope(
         fixture: firstFixture,
-        placement: firstFixture.root,
         provenance: provenance)
     let second = try productEnvelope(
         fixture: secondFixture,
-        placement: secondFixture.root,
         provenance: provenance)
     let storeRoot = FilePath(directory.appendingPathComponent("store").path)
     _ = try LocalProductArtifactStore(root: storeRoot).publish(
@@ -333,11 +321,9 @@ import Testing
     let provenance = try localProvenance()
     let first = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: provenance)
     let second = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: provenance,
         additionalArgument: "--cohort=second")
     let storeRoot = directory.appendingPathComponent("store")
@@ -378,11 +364,9 @@ import Testing
     let provenance = try localProvenance()
     let first = try productEnvelope(
         fixture: firstFixture,
-        placement: firstFixture.root,
         provenance: provenance)
     let second = try productEnvelope(
         fixture: secondFixture,
-        placement: secondFixture.root,
         provenance: provenance)
     let storeRoot = directory.appendingPathComponent("store")
     let store = LocalProductArtifactStore(root: FilePath(storeRoot.path))
@@ -465,12 +449,10 @@ import Testing
     let fixture = try productFixture(in: directory.appendingPathComponent("producer"))
     let local = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: localProvenance(),
         requiredRoles: [.release])
     let protectedMain = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: ProductArtifactProvenance(
             baseCommit: String(repeating: "a", count: 40),
             branch: "refs/heads/main",
@@ -479,7 +461,6 @@ import Testing
         requiredRoles: [.release])
     let locallyProducedProtectedMain = try productEnvelope(
         fixture: fixture,
-        placement: fixture.root,
         provenance: protectedMain.provenance,
         requiredRoles: [.release],
         producerTrustDomain: .localDeveloper)
@@ -629,7 +610,6 @@ private func localProvenance() throws -> ProductArtifactProvenance {
 
 private func productEnvelope(
     fixture: ProductFixture,
-    placement: URL,
     provenance: ProductArtifactProvenance,
     sourceSeed: String = "source",
     toolchainSeed: String = "toolchain",
@@ -640,17 +620,10 @@ private func productEnvelope(
     requiredRoles: [ProductArtifactQualificationRole] = [.bundleIntegrity],
     producerTrustDomain: ProductArtifactProducerTrustDomain = .nucleusBuilder
 ) throws -> ProductArtifactEnvelope {
-    let checkout = FilePath(placement.appendingPathComponent("checkout").path)
-    let cache = FilePath(placement.appendingPathComponent("cache").path)
-    let home = FilePath(placement.appendingPathComponent("home").path)
-    let workspace = FilePath(placement.appendingPathComponent("workspace").path)
-    let output = FilePath(placement.appendingPathComponent("output").path)
     var arguments = [
-        "--cache=\(cache)",
-        "--checkout=\(checkout)",
-        "--home=\(home)",
-        "--output=\(output)",
-        "--workspace=\(workspace)",
+        "family=deb",
+        "package=nucleus",
+        "version=2026.09.05.1",
     ]
     if let additionalArgument {
         arguments.append(additionalArgument)
@@ -690,14 +663,7 @@ private func productEnvelope(
         ],
         producerTrustDomain: producerTrustDomain,
         requiredQualificationRoles: requiredRoles,
-        provenance: provenance,
-        identityPathMap: IdentityPathMap(roots: [
-            IdentityPathRoot(name: "checkout", path: checkout),
-            IdentityPathRoot(name: "cache", path: cache),
-            IdentityPathRoot(name: "home", path: home),
-            IdentityPathRoot(name: "workspace", path: workspace),
-            IdentityPathRoot(name: "output", path: output),
-        ]))
+        provenance: provenance)
 }
 
 private func digest(_ value: String) -> ArtifactDigest {

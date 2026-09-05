@@ -227,8 +227,7 @@ public struct ProductArtifactManifest: Codable, Hashable, Sendable {
         files: [ProductArtifactFile],
         executables: [ProductArtifactExecutable],
         producerTrustDomain: ProductArtifactProducerTrustDomain,
-        requiredQualificationRoles: [ProductArtifactQualificationRole],
-        identityPathMap: IdentityPathMap = .empty
+        requiredQualificationRoles: [ProductArtifactQualificationRole]
     ) throws {
         self.sourceClosure = sourceClosure
         self.submoduleClosures = submoduleClosures.sorted {
@@ -243,9 +242,7 @@ public struct ProductArtifactManifest: Codable, Hashable, Sendable {
         self.nativeSDKIdentities = nativeSDKIdentities.sorted { $0.name < $1.name }
         self.builderImageIdentity = builderImageIdentity
         self.buildConfiguration = buildConfiguration
-        self.semanticBuildArguments = try semanticBuildArguments.map {
-            try identityPathMap.canonicalizePortable($0)
-        }
+        self.semanticBuildArguments = semanticBuildArguments
         self.targetFilesystemRoots = targetFilesystemRoots.sorted()
         self.archiveDigest = archiveDigest
         self.treeDigest = treeDigest
@@ -293,7 +290,7 @@ public struct ProductArtifactManifest: Codable, Hashable, Sendable {
             try requireDigest(identity.digest, name: "native SDK")
         }
         for argument in semanticBuildArguments {
-            _ = try IdentityPathMap.empty.canonicalizePortable(argument)
+            try requirePortableIdentityValue(argument)
         }
         try requireCanonicalOrder(
             targetFilesystemRoots,
@@ -337,7 +334,7 @@ public struct ProductArtifactManifest: Codable, Hashable, Sendable {
                                 target)
                         }
                     } else {
-                        _ = try IdentityPathMap.empty.canonicalizePortable(target)
+                        try requirePortableIdentityValue(target)
                     }
                 }
             case .directory:
@@ -373,7 +370,7 @@ public struct ProductArtifactManifest: Codable, Hashable, Sendable {
                     throw ProductArtifactContractFailure(
                         "dynamic-library identity is empty: \(executable.relativePath)")
                 }
-                _ = try IdentityPathMap.empty.canonicalizePortable(library)
+                try requirePortableIdentityValue(library)
             }
         }
         try requireCanonicalOrder(
@@ -660,7 +657,7 @@ private func requirePortableRelativePath(
         throw ProductArtifactContractFailure(
             "path is not a canonical portable relative path: \(value)")
     }
-    _ = try IdentityPathMap.empty.canonicalizePortable(value)
+    try requirePortableIdentityValue(value)
 }
 
 extension IdentityEncoder {

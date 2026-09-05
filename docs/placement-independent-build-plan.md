@@ -227,6 +227,8 @@ same toolchain.
 
 ## Phase 3: Remove the Interim Corrections
 
+Status: active
+
 Delete the file-prefix mapping applied to container Swift and Clang invocations,
 and the argument and path canonicalization applied while encoding product task
 identities. Both exist to remove a leak that canonical product execution no
@@ -246,15 +248,17 @@ never appears and would put the host's own directory into the identity through
 the flag itself. Host-tool compilation keeps its mapping, as this phase says it
 should while Phase 2 is deferred.
 
-The encoding half is not done. `ProductArtifactManifest` still canonicalizes
-`semanticBuildArguments` through a map its one caller supplies, so a host path
-reaching a product manifest is still corrected rather than refused. Inverting it
-is a small change -- the assertion already exists, since validation re-checks
-those arguments against the empty map -- but its consequence is not small: a
-product whose arguments still carry a declared root would begin to fail, and
-product manifests are written by packaging, which the protected-main sweep does
-not yet run. So the inversion needs the packaging lane in the sweep, or a check
-that runs against a produced manifest, before it can be made safely.
+The encoding boundary now accepts semantic arguments unchanged and rejects an
+absolute host path during manifest validation. Neither the manifest initializer
+nor the artifact builder accepts a placement map. The portable-value validator
+performs validation only; the rewriting API is removed. Tests cover identity
+stability across payload and archive locations and reject checkout, cache, home,
+output, include, and file-URL paths.
+
+Protected-main verification now includes Linux-runtime packaging, which makes
+this boundary observable through real product producers. The implementation
+awaits that sweep before this phase closes; the checkout/store relocation gate
+remains part of Phase 4.
 
 Gate: product identity encoding rejects a host path rather than canonicalizing
 it; no product compiler invocation carries a prefix mapping; and every product

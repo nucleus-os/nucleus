@@ -426,8 +426,7 @@ package struct AssembleLinuxNativePackagesAction: ColliderAction {
                     executables: [],
                     producerTrustDomain: producerTrustDomain,
                     requiredQualificationRoles: [.bundleIntegrity],
-                    provenance: source.provenance,
-                    identityPathMap: .empty)
+                    provenance: source.provenance)
                 let envelopeBytes = try encodedJSON(envelope)
                 stageRecorder.record(
                     .productEnvelopeConstruction,
@@ -1774,8 +1773,7 @@ extension AssembleLinuxNativePackagesAction {
                 .bundleIntegrity, .nativeLinuxKernel, .physicalDRM, .physicalGPU,
                 .release,
             ],
-            provenance: source.provenance,
-            identityPathMap: .empty)
+            provenance: source.provenance)
         let envelopeBytes = try encodedJSON(envelope)
         stageRecorder.record(
             .productEnvelopeConstruction,

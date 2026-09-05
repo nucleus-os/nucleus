@@ -83,17 +83,6 @@ public struct IdentityPathMap: Hashable, Sendable {
                 in: result)
         }
     }
-
-    /// Replaces declared placement-only roots and rejects a remaining absolute
-    /// macOS or Linux user/temporary path. Portable artifact identity must not
-    /// silently retain a path that another builder cannot reproduce.
-    public func canonicalizePortable(_ value: String) throws -> String {
-        let canonical = canonicalize(value)
-        guard !containsAbsoluteHostPath(canonical) else {
-            throw PortableIdentityPathFailure.unrecognizedAbsoluteHostPath(value)
-        }
-        return canonical
-    }
 }
 
 extension IdentityPathMap {
@@ -206,6 +195,14 @@ private func replacingPathRoot(
     }
     result += value[cursor...]
     return result
+}
+
+/// Product identity accepts semantic values directly. A placement path is a
+/// producer defect; encoding must reject it rather than repair it.
+func requirePortableIdentityValue(_ value: String) throws {
+    guard !containsAbsoluteHostPath(value) else {
+        throw PortableIdentityPathFailure.unrecognizedAbsoluteHostPath(value)
+    }
 }
 
 private func containsAbsoluteHostPath(_ value: String) -> Bool {

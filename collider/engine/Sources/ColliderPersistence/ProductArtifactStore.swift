@@ -29,8 +29,7 @@ public enum ProductArtifactBuilder {
         executables: [ProductArtifactExecutableDeclaration],
         producerTrustDomain: ProductArtifactProducerTrustDomain,
         requiredQualificationRoles: [ProductArtifactQualificationRole],
-        provenance: ProductArtifactProvenance,
-        identityPathMap: IdentityPathMap
+        provenance: ProductArtifactProvenance
     ) throws -> ProductArtifactEnvelope {
         let inspection = try inspectPayload(payloadRoot)
         let filesByPath = Dictionary(
@@ -72,8 +71,7 @@ public enum ProductArtifactBuilder {
             files: inspection.files,
             executables: executableRecords,
             producerTrustDomain: producerTrustDomain,
-            requiredQualificationRoles: requiredQualificationRoles,
-            identityPathMap: identityPathMap)
+            requiredQualificationRoles: requiredQualificationRoles)
         return try ProductArtifactEnvelope(
             manifest: manifest,
             provenance: provenance)
