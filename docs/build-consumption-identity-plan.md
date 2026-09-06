@@ -68,6 +68,14 @@ adds independent, bounded collection of run records and crash evidence to the
 next verification attempt. Full verification remains pending; the crash has
 not been attributed to a specific runtime operation.
 
+Execution startup now records separate durable phases for loading task state,
+loading the artifact digest index, and validating/prioritizing the expanded
+execution graph. Owner-completion edges are included in graph validation, and
+priority calculation uses the resulting topological order instead of unchecked
+recursion. A regression fixture makes an acyclic declaration graph cyclic only
+after lowering and requires a concrete cycle error. This is a diagnostic and
+scheduler-safety correction; CI must establish whether it identifies the SIGBUS.
+
 Verify the full catalog with the new identity model, including the reservation
 tests and both architectures' package cohorts. Record the one-time identity
 transition separately from steady-state invalidation. Exercise an unrelated

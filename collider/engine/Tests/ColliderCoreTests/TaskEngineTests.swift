@@ -144,6 +144,34 @@ private struct FailAfterWriteAction: ColliderAction {
     }
 }
 
+private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
+    func lower(_ tasks: [AssessedTaskDeclaration]) throws -> [LoweredExecutionTask] {
+        guard let owner = tasks.first?.task else { return [] }
+        return [
+            LoweredExecutionTask(
+                task: TaskDeclaration(
+                    id: "fixture.lowered", component: "fixture", dependencies: [owner.id]),
+                attribution: "fixture", logicalOwners: [owner.id], prerequisites: [owner.id])
+        ]
+    }
+}
+
+@Test func executionGraphRejectsCyclesIntroducedByOwnerCompletionEdges() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let owner = TaskDeclaration(id: "fixture.owner", component: "fixture")
+    do {
+        _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+            graph: TaskGraph([owner]), selected: [owner.id], stateRoot: FilePath(directory.path),
+            lowerings: [CyclicOwnerCompletionLowering()])
+        Issue.record("cyclic execution graph was accepted")
+    } catch let error as TaskGraphFailure {
+        guard case .cycle(let path) = error else { throw error }
+        #expect(Set(path) == Set([owner.id, TaskID(rawValue: "fixture.lowered")]))
+        #expect(path.first == path.last)
+    }
+}
+
 @Test func artifactConsumptionStopsAtUnchangedBytesAndPropagatesChangedBytes() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

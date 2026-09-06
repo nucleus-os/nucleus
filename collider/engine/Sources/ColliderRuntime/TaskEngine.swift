@@ -223,7 +223,7 @@ private func estimatedCriticalPathPriorities(
     declaredPlans: [TaskPlanEntry],
     buildPrerequisites: [TaskID: Set<TaskID>],
     buildsByOwner: [TaskID: Set<TaskID>]
-) -> [TaskID: UInt64] {
+) throws -> [TaskID: UInt64] {
     func estimatedDuration(_ plan: TaskPlanEntry) -> UInt64 {
         guard !plan.isClean else { return 0 }
         if let estimate = plan.durationEstimate?.durationNanoseconds {
@@ -259,15 +259,32 @@ private func estimatedCriticalPathPriorities(
         }
     }
 
+    // Lowering adds owner-completion edges that the declaration graph does
+    // not contain. Validate the graph the scheduler actually executes before
+    // computing priorities, rather than recursively following unchecked edges.
+    let schedulingDeclarations =
+        swiftBuilds.map { build in
+            TaskDeclaration(
+                id: build.task.id, component: build.task.component,
+                dependencies: Array(buildPrerequisites[build.task.id, default: []]).sorted {
+                    $0.rawValue < $1.rawValue
+                })
+        }
+        + declaredTasks.map { task in
+            TaskDeclaration(
+                id: task.id, component: task.component,
+                dependencies: Array(
+                    Set(task.executionDependencies).union(buildsByOwner[task.id, default: []])
+                )
+                .sorted { $0.rawValue < $1.rawValue })
+        }
+    let schedule = try TaskGraph(schedulingDeclarations).orderedTasks(
+        selecting: durations.keys.sorted { $0.rawValue < $1.rawValue })
     var priorities: [TaskID: UInt64] = [:]
-    func priority(_ task: TaskID) -> UInt64 {
-        if let cached = priorities[task] { return cached }
-        let downstream = successors[task, default: []].map(priority).max() ?? 0
-        let value = durations[task, default: 0] &+ downstream
-        priorities[task] = value
-        return value
+    for task in schedule.reversed() {
+        let downstream = successors[task.id, default: []].compactMap { priorities[$0] }.max() ?? 0
+        priorities[task.id] = durations[task.id, default: 0] &+ downstream
     }
-    for task in durations.keys { _ = priority(task) }
     return priorities
 }
 
@@ -373,12 +390,18 @@ extension ColliderRuntime {
                 schedulingWaitDurationNanoseconds: 0)
         }
         let executionStart = ContinuousClock().now
-        let priorState = try taskStateStore.snapshot()
+        let startupPhases = HostPhaseRecorder(registry: eventRegistry, run: eventRun)
+        let priorState = try await startupPhases.withPhase("loading execution task state") {
+            try taskStateStore.snapshot()
+        }
         // This provider starts after planning, and sees artifact content only
         // after its producer completes. No planning-local tree digest can be
         // reused across a producer's write.
-        let artifactInputs = PlanningInputProvider(
-            digestIndex: stateRoot.appending("artifact-digests.json"))
+        let artifactInputs = try await startupPhases.withPhase(
+            "loading execution artifact digest index"
+        ) {
+            PlanningInputProvider(digestIndex: stateRoot.appending("artifact-digests.json"))
+        }
         var artifactDigests: [ArtifactReference: ArtifactDigest] = [:]
         if let eventRun, let eventRegistry {
             for entry in swiftBuildPlans where entry.isClean {
@@ -410,13 +433,17 @@ extension ColliderRuntime {
             uniqueKeysWithValues: swiftBuilds.map {
                 ($0.task.id, $0.prerequisites.union($0.task.executionDependencies))
             })
-        let schedulingPriorities = estimatedCriticalPathPriorities(
-            swiftBuilds: swiftBuilds,
-            swiftBuildPlans: swiftBuildPlans,
-            declaredTasks: ordered,
-            declaredPlans: plan,
-            buildPrerequisites: buildPrerequisites,
-            buildsByOwner: buildsByOwner)
+        let schedulingPriorities = try await startupPhases.withPhase(
+            "validating and prioritizing execution graph"
+        ) {
+            try estimatedCriticalPathPriorities(
+                swiftBuilds: swiftBuilds,
+                swiftBuildPlans: swiftBuildPlans,
+                declaredTasks: ordered,
+                declaredPlans: plan,
+                buildPrerequisites: buildPrerequisites,
+                buildsByOwner: buildsByOwner)
+        }
         var completed = Set(plan.filter(\.isClean).map(\.task))
         var resolvedIdentities = Dictionary(
             uniqueKeysWithValues: (plan + swiftBuildPlans).map { ($0.task, $0.identity) })
