@@ -672,16 +672,19 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 execution.containerEnvironment["PKG_CONFIG_PATH"]
                     == fixturePlacement.executionPath(
                         fixtureRepositoryRoot.appending("swift-sdk/pkgconfig")))
+            // Package-root views are preparation artifacts: they order the
+            // task producing them ahead of this build without their bytes
+            // reaching its identity.
             let assemblerView = try #require(
-                execution.inputArtifacts.first {
+                execution.preparationArtifacts.first {
                     $0.path.string.hasSuffix("/package-root-views/assembler")
                 })
             #expect(
-                !execution.inputArtifacts.contains {
+                !execution.preparationArtifacts.contains {
                     $0.path.string.hasSuffix("/package-root-views/nucleus")
                 })
             #expect(
-                execution.mounts.contains {
+                (execution.preparationMounts + execution.mounts).contains {
                     $0.source == assemblerView.path
                         && $0.target == fixturePlacement.executionPath(fixtureRepositoryRoot)
                 })
@@ -1022,12 +1025,17 @@ private func fixtureReactNativeNodeModules(
             == .path(FilePath("/opt/swift/usr/bin/swift")))
     #expect(armExecution.executableRequirements.isEmpty)
     #expect(x86Execution.executableRequirements.isEmpty)
-    // The package-root view is an input artifact, not just a mount: that is
-    // what makes the task producing it run before the build that reads it.
+    // The package-root view is a preparation artifact rather than an input.
+    // The task producing it still runs before the build that reads it, which
+    // is what the declaration is for; what it no longer does is bind the
+    // view's bytes into the build's identity, because the build consumes the
+    // package structure and not the content of the view materializing it.
     let view = try builder.packageRootView(
         ComponentRegistry.nucleusPackageRootViewIdentifier)
-    #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay, view])
-    #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay, view])
+    #expect(armExecution.inputArtifacts == [builder.swiftPMOverlay])
+    #expect(x86Execution.inputArtifacts == [builder.swiftPMOverlay])
+    #expect(armExecution.preparationArtifacts == [view])
+    #expect(x86Execution.preparationArtifacts == [view])
     #expect(
         NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
             .hasSuffix(
@@ -1038,9 +1046,14 @@ private func fixtureReactNativeNodeModules(
             .hasSuffix(
                 "/x86_64-unknown-linux-gnu/"
                     + NucleusLinuxABI.sdkDirectoryName))
+    // The identity split does not change what the container sees: preparation
+    // mounts precede the build's own, and every assertion about visibility
+    // reads the union rather than either half.
+    let armMounts = armExecution.preparationMounts + armExecution.mounts
+    let x86Mounts = x86Execution.preparationMounts + x86Execution.mounts
     // The checkout is mounted where the declared placement roots put it, not
     // where the host keeps it, so a build cannot record which checkout it read.
-    let checkoutMounts = armExecution.mounts.filter {
+    let checkoutMounts = armMounts.filter {
         $0.source.starts(with: fixtureRepositoryRoot)
     }
     #expect(!checkoutMounts.isEmpty)
@@ -1049,25 +1062,24 @@ private func fixtureReactNativeNodeModules(
     // directories the manifest declares, and a root holding every vendored tree
     // it never mentions is not one of them.
     let packageRoot = try #require(
-        armExecution.mounts.first { $0.target == "/nucleus-workspace" })
+        armMounts.first { $0.target == "/nucleus-workspace" })
     #expect(packageRoot.source != fixtureRepositoryRoot)
     #expect(packageRoot.isReadOnly)
-    #expect(
-        !armExecution.mounts.contains { $0.source == fixtureRepositoryRoot })
-    for execution in [armExecution, x86Execution] {
+    #expect(!armMounts.contains { $0.source == fixtureRepositoryRoot })
+    for mounts in [armMounts, x86Mounts] {
         #expect(
-            execution.mounts.allSatisfy {
+            mounts.allSatisfy {
                 !$0.target.hasPrefix(fixtureRepositoryRoot.string)
             })
     }
-    #expect(armExecution.mounts.allSatisfy { $0.isReadOnly })
-    #expect(x86Execution.mounts.allSatisfy { $0.isReadOnly })
+    #expect(armMounts.allSatisfy { $0.isReadOnly })
+    #expect(x86Mounts.allSatisfy { $0.isReadOnly })
     #expect(
-        armExecution.mounts.contains {
+        armMounts.contains {
             $0.target == SwiftPMInvocation.ociSwiftSDKDirectory.string
         })
     #expect(
-        armExecution.mounts.contains(
+        armMounts.contains(
             OCIMount(
                 source: builder.swiftPMOverlay.path,
                 target: "/swiftpm-overlay",
