@@ -15,6 +15,7 @@ struct AndroidPackageInput {
     /// agree.
     let architecture: PlatformArchitecture
     let runtimeSwiftPM: SwiftPMInvocation
+    let runtimeCompilationArtifacts: ArtifactReferenceSet
     let assemblerSwiftPM: SwiftPMInvocation
     let runtimeScratch: FilePath
     /// The sysroot the payload is assembled from, for the architecture it
@@ -57,6 +58,7 @@ extension AndroidRuntimeColliderRecipe {
                 product: product,
                 packageRoot: repositoryRoot,
                 environment: input.environment,
+                compilationArtifacts: input.runtimeCompilationArtifacts,
                 expectedOutputs: [
                     PathPostcondition(
                         path: input.runtimeSwiftPM.executable(product),

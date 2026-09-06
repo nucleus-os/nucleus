@@ -321,6 +321,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     product: "SwiftWaylandGen",
                     packageRoot: root,
                     environment: environment,
+                    compilationArtifacts: ArtifactReferenceSet(builder.swiftSDK),
                     expectedOutputs: [
                         PathPostcondition(
                             path: generator.path,

@@ -50,7 +50,7 @@ public struct ExecutableReference: Hashable, Sendable {
 }
 
 public struct ArtifactReferenceSet: Hashable, Sendable {
-    fileprivate var references: [ArtifactReference]
+    var references: [ArtifactReference]
 
     public init() {
         references = []

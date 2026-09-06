@@ -8,7 +8,9 @@ A task is identified by its own semantic configuration and the content of the
 artifacts it consumes. The recipe that produced an artifact is not a substitute
 for that content. Ordering and package preparation establish execution
 readiness; they do not make unrelated source or manifest declarations semantic
-inputs. A consumer waits for its producers before its final cache assessment.
+inputs. Swift product and test requirements declare their own compilation
+artifacts; a consuming action's packaging inputs never become compiler inputs.
+A consumer waits for its producers before its final cache assessment.
 An unchanged published artifact stops invalidation at that boundary.
 
 ## Phase 1: Resolve SwiftPM semantics at the selected target closure
@@ -61,20 +63,29 @@ missing-output restoration, and explicit rebuilds. CI evidence remains pending.
 
 Status: active
 
-The corrected graph reached execution in protected-main run `34007936074`,
-then Collider terminated with SIGBUS before completing a task. No stack was
-available in the job log. The [CI diagnostic artifact contract](ci-diagnostic-artifacts-contract.md)
-adds independent, bounded collection of run records and crash evidence to the
-next verification attempt. Full verification remains pending; the crash has
-not been attributed to a specific runtime operation.
+Protected-main run `34041675293` reported the expanded dependency cycle instead
+of crashing: AOSP image assembly requires a signing identity, which requires
+the Android assembler compiler task, which incorrectly consumed the AOSP image
+from another owner of that same product. The [CI diagnostic artifact contract](ci-diagnostic-artifacts-contract.md)
+provides independent, bounded collection of run records and crash evidence.
 
 Execution startup now records separate durable phases for loading task state,
 loading the artifact digest index, and validating/prioritizing the expanded
 execution graph. Owner-completion edges are included in graph validation, and
 priority calculation uses the resulting topological order instead of unchecked
 recursion. A regression fixture makes an acyclic declaration graph cyclic only
-after lowering and requires a concrete cycle error. This is a diagnostic and
-scheduler-safety correction; CI must establish whether it identifies the SIGBUS.
+after lowering and requires a concrete cycle error. CI verified that the
+scheduler-safety correction exposes the cycle as a normal diagnostic.
+
+SwiftPM lowering now consumes only invocation inputs and explicit compilation
+artifacts, with preparation and dependency resolution as ordering prerequisites.
+It never walks owner dependencies to guess compiler prerequisites or suppress
+cycles. Recipes supply native SDK artifacts to runtime compilation while
+assembler tools remain independent of payloads. Android package declarations
+follow native SDK preparation so they carry the complete compilation contract.
+A regression models shared signing-tool compilation, signed-image production,
+and packaging and validates their expanded graph. Full CI verification of this
+correction remains pending.
 
 Verify the full catalog with the new identity model, including the reservation
 tests and both architectures' package cohorts. Record the one-time identity

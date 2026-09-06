@@ -7,6 +7,22 @@ struct TaskIdentitySnapshot: Sendable {
 }
 
 struct TaskIdentityBuilder {
+    private static func encode(
+        _ references: [ArtifactReference], into encoder: inout IdentityEncoder
+    ) {
+        encoder.appendSequence(
+            Set(references).sorted {
+                ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
+                    < ($1.producer.rawValue, $1.slot.rawValue, $1.path.string)
+            }
+        ) { referenceEncoder, reference in
+            referenceEncoder.append(reference.producer.rawValue)
+            referenceEncoder.append(reference.slot.rawValue)
+            referenceEncoder.append(path: reference.path)
+            referenceEncoder.append(reference.validation.rawValue)
+        }
+    }
+
     func build(
         of task: TaskDeclaration,
         services: TaskPlanningServices
@@ -54,6 +70,7 @@ struct TaskIdentityBuilder {
             })
         ) { requirementEncoder, requirement in
             requirementEncoder.append(requirement.qualifiedProduct)
+            Self.encode(requirement.artifactReferences, into: &requirementEncoder)
             requirementEncoder.append(
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))
@@ -70,6 +87,7 @@ struct TaskIdentityBuilder {
             })
         ) { requirementEncoder, requirement in
             requirementEncoder.append(requirement.qualifiedProduct)
+            Self.encode(requirement.artifactReferences, into: &requirementEncoder)
             requirementEncoder.append(
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))

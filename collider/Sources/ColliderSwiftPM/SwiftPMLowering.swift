@@ -37,29 +37,22 @@ public struct SwiftPMLowering: TaskPlanLowering {
             products.map(\.requirement.invocation.context)
                 + tests.map(\.requirement.invocation.context)
         )
-        let tasksByID = Dictionary(
-            uniqueKeysWithValues: assessed.map { ($0.task.id, $0.task) })
-
         return try contexts.sorted {
             $0.identityBytes.lexicographicallyPrecedes($1.identityBytes)
         }.flatMap { context in
             try lower(
-                context: context,
                 products: products.filter {
                     $0.requirement.invocation.context == context
                 },
                 tests: tests.filter {
                     $0.requirement.invocation.context == context
-                },
-                tasksByID: tasksByID)
+                })
         }
     }
 
     private func lower(
-        context: SwiftBuildContext,
         products: [ProductEntry],
-        tests: [TestEntry],
-        tasksByID: [TaskID: TaskDeclaration]
+        tests: [TestEntry]
     ) throws -> [LoweredExecutionTask] {
         let groupedTests = Dictionary(grouping: tests) {
             $0.requirement.options
@@ -98,16 +91,12 @@ public struct SwiftPMLowering: TaskPlanLowering {
             lowered.append(
                 contentsOf: try loweredBuilds(
                     products,
-                    context: context,
-                    tasksByID: tasksByID,
                     additionalPrerequisites: dependencyPrerequisites))
         }
         for grouping in groupedTests {
             lowered.append(
                 try loweredTest(
                     grouping.value,
-                    context: context,
-                    tasksByID: tasksByID,
                     additionalPrerequisites: dependencyPrerequisites))
         }
         return lowered
@@ -122,19 +111,11 @@ public struct SwiftPMLowering: TaskPlanLowering {
     /// another.
     private func loweredBuilds(
         _ entries: [ProductEntry],
-        context: SwiftBuildContext,
-        tasksByID: [TaskID: TaskDeclaration],
         additionalPrerequisites: Set<TaskID>
     ) throws -> [LoweredExecutionTask] {
         let grouped = Dictionary(grouping: entries) {
             $0.requirement.qualifiedProduct
         }
-        // Every owner contributing a product to this context, not just the
-        // owners of one product. An action sitting behind any of these builds
-        // cannot be a prerequisite of any of them: it cannot run until the
-        // build it waits on has completed, and in a graph where two owners'
-        // chains cross, treating it as one closes a cycle.
-        let contextOwners = Set(entries.map(\.owner.id))
         return try grouped.keys.sorted().map { product in
             let group = grouped[product] ?? []
             let owners = group.map(\.owner)
@@ -144,20 +125,14 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 attribution: attribution(
                     group.map { ($0.owner, $0.requirement.qualifiedProduct) }),
                 logicalOwners: Set(owners.map(\.id)),
-                prerequisites: prerequisites(
-                    for: owners,
-                    context: context,
-                    tasksByID: tasksByID,
-                    logicalOwners: contextOwners
-                ).union(additionalPrerequisites),
+                prerequisites: Set(lowered.task.executionDependencies)
+                    .union(additionalPrerequisites),
                 identityBytes: lowered.identityBytes)
         }
     }
 
     private func loweredTest(
         _ tests: [TestEntry],
-        context: SwiftBuildContext,
-        tasksByID: [TaskID: TaskDeclaration],
         additionalPrerequisites: Set<TaskID>
     ) throws -> LoweredExecutionTask {
         let owners = tests.map(\.owner)
@@ -167,12 +142,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
             attribution: attribution(
                 tests.map { ($0.owner, $0.requirement.qualifiedProduct) }),
             logicalOwners: Set(owners.map(\.id)),
-            prerequisites: prerequisites(
-                for: owners,
-                context: context,
-                tasksByID: tasksByID,
-                logicalOwners: Set(owners.map(\.id))
-            ).union(additionalPrerequisites),
+            prerequisites: Set(lowered.task.executionDependencies)
+                .union(additionalPrerequisites),
             identityBytes: lowered.identityBytes)
     }
 
@@ -263,79 +234,6 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }.sorted().joined(separator: ", ")
     }
 
-    private func prerequisites(
-        for owners: [TaskDeclaration],
-        context: SwiftBuildContext,
-        tasksByID: [TaskID: TaskDeclaration],
-        logicalOwners: Set<TaskID>
-    ) -> Set<TaskID> {
-        var result: Set<TaskID> = []
-        for owner in owners {
-            for dependency in owner.executionDependencies {
-                collectPrerequisite(
-                    dependency,
-                    context: context,
-                    tasksByID: tasksByID,
-                    logicalOwners: logicalOwners,
-                    into: &result)
-            }
-        }
-        return result
-    }
-
-    private func collectPrerequisite(
-        _ id: TaskID,
-        context: SwiftBuildContext,
-        tasksByID: [TaskID: TaskDeclaration],
-        logicalOwners: Set<TaskID>,
-        into prerequisites: inout Set<TaskID>
-    ) {
-        guard let task = tasksByID[id] else { return }
-        if task.swiftProducts.contains(where: {
-            $0.invocation.context == context
-        })
-            || task.swiftTests.contains(where: {
-                $0.invocation.context == context
-            })
-        {
-            for dependency in task.executionDependencies {
-                collectPrerequisite(
-                    dependency,
-                    context: context,
-                    tasksByID: tasksByID,
-                    logicalOwners: logicalOwners,
-                    into: &prerequisites)
-            }
-        } else if transitivelyDepends(
-            task,
-            onAnyOf: logicalOwners,
-            tasksByID: tasksByID
-        ) {
-            // This action sits after another owner of the same coalesced build.
-            // Making it a compiler prerequisite would make the build wait for
-            // an action that cannot run until that build has completed.
-        } else {
-            prerequisites.insert(id)
-        }
-    }
-
-    private func transitivelyDepends(
-        _ task: TaskDeclaration,
-        onAnyOf logicalOwners: Set<TaskID>,
-        tasksByID: [TaskID: TaskDeclaration]
-    ) -> Bool {
-        var pending = task.executionDependencies
-        var visited: Set<TaskID> = []
-        while let id = pending.popLast() {
-            guard visited.insert(id).inserted else { continue }
-            if logicalOwners.contains(id) { return true }
-            if let dependency = tasksByID[id] {
-                pending.append(contentsOf: dependency.executionDependencies)
-            }
-        }
-        return false
-    }
-
     /// Names the fields two requirements for one product disagree on. A
     /// lowering group is a set of requirements the graph expected to be
     /// identical, so the useful question on failure is never that they differ
@@ -369,6 +267,9 @@ public struct SwiftPMLowering: TaskPlanLowering {
         if lhs.invocation.sourceGraph != rhs.invocation.sourceGraph {
             fields.append("source graph")
         }
+        if Set(lhs.artifactReferences) != Set(rhs.artifactReferences) {
+            fields.append("compilation artifacts")
+        }
         if lhs.environment != rhs.environment {
             let names = Set(lhs.environment.keys)
                 .union(rhs.environment.keys)
@@ -388,6 +289,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         }
         if let mismatch = requirements.first(where: {
             $0.invocation != first.invocation || $0.environment != first.environment
+                || Set($0.artifactReferences) != Set(first.artifactReferences)
         }) {
             throw SwiftPMLoweringFailure.incompatibleBuildContexts(
                 product: first.qualifiedProduct,
@@ -431,10 +333,11 @@ public struct SwiftPMLowering: TaskPlanLowering {
         var builder = TaskBuilder(
             id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
-        consumeSwiftExecutable(first.invocation, into: &builder)
-        consumeOwnerReferences(owners, into: &builder)
-        if case .oci(let configuration) = first.invocation.context.execution {
-            builder.consume(configuration.image)
+        for reference in requirements.flatMap(\.artifactReferences) {
+            builder.consume(reference)
+        }
+        for ordering in first.invocation.orderingDependencies {
+            builder.after(ordering)
         }
         return LoweredTask(
             task: builder.build(
@@ -499,10 +402,11 @@ public struct SwiftPMLowering: TaskPlanLowering {
         var builder = TaskBuilder(
             id: identity.id,
             component: ComponentID(rawValue: "swift-package"))
-        consumeSwiftExecutable(first.invocation, into: &builder)
-        consumeOwnerReferences(owners, into: &builder)
-        if case .oci(let configuration) = first.invocation.context.execution {
-            builder.consume(configuration.image)
+        for reference in requirements.flatMap(\.artifactReferences) {
+            builder.consume(reference)
+        }
+        for ordering in first.invocation.orderingDependencies {
+            builder.after(ordering)
         }
         return LoweredTask(
             task: builder.build(
@@ -521,17 +425,6 @@ public struct SwiftPMLowering: TaskPlanLowering {
             identityBytes: identity.bytes)
     }
 
-    private func consumeOwnerReferences(
-        _ owners: [TaskDeclaration],
-        into builder: inout TaskBuilder
-    ) {
-        for owner in owners {
-            for reference in owner.artifactReferences {
-                builder.consume(reference)
-            }
-        }
-    }
-
     private func logicalOwnerLocks(
         owners: [TaskDeclaration]
     ) -> [TaskLock] {
@@ -540,16 +433,6 @@ public struct SwiftPMLowering: TaskPlanLowering {
             result.append(lock)
         }
         return result
-    }
-
-    private func consumeSwiftExecutable(
-        _ invocation: SwiftPMInvocation,
-        into builder: inout TaskBuilder
-    ) {
-        guard case .host = invocation.context.execution,
-            case .artifact(let reference) = invocation.swiftExecutable
-        else { return }
-        builder.consume(reference)
     }
 
     private func swiftPMAction(

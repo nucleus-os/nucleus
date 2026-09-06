@@ -1814,7 +1814,8 @@ private func artifactInput(
     let task = CompositorColliderRecipe.testDRMGPU(
         root: root,
         environment: [:],
-        swiftPM: swiftPM)
+        swiftPM: swiftPM,
+        compilationArtifacts: .init())
     let catalog = try await sharedFixtureCatalog()
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)

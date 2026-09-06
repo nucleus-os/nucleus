@@ -83,3 +83,9 @@ account diagnostic directory is unavailable; no matching system-wide report
 was found. Export is verified, but no crash stack has been recovered. The
 recorded planning duration was 10.45 seconds, including 6.51 seconds of input
 hashing; the earlier approximately two-minute delay preceded that phase.
+
+[Run 34041675293](https://github.com/nucleus-os/nucleus/actions/runs/34041675293)
+replaced the crash with an explicit expanded-graph dependency-cycle diagnostic
+after scheduler validation was added. The cycle ties AOSP image production to
+the compilation of its own signing tool through an unrelated packaging owner.
+This supplies actionable evidence without access to the host or a crash stack.

@@ -266,8 +266,6 @@ package struct ComponentRegistry {
             configurations: configurations)
         let chromium = try ChromiumColliderRecipe.prepare(in: baseRecipeContext)
         let coreArtifacts = try CoreColliderRecipe.prepare(in: baseRecipeContext)
-        let androidRuntime = try AndroidRuntimeColliderRecipe.prepare(
-            in: baseRecipeContext)
         let waylandArtifacts = try WaylandColliderRecipe.prepare(
             in: baseRecipeContext)
         let reactNativeArtifacts = try ReactNativeColliderRecipe.prepare(
@@ -281,12 +279,6 @@ package struct ComponentRegistry {
                     .append(contentsOf: references)
             }
         }
-        for (target, gfxstream) in androidRuntime.artifacts.gfxstream {
-            var artifacts = ArtifactReferenceSet(gfxstream.hostBackend)
-            artifacts.append(gfxstream.guestVulkanDriver)
-            targetArtifacts[target, default: ArtifactReferenceSet()]
-                .append(contentsOf: artifacts)
-        }
         merge(coreArtifacts.nativeSDKs)
         merge(reactNativeArtifacts.artifacts.nativeSDKs)
         merge(waylandArtifacts.nativeSDKs)
@@ -294,6 +286,14 @@ package struct ComponentRegistry {
             let target = NativeLinuxTarget(architecture: architecture)
             targetArtifacts[target, default: ArtifactReferenceSet()]
                 .append(swiftTargetSDK.activeSDK)
+        }
+        let androidRuntime = try AndroidRuntimeColliderRecipe.prepare(
+            in: baseRecipeContext, runtimeCompilationArtifacts: targetArtifacts)
+        for (target, gfxstream) in androidRuntime.artifacts.gfxstream {
+            targetArtifacts[target, default: ArtifactReferenceSet()]
+                .append(gfxstream.hostBackend)
+            targetArtifacts[target, default: ArtifactReferenceSet()]
+                .append(gfxstream.guestVulkanDriver)
         }
         configurations[NativeBuilderColliderRecipe.descriptor.id] =
             NativeBuilderGraphConfiguration(

@@ -166,7 +166,10 @@ let package = Package(
             ]),
         .target(
             name: "CompositorColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "CoreColliderRecipe",
             dependencies: [

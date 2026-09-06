@@ -1,4 +1,5 @@
 import ColliderCore
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum CompositorEntrypoints {
@@ -21,10 +22,15 @@ public enum CompositorColliderRecipe: ColliderComponent {
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
         let swiftPM = try context.swiftPM(.linux(.arm64, configuration: .release))
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let test = testDRMGPU(
             root: root,
             environment: context.environment,
-            swiftPM: swiftPM)
+            swiftPM: swiftPM,
+            compilationArtifacts: try native.artifacts(
+                for: NativeLinuxTarget(architecture: .arm64)))
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: [test],
@@ -38,13 +44,15 @@ public enum CompositorColliderRecipe: ColliderComponent {
     public static func testDRMGPU(
         root: FilePath,
         environment: [String: String],
-        swiftPM: SwiftPMInvocation
+        swiftPM: SwiftPMInvocation,
+        compilationArtifacts: ArtifactReferenceSet
     ) -> TaskDeclaration {
         testTask(
             CompositorTaskIDs.testGPUDRM, root, environment,
             SwiftTestOptions(filters: ["gpuDRM_"]),
             [],
-            swiftPM: swiftPM)
+            swiftPM: swiftPM,
+            compilationArtifacts: compilationArtifacts)
     }
 }
 
@@ -54,13 +62,15 @@ private func testTask(
     _ environment: [String: String],
     _ options: SwiftTestOptions,
     _ dependencies: [TaskID],
-    swiftPM: SwiftPMInvocation
+    swiftPM: SwiftPMInvocation,
+    compilationArtifacts: ArtifactReferenceSet
 ) -> TaskDeclaration {
     let testRequirement = swiftPM.testProduct(
         package: "compositor-core",
         testProduct: "compositor-corePackageTests",
         packageRoot: root,
         environment: environment,
+        compilationArtifacts: compilationArtifacts,
         options: options)
     return TaskDeclaration(
         id: id,

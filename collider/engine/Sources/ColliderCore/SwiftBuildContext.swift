@@ -422,6 +422,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         product: String,
         packageRoot: FilePath,
         environment: [String: String],
+        compilationArtifacts: ArtifactReferenceSet = .init(),
         prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) -> SwiftProductRequirement {
@@ -435,6 +436,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             invocation: self,
             inputs: inputs,
             environment: environment,
+            compilationArtifacts: compilationArtifacts,
             prebuildTargets: prebuildTargets,
             expectedOutputs: expectedOutputs)
     }
@@ -444,6 +446,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         testProduct: String,
         packageRoot: FilePath,
         environment: [String: String],
+        compilationArtifacts: ArtifactReferenceSet = .init(),
         options: SwiftTestOptions = .init(),
         expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
@@ -455,6 +458,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             invocation: self,
             inputs: inputs,
             environment: environment,
+            compilationArtifacts: compilationArtifacts,
             options: options,
             expectedBuildOutputs: expectedBuildOutputs)
     }
@@ -785,6 +789,11 @@ public struct SwiftPMInvocation: Hashable, Sendable {
 /// One product that a task needs from the canonical Swift package. Recipes
 /// declare requirements; ColliderRuntime unions them into one SwiftPM request.
 public struct SwiftProductRequirement: Hashable, Sendable {
+    /// Inputs read by the compiler, independent of the action consuming this product.
+    public let compilationArtifacts: ArtifactReferenceSet
+    public var artifactReferences: [ArtifactReference] {
+        invocation.artifactReferences + compilationArtifacts.references
+    }
     public let package: String
     public let product: String
     public let packageRoot: FilePath
@@ -801,6 +810,7 @@ public struct SwiftProductRequirement: Hashable, Sendable {
         invocation: SwiftPMInvocation,
         inputs: [ArtifactInput],
         environment: [String: String],
+        compilationArtifacts: ArtifactReferenceSet = .init(),
         prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) {
@@ -815,6 +825,7 @@ public struct SwiftProductRequirement: Hashable, Sendable {
         self.invocation = invocation
         self.inputs = inputs
         self.environment = environment
+        self.compilationArtifacts = compilationArtifacts
         self.prebuildTargets = prebuildTargets
         self.expectedOutputs = expectedOutputs
     }
@@ -827,6 +838,10 @@ public struct SwiftProductRequirement: Hashable, Sendable {
 /// One independently attributed test product. Collider unions compilation for
 /// these requirements, then runs each selected product without rebuilding it.
 public struct SwiftTestRequirement: Hashable, Sendable {
+    public let compilationArtifacts: ArtifactReferenceSet
+    public var artifactReferences: [ArtifactReference] {
+        invocation.artifactReferences + compilationArtifacts.references
+    }
     public let package: String
     public let testProduct: String
     public let packageRoot: FilePath
@@ -843,6 +858,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         invocation: SwiftPMInvocation,
         inputs: [ArtifactInput],
         environment: [String: String],
+        compilationArtifacts: ArtifactReferenceSet = .init(),
         options: SwiftTestOptions = .init(),
         expectedBuildOutputs: [PathPostcondition] = []
     ) {
@@ -857,6 +873,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         self.invocation = invocation
         self.inputs = inputs
         self.environment = environment
+        self.compilationArtifacts = compilationArtifacts
         self.options = options
         self.expectedBuildOutputs = expectedBuildOutputs
     }

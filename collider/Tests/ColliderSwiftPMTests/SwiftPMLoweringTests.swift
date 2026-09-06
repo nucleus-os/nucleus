@@ -41,11 +41,14 @@ private func executeWithSwiftPM(
         options: options)
 }
 
-@Test func loweringCarriesLogicalOwnersAndNonSwiftPrerequisites() throws {
+@Test func loweringCarriesExplicitCompilationArtifactsAndLogicalOwners() throws {
     let packageRoot = FilePath("/fixture/package")
-    let prerequisite = TaskDeclaration(
+    var prerequisiteBuilder = TaskBuilder(
         id: TaskID(rawValue: "fixture.generated-input"),
         component: ComponentID(rawValue: "fixture"))
+    let generated = try prerequisiteBuilder.output(
+        "headers", path: FilePath("/fixture/headers"), validation: .nonEmptyDirectory)
+    let prerequisite = prerequisiteBuilder.build()
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
             packageRoot: packageRoot,
@@ -56,7 +59,6 @@ private func executeWithSwiftPM(
     let owner = TaskDeclaration(
         id: TaskID(rawValue: "fixture.product"),
         component: ComponentID(rawValue: "fixture"),
-        dependencies: [prerequisite.id],
         swiftProducts: [
             SwiftProductRequirement(
                 package: "fixture",
@@ -64,7 +66,8 @@ private func executeWithSwiftPM(
                 packageRoot: packageRoot,
                 invocation: invocation,
                 inputs: [],
-                environment: [:])
+                environment: [:],
+                compilationArtifacts: ArtifactReferenceSet(generated))
         ],
         locks: [.checkout("fixture-capacity")])
 
@@ -86,6 +89,80 @@ private func executeWithSwiftPM(
             invocation.lock,
             .checkout("fixture-capacity"),
         ])
+}
+
+@Test func sharedSigningToolDoesNotConsumeItsOwnersImage() throws {
+    let component = ComponentID(rawValue: "fixture")
+    let packageRoot = FilePath("/fixture/package")
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath("/fixture/scratch"))
+    var sdkBuilder = TaskBuilder(id: TaskID(rawValue: "fixture.sdk"), component: component)
+    let sdk = try sdkBuilder.output(
+        "sdk", path: FilePath("/fixture/sdk"), validation: .nonEmptyDirectory)
+    let requirement = invocation.product(
+        package: "fixture", product: "SigningTool", packageRoot: packageRoot,
+        environment: [:], compilationArtifacts: ArtifactReferenceSet(sdk))
+    var signingBuilder = TaskBuilder(id: TaskID(rawValue: "fixture.signing"), component: component)
+    let signing = try signingBuilder.output(
+        "key", path: FilePath("/fixture/key"), validation: .regularFile)
+    let signingTask = signingBuilder.build(swiftProducts: [requirement])
+    var imageBuilder = TaskBuilder(id: TaskID(rawValue: "fixture.image"), component: component)
+    imageBuilder.consume(signing)
+    let image = try imageBuilder.output(
+        "image", path: FilePath("/fixture/image"), validation: .regularFile)
+    let imageTask = imageBuilder.build()
+    var packagingBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.package"), component: component)
+    packagingBuilder.consume(image)
+    let packagingTask = packagingBuilder.build(swiftProducts: [requirement])
+    let declarations = [sdkBuilder.build(), signingTask, imageTask, packagingTask]
+    let shared = try #require(
+        SwiftPMLowering().lower(
+            declarations.map {
+                AssessedTaskDeclaration(task: $0, isClean: false)
+            }
+        ).first)
+    #expect(shared.logicalOwners == [signingTask.id, packagingTask.id])
+    #expect(shared.task.artifactReferences == [sdk])
+    #expect(shared.prerequisites == [sdkBuilder.id])
+    #expect(packagingTask.artifactReferences.contains(image))
+
+    // Validate the actual completion edges: signing and packaging wait for
+    // their shared compiler, but compilation never waits for the signed image.
+    let expanded = try TaskGraph(
+        declarations.map { task in
+            shared.logicalOwners.contains(task.id)
+                ? task.addingDependencies([shared.task.id]) : task
+        } + [shared.task])
+    _ = expanded
+
+    let signingOnly = try #require(
+        SwiftPMLowering().lower([
+            AssessedTaskDeclaration(task: sdkBuilder.build(), isClean: false),
+            AssessedTaskDeclaration(task: signingTask, isClean: false),
+        ]).first)
+    #expect(shared.task.inputs == signingOnly.task.inputs)
+    #expect(shared.task.artifactReferences == signingOnly.task.artifactReferences)
+    #expect(shared.identityBytes == signingOnly.identityBytes)
+
+    let incompatible = TaskBuilder(
+        id: TaskID(rawValue: "fixture.incompatible"), component: component
+    ).build(swiftProducts: [
+        invocation.product(
+            package: "fixture", product: "SigningTool", packageRoot: packageRoot,
+            environment: [:])
+    ])
+    #expect(throws: SwiftPMLoweringFailure.self) {
+        try SwiftPMLowering().lower([
+            AssessedTaskDeclaration(task: signingTask, isClean: false),
+            AssessedTaskDeclaration(task: incompatible, isClean: false),
+        ])
+    }
 }
 
 @Test func aProductBuildDoesNotWaitForAnActionDependingOnAnotherOwner() throws {
@@ -147,6 +224,16 @@ private func executeWithSwiftPM(
         path: FilePath("/fixture/image-id"),
         validation: .regularFile)
     let imageTask = imageBuilder.build()
+    var preparationBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.preparation"),
+        component: ComponentID(rawValue: "fixture"))
+    let preparation = try preparationBuilder.output(
+        "package-root", path: FilePath("/fixture/prepared"), validation: .nonEmptyDirectory)
+    var overlayBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.overlay"),
+        component: ComponentID(rawValue: "fixture"))
+    let overlay = try overlayBuilder.output(
+        "overlay", path: FilePath("/fixture/overlay"), validation: .nonEmptyDirectory)
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
             packageRoot: packageRoot,
@@ -158,6 +245,8 @@ private func executeWithSwiftPM(
                     executionPlatform: .linuxARM64OCI,
                     artifactTarget: .linuxARM64,
                     image: image,
+                    inputArtifacts: [overlay],
+                    preparationArtifacts: [preparation],
                     hostname: "fixture",
                     hostWorkingDirectory: packageRoot,
                     mounts: [],
@@ -201,8 +290,12 @@ private func executeWithSwiftPM(
         container.task.action?.requirements.effects.contains(
             ActionEffect(.readWrite, scope: .scratch(scratch))) == true)
     #expect(container.prerequisites.contains(host.task.id))
+    #expect(container.prerequisites.contains(preparationBuilder.id))
+    #expect(container.prerequisites.contains(overlayBuilder.id))
+    #expect(container.task.artifactReferences.contains(overlay))
+    #expect(!container.task.artifactReferences.contains(preparation))
     #expect(host.task.inputs.contains(.file(mirrors)))
-    #expect(container.task.inputs.contains(.file(mirrors)))
+    #expect(!container.task.inputs.contains(.file(mirrors)))
     #expect(host.task.locks.contains(.checkout("fixture-oci-capacity")))
     #expect(container.task.locks.contains(.checkout("fixture-oci-capacity")))
     let execution = try invocation.ociExecution(

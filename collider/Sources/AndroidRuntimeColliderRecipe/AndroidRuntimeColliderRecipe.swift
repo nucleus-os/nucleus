@@ -156,11 +156,17 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        try prepare(in: context).component
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
+        return try prepare(
+            in: context, runtimeCompilationArtifacts: native.targetArtifacts
+        ).component
     }
 
     package static func prepare(
-        in context: RecipeContext
+        in context: RecipeContext,
+        runtimeCompilationArtifacts: [NativeLinuxTarget: ArtifactReferenceSet]
     ) throws -> PreparedComponent {
         let native = try context.configuration(
             NativeBuilderGraphConfiguration.self,
@@ -236,6 +242,13 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     "no product is locked for " + architecture.rawValue)
             }
             let linuxTarget = NativeLinuxTarget(architecture: architecture)
+            guard var compilationArtifacts = runtimeCompilationArtifacts[linuxTarget],
+                let gfxstream = gfxstreamArtifacts[linuxTarget]
+            else {
+                throw NativeBuilderGraphConfigurationFailure.missingTargetArtifacts(linuxTarget)
+            }
+            compilationArtifacts.append(gfxstream.hostBackend)
+            compilationArtifacts.append(gfxstream.guestVulkanDriver)
             let runtimeScratch = context.buildRoot.appending(
                 "android-package-input/\(architecture.rawValue)")
             let output = context.artifactRoot.appending(
@@ -245,6 +258,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     architecture: architecture,
                     runtimeSwiftPM: try context.swiftPM(
                         .linux(architecture, configuration: .release)),
+                    runtimeCompilationArtifacts: compilationArtifacts,
                     assemblerSwiftPM: try context.swiftPM(.linuxAssembler),
                     runtimeScratch: runtimeScratch,
                     targetLibraryRoots: NucleusLinuxABI.targetLibraryRoots(

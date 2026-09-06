@@ -464,6 +464,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                     product: "nucleus-android",
                     packageRoot: package,
                     environment: environment,
+                    compilationArtifacts: nativeSDK,
                     expectedOutputs: [
                         PathPostcondition(
                             path: product,

@@ -616,8 +616,8 @@ public struct TaskDeclaration: Hashable, Sendable {
         action: AnyColliderAction? = nil
     ) {
         let swiftArtifactReferences =
-            swiftProducts.flatMap(\.invocation.artifactReferences)
-            + swiftTests.flatMap(\.invocation.artifactReferences)
+            swiftProducts.flatMap(\.artifactReferences)
+            + swiftTests.flatMap(\.artifactReferences)
         let allArtifactReferences = Self.uniqued(
             artifactReferences + swiftArtifactReferences)
         self.id = id

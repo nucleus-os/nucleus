@@ -38,6 +38,14 @@ whether compilation is necessary. OCI work retains an outer input gate because
 avoiding container startup and mount preparation is a meaningful boundary-level
 optimization.
 
+Swift product and test requirements own their compilation artifacts separately
+from the action consuming their results. Lowering consumes those references
+and the invocation's compiler/image inputs; it orders after package preparation
+and host dependency resolution. It never promotes packaging inputs or walks
+consumer dependencies to infer compiler prerequisites. Owners sharing one
+product must agree on its compilation artifact set. The expanded execution
+graph, including owner-completion edges, is validated before priority assignment.
+
 Downloaded bytes have one digest-addressed cache. Deterministic generators run
 from declared inputs and outputs; Collider does not snapshot their outputs into
 a second artifact cache. A successful process exit is sufficient for a terminal

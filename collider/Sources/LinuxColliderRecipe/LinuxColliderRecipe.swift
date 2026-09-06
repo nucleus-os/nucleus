@@ -675,6 +675,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 product: product,
                 packageRoot: lane.runtimeSwiftPM.context.packageRoot,
                 environment: configuration.buildEnvironment,
+                compilationArtifacts: targetArtifacts,
                 expectedOutputs: [
                     PathPostcondition(
                         path: lane.runtimeSwiftPM.executable(product),
@@ -1212,7 +1213,8 @@ public enum LinuxColliderRecipe: ColliderComponent {
             package: "nucleus",
             product: "NucleusSessionSupervisor",
             packageRoot: root,
-            environment: environment)
+            environment: environment,
+            compilationArtifacts: targetArtifacts)
         let sharedInputs: [ArtifactInput] = [
             swiftPM.identityInput
         ]
@@ -1233,6 +1235,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
+            compilationArtifacts: targetArtifacts,
             options: SwiftTestOptions(
                 skips: ["gpu(DRM|Loader|Headless)_"],
                 parallel: true,
@@ -1242,12 +1245,14 @@ public enum LinuxColliderRecipe: ColliderComponent {
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
+            compilationArtifacts: targetArtifacts,
             options: SwiftTestOptions(filters: ["gpuLoader_"]))
         let headlessRequirement = swiftPM.testProduct(
             package: "nucleus",
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
+            compilationArtifacts: targetArtifacts,
             options: SwiftTestOptions(filters: ["gpuHeadless_"]))
         var testBuilder = TaskBuilder(
             id: LinuxTaskIDs.test(architecture),

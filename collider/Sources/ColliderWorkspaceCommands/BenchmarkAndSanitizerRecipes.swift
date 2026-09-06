@@ -91,6 +91,7 @@ enum BenchmarkColliderRecipe: ColliderComponent {
                         product: product,
                         packageRoot: context.repositoryRoot.appending(package),
                         environment: environment,
+                        compilationArtifacts: targetArtifacts,
                         expectedOutputs: [
                             PathPostcondition(
                                 path: executable,
@@ -279,6 +280,7 @@ enum SanitizerColliderRecipe: ColliderComponent {
                 testProduct: suite,
                 packageRoot: context.repositoryRoot.appending(invocation.package),
                 environment: environment,
+                compilationArtifacts: targetArtifacts,
                 options: SwiftTestOptions(filters: [suite]))
             var builder = TaskBuilder(
                 id: id,
@@ -296,6 +298,7 @@ enum SanitizerColliderRecipe: ColliderComponent {
                 product: product,
                 packageRoot: context.repositoryRoot.appending(invocation.package),
                 environment: environment,
+                compilationArtifacts: targetArtifacts,
                 prebuildTargets: invocation.prerequisiteTargets,
                 expectedOutputs: [
                     PathPostcondition(
