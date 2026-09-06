@@ -46,8 +46,8 @@ defense in depth, not permission for producers to log secrets.
 
 Each file is bounded to 8 MiB. Large text logs retain their tail and are marked
 as truncated; oversized structured records are omitted rather than emitted as
-invalid JSON. Payload is bounded to 128 MiB and 512 files, with crash evidence
-collected first. The index records omissions. Artifact names contain both run
+invalid JSON. Payload is bounded to 128 MiB and 512 files.
+The index records omissions. Artifact names contain both run
 ID and attempt number, and GitHub retains them for fourteen days under the
 repository's normal Actions artifact access controls.
 
@@ -75,3 +75,11 @@ execution context. That ineffective setting was removed without weakening the
 host boundary. Exact-PID system-report collection covers the alternate macOS
 report location; absence of a report still requires host crash-reporting
 diagnosis, not speculative fixes to the failing task.
+
+[Run 34018214851](https://github.com/nucleus-os/nucleus/actions/runs/34018214851)
+passed all six collector contract tests, collected the interrupted run, and
+uploaded the bundle after the repeated SIGBUS. Its index reports that the
+account diagnostic directory is unavailable; no matching system-wide report
+was found. Export is verified, but no crash stack has been recovered. The
+recorded planning duration was 10.45 seconds, including 6.51 seconds of input
+hashing; the earlier approximately two-minute delay preceded that phase.
