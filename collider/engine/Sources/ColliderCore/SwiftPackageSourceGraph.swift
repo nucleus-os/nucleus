@@ -11,10 +11,12 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
     public struct Product: Hashable, Sendable {
         public let name: String
         public let targets: [String]
+        public let manifestConfiguration: String
 
-        public init(name: String, targets: [String]) {
+        public init(name: String, targets: [String], manifestConfiguration: String = "{}") {
             self.name = name
             self.targets = targets.sorted()
+            self.manifestConfiguration = manifestConfiguration
         }
     }
 
@@ -27,6 +29,7 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         /// Directories the manifest tells the compiler to search for this
         /// target's headers, resolved against the target that declares them.
         public let headerSearchPaths: [FilePath]
+        public let manifestConfiguration: String
 
         public init(
             name: String,
@@ -34,13 +37,15 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             targetDependencies: [String] = [],
             productDependencies: [String] = [],
             isTest: Bool = false,
-            headerSearchPaths: [FilePath] = []
+            headerSearchPaths: [FilePath] = [],
+            manifestConfiguration: String = "{}"
         ) {
             self.name = name
             self.path = path
             self.targetDependencies = targetDependencies.sorted()
             self.productDependencies = productDependencies.sorted()
             self.isTest = isTest
+            self.manifestConfiguration = manifestConfiguration
             self.headerSearchPaths = headerSearchPaths.sorted {
                 $0.string < $1.string
             }
@@ -54,6 +59,7 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
         public let dependencyRoots: [FilePath]
         public let products: [Product]
         public let targets: [Target]
+        public let manifestConfiguration: String
 
         public init(
             identity: String,
@@ -61,11 +67,13 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             isLocal: Bool = true,
             dependencyRoots: [FilePath] = [],
             products: [Product],
-            targets: [Target]
+            targets: [Target],
+            manifestConfiguration: String = "{}"
         ) {
             self.identity = identity
             self.root = root
             self.isLocal = isLocal
+            self.manifestConfiguration = manifestConfiguration
             self.dependencyRoots = dependencyRoots.sorted {
                 $0.string < $1.string
             }
@@ -130,7 +138,11 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             }
             return inputs(
                 roots: product.targets.map { (root, $0) },
-                packageByRoot: packageByRoot)
+                packageByRoot: packageByRoot) + [
+                    .string(
+                        name: "swift-product:\(rootPackage.identity):\(product.name)",
+                        value: product.manifestConfiguration)
+                ]
         }
     }
 
@@ -334,6 +346,10 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
             for target in candidates[0].1.targets {
                 visitTarget(target, in: candidates[0].0)
             }
+            manifestInputs.insert(
+                .string(
+                    name: "swift-product:\(candidates[0].0.identity):\(name)",
+                    value: candidates[0].1.manifestConfiguration))
         }
 
         func visitTarget(_ name: String, in package: Package) {
@@ -343,7 +359,14 @@ public struct SwiftPackageSourceGraph: Hashable, Sendable {
                 preconditionFailure(
                     "Swift package graph has no target \(name) in \(package.identity)")
             }
-            manifestInputs.insert(.file(package.root.appending("Package.swift")))
+            manifestInputs.insert(
+                .string(
+                    name: "swift-package:\(package.identity)",
+                    value: package.manifestConfiguration))
+            manifestInputs.insert(
+                .string(
+                    name: "swift-target:\(package.identity):\(target.name)",
+                    value: target.manifestConfiguration))
             sourcePathsByPackage[package.root, default: []].insert(target.path)
             for dependency in target.targetDependencies {
                 visitTarget(dependency, in: package)

@@ -65,7 +65,7 @@ package struct TaskControls: Sendable {
                 + "\(report.selectedInputHashingDurationNanoseconds / 1_000) us")
         lines.append("SwiftPM invocations  \(report.swiftPMInvocationCount)")
         for entry in report.plan {
-            let state = entry.isClean ? "clean" : "dirty"
+            let state = entry.isClean ? "clean" : entry.isDeferred ? "deferred" : "dirty"
             lines.append(
                 "\(state)  \(entry.task.rawValue)"
                     + executionCoordinateSummary(entry.coordinates)

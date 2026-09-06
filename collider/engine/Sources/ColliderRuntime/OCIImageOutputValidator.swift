@@ -1,8 +1,7 @@
 import ColliderCore
-import ColliderRuntime
 import Foundation
 
-struct OCIImageOutputValidator {
+package struct OCIImageOutputValidator {
     private struct Image: Hashable {
         let repository: String
         let digest: String
@@ -10,14 +9,14 @@ struct OCIImageOutputValidator {
 
     private let latestImages: Set<Image>
 
-    init(images: [OCIImageState]) {
+    package init(images: [OCIImageState]) {
         latestImages = Set(
             images.lazy.filter { $0.tag == "latest" }.map {
                 Image(repository: $0.repository, digest: $0.digest)
             })
     }
 
-    func validate(_ task: TaskDeclaration) throws {
+    package func validate(_ task: TaskDeclaration) throws {
         guard let action = task.action else { return }
         let outputPaths = Set(task.outputs.map(\.path))
         for preparation in action.imagePreparations
@@ -55,7 +54,7 @@ private enum OCIImageOutputValidationFailure: Error, CustomStringConvertible {
 }
 
 extension ExecutionPlan {
-    var containsCleanOCIImageOutput: Bool {
+    package var containsCleanOCIImageOutput: Bool {
         zip(declaredTasks, declaredEntries).contains {
             hasCleanOCIImageOutput(task: $0.0, entry: $0.1)
         }

@@ -13,10 +13,10 @@ func productInputsFollowTheTransitiveManifestTargetGraph() {
     let sourcePaths = sourcePaths(in: inputs)
     let productSourcePaths = Set(graph.sourcePaths(forProduct: "App"))
 
-    #expect(inputs.contains(.file(root.appending("Package.swift"))))
+    #expect(inputs.contains(.string(name: "swift-package:workspace", value: "{}")))
     #expect(sourcePaths.contains(root.appending("domains/app")))
     #expect(sourcePaths.contains(root.appending("domains/shared")))
-    #expect(inputs.contains(.file(dependency.appending("Package.swift"))))
+    #expect(inputs.contains(.string(name: "swift-package:dependency", value: "{}")))
     #expect(sourcePaths.contains(dependency.appending("Sources/Library")))
     #expect(!sourcePaths.contains(root.appending("domains/unrelated")))
     #expect(!sourcePaths.contains(root.appending("tests/app")))
@@ -100,6 +100,37 @@ private func sourcePaths(
             guard case .sourceCheckoutClosure(let paths) = input else { return [] }
             return paths
         })
+}
+
+@Test func semanticProductInputsExcludeUnrelatedDeclarationsButIncludeSelectedConfiguration() {
+    let root = FilePath("/workspace")
+    func inputs(
+        selected: String = "settings", unrelated: String = "other",
+        product: String = "executable", package: String = "swift6"
+    ) -> [ArtifactInput] {
+        SwiftPackageSourceGraph(
+            root: root,
+            packages: [
+                .init(
+                    identity: "workspace", root: root,
+                    products: [
+                        .init(name: "App", targets: ["App"], manifestConfiguration: product)
+                    ],
+                    targets: [
+                        .init(
+                            name: "App", path: root.appending("App"),
+                            manifestConfiguration: selected),
+                        .init(
+                            name: "Other", path: root.appending("Other"),
+                            manifestConfiguration: unrelated),
+                    ], manifestConfiguration: package)
+            ]
+        ).inputs(forProduct: "App")
+    }
+    #expect(inputs() == inputs(unrelated: "new unrelated settings and resources"))
+    #expect(inputs() != inputs(selected: "changed compiler settings or resources"))
+    #expect(inputs() != inputs(product: "dynamic library"))
+    #expect(inputs() != inputs(package: "changed package-wide settings"))
 }
 
 private func fixtureGraph(

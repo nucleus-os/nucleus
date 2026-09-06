@@ -330,9 +330,9 @@ extension ColliderRuntime {
         defer { withExtendedLifetime(workflowHeldLocks) {} }
 
         let ordered = frozenPlan.declaredTasks
-        let plan = frozenPlan.declaredEntries
+        var plan = frozenPlan.declaredEntries
         let swiftBuilds = frozenPlan.loweredTasks
-        let swiftBuildPlans = frozenPlan.loweredEntries
+        var swiftBuildPlans = frozenPlan.loweredEntries
         let reportedPlan = swiftBuildPlans + plan
         let swiftPMInvocationCount = swiftBuildPlans.count
         if let eventRun, let eventRegistry {
@@ -373,6 +373,13 @@ extension ColliderRuntime {
                 schedulingWaitDurationNanoseconds: 0)
         }
         let executionStart = ContinuousClock().now
+        let priorState = try taskStateStore.snapshot()
+        // This provider starts after planning, and sees artifact content only
+        // after its producer completes. No planning-local tree digest can be
+        // reused across a producer's write.
+        let artifactInputs = PlanningInputProvider(
+            digestIndex: stateRoot.appending("artifact-digests.json"))
+        var artifactDigests: [ArtifactReference: ArtifactDigest] = [:]
         if let eventRun, let eventRegistry {
             for entry in swiftBuildPlans where entry.isClean {
                 try await eventRegistry.record(
@@ -401,7 +408,7 @@ extension ColliderRuntime {
         }
         let buildPrerequisites = Dictionary(
             uniqueKeysWithValues: swiftBuilds.map {
-                ($0.task.id, $0.prerequisites)
+                ($0.task.id, $0.prerequisites.union($0.task.executionDependencies))
             })
         let schedulingPriorities = estimatedCriticalPathPriorities(
             swiftBuilds: swiftBuilds,
@@ -411,6 +418,8 @@ extension ColliderRuntime {
             buildPrerequisites: buildPrerequisites,
             buildsByOwner: buildsByOwner)
         var completed = Set(plan.filter(\.isClean).map(\.task))
+        var resolvedIdentities = Dictionary(
+            uniqueKeysWithValues: (plan + swiftBuildPlans).map { ($0.task, $0.identity) })
         completed.formUnion(swiftBuildPlans.filter(\.isClean).map(\.task))
         var pendingBuilds = swiftBuilds.indices.filter {
             !swiftBuildPlans[$0].isClean
@@ -535,6 +544,68 @@ extension ColliderRuntime {
                             swiftBuildAttribution: nil,
                             recordsActiveArtifact: true)
                     }
+                    let resolvedIdentity = try TaskArtifactIdentity.resolve(
+                        recipe: execution.plan.recipeIdentity, task: task,
+                        dependencyIdentity: { resolvedIdentities[$0]! }
+                    ) { reference in
+                        if let digest = artifactDigests[reference] { return digest }
+                        let digest = try artifactInputs.digest(artifact: reference)
+                        artifactDigests[reference] = digest
+                        return digest
+                    }
+                    resolvedIdentities[task.id] = resolvedIdentity
+                    var reusable = false
+                    if !execution.plan.isForced, task.assessmentPolicy != .always,
+                        case .record(let prior) = priorState.lookup(task.id),
+                        prior.identity == resolvedIdentity
+                    {
+                        do {
+                            try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+                            if hasOCIRuntimeBackend, let action = task.action,
+                                !action.imagePreparations.isEmpty
+                            {
+                                try OCIImageOutputValidator(images: await ociImages()).validate(
+                                    task)
+                            }
+                            reusable = true
+                        } catch {
+                            // A matching key never excuses missing or invalid
+                            // outputs, including an evicted OCI image.
+                            reusable = false
+                        }
+                    }
+                    let assessed = execution.plan.assessed(
+                        identity: resolvedIdentity,
+                        isClean: reusable,
+                        explanation: reusable
+                            ? "consumed artifact content and outputs are current"
+                            : "execution required after artifact assessment")
+                    switch candidate {
+                    case .swiftBuild(let index): swiftBuildPlans[index] = assessed
+                    case .declared(let index): plan[index] = assessed
+                    }
+                    if let eventRun, let eventRegistry {
+                        try await eventRegistry.recordAssessment(assessed, in: eventRun)
+                    }
+                    if reusable {
+                        completed.insert(task.id)
+                        readySince.removeValue(forKey: candidate)
+                        if let eventRun, let eventRegistry {
+                            try await eventRegistry.record(
+                                .task(.skipped(task: task.id, explanation: assessed.explanation)),
+                                in: eventRun)
+                            if execution.recordsActiveArtifact, task.recordsActiveArtifact {
+                                try await eventRegistry.recordActiveArtifact(
+                                    resolvedIdentity,
+                                    name: task.component.rawValue, in: eventRun)
+                            }
+                        }
+                        continue
+                    }
+                    let assessedExecution = ScheduledTaskExecution(
+                        scheduledTask: execution.scheduledTask, task: task, plan: assessed,
+                        swiftBuildAttribution: execution.swiftBuildAttribution,
+                        recordsActiveArtifact: execution.recordsActiveArtifact)
                     running[candidate] = lane
                     runningClaims[candidate] = execution.plan.claims
                     if let ready = readySince.removeValue(forKey: candidate) {
@@ -542,7 +613,7 @@ extension ColliderRuntime {
                     }
                     executed.append(task.id)
 
-                    group.addTask {
+                    group.addTask { [execution = assessedExecution] in
                         let taskStart = ContinuousClock().now
                         if let attribution = execution.swiftBuildAttribution {
                             do {
@@ -589,6 +660,7 @@ extension ColliderRuntime {
                     }
                 }
 
+                if pendingBuilds.isEmpty && pendingTasks.isEmpty && running.isEmpty { break }
                 guard !running.isEmpty else {
                     let blocked =
                         pendingBuilds.map {
@@ -640,25 +712,32 @@ extension ColliderRuntime {
         }
 
         let executionDuration = elapsedNanoseconds(since: executionStart)
+        try artifactInputs.persistDigestIndex()
+        let actualSwiftPMInvocations = executed.filter { task in
+            swiftBuildPlans.contains { $0.task == task }
+        }.count
         let criticalPathDuration = criticalPathByTask.values.max() ?? 0
         if let eventRun, let eventRegistry {
             try await eventRegistry.recordExecutionDuration(
                 executionDuration,
                 in: eventRun)
+            try await eventRegistry.recordPlanningMetrics(
+                selectedInputHashingDurationNanoseconds: selectedInputHashingDurationNanoseconds,
+                swiftPMInvocationCount: actualSwiftPMInvocations, in: eventRun)
             try await eventRegistry.recordExecutionMetrics(
                 criticalPathDurationNanoseconds: criticalPathDuration,
                 schedulingWaitDurationNanoseconds: schedulingWaitDuration,
                 in: eventRun)
         }
         return TaskExecutionReport(
-            plan: reportedPlan,
+            plan: swiftBuildPlans + plan,
             executed: executed,
             taskTimings: taskTimings,
             containerExecutionTimings: containerExecutionTimings,
             planningDurationNanoseconds: planningDurationNanoseconds,
             selectedInputHashingDurationNanoseconds:
                 selectedInputHashingDurationNanoseconds,
-            swiftPMInvocationCount: swiftPMInvocationCount,
+            swiftPMInvocationCount: actualSwiftPMInvocations,
             executionDurationNanoseconds: executionDuration,
             criticalPathDurationNanoseconds: criticalPathDuration,
             schedulingWaitDurationNanoseconds: schedulingWaitDuration)

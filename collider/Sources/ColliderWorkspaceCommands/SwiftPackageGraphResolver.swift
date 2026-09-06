@@ -19,6 +19,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         struct Product: Codable {
             let name: String
             let targets: [String]
+            let type: [String: [String]?]
         }
 
         struct Target: Codable {
@@ -69,14 +70,17 @@ package final class SwiftPackageGraphResolver: Sendable {
         let identities: [GraphIdentity]
         let locations: [PackageLocation]
         let packages: [Description]
-        /// Header search paths each package's manifest declares, keyed by
-        /// package path and then target name.
-        ///
-        /// Required rather than optional so a cache written before the
-        /// resolver collected build settings fails to decode and is rebuilt.
-        /// Reading one as though it had recorded no settings is how a target
-        /// that does declare them silently loses the directory it reads.
-        let headerSearchPaths: [String: [String: [String]]]
+        /// Complete evaluated manifest semantics. Requiring this field resets
+        /// caches that predate target-scoped identity instead of inventing
+        /// empty settings for a real package.
+        let manifests: [String: ManifestConfiguration]
+    }
+
+    struct ManifestConfiguration: Codable {
+        let package: String
+        let targets: [String: String]
+        let products: [String: String]
+        let headerSearchPaths: [String: [String]]
     }
 
     private let cacheRoot: FilePath
@@ -169,7 +173,7 @@ package final class SwiftPackageGraphResolver: Sendable {
                 root: packageRoot,
                 locations: cache.locations,
                 descriptions: cache.packages,
-                headerSearchPaths: cache.headerSearchPaths)
+                manifests: cache.manifests)
             return graph
         }
 
@@ -177,14 +181,14 @@ package final class SwiftPackageGraphResolver: Sendable {
             packageRoot,
             swift: swiftExecutable)
         var described: [Description] = []
-        var headerSearchPaths: [String: [String: [String]]] = [:]
+        var manifests: [String: ManifestConfiguration] = [:]
         for location in locations {
             let location = FilePath(location.path)
             described.append(try await describe(location, swift: swiftExecutable))
-            let declared = try await manifestHeaderSearchPaths(
+            let declared = try await manifestConfiguration(
                 location,
                 swift: swiftExecutable)
-            if !declared.isEmpty { headerSearchPaths[location.string] = declared }
+            manifests[location.string] = declared
         }
         let descriptions = described.sorted { $0.path < $1.path }
 
@@ -192,7 +196,7 @@ package final class SwiftPackageGraphResolver: Sendable {
             root: packageRoot,
             locations: locations,
             descriptions: descriptions,
-            headerSearchPaths: headerSearchPaths)
+            manifests: manifests)
         var identityPaths = descriptions.map {
             FilePath($0.path).appending("Package.swift")
         }
@@ -216,7 +220,7 @@ package final class SwiftPackageGraphResolver: Sendable {
                 identities: identities,
                 locations: locations,
                 packages: descriptions,
-                headerSearchPaths: headerSearchPaths))
+                manifests: manifests))
         cacheData.append(0x0a)
         try cacheData.write(
             to: URL(fileURLWithPath: cacheFile.string),
@@ -324,31 +328,67 @@ package final class SwiftPackageGraphResolver: Sendable {
         }
     }
 
-    /// Every target's declared header search paths, by target name.
-    ///
-    /// Matched by name rather than by the manifest's own target path, because
-    /// a target that does not state a path takes a default this would have to
-    /// reproduce, while `describe` has already resolved it.
-    private func manifestHeaderSearchPaths(
+    /// Evaluated package-wide semantics and independently selectable target
+    /// and product declarations. `describe` still resolves their source paths.
+    private func manifestConfiguration(
         _ packageRoot: FilePath,
         swift: FilePath
-    ) async throws -> [String: [String]] {
+    ) async throws -> ManifestConfiguration {
         let data = try await runSwiftPackage(
             packageRoot,
             swift: swift,
             arguments: ["dump-package"])
+        return try Self.parsedManifestConfiguration(data, packageRoot: packageRoot)
+    }
+
+    static func parsedManifestConfiguration(_ data: Data, packageRoot: FilePath) throws
+        -> ManifestConfiguration
+    {
         let manifest: Manifest
         do {
             manifest = try JSONDecoder().decode(Manifest.self, from: data)
         } catch {
             throw SwiftPackageGraphFailure.invalidDescription(packageRoot, error)
         }
-        return manifest.targets.reduce(into: [:]) { result, target in
+        let headerSearchPaths = manifest.targets.reduce(into: [String: [String]]()) {
+            result, target in
             let paths = (target.settings ?? []).compactMap {
                 $0.kind.headerSearchPath?.path
             }
             if !paths.isEmpty { result[target.name] = paths }
         }
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let targets = object.removeValue(forKey: "targets") as? [[String: Any]],
+            let products = object.removeValue(forKey: "products") as? [[String: Any]]
+        else {
+            throw SwiftPackageGraphFailure.invalidDescription(
+                packageRoot,
+                SwiftManifestIdentityFailure("manifest has no target/product arrays"))
+        }
+        // Dependency declarations select graph nodes; the visited products and
+        // their source closures identify those nodes. Unvisited dependencies
+        // and targets do not contribute to a selected product's semantics.
+        object.removeValue(forKey: "dependencies")
+        func canonical(_ value: Any) throws -> String {
+            let bytes = try JSONSerialization.data(
+                withJSONObject: value,
+                options: [.sortedKeys, .withoutEscapingSlashes])
+            return String(decoding: bytes, as: UTF8.self)
+        }
+        func named(_ values: [[String: Any]]) throws -> [String: String] {
+            var result: [String: String] = [:]
+            for value in values {
+                guard let name = value["name"] as? String, result[name] == nil else {
+                    throw SwiftManifestIdentityFailure("manifest declarations require unique names")
+                }
+                result[name] = try canonical(value)
+            }
+            return result
+        }
+        return ManifestConfiguration(
+            package: try canonical(object),
+            targets: try named(targets), products: try named(products),
+            headerSearchPaths: headerSearchPaths)
     }
 
     /// Was in the deadlock class: standard output was read to end of file
@@ -414,7 +454,7 @@ package final class SwiftPackageGraphResolver: Sendable {
         root: FilePath,
         locations: [PackageLocation],
         descriptions: [Description],
-        headerSearchPaths: [String: [String: [String]]]
+        manifests: [String: ManifestConfiguration]
     ) throws -> SwiftPackageSourceGraph {
         let canonicalPath = CanonicalPathCache()
         let canonicalRoot = canonicalPath(root)
@@ -446,8 +486,12 @@ package final class SwiftPackageGraphResolver: Sendable {
         }
         return SwiftPackageSourceGraph(
             root: canonicalRoot,
-            packages: descriptions.map { description in
+            packages: try descriptions.map { description in
                 let packageRoot = canonicalPath(FilePath(description.path))
+                guard let manifest = manifests[description.path] else {
+                    throw SwiftManifestIdentityFailure(
+                        "missing evaluated manifest for \(description.path)")
+                }
                 let dependencyRoots = description.dependencies.compactMap { dependency in
                     if let path = dependency.path {
                         return canonicalPath(FilePath(path))
@@ -459,12 +503,22 @@ package final class SwiftPackageGraphResolver: Sendable {
                     root: packageRoot,
                     isLocal: localRoots.contains(packageRoot),
                     dependencyRoots: dependencyRoots,
-                    products: description.products.map {
-                        SwiftPackageSourceGraph.Product(
+                    products: try description.products.map {
+                        // SwiftPM also synthesizes products (for example for
+                        // executable targets). Their resolved description is
+                        // authoritative when no manifest product declares them.
+                        let configuration =
+                            try manifest.products[$0.name]
+                            ?? String(decoding: JSONEncoder.sorted.encode($0), as: UTF8.self)
+                        return SwiftPackageSourceGraph.Product(
                             name: $0.name,
-                            targets: $0.targets)
+                            targets: $0.targets, manifestConfiguration: configuration)
                     },
-                    targets: description.targets.map { target in
+                    targets: try description.targets.map { target in
+                        guard let configuration = manifest.targets[target.name] else {
+                            throw SwiftManifestIdentityFailure(
+                                "missing target semantics for \(target.name)")
+                        }
                         let targetPath = FilePath(target.path)
                         let resolved =
                             targetPath.isAbsolute
@@ -477,12 +531,11 @@ package final class SwiftPackageGraphResolver: Sendable {
                             targetDependencies: target.targetDependencies ?? [],
                             productDependencies: target.productDependencies ?? [],
                             isTest: target.type == "test",
-                            headerSearchPaths: (headerSearchPaths[description.path]?[
-                                target.name] ?? []).map {
-                                    canonicalPath(
-                                        resolved.appending(FilePath($0).components))
-                                })
-                    })
+                            headerSearchPaths: (manifest.headerSearchPaths[target.name] ?? []).map {
+                                canonicalPath(
+                                    resolved.appending(FilePath($0).components))
+                            }, manifestConfiguration: configuration)
+                    }, manifestConfiguration: manifest.package)
             })
     }
 }
@@ -496,6 +549,11 @@ package final class SwiftPackageGraphResolver: Sendable {
 /// walks over a few dozen distinct directories. Resolution depends only on the
 /// filesystem, which does not change while one graph is being built, so the
 /// answers are shared for the duration of one reconstruction.
+private struct SwiftManifestIdentityFailure: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+
 private final class CanonicalPathCache {
     private var resolved: [FilePath: FilePath] = [:]
 

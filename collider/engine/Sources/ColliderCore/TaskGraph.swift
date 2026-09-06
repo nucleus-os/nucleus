@@ -576,6 +576,13 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let id: TaskID
     public let component: ComponentID
     public let dependencies: [TaskID]
+
+    /// Untyped dependency edges conservatively consume the dependency's final
+    /// identity. Typed references consume only the named output content.
+    package var identityDependencies: [TaskID] {
+        let producers = Set(artifactReferences.map(\.producer))
+        return dependencies.filter { !producers.contains($0) }
+    }
     public let orderingDependencies: [TaskOrderingReference]
     public let artifactReferences: [ArtifactReference]
     public let outputSlots: [TaskOutputSlot]
@@ -617,7 +624,10 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.component = component
         self.dependencies = Self.uniqued(
             dependencies + allArtifactReferences.map(\.producer))
-        self.orderingDependencies = orderingDependencies
+        self.orderingDependencies = Self.uniqued(
+            orderingDependencies
+                + swiftProducts.flatMap(\.invocation.orderingDependencies)
+                + swiftTests.flatMap(\.invocation.orderingDependencies))
         self.artifactReferences = allArtifactReferences
         self.outputSlots = outputSlots
         self.swiftProducts = swiftProducts

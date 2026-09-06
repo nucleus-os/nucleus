@@ -121,6 +121,39 @@ private func inertActionFileSystem() -> ActionFileSystem {
                 entrypoint: "/collider-entrypoints/build"))
 }
 
+@Test func preparationViewsDoNotChangeOCIIdentityButSemanticMountsDo() {
+    func identity(extraPreparation: Bool, input: String) -> [UInt8] {
+        let preparation =
+            extraPreparation
+            ? [
+                OCIMount(
+                    source: FilePath("/fixture/unrelated"), target: "/workspace/Other",
+                    access: .readOnly)
+            ]
+            : []
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI, artifactTarget: .linuxARM64,
+            imageID: FilePath("/fixture/image"), hostname: "fixture",
+            workingDirectory: "/workspace", hostWorkingDirectory: FilePath("/fixture"),
+            mounts: preparation + [
+                OCIMount(source: FilePath(input), target: "/sdk", access: .readOnly)
+            ],
+            userPolicy: .builder, capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition, processFilesystemPolicy: .standard,
+            resourceLimits: .build, containerEnvironment: [:],
+            command: ["build"], environment: [:], output: .logged)
+        var encoder = IdentityEncoder()
+        OCIExecutionActionIdentity(execution, preparationMounts: preparation).encode(into: &encoder)
+        return encoder.bytes
+    }
+    #expect(
+        identity(extraPreparation: false, input: "/sdk-a")
+            == identity(extraPreparation: true, input: "/sdk-a"))
+    #expect(
+        identity(extraPreparation: false, input: "/sdk-a")
+            != identity(extraPreparation: false, input: "/sdk-b"))
+}
+
 @Test func ociEnvironmentIdentityIgnoresDeclaredHostPlacement() {
     func identity(workspace: FilePath) -> [UInt8] {
         let map = IdentityPathMap(roots: [

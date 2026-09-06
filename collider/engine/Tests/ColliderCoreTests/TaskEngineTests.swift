@@ -144,6 +144,49 @@ private struct FailAfterWriteAction: ColliderAction {
     }
 }
 
+@Test func artifactConsumptionStopsAtUnchangedBytesAndPropagatesChangedBytes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let state = root.appending("state")
+    var producer = TaskBuilder(id: "fixture.producer", component: "fixture")
+    let artifact = try producer.output(
+        "value", path: root.appending("value"), validation: .regularFile)
+    var consumer = TaskBuilder(id: "fixture.consumer", component: "fixture")
+    consumer.consume(artifact)
+    let result = try consumer.output(
+        "result", path: root.appending("result"), validation: .regularFile)
+    let consumerTask = consumer.build(action: try fixtureWriteAction(result.path, bytes: [42]))
+    // An untyped edge must transitively carry the consumer's final identity.
+    let downstream = TaskDeclaration(
+        id: "fixture.downstream", component: "fixture",
+        dependencies: [consumer.id],
+        outputs: [OutputDeclaration(path: root.appending("downstream"), validation: .regularFile)],
+        action: try fixtureWriteAction(root.appending("downstream"), bytes: [43]))
+    func run(recipe: String, bytes: [UInt8], force: Bool = false) async throws
+        -> TaskExecutionReport
+    {
+        let task = producer.build(
+            inputs: [.string(name: "recipe", value: recipe)],
+            action: try fixtureWriteAction(artifact.path, bytes: bytes))
+        return try await ColliderEngine(runtime: ColliderRuntime()).execute(
+            graph: TaskGraph([task, consumerTask, downstream]), selected: [downstream.id],
+            stateRoot: state, options: TaskExecutionOptions(rebuildSelected: force))
+    }
+    let cold = try await run(recipe: "one", bytes: [1])
+    #expect(cold.executed == [producer.id, consumer.id, downstream.id])
+    let unchanged = try await run(recipe: "two", bytes: [1])
+    #expect(unchanged.executed == [producer.id])
+    #expect(unchanged.plan.first { $0.task == consumer.id }?.isClean == true)
+    let changed = try await run(recipe: "three", bytes: [2])
+    #expect(changed.executed == [producer.id, consumer.id, downstream.id])
+    try FileManager.default.removeItem(atPath: artifact.path.string)
+    let restored = try await run(recipe: "three", bytes: [2])
+    #expect(restored.executed == [producer.id])
+    let forced = try await run(recipe: "three", bytes: [2], force: true)
+    #expect(forced.executed == [downstream.id])
+}
+
 @Test func taskSchedulerRunsIndependentTasksConcurrently() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-concurrency-\(UUID().uuidString)")

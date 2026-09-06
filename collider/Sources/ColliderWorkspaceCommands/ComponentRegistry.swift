@@ -1136,46 +1136,45 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: resolvedArtifactTarget,
                 image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay, packageRootView],
+                inputArtifacts: [builder.swiftPMOverlay],
+                preparationArtifacts: [packageRootView],
+                preparationMounts: packageRootMounts(
+                    root: root, view: packageRootView.path,
+                    nested: checkoutRoots, placement: placement),
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
-                mounts: packageRootMounts(
-                    root: root,
-                    view: packageRootView.path,
-                    nested: checkoutRoots,
-                    placement: placement)
-                    + [
-                        OCIMount(
-                            source: nativeSDK,
-                            target: placement.executionPath(nativeSDK),
-                            access: .readOnly),
-                        // The native SDK's include tree links into the materialized
-                        // JavaScript workspace and the generated sources beside it,
-                        // and those links record the path the container sees, so
-                        // both trees are mounted where the declared roots put them.
-                        OCIMount(
-                            source: ReactNativeColliderRecipe.javaScriptWorkspace(
-                                cacheRoot: context.cacheRoot),
-                            target: placement.executionPath(
-                                ReactNativeColliderRecipe.javaScriptWorkspace(
-                                    cacheRoot: context.cacheRoot)),
-                            access: .readOnly),
-                        OCIMount(
-                            source: ReactNativeColliderRecipe.codegenRoot(
-                                cacheRoot: context.cacheRoot),
-                            target: placement.executionPath(
-                                ReactNativeColliderRecipe.codegenRoot(
-                                    cacheRoot: context.cacheRoot)),
-                            access: .readOnly),
-                        OCIMount(
-                            source: builder.swiftSDKRoot,
-                            target: guestSDKRoot,
-                            access: .readOnly),
-                        OCIMount(
-                            source: builder.swiftPMOverlay.path,
-                            target: "/swiftpm-overlay",
-                            access: .readOnly),
-                    ],
+                mounts: [
+                    OCIMount(
+                        source: nativeSDK,
+                        target: placement.executionPath(nativeSDK),
+                        access: .readOnly),
+                    // The native SDK's include tree links into the materialized
+                    // JavaScript workspace and the generated sources beside it,
+                    // and those links record the path the container sees, so
+                    // both trees are mounted where the declared roots put them.
+                    OCIMount(
+                        source: ReactNativeColliderRecipe.javaScriptWorkspace(
+                            cacheRoot: context.cacheRoot),
+                        target: placement.executionPath(
+                            ReactNativeColliderRecipe.javaScriptWorkspace(
+                                cacheRoot: context.cacheRoot)),
+                        access: .readOnly),
+                    OCIMount(
+                        source: ReactNativeColliderRecipe.codegenRoot(
+                            cacheRoot: context.cacheRoot),
+                        target: placement.executionPath(
+                            ReactNativeColliderRecipe.codegenRoot(
+                                cacheRoot: context.cacheRoot)),
+                        access: .readOnly),
+                    OCIMount(
+                        source: builder.swiftSDKRoot,
+                        target: guestSDKRoot,
+                        access: .readOnly),
+                    OCIMount(
+                        source: builder.swiftPMOverlay.path,
+                        target: "/swiftpm-overlay",
+                        access: .readOnly),
+                ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
                         key: "nucleus-swiftpm",
@@ -1281,20 +1280,19 @@ package struct ComponentRegistry {
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: .linuxARM64,
                 image: builder.image,
-                inputArtifacts: [builder.swiftPMOverlay, assemblerView],
+                inputArtifacts: [builder.swiftPMOverlay],
+                preparationArtifacts: [assemblerView],
+                preparationMounts: packageRootMounts(
+                    root: root, view: assemblerView.path,
+                    nested: checkoutRoots, placement: context.identityPathMap),
                 hostname: "nucleus-linux-assembler",
                 hostWorkingDirectory: packageRoot,
-                mounts: packageRootMounts(
-                    root: root,
-                    view: assemblerView.path,
-                    nested: checkoutRoots,
-                    placement: context.identityPathMap)
-                    + [
-                        OCIMount(
-                            source: builder.swiftPMOverlay.path,
-                            target: "/swiftpm-overlay",
-                            access: .readOnly)
-                    ],
+                mounts: [
+                    OCIMount(
+                        source: builder.swiftPMOverlay.path,
+                        target: "/swiftpm-overlay",
+                        access: .readOnly)
+                ],
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
                         key: "collider-swiftpm-tools",

@@ -6,6 +6,36 @@ import Synchronization
 import SystemPackage
 import Testing
 
+@Test func coldConsumersDeferWithoutReadingUnproducedArtifacts() async throws {
+    var producer = TaskBuilder(id: "fixture.producer", component: "fixture")
+    let artifact = try producer.output(
+        "value", path: FilePath("/not-produced"), validation: .regularFile)
+    var consumer = TaskBuilder(id: "fixture.consumer", component: "fixture")
+    consumer.consume(artifact)
+    let digest = ArtifactDigest.sha256([UInt8]())
+    let services = TaskPlanningServices(
+        digestBytes: { ArtifactDigest.sha256($0) },
+        digestFile: { _ in
+            Issue.record("unproduced artifact was read")
+            return digest
+        },
+        digestTree: { _ in
+            Issue.record("unproduced artifact was read")
+            return digest
+        },
+        digestSourceCheckout: { _ in digest },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/tool"), digest: digest)
+        },
+        taskState: { _ in .missing }, validateOutputs: { _ in })
+    let plan = try await ColliderPlanner().plan(
+        graph: TaskGraph([producer.build(), consumer.build()]), selected: [consumer.id],
+        rebuildSelected: false, lowerings: [], services: services)
+    let entry = try #require(plan.declaredEntries.first { $0.task == consumer.id })
+    #expect(entry.isDeferred)
+    #expect(!entry.isClean)
+}
+
 @Test func identicalDeclarationsAndSnapshotsProduceIdenticalPlanBytes() async throws {
     let input = FilePath("/fixture/selected-input")
     let selected = TaskDeclaration(

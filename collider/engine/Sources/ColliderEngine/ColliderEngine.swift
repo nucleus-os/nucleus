@@ -117,7 +117,8 @@ public struct ColliderEngine: Sendable {
                             try outputValidator.validate(task)
                             try imageValidator?.validate(task)
                         },
-                        observeIdentity: options.identityObserver)
+                        observeIdentity: options.identityObserver,
+                        digestArtifact: planningInputs.digest(artifact:))
                 }
                 var plan = try await planning(services())
                 // A dry run reports what planning decided. Confirming that a

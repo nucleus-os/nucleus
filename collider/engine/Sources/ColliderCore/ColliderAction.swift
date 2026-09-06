@@ -353,9 +353,14 @@ public struct OCIMountedEntrypointActionIdentity: ColliderActionIdentity {
 
 public struct OCIExecutionActionIdentity: ColliderActionIdentity {
     public let execution: OCIExecution
+    public let preparationMounts: [OCIMount]
 
-    public init(_ execution: OCIExecution) {
+    /// Preparation mounts are execution views whose selected semantic inputs
+    /// are declared separately by the owning action (for example SwiftPM's
+    /// resolved target closure). They grant access, not additional inputs.
+    public init(_ execution: OCIExecution, preparationMounts: [OCIMount] = []) {
         self.execution = execution
+        self.preparationMounts = preparationMounts
     }
 
     public func encode(into encoder: inout IdentityEncoder) {
@@ -371,7 +376,8 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(execution.workingDirectory)
         encoder.append(path: execution.hostWorkingDirectory)
 
-        encoder.appendSequence(execution.mounts) { mountEncoder, mount in
+        encoder.appendSequence(execution.mounts.filter { !preparationMounts.contains($0) }) {
+            mountEncoder, mount in
             mountEncoder.append(path: mount.source)
             mountEncoder.append(mount.target)
             mountEncoder.appendEnum(mount.purpose)

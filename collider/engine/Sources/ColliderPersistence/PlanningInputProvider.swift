@@ -29,6 +29,27 @@ package final class PlanningInputProvider: @unchecked Sendable {
         try digests.digest(tree: path)
     }
 
+    package func digest(artifact reference: ArtifactReference) throws -> ArtifactDigest {
+        let path = reference.path
+        let metadata = try path.stat(followTargetSymlink: reference.validation != .symlink)
+        var encoder = IdentityEncoder()
+        encoder.append(metadata.permissions.contains(.ownerExecute))
+        switch metadata.type {
+        case .regular:
+            encoder.append("file")
+            encoder.append(digest: try digest(file: path))
+        case .directory:
+            encoder.append("directory")
+            encoder.append(digest: try digest(tree: path))
+        case .symbolicLink:
+            encoder.append("symlink")
+            encoder.append(try FileManager.default.destinationOfSymbolicLink(atPath: path.string))
+        default:
+            throw PersistenceFailure.invalidPath("unsupported artifact content at \(path)")
+        }
+        return .sha256(encoder.bytes)
+    }
+
     package func digest(sourceCheckout path: FilePath) async throws -> ArtifactDigest {
         try await digests.digest(sourceCheckout: path)
     }

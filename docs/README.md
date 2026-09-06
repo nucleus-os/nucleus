@@ -35,6 +35,10 @@ qualification, packaging, CI, signing, publication, and distribution establish
 the contracts that development deployment and independent contributor hosts
 reuse.
 
+Complete the [build consumption identity correction](build-consumption-identity-plan.md)
+before resuming the sequence below. It removes package-wide invalidation and
+propagation through producer recipe identities exposed by the nightly allocator.
+
 1. Complete the remaining gates in Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    the protected-main host-contract, provenance, build, and test lanes already

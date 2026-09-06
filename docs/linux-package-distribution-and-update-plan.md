@@ -404,7 +404,10 @@ reservation into version-bearing finalization. Authority provisioning and
 state backup, final package lifecycle qualification, package-manager ordering
 checks, deterministic repository assembly, and signing remain pending. The
 reservation concurrency, retry, calendar, corruption, and process-boundary tests
-await protected-main CI.
+passed [protected-main verification](https://github.com/nucleus-os/nucleus/actions/runs/33987869473)
+at `3eea96c724ccfefa4009f7c68cb549984e300a17`. Build consumption identity is the
+prerequisite to the next increment; reservation admission and version-bearing
+finalization retain the boundaries above.
 
 Add protected nightly finalization after content-derived native package
 production and qualification. Select one exact successfully verified `main`

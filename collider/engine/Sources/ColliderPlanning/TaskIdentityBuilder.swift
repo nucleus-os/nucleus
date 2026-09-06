@@ -9,20 +9,17 @@ struct TaskIdentitySnapshot: Sendable {
 struct TaskIdentityBuilder {
     func build(
         of task: TaskDeclaration,
-        dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices
     ) async throws -> TaskIdentitySnapshot {
         var resolutions = TaskIdentityResolutions()
         return try await identity(
             of: task,
-            dependencies: dependencies,
             services: services,
             resolutions: &resolutions)
     }
 
     private func identity(
         of task: TaskDeclaration,
-        dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices,
         resolutions: inout TaskIdentityResolutions
     ) async throws -> TaskIdentitySnapshot {
@@ -30,10 +27,9 @@ struct TaskIdentityBuilder {
             identityPathMap: services.identityPathMap)
         encoder.append(task.id.rawValue)
         encoder.append(task.component.rawValue)
-        encoder.appendSequence(dependencies.sorted { $0.task.rawValue < $1.task.rawValue }) {
+        encoder.appendSequence(task.identityDependencies.sorted { $0.rawValue < $1.rawValue }) {
             dependencyEncoder, dependency in
-            dependencyEncoder.append(dependency.task.rawValue)
-            dependencyEncoder.append(bytes: dependency.identity.bytes)
+            dependencyEncoder.append(dependency.rawValue)
         }
         let artifactReferences = task.artifactReferences.sorted {
             ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
@@ -261,25 +257,9 @@ struct TaskIdentityBuilder {
                 toolEncoder.append(bytes: identity.digest.bytes)
             }
         }
-        let effects = action.requirements.effects.sorted {
-            let left = $0.scope.root.string + "\u{0}" + $0.access.rawValue
-            let right = $1.scope.root.string + "\u{0}" + $1.access.rawValue
-            return left.utf8.lexicographicallyPrecedes(right.utf8)
-        }
-        encoder.appendSequence(effects) { effectEncoder, effect in
-            effectEncoder.append(effect.access.rawValue)
-            let scope: String
-            switch effect.scope {
-            case .input: scope = "input"
-            case .checkout: scope = "checkout"
-            case .scratch: scope = "scratch"
-            case .output: scope = "output"
-            case .publication: scope = "publication"
-            case .unrestricted: scope = "unrestricted"
-            }
-            effectEncoder.append(scope)
-            effectEncoder.append(path: effect.scope.root)
-        }
+        // Effects authorize access and determine scheduling claims. Semantic
+        // values and consumed artifacts identify the work; a wider permitted
+        // source view does not make every visible target an input.
         encoder.appendSequence(artifactEnvironment(action.environment)) { entry, pair in
             entry.append(pair.key)
             entry.append(canonicalizingPathsIn: pair.value)

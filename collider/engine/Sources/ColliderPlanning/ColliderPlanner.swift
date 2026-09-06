@@ -60,15 +60,10 @@ public struct ColliderPlanner {
         let identityBuilder = TaskIdentityBuilder()
         let normalization = NormalizationCache()
         var identities: [TaskID: ArtifactDigest] = [:]
+        var current: [TaskID: Bool] = [:]
         var entries: [TaskPlanEntry] = []
 
         for task in ordered {
-            let dependencyIdentities = try task.dependencies.map {
-                guard let identity = identities[$0] else {
-                    throw TaskGraphFailure.missing(task: task.id, dependency: $0)
-                }
-                return (task: $0, identity: identity)
-            }
             let snapshot: TaskIdentitySnapshot
             if let cached = identityCache[task.id] {
                 snapshot = cached
@@ -76,18 +71,31 @@ public struct ColliderPlanner {
             } else {
                 snapshot = try await identityBuilder.build(
                     of: task,
-                    dependencies: dependencyIdentities,
                     services: services)
                 identityCache[task.id] = snapshot
             }
-            let identity = snapshot.digest
+            let recipeIdentity = snapshot.digest
+            let deferred = task.dependencies.contains { current[$0] != true }
+            let identity =
+                try deferred
+                ? recipeIdentity
+                : TaskArtifactIdentity.resolve(
+                    recipe: recipeIdentity, task: task,
+                    dependencyIdentity: { identities[$0]! }, digest: services.digestArtifact)
             identities[task.id] = identity
+            let forced =
+                rebuildSelected && explicitlySelected.contains(task.id)
+                || task.assessmentPolicy == .always || ownsHostSwiftRequirement(task)
             let assessment =
                 rebuildSelected && explicitlySelected.contains(task.id)
                 ? TaskAssessment(
                     isClean: false,
                     explanation: "rebuild requested for selected task")
-                : assessment(of: task, identity: identity, services: services)
+                : deferred
+                    ? TaskAssessment(
+                        isClean: false, explanation: "awaiting consumed artifact content")
+                    : assessment(of: task, identity: identity, services: services)
+            current[task.id] = assessment.isClean
             let coordinates = try executionCoordinates(
                 for: task.action,
                 runner: services.runnerPlatform)
@@ -111,7 +119,7 @@ public struct ColliderPlanner {
                         TaskDurationEstimate(
                             workload: workload,
                             durationNanoseconds: $0)
-                    }))
+                    }, recipeIdentity: recipeIdentity, isDeferred: deferred, isForced: forced))
         }
 
         let assessed = zip(ordered, entries).map {
@@ -144,23 +152,29 @@ public struct ColliderPlanner {
         // so the lowered entries are built in order rather than mapped.
         var loweredEntries: [TaskPlanEntry] = []
         for lowered in lowered {
-            let dependencyIdentities = try lowered.task.dependencies.map {
-                guard let identity = identities[$0] else {
-                    throw TaskGraphFailure.missing(
-                        task: lowered.task.id,
-                        dependency: $0)
-                }
-                return (task: $0, identity: identity)
-            }
-            let identity = try await identityBuilder.build(
+            let recipeIdentity = try await identityBuilder.build(
                 of: lowered.task,
-                dependencies: dependencyIdentities,
                 services: services
             ).digest
-            let assessment = assessment(
-                of: lowered.task,
-                identity: identity,
-                services: services)
+            let deferred = lowered.task.dependencies.contains { current[$0] != true }
+            let identity =
+                try deferred
+                ? recipeIdentity
+                : TaskArtifactIdentity.resolve(
+                    recipe: recipeIdentity, task: lowered.task,
+                    dependencyIdentity: { identities[$0]! }, digest: services.digestArtifact)
+            identities[lowered.task.id] = identity
+            let forced =
+                lowered.task.assessmentPolicy == .always
+                || (rebuildSelected && !explicitlySelected.isDisjoint(with: lowered.logicalOwners))
+            let assessment =
+                forced
+                ? TaskAssessment(isClean: false, explanation: "rebuild required for lowered task")
+                : deferred
+                    ? TaskAssessment(
+                        isClean: false, explanation: "awaiting consumed artifact content")
+                    : assessment(of: lowered.task, identity: identity, services: services)
+            current[lowered.task.id] = assessment.isClean
             let coordinates = try executionCoordinates(
                 for: lowered.task.action,
                 runner: services.runnerPlatform)
@@ -190,7 +204,9 @@ public struct ColliderPlanner {
                             durationNanoseconds: $0)
                     },
                     identityComponents: lowered.identityBytes.isEmpty
-                        ? nil : lowered.identityBytes))
+                        ? nil : lowered.identityBytes,
+                    recipeIdentity: recipeIdentity, isDeferred: deferred,
+                    isForced: forced))
         }
         return ExecutionPlan(
             declaredTasks: ordered,

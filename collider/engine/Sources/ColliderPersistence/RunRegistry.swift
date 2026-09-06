@@ -121,9 +121,7 @@ public actor RunRegistry {
             throw RunRegistryFailure.activeRunOwned(id)
         }
         let manifestPath = directory.appending("manifest.json")
-        var manifest = try JSONDecoder().decode(
-            RunManifest.self,
-            from: Data(contentsOf: URL(fileURLWithPath: manifestPath.string)))
+        var manifest = try readManifest(manifestPath)
         guard manifest.status == .interrupted || manifest.status == .failed else {
             throw RunRegistryFailure.notResumable(id, manifest.status)
         }
@@ -146,9 +144,7 @@ public actor RunRegistry {
         in run: RunHandle
     ) throws {
         let path = run.directory.appending("manifest.json")
-        var manifest = try JSONDecoder().decode(
-            RunManifest.self,
-            from: Data(contentsOf: URL(fileURLWithPath: path.string)))
+        var manifest = try readManifest(path)
         if (manifest.resumeCount ?? 0) > 0,
             let recorded = manifest.tasks
         {
@@ -214,6 +210,19 @@ public actor RunRegistry {
             }
             record.outcome = outcome
             $0.tasks?[task.rawValue] = record
+        }
+    }
+
+    /// Resolves a deferred assessment without replacing completed task evidence.
+    public func recordAssessment(_ entry: TaskPlanEntry, in run: RunHandle) throws {
+        try updateManifest(run) { manifest in
+            guard let previous = manifest.tasks?[entry.task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(entry.task)
+            }
+            manifest.tasks?[entry.task.rawValue] = RunTaskRecord(
+                plan: entry, outcome: entry.isClean ? .localClean : previous.outcome,
+                durationNanoseconds: previous.durationNanoseconds,
+                observations: previous.observations)
         }
     }
 
@@ -296,8 +305,7 @@ public actor RunRegistry {
     ) throws {
         defer { leases[run.id] = nil }
         let manifestPath = run.directory.appending("manifest.json")
-        var manifest = try JSONDecoder().decode(
-            RunManifest.self, from: Data(contentsOf: URL(fileURLWithPath: manifestPath.string)))
+        var manifest = try readManifest(manifestPath)
         manifest.status = status
         manifest.failedTask = failedTask
         manifest.finishedAt = timestamp()
@@ -375,10 +383,8 @@ public actor RunRegistry {
                 options: [.skipsHiddenFiles])) ?? [])
             .compactMap { url -> RecordedRunSnapshot? in
                 guard
-                    let data = try? Data(
-                        contentsOf: url.appendingPathComponent("manifest.json")),
-                    let manifest = try? JSONDecoder().decode(
-                        RunManifest.self, from: data)
+                    let manifest = try? readManifest(
+                        FilePath(url.appendingPathComponent("manifest.json").path))
                 else { return nil }
                 return RecordedRunSnapshot(
                     run: RecordedRun(
@@ -527,11 +533,8 @@ public actor RunRegistry {
                 options: [.skipsHiddenFiles])) ?? [])
             .compactMap { url -> (RecordedRun, RunManifest)? in
                 guard
-                    let data = try? Data(
-                        contentsOf: url.appendingPathComponent(
-                            "manifest.json")),
-                    let manifest = try? JSONDecoder().decode(
-                        RunManifest.self, from: data)
+                    let manifest = try? readManifest(
+                        FilePath(url.appendingPathComponent("manifest.json").path))
                 else { return nil }
                 return (
                     RecordedRun(id: manifest.runID, directory: FilePath(url.path)),
@@ -591,11 +594,38 @@ public actor RunRegistry {
         _ update: (inout RunManifest) throws -> Void
     ) throws {
         let path = run.directory.appending("manifest.json")
-        var manifest = try JSONDecoder().decode(
-            RunManifest.self,
-            from: Data(contentsOf: URL(fileURLWithPath: path.string)))
+        var manifest = try readManifest(path)
         try update(&manifest)
         try writeJSON(manifest, to: path)
+    }
+
+    /// Hard-migrate retained run evidence once. Historical identities remain
+    /// historical; they are never used as recipes to resume execution (resume
+    /// always replans). The decoder accepts only the current record shape.
+    private func readManifest(_ path: FilePath) throws -> RunManifest {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path.string))
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            var tasks = object["tasks"] as? [String: [String: Any]]
+        else { return try JSONDecoder().decode(RunManifest.self, from: data) }
+        var changed = false
+        for (id, var record) in tasks {
+            guard var plan = record["plan"] as? [String: Any],
+                plan["recipeIdentity"] == nil
+            else { continue }
+            plan["recipeIdentity"] = plan["identity"]
+            plan["isDeferred"] = false
+            plan["isForced"] = false
+            record["plan"] = plan
+            tasks[id] = record
+            changed = true
+        }
+        guard changed else { return try JSONDecoder().decode(RunManifest.self, from: data) }
+        object["tasks"] = tasks
+        let migrated = try JSONDecoder().decode(
+            RunManifest.self,
+            from: JSONSerialization.data(withJSONObject: object))
+        try writeJSON(migrated, to: path)
+        return migrated
     }
 
     private func append(_ event: RunEvent, to run: RunHandle) throws {

@@ -108,8 +108,8 @@ public struct TaskOrderingReference: Hashable, Sendable {
 extension ArtifactReference {
     /// Run after this artifact's producer without taking its identity.
     ///
-    /// A task that reads an artifact consumes it, and the producer's identity
-    /// becomes part of its own. A task that only requires the artifact to exist
+    /// A task that reads an artifact consumes it, and the artifact's content
+    /// becomes part of its identity. A task that only requires the artifact to exist
     /// -- because what the task asserts is identified by something else --
     /// orders after it instead. Consuming there would make the assertion's
     /// identity depend on the shape of the graph that established it rather

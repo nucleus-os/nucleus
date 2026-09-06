@@ -449,8 +449,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     environment: first.environment,
                     operations: prebuildTargets.map(SwiftPMOperation.buildTarget)
                         + [buildOperation])
-            )
-            .addingDependencies(owners.flatMap(\.dependencies)),
+            ),
             identityBytes: identity.bytes)
     }
 
@@ -518,8 +517,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
                     environment: environment,
                     operations: [testOperation],
                     recordsTestResults: true)
-            )
-            .addingDependencies(owners.flatMap(\.dependencies)),
+            ),
             identityBytes: identity.bytes)
     }
 
@@ -722,6 +720,12 @@ public struct SwiftPMLowering: TaskPlanLowering {
         return try AnyColliderAction(
             SwiftPMAction(
                 processes: processes + [binPathQuery],
+                preparationMounts: {
+                    if case .oci(let configuration) = invocation.context.execution {
+                        return configuration.preparationMounts
+                    }
+                    return []
+                }(),
                 packageRoot: invocation.context.packageRoot,
                 scratchPath: invocation.scratchPath,
                 productsDirectory: invocation.productsDirectory))
@@ -959,6 +963,7 @@ private struct SwiftPMDriverEvent: Codable, Sendable {
 private struct SwiftPMAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let processes: [SwiftPMProcess]
+        let preparationMounts: [OCIMount]
         let productsDirectory: FilePath
 
         func encode(into encoder: inout IdentityEncoder) {
@@ -974,7 +979,10 @@ private struct SwiftPMAction: ColliderAction {
                 case .host(let command):
                     encoder.append(nested: HostSwiftPMCommandIdentity(command: command))
                 case .oci(let execution):
-                    encoder.append(nested: OCIExecutionActionIdentity(execution))
+                    encoder.append(
+                        nested: OCIExecutionActionIdentity(
+                            execution,
+                            preparationMounts: preparationMounts))
                 }
             }
             encoder.append(path: productsDirectory)
@@ -991,12 +999,14 @@ private struct SwiftPMAction: ColliderAction {
 
     init(
         processes: [SwiftPMProcess],
+        preparationMounts: [OCIMount],
         packageRoot: FilePath,
         scratchPath: FilePath,
         productsDirectory: FilePath
     ) throws {
         identity = Identity(
             processes: processes,
+            preparationMounts: preparationMounts,
             productsDirectory: productsDirectory)
         self.productsDirectory = productsDirectory
         self.scratchPath = scratchPath

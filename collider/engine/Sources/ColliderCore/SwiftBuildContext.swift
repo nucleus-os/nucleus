@@ -45,6 +45,10 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let artifactTarget: ArtifactTarget
     public let image: ArtifactReference
     public let inputArtifacts: [ArtifactReference]
+    /// Materialized package structure needed to invoke SwiftPM. Its evaluated
+    /// target semantics are carried by the source graph, not by these bytes.
+    public let preparationArtifacts: [ArtifactReference]
+    public let preparationMounts: [OCIMount]
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
@@ -67,6 +71,8 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         artifactTarget: ArtifactTarget,
         image: ArtifactReference,
         inputArtifacts: [ArtifactReference] = [],
+        preparationArtifacts: [ArtifactReference] = [],
+        preparationMounts: [OCIMount] = [],
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
@@ -86,6 +92,8 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.artifactTarget = artifactTarget
         self.image = image
         self.inputArtifacts = inputArtifacts
+        self.preparationArtifacts = preparationArtifacts
+        self.preparationMounts = preparationMounts
         self.hostname = hostname
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
@@ -358,6 +366,14 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         .swiftBuildContext(context)
     }
 
+    public var orderingDependencies: [TaskOrderingReference] {
+        if case .oci(let configuration) = context.execution {
+            configuration.preparationArtifacts.map(\.ordering)
+        } else {
+            []
+        }
+    }
+
     public var postcondition: PathPostcondition {
         PathPostcondition(
             path: productsDirectory,
@@ -409,10 +425,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) -> SwiftProductRequirement {
-        let inputs =
-            sourceGraph.inputs(forProduct: product)
-            + (dependencyLock.map { [.file($0)] } ?? [])
-            + dependencyConfigurationFiles.map(ArtifactInput.file)
+        // Resolution configuration belongs to host materialization. The
+        // resolved product closure, not every pin in the lock, is consumed.
+        let inputs = sourceGraph.inputs(forProduct: product)
         return SwiftProductRequirement(
             package: package,
             product: product,
@@ -432,10 +447,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         options: SwiftTestOptions = .init(),
         expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
-        let inputs =
-            sourceGraph.testInputs
-            + (dependencyLock.map { [.file($0)] } ?? [])
-            + dependencyConfigurationFiles.map(ArtifactInput.file)
+        let inputs = sourceGraph.testInputs
         return SwiftTestRequirement(
             package: package,
             testProduct: testProduct,
@@ -722,8 +734,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     }
 
     private func ociMounts(_ configuration: SwiftPMOCIExecution) -> [OCIMount] {
-        guard configuration.buildWorkspace != nil else { return configuration.mounts }
-        return configuration.mounts + [
+        let mounts = configuration.preparationMounts + configuration.mounts
+        guard configuration.buildWorkspace != nil else { return mounts }
+        return mounts + [
             OCIMount(
                 source: scratchPath,
                 target: "/swiftpm-input",

@@ -36,7 +36,11 @@ public struct TaskDurationEstimate: Codable, Hashable, Sendable {
 public struct TaskPlanEntry: Codable, Sendable {
     public let task: TaskID
     public let identity: ArtifactDigest
+    /// Frozen source and recipe key, before consuming produced artifact bytes.
+    public let recipeIdentity: ArtifactDigest
     public let isClean: Bool
+    public let isDeferred: Bool
+    public let isForced: Bool
     public let explanation: String
     public let coordinates: TaskExecutionCoordinates?
     public let lane: TaskExecutionLane
@@ -68,11 +72,17 @@ public struct TaskPlanEntry: Codable, Sendable {
         attribution: String? = nil,
         durationWorkload: TaskDurationWorkload? = nil,
         durationEstimate: TaskDurationEstimate? = nil,
-        identityComponents: [UInt8]? = nil
+        identityComponents: [UInt8]? = nil,
+        recipeIdentity: ArtifactDigest? = nil,
+        isDeferred: Bool = false,
+        isForced: Bool = false
     ) {
         self.task = task
         self.identity = identity
+        self.recipeIdentity = recipeIdentity ?? identity
         self.isClean = isClean
+        self.isDeferred = isDeferred
+        self.isForced = isForced
         self.explanation = explanation
         self.coordinates = coordinates
         self.lane = lane
@@ -82,6 +92,16 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.durationWorkload = durationWorkload
         self.durationEstimate = durationEstimate
         self.identityComponents = identityComponents
+    }
+
+    public func assessed(identity: ArtifactDigest, isClean: Bool, explanation: String) -> Self {
+        Self(
+            task: task, identity: identity, isClean: isClean, explanation: explanation,
+            coordinates: coordinates, lane: lane, claims: claims, logicalOwners: logicalOwners,
+            attribution: attribution, durationWorkload: durationWorkload,
+            durationEstimate: durationEstimate,
+            identityComponents: identityComponents, recipeIdentity: recipeIdentity,
+            isForced: isForced)
     }
 }
 
@@ -217,6 +237,7 @@ public struct TaskPlanningServices {
     public let digestBytes: ([UInt8]) -> ArtifactDigest
     public let digestFile: (FilePath) throws -> ArtifactDigest
     public let digestTree: (FilePath) throws -> ArtifactDigest
+    public let digestArtifact: (ArtifactReference) throws -> ArtifactDigest
     public let digestSourceCheckout: (FilePath) async throws -> ArtifactDigest
     public let digestSourceCheckoutClosure: ([FilePath]) async throws -> ArtifactDigest
     public let semanticToolIdentity:
@@ -244,7 +265,8 @@ public struct TaskPlanningServices {
         taskState: @escaping (TaskID) -> PlanningTaskState,
         durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
         validateOutputs: @escaping (TaskDeclaration) throws -> Void,
-        observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil
+        observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
+        digestArtifact: ((ArtifactReference) throws -> ArtifactDigest)? = nil
     ) {
         self.runnerPlatform = runnerPlatform
         self.identityPathMap = identityPathMap
@@ -252,6 +274,14 @@ public struct TaskPlanningServices {
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree
+        self.digestArtifact =
+            digestArtifact ?? { reference in
+                if reference.validation == .nonEmptyDirectory {
+                    try digestTree(reference.path)
+                } else {
+                    try digestFile(reference.path)
+                }
+            }
         self.digestSourceCheckout = digestSourceCheckout
         self.digestSourceCheckoutClosure =
             digestSourceCheckoutClosure ?? { paths in
