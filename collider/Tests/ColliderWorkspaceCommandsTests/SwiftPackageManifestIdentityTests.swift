@@ -4,6 +4,22 @@ import Testing
 
 @testable import ColliderWorkspaceCommands
 
+@Test func inferredSnippetTargetsUseResolvedConfigurationAndMissingDeclaredTargetsFailClosed()
+    throws
+{
+    let resolved = Data(
+        #"{"name":"basic-usage","type":"snippet","target_dependencies":["Logging"]}"#.utf8)
+    let configuration = try SwiftPackageGraphResolver.targetConfiguration(
+        name: "basic-usage", type: "snippet", declared: nil,
+        resolved: resolved, packageRoot: FilePath("/fixture"))
+    #expect(configuration == String(decoding: resolved, as: UTF8.self))
+    #expect(throws: (any Error).self) {
+        try SwiftPackageGraphResolver.targetConfiguration(
+            name: "Logging", type: "library", declared: nil,
+            resolved: resolved, packageRoot: FilePath("/fixture"))
+    }
+}
+
 @Test func evaluatedManifestIdentitySeparatesSelectedDeclarationsAndPreservesUnknownSettings()
     throws
 {

@@ -579,7 +579,9 @@ extension ColliderRuntime {
                         isClean: reusable,
                         explanation: reusable
                             ? "consumed artifact content and outputs are current"
-                            : "execution required after artifact assessment")
+                            : execution.plan.isDeferred
+                                ? "execution required after artifact assessment"
+                                : execution.plan.explanation)
                     switch candidate {
                     case .swiftBuild(let index): swiftBuildPlans[index] = assessed
                     case .declared(let index): plan[index] = assessed

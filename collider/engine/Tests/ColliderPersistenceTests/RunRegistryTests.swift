@@ -9,6 +9,42 @@ private enum ObservationFixtureFailure: Error {
     case stopped
 }
 
+@Test func historicalRunPlansAreMigratedOnceWithoutLosingEvidence() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "verify", "fixture"])
+    let identity = ArtifactDigest.sha256([UInt8]("historical".utf8))
+    try await registry.recordPlan(
+        [
+            TaskPlanEntry(
+                task: "fixture.task", identity: identity, isClean: false,
+                explanation: "historical assessment", coordinates: nil)
+        ], in: run)
+    try await registry.recordTaskOutcome(.executed, task: "fixture.task", in: run)
+    try await registry.finish(run, status: .succeeded)
+    let path = directory.appendingPathComponent("runs/\(run.id.rawValue)/manifest.json")
+    var object = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+    var tasks = try #require(object["tasks"] as? [String: [String: Any]])
+    var task = try #require(tasks["fixture.task"])
+    var plan = try #require(task["plan"] as? [String: Any])
+    for field in ["recipeIdentity", "isDeferred", "isForced"] { plan.removeValue(forKey: field) }
+    task["plan"] = plan
+    tasks["fixture.task"] = task
+    object["tasks"] = tasks
+    try JSONSerialization.data(withJSONObject: object).write(to: path)
+    let records = try await registry.recordedRuns()
+    let restored = try #require(records.first?.manifest.tasks?["fixture.task"])
+    #expect(restored.plan.identity == identity)
+    #expect(restored.outcome == .executed)
+    #expect(restored.plan.explanation == "historical assessment")
+    let migrated = try Data(contentsOf: path)
+    _ = try JSONDecoder().decode(RunManifest.self, from: migrated)
+    _ = try await registry.recordedRuns()
+    #expect(try Data(contentsOf: path) == migrated)
+}
+
 @Test func hostPhaseRecorderPersistsStartedProgressAndTerminalEvents() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-host-phase-\(UUID().uuidString)")

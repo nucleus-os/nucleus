@@ -515,10 +515,10 @@ package final class SwiftPackageGraphResolver: Sendable {
                             targets: $0.targets, manifestConfiguration: configuration)
                     },
                     targets: try description.targets.map { target in
-                        guard let configuration = manifest.targets[target.name] else {
-                            throw SwiftManifestIdentityFailure(
-                                "missing target semantics for \(target.name)")
-                        }
+                        let configuration = try Self.targetConfiguration(
+                            name: target.name, type: target.type,
+                            declared: manifest.targets[target.name],
+                            resolved: JSONEncoder.sorted.encode(target), packageRoot: packageRoot)
                         let targetPath = FilePath(target.path)
                         let resolved =
                             targetPath.isAbsolute
@@ -537,6 +537,21 @@ package final class SwiftPackageGraphResolver: Sendable {
                             }, manifestConfiguration: configuration)
                     }, manifestConfiguration: manifest.package)
             })
+    }
+
+    static func targetConfiguration(
+        name: String, type: String, declared: String?,
+        resolved: Data, packageRoot: FilePath
+    ) throws -> String {
+        if let declared { return declared }
+        // SwiftPM creates one executable target per Snippets/*.swift file;
+        // these have no manifest declaration. Their resolved description and
+        // source closure are their complete configuration.
+        guard type == "snippet" else {
+            throw SwiftManifestIdentityFailure(
+                "missing target semantics for \(name) (\(type)) in \(packageRoot)")
+        }
+        return String(decoding: resolved, as: UTF8.self)
     }
 }
 
