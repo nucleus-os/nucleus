@@ -59,6 +59,15 @@ missing-output restoration, and explicit rebuilds. CI evidence remains pending.
 
 ## Phase 3: Prove the protected-main boundary and resume nightly finalization
 
+Status: active
+
+The corrected graph reached execution in protected-main run `34007936074`,
+then Collider terminated with SIGBUS before completing a task. No stack was
+available in the job log. The [CI diagnostic artifact contract](ci-diagnostic-artifacts-contract.md)
+adds independent, bounded collection of run records and crash evidence to the
+next verification attempt. Full verification remains pending; the crash has
+not been attributed to a specific runtime operation.
+
 Verify the full catalog with the new identity model, including the reservation
 tests and both architectures' package cohorts. Record the one-time identity
 transition separately from steady-state invalidation. Exercise an unrelated

@@ -128,6 +128,11 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.admission.outputs.revision }}
           submodules: recursive
+      - name: Begin diagnostic capture
+        id: diagnostics
+        run: python3 tools/ci-diagnostics.py begin
+      - name: Verify diagnostic export boundaries
+        run: python3 tools/ci-diagnostics-test.py
       - name: Verify runner and checkout ownership
         shell: bash
         run: |
@@ -144,9 +149,21 @@ jobs:
         run: collider check protected-main-source
       - name: Verify the catalog
         run: collider verify all
-      # The durable evidence is the builder-owned run record, not this log.
-      # Verification records are retained independently of local runs, so this
-      # step exists to name the ones this revision produced.
-      - name: Name this revision's durable run records
-        if: always()
-        run: collider runs list --limit 10
+      # Never invoke Collider to recover from a Collider crash. Preserve the
+      # verification outcome even if diagnostic collection itself fails.
+      - name: Collect this attempt's diagnostics
+        if: ${{ always() && steps.diagnostics.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          DIAGNOSTIC_JOB_STATUS: ${{ job.status }}
+        run: python3 tools/ci-diagnostics.py collect
+      - name: Upload this attempt's diagnostics
+        if: ${{ always() && steps.diagnostics.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: collider-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.diagnostics.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6

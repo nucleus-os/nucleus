@@ -39,6 +39,9 @@ Complete the [build consumption identity correction](build-consumption-identity-
 before resuming the sequence below. It removes package-wide invalidation and
 propagation through producer recipe identities exposed by the nightly allocator.
 
+The [CI diagnostic artifact contract](ci-diagnostic-artifacts-contract.md)
+defines independently collected, attempt-scoped evidence for that verification.
+
 1. Complete the remaining gates in Phases 4 and 5 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md):
    the protected-main host-contract, provenance, build, and test lanes already
