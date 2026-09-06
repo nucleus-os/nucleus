@@ -77,6 +77,52 @@ func androidPackagingMountsPolicyInputsWithoutTheCheckout(separateDirectories: B
     #expect(!execution.mounts.contains { $0.target == placement.executionPath(root) })
 }
 
+@Test func linuxRuntimePublicationUsesOnlyDeclaredFilesystemInputs() throws {
+    let root = FilePath("/workspace")
+    let placement = fixturePlacement(workspace: root)
+    var imageBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.image"), component: ComponentID(rawValue: "fixture"))
+    let image = try imageBuilder.output(
+        "image", path: FilePath("/cache/image"), validation: .regularFile)
+    func invocation(packageRoot: FilePath, scratch: String) -> SwiftPMInvocation {
+        SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot, configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "fixture",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI, artifactTarget: .linuxARM64,
+                        image: image, hostname: "fixture", hostWorkingDirectory: packageRoot,
+                        mounts: [], hostDependencyCache: FilePath("/cache/dependencies")))),
+            scratchPath: FilePath(scratch))
+    }
+    let artifactRoot = FilePath("/cache/runtime-artifact")
+    let session = root.appending("compositor/packages/session")
+    let action = try PublishLinuxRuntimeArtifactAction(
+        runtimeSwiftPM: invocation(packageRoot: root, scratch: "/cache/runtime"),
+        assemblerSwiftPM: invocation(
+            packageRoot: root.appending("collider"), scratch: "/cache/assembler"),
+        architecture: .x86_64, targetLibraryRoots: [], artifactRoot: artifactRoot,
+        generationsRoot: artifactRoot.appending("generations"),
+        packageManifestsRoot: artifactRoot.appending("package-manifests"),
+        rollbackGenerationCount: 1, sessionPackage: session,
+        placement: placement, environment: [:])
+    let execution = action.identity.execution
+    #expect(execution.workingDirectory == placement.executionPath(artifactRoot))
+    #expect(execution.hostWorkingDirectory == artifactRoot)
+    #expect(
+        execution.mounts.contains {
+            $0.source == artifactRoot && $0.target == execution.workingDirectory && !$0.isReadOnly
+        })
+    #expect(
+        execution.mounts.contains {
+            $0.source == session && $0.target == placement.executionPath(session) && $0.isReadOnly
+        })
+    #expect(execution.command.contains(placement.executionPath(session)))
+    #expect(!execution.mounts.contains { $0.target == placement.executionPath(root) })
+}
+
 /// The placement roots a fixture resolves through, matching the two the
 /// workspace declares.
 private func fixturePlacement(workspace: FilePath) -> IdentityPathMap {

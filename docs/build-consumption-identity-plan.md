@@ -91,6 +91,13 @@ authored policy directories read-only, independent of SwiftPM preparation
 mounts. Regression coverage includes shared and separate policy directories.
 Full catalog verification remains pending.
 
+Run `34047619404` then exposed a runtime-publication filesystem contract error:
+its working directory still named the excluded checkout. Publication now runs
+in its bounded artifact export and explicitly mounts its session-package input
+read-only. Regression coverage checks both paths without a whole-checkout mount;
+the other packaging actions already use their bounded exports as working
+directories. The full catalog remains the acceptance gate.
+
 Verify the full catalog with the new identity model, including the reservation
 tests and both architectures' package cohorts. Record the one-time identity
 transition separately from steady-state invalidation. Exercise an unrelated

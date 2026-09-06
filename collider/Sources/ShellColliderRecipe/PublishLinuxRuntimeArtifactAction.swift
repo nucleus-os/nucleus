@@ -66,6 +66,14 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 assemblerProducts.target)
         }
         mounts.append(assemblerProducts)
+        let sessionMount = OCIMount(
+            source: sessionPackage,
+            target: containerPath(sessionPackage),
+            access: .readOnly)
+        guard !mounts.contains(where: { $0.target == sessionMount.target }) else {
+            throw PublishLinuxRuntimeArtifactFailure.conflictingMount(sessionMount.target)
+        }
+        mounts.append(sessionMount)
         let artifactMount = OCIMount(
             boundedExport: artifactRoot,
             target: containerPath(artifactRoot))
@@ -90,8 +98,8 @@ package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
                 abi: "glibc"),
             imageID: runtimeOCI.imageID,
             hostname: "nucleus-runtime-artifact-\(architecture.rawValue)",
-            workingDirectory: containerPath(runtimeSwiftPM.context.packageRoot),
-            hostWorkingDirectory: runtimeSwiftPM.context.packageRoot,
+            workingDirectory: containerPath(artifactRoot),
+            hostWorkingDirectory: artifactRoot,
             mounts: mounts,
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
