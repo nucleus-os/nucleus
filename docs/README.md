@@ -58,17 +58,17 @@ verification below.
 
 ### Foundations
 
-1. Give the task scheduler a second objective.
+1. Complete the [task scheduling objective plan](task-scheduling-objective-plan.md).
    `estimatedCriticalPathPriorities` orders execution to minimize makespan,
    which is correct for a run that succeeds and wrong for one that fails: a
-   cheap leaf with no dependents sorts last precisely because it is cheap. On
-   the sweep that verified `9858a62c`, `collider.test.engine` and
-   `linux.package-storage-retention` were the last two tasks to start, at
-   1,011.7 s of a 1,025.2 s execution, and both were broken; the preceding
-   fourteen consecutive non-green runs each stopped before reaching them.
-   Every step below is verified through this scheduler, which makes its
-   objective the multiplier on all of them. This work has no plan document;
-   write one before starting it.
+   leaf's priority is its own estimated duration, so cheap work sorts last
+   precisely because it is cheap. On the sweep that verified `9858a62c`, both
+   Collider self-tests were reachable from the first scheduling boundary and
+   started at 748.8 s and 930.5 s of a 1,025.2 s execution; the engine suite
+   returned its verdict at 1,011.4 s, and it was broken for the length of the
+   preceding fourteen consecutive non-green runs, each of which stopped before
+   reaching it. Every step below is verified through this scheduler, which
+   makes its objective the multiplier on all of them.
 2. Complete Phases 1 and 2 of the
    [build consumption identity correction](build-consumption-identity-plan.md)
    and record their protected-main evidence. The implementation covers
