@@ -8,6 +8,19 @@ package struct RunTerminalTaskSummary: Codable, Equatable, Sendable {
     package let durationNanoseconds: UInt64
 }
 
+/// One task the scheduler left waiting longer than it took to run.
+///
+/// Ready-to-start delay is not by itself a defect: a run with more ready work
+/// than lanes must defer something. It becomes evidence when the deferral
+/// costs more than the work does, because that is the case where running the
+/// task earlier would have reported its result sooner without displacing much.
+package struct RunTerminalDeferredSummary: Codable, Equatable, Sendable {
+    package let task: String
+    package let outcome: String
+    package let durationNanoseconds: UInt64
+    package let schedulingWaitNanoseconds: UInt64
+}
+
 package struct RunTerminalContainerSummary: Codable, Equatable, Sendable {
     package let task: String
     package let executionIndex: Int
@@ -45,6 +58,12 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
     package let criticalPathDurationNanoseconds: UInt64?
     package let schedulingWaitDurationNanoseconds: UInt64?
     package let slowestTasks: [RunTerminalTaskSummary]
+    /// Tasks whose ready-to-start delay exceeded their own duration, longest
+    /// delay first, up to the reported cap.
+    package let deferredTasks: [RunTerminalDeferredSummary]
+    /// How many tasks met that condition, which exceeds `deferredTasks` when a
+    /// run defers more work than is worth naming in a summary.
+    package let deferredTaskCount: Int
     package let slowestContainerExecutions: [RunTerminalContainerSummary]
     /// Every observed test failure, up to the reported cap.
     package let failedTestCases: [RunTerminalFailedTestSummary]
@@ -101,6 +120,28 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
             return $0.durationNanoseconds > $1.durationNanoseconds
         }.prefix(5).map { $0 }
 
+        let deferred = (manifest.tasks ?? [:]).compactMap {
+            task, record -> RunTerminalDeferredSummary? in
+            guard let duration = record.durationNanoseconds,
+                let wait = record.schedulingWaitNanoseconds,
+                wait > duration
+            else { return nil }
+            return RunTerminalDeferredSummary(
+                task: task,
+                outcome: Self.outcome(
+                    observedState.tasks[TaskID(rawValue: task)],
+                    recorded: record.outcome),
+                durationNanoseconds: duration,
+                schedulingWaitNanoseconds: wait)
+        }.sorted {
+            if $0.schedulingWaitNanoseconds == $1.schedulingWaitNanoseconds {
+                return $0.task < $1.task
+            }
+            return $0.schedulingWaitNanoseconds > $1.schedulingWaitNanoseconds
+        }
+        deferredTaskCount = deferred.count
+        deferredTasks = Array(deferred.prefix(Self.reportedDeferredTaskCap))
+
         slowestContainerExecutions = (manifest.tasks ?? [:]).flatMap { task, record in
             (record.observations?.containerExecutions ?? []).enumerated().compactMap {
                 index, observation in
@@ -142,6 +183,11 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
     /// Naming every failure in a run that fails thousands of tests buries the
     /// rest of the summary, so the count stays exact while the list is capped.
     package static let reportedFailedTestCap = 20
+
+    /// The deferral list exists to point at an ordering decision, not to
+    /// inventory every task that waited, so the count stays exact while the
+    /// list stays short enough to read.
+    package static let reportedDeferredTaskCap = 5
 
     package var text: String {
         var outcome = [
@@ -189,6 +235,18 @@ package struct RunTerminalSummary: Codable, Equatable, Sendable {
             for task in slowestTasks {
                 lines.append(
                     "  \(formatDuration(task.durationNanoseconds))  "
+                        + "\(task.outcome)  \(task.task)")
+            }
+        }
+        if !deferredTasks.isEmpty {
+            lines.append(
+                deferredTaskCount == deferredTasks.count
+                    ? "deferred tasks"
+                    : "deferred tasks (\(deferredTasks.count) of \(deferredTaskCount))")
+            for task in deferredTasks {
+                lines.append(
+                    "  waited \(formatDuration(task.schedulingWaitNanoseconds)), "
+                        + "ran \(formatDuration(task.durationNanoseconds))  "
                         + "\(task.outcome)  \(task.task)")
             }
         }

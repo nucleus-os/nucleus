@@ -200,17 +200,27 @@ public struct RunTaskRecord: Codable, Sendable {
     public let plan: TaskPlanEntry
     public var outcome: TaskRunOutcome?
     public var durationNanoseconds: UInt64?
+    /// How long the task was ready to run before the scheduler started it.
+    ///
+    /// A task waits either because the graph blocked it or because the
+    /// scheduler preferred other work, and only the second is a scheduling
+    /// decision. Measuring from the moment the task became ready separates
+    /// them: a task that was never ready until its dependencies finished
+    /// records no wait at all.
+    public var schedulingWaitNanoseconds: UInt64?
     public var observations: TaskExecutionObservations?
 
     public init(
         plan: TaskPlanEntry,
         outcome: TaskRunOutcome? = nil,
         durationNanoseconds: UInt64? = nil,
+        schedulingWaitNanoseconds: UInt64? = nil,
         observations: TaskExecutionObservations? = nil
     ) {
         self.plan = plan
         self.outcome = outcome
         self.durationNanoseconds = durationNanoseconds
+        self.schedulingWaitNanoseconds = schedulingWaitNanoseconds
         self.observations = observations
     }
 }

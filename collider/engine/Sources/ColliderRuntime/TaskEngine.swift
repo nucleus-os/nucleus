@@ -102,10 +102,17 @@ public struct TaskExecutionReport: Codable, Sendable {
 public struct TaskExecutionTiming: Codable, Sendable {
     public let task: TaskID
     public let durationNanoseconds: UInt64
+    /// How long the task was ready before the scheduler started it.
+    public let schedulingWaitNanoseconds: UInt64
 
-    public init(task: TaskID, durationNanoseconds: UInt64) {
+    public init(
+        task: TaskID,
+        durationNanoseconds: UInt64,
+        schedulingWaitNanoseconds: UInt64 = 0
+    ) {
         self.task = task
         self.durationNanoseconds = durationNanoseconds
+        self.schedulingWaitNanoseconds = schedulingWaitNanoseconds
     }
 }
 
@@ -459,6 +466,7 @@ extension ColliderRuntime {
         var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]
         var readySince: [ScheduledTask: ContinuousClock.Instant] = [:]
         var schedulingWaitDuration: UInt64 = 0
+        var schedulingWaitByTask: [TaskID: UInt64] = [:]
         var criticalPathByTask: [TaskID: UInt64] = [:]
 
         try await withThrowingTaskGroup(of: ScheduledTaskResult.self) { group in
@@ -637,8 +645,17 @@ extension ColliderRuntime {
                         recordsActiveArtifact: execution.recordsActiveArtifact)
                     running[candidate] = lane
                     runningClaims[candidate] = execution.plan.claims
-                    if let ready = readySince.removeValue(forKey: candidate) {
-                        schedulingWaitDuration &+= elapsedNanoseconds(since: ready)
+                    // The per-task wait is what says whether the graph or the
+                    // scheduler held this task back, and summing it away leaves
+                    // a total that cannot answer that for any single task.
+                    let taskSchedulingWait =
+                        readySince.removeValue(forKey: candidate)
+                        .map { elapsedNanoseconds(since: $0) } ?? 0
+                    schedulingWaitDuration &+= taskSchedulingWait
+                    schedulingWaitByTask[task.id] = taskSchedulingWait
+                    if let eventRun, let eventRegistry {
+                        try? await eventRegistry.recordTaskSchedulingWait(
+                            taskSchedulingWait, task: task.id, in: eventRun)
                     }
                     executed.append(task.id)
 
@@ -734,7 +751,8 @@ extension ColliderRuntime {
                 taskTimings.append(
                     TaskExecutionTiming(
                         task: taskID,
-                        durationNanoseconds: finished.durationNanoseconds))
+                        durationNanoseconds: finished.durationNanoseconds,
+                        schedulingWaitNanoseconds: schedulingWaitByTask[taskID, default: 0]))
                 for (index, observation) in finished.observations.containerExecutions.enumerated() {
                     guard let timings = observation.timings else { continue }
                     containerExecutionTimings.append(

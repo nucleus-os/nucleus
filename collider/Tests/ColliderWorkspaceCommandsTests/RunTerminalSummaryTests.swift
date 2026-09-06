@@ -249,3 +249,59 @@ private func plan(
         explanation: isClean ? "artifact is clean" : "artifact is dirty",
         coordinates: nil)
 }
+
+@Test func terminalSummaryNamesTasksDeferredLongerThanTheyRan() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-terminal-deferred-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "verify", "all"])
+    let deferredLongest = TaskID(rawValue: "fixture.deferred-longest")
+    let deferred = TaskID(rawValue: "fixture.deferred")
+    let blocked = TaskID(rawValue: "fixture.blocked")
+    let expensive = TaskID(rawValue: "fixture.expensive")
+    let digest = ArtifactDigest(bytes: [2])
+    try await registry.recordPlan(
+        [
+            plan(deferredLongest, digest: digest, isClean: false),
+            plan(deferred, digest: digest, isClean: false),
+            plan(blocked, digest: digest, isClean: false),
+            plan(expensive, digest: digest, isClean: false),
+        ],
+        in: run)
+    for task in [deferredLongest, deferred, blocked, expensive] {
+        try await registry.record(.task(.started(task)), in: run)
+        try await registry.recordTaskOutcome(.executed, task: task, in: run)
+        try await registry.record(.task(.succeeded(task)), in: run)
+    }
+    let second: UInt64 = 1_000_000_000
+    try await registry.recordTaskDuration(10 * second, task: deferredLongest, in: run)
+    try await registry.recordTaskSchedulingWait(900 * second, task: deferredLongest, in: run)
+    try await registry.recordTaskDuration(10 * second, task: deferred, in: run)
+    try await registry.recordTaskSchedulingWait(300 * second, task: deferred, in: run)
+    // A task the graph held back is ready only once its dependencies finish, so
+    // it records no wait and is not evidence of an ordering decision.
+    try await registry.recordTaskDuration(500 * second, task: blocked, in: run)
+    try await registry.recordTaskSchedulingWait(0, task: blocked, in: run)
+    // Waiting is not by itself a deferral worth naming; waiting longer than the
+    // work takes is.
+    try await registry.recordTaskDuration(900 * second, task: expensive, in: run)
+    try await registry.recordTaskSchedulingWait(400 * second, task: expensive, in: run)
+    try await registry.finish(run, status: .succeeded, failedTask: nil)
+
+    let snapshot = try await registry.recordedRun(run.id)
+    let observed = try await registry.reducedEvents(in: snapshot)
+    let summary = RunTerminalSummary(snapshot: snapshot, observedState: observed)
+
+    #expect(
+        summary.deferredTasks.map(\.task) == [
+            "fixture.deferred-longest", "fixture.deferred",
+        ])
+    #expect(summary.deferredTaskCount == 2)
+    // The report has to carry both numbers, because the deferral is only
+    // legible against what the work itself cost.
+    #expect(
+        summary.text.contains(
+            "waited 900.0 s, ran 10.0 s  executed  fixture.deferred-longest"))
+}

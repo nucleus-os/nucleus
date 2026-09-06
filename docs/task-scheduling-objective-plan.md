@@ -77,17 +77,29 @@ addresses the question it answers, not the position it holds.
 
 ## Phase 1: Record the ordering the sweep already produces
 
-Status: pending
+Status: implemented; gate pending the first sweep that carries it.
 
-Emit, per run, each executed task's estimated duration, actual duration, ready
-time, and start time, and retain them beside the existing task records. The
-run manifest holds durations and the event log holds start times; neither
-holds the moment a task became ready, which is what separates a task the
-scheduler deferred from one the graph blocked.
+Retain each executed task's ready-to-start delay beside its duration in the
+run manifest, and report the tasks whose delay exceeded their own duration,
+longest delay first. The engine already computed this value per task and
+summed it into a run total, which is a number that cannot answer the question
+for any single task; keeping it is the whole of the measurement.
+
+The delay is recorded when the task starts rather than when it finishes, so a
+run that dies mid-task still carries what it knew about the ordering. Deferral
+is not by itself a defect -- a run with more ready work than lanes must defer
+something -- so the report names only the tasks whose deferral cost more than
+their work did.
 
 Gate: a run report names the tasks whose ready-to-start delay exceeded their
-own duration, ordered by that delay. Run 34061148632 is the baseline: it must
-name both Collider self-tests.
+own duration, ordered by that delay. Run 34061148632 predates the measurement
+and cannot satisfy this retroactively; the first protected-main sweep carrying
+it must name both Collider self-tests.
+
+Behavior tests cover both halves of the distinction the measurement exists to
+draw: a task the scheduler deferred records a wait exceeding its own duration,
+and a task the graph blocked records a shorter one, because it was not ready
+until its dependency finished.
 
 ## Phase 2: Give the ready order a second key
 

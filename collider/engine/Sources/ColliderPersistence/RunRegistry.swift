@@ -199,6 +199,25 @@ public actor RunRegistry {
         }
     }
 
+    /// Record how long the scheduler left a ready task waiting.
+    ///
+    /// Recorded when the task starts rather than when it finishes, because the
+    /// wait is a property of the scheduling decision and a run that dies mid
+    /// task should still carry what it already knew about the ordering.
+    public func recordTaskSchedulingWait(
+        _ nanoseconds: UInt64,
+        task: TaskID,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            guard var record = $0.tasks?[task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(task)
+            }
+            record.schedulingWaitNanoseconds = nanoseconds
+            $0.tasks?[task.rawValue] = record
+        }
+    }
+
     public func recordTaskOutcome(
         _ outcome: TaskRunOutcome,
         task: TaskID,

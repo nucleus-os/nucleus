@@ -600,6 +600,66 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     #expect(report.criticalPathDurationNanoseconds > 0)
 }
 
+@Test func aDeferredTaskRecordsItsWaitAndABlockedTaskDoesNot() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-deferral-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    func probeTask(
+        _ name: String,
+        lane: TaskExecutionLane,
+        duration: Duration,
+        dependencies: [TaskID] = []
+    ) throws -> TaskDeclaration {
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.deferral.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            dependencies: dependencies,
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    lane: lane,
+                    duration: duration)))
+    }
+
+    // `holder` owns the single host-exclusive lane and has a successor, so it
+    // outranks the leaf beside it and is admitted first. `deferred` is ready at
+    // the same boundary and can only be waiting on the scheduler's choice.
+    // `blocked` is not ready until `holder` finishes, so its wait is the
+    // graph's and belongs in a different account.
+    let holder = try probeTask(
+        "holder", lane: .hostExclusive, duration: .milliseconds(500))
+    let deferred = try probeTask(
+        "deferred", lane: .hostExclusive, duration: .milliseconds(1))
+    let blocked = try probeTask(
+        "blocked", lane: .lightweight, duration: .milliseconds(1),
+        dependencies: [holder.id])
+    let tasks = [holder, deferred, blocked]
+
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    let timings = Dictionary(
+        uniqueKeysWithValues: report.taskTimings.map { ($0.task, $0) })
+    let deferredTiming = try #require(timings[deferred.id])
+    let blockedTiming = try #require(timings[blocked.id])
+    #expect(
+        deferredTiming.schedulingWaitNanoseconds
+            > deferredTiming.durationNanoseconds)
+    #expect(
+        blockedTiming.schedulingWaitNanoseconds
+            < deferredTiming.schedulingWaitNanoseconds)
+}
+
 @Test func taskSchedulerSerializesHostExclusiveWork() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-io-concurrency-\(UUID().uuidString)")
