@@ -77,7 +77,7 @@ addresses the question it answers, not the position it holds.
 
 ## Phase 1: Record the ordering the sweep already produces
 
-Status: implemented; gate pending the first sweep that carries it.
+Status: complete.
 
 Retain each executed task's ready-to-start delay beside its duration in the
 run manifest, and report the tasks whose delay exceeded their own duration,
@@ -91,10 +91,14 @@ is not by itself a defect -- a run with more ready work than lanes must defer
 something -- so the report names only the tasks whose deferral cost more than
 their work did.
 
-Gate: a run report names the tasks whose ready-to-start delay exceeded their
-own duration, ordered by that delay. Run 34061148632 predates the measurement
-and cannot satisfy this retroactively; the first protected-main sweep carrying
-it must name both Collider self-tests.
+Gate evidence: [protected-main run 34066753916](https://github.com/nucleus-os/nucleus/actions/runs/34066753916)
+verified `c7117a99` and reported both Collider self-tests, ranked first and
+third by delay:
+
+    deferred tasks (5 of 54)
+      waited 893.0 s, ran  69.7 s  swift.package.test…54dc1ff6
+      waited 824.2 s, ran   3.3 s  linux.package-source-snapshot
+      waited 655.8 s, ran 132.2 s  swift.package.test…c15ea713
 
 Behavior tests cover both halves of the distinction the measurement exists to
 draw: a task the scheduler deferred records a wait exceeding its own duration,
@@ -105,21 +109,37 @@ until its dependency finished.
 
 Status: pending
 
-Sort the ready queue on longest remaining path as now, and admit work that is
-ready, cheap, and terminal ahead of it up to a bounded share of the available
-lanes. The bound is what keeps this from becoming a second makespan policy
-competing with the first: the reservation may not exceed lanes that would
-otherwise sit idle, which run 34061148632 had in quantity -- 1,025.2 s of
-execution against a 467.8 s critical path and 7,068.2 s of accumulated
-scheduling wait.
+Phase 1's first measurement moved this phase's target. Of the 73 tasks that
+recorded a wait, 54 waited longer than they ran, which is not by itself the
+finding: 33 of those are `oci` tasks contending for two container lanes, where
+deferral is arithmetic rather than a decision. The finding is where the
+deferral is disproportionate. All three `hostExclusive` tasks in the run were
+deferred, they occupy the first three positions by delay, and together they
+waited 2,373 s to perform 205 s of work -- an eleven-to-one ratio on a lane
+that runs one task at a time. `linux.package-source-snapshot` is the extreme
+and was not predicted: 824.2 s of waiting for 3.3 s of work.
+
+Aim the reservation at that lane first. Sort the ready queue on longest
+remaining path as now, and admit work that is ready, cheap, and terminal ahead
+of it up to a bounded share of the available lanes. The bound is what keeps
+this from becoming a second makespan policy competing with the first: the
+reservation may not exceed lanes that would otherwise sit idle, which run
+34066753916 had in quantity -- 1,002.5 s of execution against a 468.0 s
+critical path.
+
+Whether a single exclusive lane is the right shape is a question this raises
+and does not answer. Reordering within it is sufficient for the measured
+case -- three tasks totalling 205 s finish by roughly that mark if scheduled
+first, against 1,014 s scheduled last -- so widening the lane is not this
+plan's business unless reordering proves insufficient.
 
 Cheapness is read from the estimate the scheduler already computes, and
 terminality from the successor map it already builds. No task declares its own
 priority: a declaration that names its urgency is a second scheduling policy
 maintained by hand, and it would drift from the graph it describes.
 
-Gate: replaying run 34061148632's plan schedules both Collider self-tests
-within the first 250 s, and its total execution does not regress beyond
+Gate: replaying run 34066753916's plan schedules all three `hostExclusive`
+tasks within the first 250 s, and its total execution does not regress beyond
 measurement noise. A run whose only failure is a cheap terminal task reports
 that failure before it begins any container work.
 
