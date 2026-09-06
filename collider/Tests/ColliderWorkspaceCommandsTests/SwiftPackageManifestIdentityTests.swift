@@ -4,6 +4,25 @@ import Testing
 
 @testable import ColliderWorkspaceCommands
 
+@Test func manifestPackageLocationDoesNotEnterSemanticIdentity() throws {
+    func configuration(_ path: String) throws -> SwiftPackageGraphResolver.ManifestConfiguration {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "name": "Fixture", "packageKind": ["root": [path]],
+            "targets": [["name": "App"]], "products": [["name": "App"]],
+            "cxxLanguageStandard": "c++20",
+        ])
+        return try SwiftPackageGraphResolver.parsedManifestConfiguration(
+            data, packageRoot: FilePath(path))
+    }
+    let first = try configuration("/first/checkout")
+    let second = try configuration("/second/checkout")
+    #expect(first.package == second.package)
+    #expect(first.targets == second.targets)
+    #expect(first.products == second.products)
+    #expect(first.package.contains("c++20"))
+    #expect(!first.package.contains("/first/checkout"))
+}
+
 @Test func inferredSnippetTargetsUseResolvedConfigurationAndMissingDeclaredTargetsFailClosed()
     throws
 {

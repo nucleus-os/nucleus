@@ -22,6 +22,11 @@ resolution and materialization inputs. Keep package source mounts and copied
 root manifests as preparation, with explicit ordering edges. They do not enter
 a selected product's semantic identity merely because SwiftPM can see them.
 
+Persist raw evaluated manifests and reapply semantic projection on every graph
+cache read. Package-location metadata is excluded; inferred snippet targets
+use their resolved declarations. CI compiled the implementation and identified
+both boundaries during catalog planning; their regression gates are included.
+
 Gate: adding an unrelated target or changing manifest formatting preserves an
 existing product identity. Changing a selected target's settings, resources,
 dependency closure, product type, or package-wide compiler configuration changes

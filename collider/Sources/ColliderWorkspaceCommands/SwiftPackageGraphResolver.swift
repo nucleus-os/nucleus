@@ -70,10 +70,9 @@ package final class SwiftPackageGraphResolver: Sendable {
         let identities: [GraphIdentity]
         let locations: [PackageLocation]
         let packages: [Description]
-        /// Complete evaluated manifest semantics. Requiring this field resets
-        /// caches that predate target-scoped identity instead of inventing
-        /// empty settings for a real package.
-        let manifests: [String: ManifestConfiguration]
+        /// Cache evaluation, never its semantic projection. Every read applies
+        /// the current projection so resolver changes cannot reuse stale keys.
+        let evaluatedManifests: [String: Data]
     }
 
     struct ManifestConfiguration: Codable {
@@ -169,11 +168,16 @@ package final class SwiftPackageGraphResolver: Sendable {
             cache.resolution == resolutionKey(packageRoot),
             try identitiesMatch(cache.identities, packageRoot: packageRoot)
         {
+            var manifests: [String: ManifestConfiguration] = [:]
+            for (path, data) in cache.evaluatedManifests {
+                manifests[path] = try Self.parsedManifestConfiguration(
+                    data, packageRoot: FilePath(path))
+            }
             let graph = try sourceGraph(
                 root: packageRoot,
                 locations: cache.locations,
                 descriptions: cache.packages,
-                manifests: cache.manifests)
+                manifests: manifests)
             return graph
         }
 
@@ -182,13 +186,15 @@ package final class SwiftPackageGraphResolver: Sendable {
             swift: swiftExecutable)
         var described: [Description] = []
         var manifests: [String: ManifestConfiguration] = [:]
+        var evaluatedManifests: [String: Data] = [:]
         for location in locations {
             let location = FilePath(location.path)
             described.append(try await describe(location, swift: swiftExecutable))
-            let declared = try await manifestConfiguration(
-                location,
-                swift: swiftExecutable)
-            manifests[location.string] = declared
+            let data = try await runSwiftPackage(
+                location, swift: swiftExecutable, arguments: ["dump-package"])
+            evaluatedManifests[location.string] = data
+            manifests[location.string] = try Self.parsedManifestConfiguration(
+                data, packageRoot: location)
         }
         let descriptions = described.sorted { $0.path < $1.path }
 
@@ -220,7 +226,7 @@ package final class SwiftPackageGraphResolver: Sendable {
                 identities: identities,
                 locations: locations,
                 packages: descriptions,
-                manifests: manifests))
+                evaluatedManifests: evaluatedManifests))
         cacheData.append(0x0a)
         try cacheData.write(
             to: URL(fileURLWithPath: cacheFile.string),
@@ -330,17 +336,6 @@ package final class SwiftPackageGraphResolver: Sendable {
 
     /// Evaluated package-wide semantics and independently selectable target
     /// and product declarations. `describe` still resolves their source paths.
-    private func manifestConfiguration(
-        _ packageRoot: FilePath,
-        swift: FilePath
-    ) async throws -> ManifestConfiguration {
-        let data = try await runSwiftPackage(
-            packageRoot,
-            swift: swift,
-            arguments: ["dump-package"])
-        return try Self.parsedManifestConfiguration(data, packageRoot: packageRoot)
-    }
-
     static func parsedManifestConfiguration(_ data: Data, packageRoot: FilePath) throws
         -> ManifestConfiguration
     {
@@ -369,6 +364,10 @@ package final class SwiftPackageGraphResolver: Sendable {
         // their source closures identify those nodes. Unvisited dependencies
         // and targets do not contribute to a selected product's semantics.
         object.removeValue(forKey: "dependencies")
+        // PackageKind describes how SwiftPM located this package and embeds
+        // its absolute checkout path. It is not compiler configuration; graph
+        // edges and selected source closures already identify the package.
+        object.removeValue(forKey: "packageKind")
         func canonical(_ value: Any) throws -> String {
             let bytes = try JSONSerialization.data(
                 withJSONObject: value,
