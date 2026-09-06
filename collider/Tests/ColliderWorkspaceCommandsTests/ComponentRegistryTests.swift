@@ -23,6 +23,60 @@ import WaylandColliderRecipe
 @testable import ColliderWorkspaceCommands
 
 private let fixtureSwiftPackageRoot = FilePath("/workspace")
+
+@Test(arguments: [false, true])
+func androidPackagingMountsPolicyInputsWithoutTheCheckout(separateDirectories: Bool) throws {
+    let root = FilePath("/workspace")
+    let placement = fixturePlacement(workspace: root)
+    var imageBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.image"), component: ComponentID(rawValue: "fixture"))
+    let image = try imageBuilder.output(
+        "image", path: FilePath("/cache/image"), validation: .regularFile)
+    func invocation(packageRoot: FilePath, scratch: String) -> SwiftPMInvocation {
+        SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot, configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "fixture",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI, artifactTarget: .linuxARM64,
+                        image: image, hostname: "fixture", hostWorkingDirectory: packageRoot,
+                        mounts: [
+                            OCIMount(
+                                source: FilePath("/cache/sdk"),
+                                target: SwiftPMInvocation.ociSwiftSDKDirectory.string,
+                                access: .readOnly)
+                        ],
+                        hostDependencyCache: FilePath("/cache/dependencies")))),
+            scratchPath: FilePath(scratch))
+    }
+    let appArmor = root.appending("android-runtime/container/policy.apparmor")
+    let seccomp = root.appending(
+        separateDirectories
+            ? "android-runtime/seccomp/policy" : "android-runtime/container/policy.seccomp")
+    let action = try PublishAndroidPackageInputAction(
+        runtimeSwiftPM: invocation(packageRoot: root, scratch: "/cache/runtime"),
+        assemblerSwiftPM: invocation(
+            packageRoot: root.appending("collider"), scratch: "/cache/assembler"),
+        architecture: .x86_64, targetLibraryRoots: [],
+        aospGeneration: FilePath("/cache/aosp/current"),
+        aospSigningKey: FilePath("/cache/signing/key.pem"),
+        runtimeScratch: FilePath("/cache/package-work"), output: FilePath("/cache/package/current"),
+        appArmorPolicy: appArmor, seccompPolicy: seccomp,
+        placement: placement, environment: [:])
+    let execution = action.identity.execution
+    for policy in [appArmor, seccomp] {
+        let directory = policy.removingLastComponent()
+        let mounts = execution.mounts.filter { $0.target == placement.executionPath(directory) }
+        #expect(mounts.count == 1)
+        #expect(mounts.first?.source == directory)
+        #expect(mounts.first?.isReadOnly == true)
+        #expect(execution.command.contains(placement.executionPath(policy)))
+    }
+    #expect(!execution.mounts.contains { $0.target == placement.executionPath(root) })
+}
+
 /// The placement roots a fixture resolves through, matching the two the
 /// workspace declares.
 private func fixturePlacement(workspace: FilePath) -> IdentityPathMap {

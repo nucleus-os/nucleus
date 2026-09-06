@@ -53,8 +53,8 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         }
 
         // The sysroot this payload is assembled from has to be present, not
-        // merely named. The assembler image mounts the checkout and the SwiftPM
-        // overlay and nothing else, so staging reads its inputs from the
+        // merely named. The assembler invocation does not carry the runtime's
+        // SDK inputs, so staging reads those inputs from the
         // invocation that built the products being staged: the Swift SDK the
         // binaries were compiled against and the native SDKs their libraries
         // come from. Taking the whole read-only set rather than naming each one
@@ -79,6 +79,17 @@ package struct PublishAndroidPackageInputAction: ColliderAction {
         // chain the AOSP build already signed.
         let signingKeyRoot = aospSigningKey.removingLastComponent()
         for mount in runtimeInputMounts.filter({ $0.target != repositoryTarget }) + [
+            // Policies are authored packaging inputs, not SwiftPM source
+            // preparation. Mount their directories explicitly; assembly has
+            // no need for the rest of the checkout.
+            OCIMount(
+                source: appArmorPolicy.removingLastComponent(),
+                target: containerPath(appArmorPolicy.removingLastComponent()),
+                access: .readOnly),
+            OCIMount(
+                source: seccompPolicy.removingLastComponent(),
+                target: containerPath(seccompPolicy.removingLastComponent()),
+                access: .readOnly),
             OCIMount(
                 source: assemblerSwiftPM.productsDirectory,
                 target: containerPath(assemblerSwiftPM.productsDirectory),

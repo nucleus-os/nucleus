@@ -84,8 +84,12 @@ cycles. Recipes supply native SDK artifacts to runtime compilation while
 assembler tools remain independent of payloads. Android package declarations
 follow native SDK preparation so they carry the complete compilation contract.
 A regression models shared signing-tool compilation, signed-image production,
-and packaging and validates their expanded graph. Full CI verification of this
-correction remains pending.
+and packaging and validates their expanded graph. Run `34043448530` passed
+expanded-graph validation and executed 89 tasks before Android package assembly
+reported an unavailable AppArmor policy. Packaging now explicitly mounts its
+authored policy directories read-only, independent of SwiftPM preparation
+mounts. Regression coverage includes shared and separate policy directories.
+Full catalog verification remains pending.
 
 Verify the full catalog with the new identity model, including the reservation
 tests and both architectures' package cohorts. Record the one-time identity
