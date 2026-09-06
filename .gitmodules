@@ -76,7 +76,7 @@
 	url = https://github.com/apple/swift-collections.git
 [submodule "swift-sdk/source/swift-corelibs-foundation"]
 	path = swift-sdk/source/swift-corelibs-foundation
-	url = https://github.com/swiftlang/swift-corelibs-foundation.git
+	url = git@github.com:nucleus-os/swift-corelibs-foundation.git
 [submodule "swift-sdk/source/swift-corelibs-libdispatch"]
 	path = swift-sdk/source/swift-corelibs-libdispatch
 	url = https://github.com/swiftlang/swift-corelibs-libdispatch.git

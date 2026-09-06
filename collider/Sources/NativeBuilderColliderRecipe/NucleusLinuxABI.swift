@@ -31,7 +31,7 @@ public enum NucleusLinuxABI {
         "libc++abi.so.1",
         "libdispatch.so",
         "libunwind.so.1",
-        "libxml2.so.2",
+        "libxml2.so.16",
     ]
 
     package static let hostOwnedSONames: Set<String> = [

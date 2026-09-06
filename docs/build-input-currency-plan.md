@@ -19,12 +19,20 @@ contract that pins them. They are not in scope below.
 
 - The Swift 6.4 source closure. `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-26-a`
   is the newest tagged 6.4 snapshot upstream, and all eight `swift-sdk/source`
-  submodules sit on it consistently.
+  submodules sit on it consistently. `swift-corelibs-foundation` is a
+  `nucleus-os` fork one commit above that snapshot, carrying upstream's #5481
+  for the reason the libxml2 entry records. It returns to a plain upstream pin
+  when the #5541 cherry-pick merges to `release/6.4.x`.
 - The five React Native C++ submodules: folly `2024.11.18.00`, glog `0.3.5`,
   fmt `12.1.0`, double-conversion `1.1.6`, fast_float `8.0.0`. These match React
   Native 0.87's `gradle/libs.versions.toml` exactly and follow React Native.
-- `swift-sdk/source/libxml2` at `v2.11.5`, which is the value upstream's own
-  `utils/update_checkout/update-checkout-config.json` pins for every 6.x scheme.
+- `swift-sdk/source/libxml2` at `v2.15.4`, deliberately ahead of the `v2.11.5`
+  upstream's `utils/update_checkout/update-checkout-config.json` pins. That pin
+  governs Windows and the Android SDK; Linux toolchains link the distribution's
+  libxml2, so upstream carries no Linux consumer of it. Ours is one: the target
+  SDK links the copy this submodule builds, and Ubuntu 26.04 -- the release the
+  target sysroot is built from -- ships 2.15.2 under the same `libxml2.so.16`
+  SONAME the 2.15 series produces.
 - The AOSP source graph at `android-17.0.0_r1` with Repo 2.65.
 - The browser stack at Chromium milestone 152. `chromium/source.lock.json`
   pins Chromium `152.0.7977.54` with CEF `152.0.5+gb129680`, and the angle,
@@ -345,6 +353,31 @@ alone because 0.87.1's catalog does not move them.
 
 Gate: `collider build linux` and the React Native test surface.
 
+## Phase 9: Retire the 24.04 toolchain compatibility closure
+
+The builder image runs an Ubuntu 26.04 base but installs the Swift 6.4 snapshot
+built for Ubuntu 24.04, so `Dependencies.Containerfile` side-loads libxml2 2.9
+and libicu74 into `/opt/swift-compat` and reaches them through an `ld.so.conf.d`
+entry. That closure is not a currency defect in the sense the invariant names:
+both `.deb` archives are immutably pinned and deliberately older than the base.
+It exists because the toolchain tarball is already linked against SONAMEs the
+base does not carry, which no bump on our side can change.
+
+The libxml2 move to 2.15.4 does not touch it and was never going to. It governs
+what the target SDK links, not what the downloaded host toolchain resolves.
+
+The exit is a 6.4 toolchain built for 26.04, which `download.swift.org` does not
+publish: the `ubuntu2604-aarch64` path 404s where `ubuntu2404-aarch64` serves.
+Swift's own 26.04 CI for 6.4 has been failing in the Foundation tests, which is
+what swiftlang/swift-corelibs-foundation#5541 is queued to fix -- the same
+cherry-pick this repository now carries in its fork. So one upstream merge
+clears both this phase and the fork above it, and neither is actionable before
+it.
+
+Status: blocked upstream. Gate: when the 26.04 tarball publishes, the image
+drops both `.deb` inputs, the `/opt/swift-compat` layer, and the
+`ld.so.conf.d` entry, and `collider bootstrap native-builder` rebuilds.
+
 ## Warnings the sweep emits that are not defects
 
 `aarch64-linux-gnu-ld.bfd: warning: … has a LOAD segment with RWX permissions`
@@ -372,8 +405,6 @@ because it passes no `-nostdinc++`, so there the flag does its job.
   upgrade carries real breakage and no benefit.
 - The five React Native C++ submodules are not upgraded independently of React
   Native, including fmt 12.2.0. Their versions are React Native's contract.
-- `swift-sdk/source/libxml2` is not moved off `v2.11.5`. It tracks upstream's
-  update-checkout configuration, not the newest libxml2.
 - The Swift 6.4 snapshot is not moved. It is already the newest tagged.
 - containerization is not forked to widen its swift-crypto range. The supported
   build path already resolves one swift-crypto for the whole graph; the

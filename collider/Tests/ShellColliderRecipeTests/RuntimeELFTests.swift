@@ -50,6 +50,12 @@ import Testing
     #expect(NucleusLinuxABI.owner(ofSONAME: "libc++.so.1") == .artifact)
     #expect(NucleusLinuxABI.owner(ofSONAME: "libvulkan.so.1") == .host)
     #expect(NucleusLinuxABI.owner(ofSONAME: "libstdc++.so.6") == nil)
+    // The artifact carries the libxml2 the target SDK builds, so the SONAME it
+    // owns follows that submodule. The 2.15 series produces `.so.16`; an
+    // artifact still importing the `.so.2` the 2.11 series produced is an
+    // unknown dependency rather than a satisfied one.
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libxml2.so.16") == .artifact)
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libxml2.so.2") == nil)
 }
 
 @Test func glibcImportsCannotExceedTheLinuxABIBaseline() throws {
