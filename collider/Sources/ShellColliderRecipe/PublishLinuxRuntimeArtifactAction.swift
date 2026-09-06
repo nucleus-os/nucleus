@@ -3,7 +3,7 @@ import SystemPackage
 
 package struct PublishLinuxRuntimeArtifactAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
-        let execution: OCIExecution
+        package let execution: OCIExecution
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(nested: OCIExecutionActionIdentity(execution))
