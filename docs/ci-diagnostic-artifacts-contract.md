@@ -30,6 +30,11 @@ needed for symbolication, while omitting unrelated device identifiers and
 report metadata. No process-memory dumps are exported. Failure collection has
 a bounded ten-second grace period for asynchronous macOS report generation.
 
+Catalog verification also enables Swift's noninteractive runtime backtracer,
+with a twenty-second timeout, a 128-frame limit, sanitized paths, and register
+dumps disabled. Its attempt-local output is exported through the same bounded
+and scrubbed file path. This does not depend on macOS emitting an IPS report.
+
 ## Privacy and resource boundaries
 
 The collector never exports environment dumps, credential files, the builder
@@ -60,3 +65,10 @@ and is investigated from GitHub's own checkout logs.
 Collector contract tests run in CI before invoking Collider. They exercise
 attempt isolation, interrupted-run selection, crash-field projection,
 credential scrubbing, symlink rejection, and bounded output.
+
+The collector tests, failure-path collection, and artifact upload passed in
+[run 34017830255](https://github.com/nucleus-os/nucleus/actions/runs/34017830255).
+That run exported both provenance and interrupted verification records after
+SIGBUS, but macOS supplied no matching IPS. Runtime-backtrace capture is the
+additional diagnostic path for that case; its crash evidence remains to be
+verified on CI.

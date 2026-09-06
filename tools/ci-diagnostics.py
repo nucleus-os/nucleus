@@ -191,6 +191,7 @@ def main():
         (root / "context.json").write_text(json.dumps(context))
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write("path=" + str(root / "bundle") + "\n")
+            stream.write("backtrace=" + str(root / "swift-runtime-backtrace.log") + "\n")
         return
     if sys.argv[1:] != ["collect"]:
         raise ValueError("expected begin or collect")
@@ -205,6 +206,8 @@ def main():
     context["jobStatus"] = os.environ.get("DIAGNOSTIC_JOB_STATUS", "unknown")
     bundle = Bundle(root / "bundle")
     bundle.root.mkdir(mode=0o700)
+    if (root / "swift-runtime-backtrace.log").exists() or context["jobStatus"] == "failure":
+        bundle.copy(root / "swift-runtime-backtrace.log", "crashes/swift-runtime-backtrace.log", tail=True)
     context["crashReports"] = collect_crashes(bundle, Path.home() / "Library/Logs/DiagnosticReports", context)
     context["runs"] = collect_runs(bundle, Path("/Library/Nucleus/Collider/logs/runs/runs"), context)
     context["files"] = bundle.files

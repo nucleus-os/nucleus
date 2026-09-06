@@ -148,6 +148,10 @@ jobs:
       - name: Verify protected main provenance
         run: collider check protected-main-source
       - name: Verify the catalog
+        env:
+          # Report directly from the runtime even when macOS produces no IPS.
+          # Disable interaction and register dumps; bound unwinding and output.
+          SWIFT_BACKTRACE: enable=yes,interactive=no,color=no,registers=none,images=all,threads=all,sanitize=yes,limit=128,timeout=20,output-to=${{ steps.diagnostics.outputs.backtrace }}
         run: collider verify all
       # Never invoke Collider to recover from a Collider crash. Preserve the
       # verification outcome even if diagnostic collection itself fails.
