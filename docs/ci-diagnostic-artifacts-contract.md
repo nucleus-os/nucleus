@@ -30,10 +30,10 @@ needed for symbolication, while omitting unrelated device identifiers and
 report metadata. No process-memory dumps are exported. Failure collection has
 a bounded ten-second grace period for asynchronous macOS report generation.
 
-Catalog verification also enables Swift's noninteractive runtime backtracer,
-with a twenty-second timeout, a 128-frame limit, sanitized paths, and register
-dumps disabled. Its attempt-local output is exported through the same bounded
-and scrubbed file path. This does not depend on macOS emitting an IPS report.
+System-wide diagnostic reports are eligible only when the process is Collider
+and its PID matches a selected run, in addition to matching the attempt time.
+Other users' reports are excluded. No privileged helper or permission change is
+used to read a report; inaccessible reports remain explicit omissions.
 
 ## Privacy and resource boundaries
 
@@ -69,6 +69,9 @@ credential scrubbing, symlink rejection, and bounded output.
 The collector tests, failure-path collection, and artifact upload passed in
 [run 34017830255](https://github.com/nucleus-os/nucleus/actions/runs/34017830255).
 That run exported both provenance and interrupted verification records after
-SIGBUS, but macOS supplied no matching IPS. Runtime-backtrace capture is the
-additional diagnostic path for that case; its crash evidence remains to be
-verified on CI.
+SIGBUS, but the account directory supplied no matching IPS. Run `34018055028`
+confirmed that Swift refuses runtime backtrace-on-crash in this privileged
+execution context. That ineffective setting was removed without weakening the
+host boundary. Exact-PID system-report collection covers the alternate macOS
+report location; absence of a report still requires host crash-reporting
+diagnosis, not speculative fixes to the failing task.

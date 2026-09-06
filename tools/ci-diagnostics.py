@@ -143,11 +143,17 @@ def collect_runs(bundle, runs_root, context):
     return summaries
 
 
-def collect_crashes(bundle, reports_root, context):
+def collect_crashes(bundle, reports_root, context, allowed_pids=None, prefix="crashes"):
     found = 0
     if not reports_root.is_dir():
+        bundle.omissions.append({"file": prefix, "reason": "diagnostic directory unavailable"})
         return found
-    for path in sorted(reports_root.glob("*.ips")):
+    try:
+        candidates = sorted(reports_root.glob("*.ips"))
+    except OSError as error:
+        bundle.omissions.append({"file": prefix, "reason": type(error).__name__})
+        return found
+    for path in candidates:
         if not any(path.name.startswith(name + "-") for name in CRASH_PROCESSES):
             continue
         try:
@@ -159,17 +165,19 @@ def collect_crashes(bundle, reports_root, context):
             body = json.loads(text[offset:]) if text[offset:].strip() else header
             if body.get("procName") not in CRASH_PROCESSES:
                 continue
+            if allowed_pids is not None and (body.get("procName") != "collider" or body.get("pid") not in allowed_pids):
+                continue
             captured = timestamp(body.get("captureTime") or header["timestamp"])
             if not context["started"] <= captured <= context["finished"]:
                 continue
             # Exclude machine identifiers and unrelated report metadata. Keep
             # symbolication inputs and fault details, never process memory.
             selected = {key: body[key] for key in CRASH_FIELDS if key in body}
-            bundle.add("crashes/" + path.stem + ".json",
+            bundle.add(prefix + "/" + path.stem + ".json",
                        json.dumps(selected, indent=2, sort_keys=True).encode())
             found += 1
         except (OSError, ValueError, KeyError, TypeError) as error:
-            bundle.omissions.append({"file": "crashes/" + path.name, "reason": type(error).__name__})
+            bundle.omissions.append({"file": prefix + "/" + path.name, "reason": type(error).__name__})
     return found
 
 
@@ -191,7 +199,6 @@ def main():
         (root / "context.json").write_text(json.dumps(context))
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write("path=" + str(root / "bundle") + "\n")
-            stream.write("backtrace=" + str(root / "swift-runtime-backtrace.log") + "\n")
         return
     if sys.argv[1:] != ["collect"]:
         raise ValueError("expected begin or collect")
@@ -206,10 +213,16 @@ def main():
     context["jobStatus"] = os.environ.get("DIAGNOSTIC_JOB_STATUS", "unknown")
     bundle = Bundle(root / "bundle")
     bundle.root.mkdir(mode=0o700)
-    if (root / "swift-runtime-backtrace.log").exists() or context["jobStatus"] == "failure":
-        bundle.copy(root / "swift-runtime-backtrace.log", "crashes/swift-runtime-backtrace.log", tail=True)
     context["crashReports"] = collect_crashes(bundle, Path.home() / "Library/Logs/DiagnosticReports", context)
     context["runs"] = collect_runs(bundle, Path("/Library/Nucleus/Collider/logs/runs/runs"), context)
+    # Background/privileged processes may be reported system-wide rather than
+    # under the account's home. Never collect other users' crashes: require
+    # Collider's exact PID from an already-selected run and its capture time.
+    pids = {int(item["runID"].rsplit("-", 1)[-1]) for item in context["runs"]
+            if isinstance(item.get("runID"), str) and item["runID"].rsplit("-", 1)[-1].isdigit()}
+    if pids:
+        context["crashReports"] += collect_crashes(bundle, Path("/Library/Logs/DiagnosticReports"),
+                                                   context, allowed_pids=pids, prefix="system-crashes")
     context["files"] = bundle.files
     context["omissions"] = bundle.omissions
     (bundle.root / "index.json").write_text(scrub(json.dumps(context, indent=2, sort_keys=True)))

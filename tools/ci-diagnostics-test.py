@@ -71,6 +71,18 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(self.bundle.files, [])
         self.assertEqual(len(self.bundle.omissions), 2)
 
+    def test_system_reports_require_exact_collider_pid(self):
+        reports = self.root / "system-reports"
+        reports.mkdir()
+        for pid, process in ((42, "collider"), (43, "collider"), (42, "clang")):
+            path = reports / (process + "-" + str(pid) + ".ips")
+            path.write_text(json.dumps({"procName": process, "pid": pid,
+                                       "captureTime": "1970-01-01T00:02:00Z"}))
+            os.utime(path, (150, 150))
+        self.assertEqual(diagnostics.collect_crashes(self.bundle, reports, self.context,
+                                                     allowed_pids={42}, prefix="system-crashes"), 1)
+        self.assertEqual([item["file"] for item in self.bundle.files], ["system-crashes/collider-42.json"])
+
     def test_log_tail_and_structured_file_size_limits_are_explicit(self):
         path = self.root / "large"
         path.write_bytes(b"1234567890")
