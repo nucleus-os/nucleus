@@ -169,6 +169,19 @@ private struct RetentionFixture {
             atPath: packageRoot.appending("generations").appending(generation).string)
     }
 
+    func assertServable() async throws {
+        _ = try await recordActionExecution(
+            try AnyColliderAction(
+                LinuxPackageStorageAssertionAction(
+                    lanes: [
+                        LinuxPackageStorageRetentionLane(
+                            architecture: .arm64,
+                            packageRoot: packageRoot)
+                    ],
+                    productStoreRoot: storeRoot)),
+            files: ColliderRuntime().actionFileSystem())
+    }
+
     func retain() async throws {
         _ = try await recordActionExecution(
             try AnyColliderAction(
@@ -181,5 +194,50 @@ private struct RetentionFixture {
                     productStoreRoot: storeRoot,
                     rollbackGenerationCount: 1)),
             files: ColliderRuntime().actionFileSystem())
+    }
+}
+
+
+
+@Test func assertionAcceptsAHostThatHasPublishedNothing() async throws {
+    let fixture = try RetentionFixture()
+    defer { fixture.remove() }
+
+    // A cold machine carries no cohort, which is not the same as carrying a
+    // broken one, and reporting it would fail every first build on a host.
+    try await fixture.assertServable()
+}
+
+@Test func assertionAcceptsAnActiveCohortTheStoreCanServe() async throws {
+    let fixture = try RetentionFixture()
+    defer { fixture.remove() }
+    let stored = try fixture.publishProduct()
+    try fixture.activate(
+        try fixture.writeGeneration(
+            products: [stored.identity.rawValue.description],
+            archiveDigests: [stored.manifest.archiveDigest.description],
+            seed: "a"))
+
+    try await fixture.assertServable()
+}
+
+@Test func assertionReportsAnActiveCohortTheStoreCannotServe() async throws {
+    let fixture = try RetentionFixture()
+    defer { fixture.remove() }
+    _ = try fixture.publishProduct()
+    try fixture.activate(
+        try fixture.writeGeneration(
+            products: [
+                ArtifactDigest.sha256(Array("never-stored".utf8)).description
+            ],
+            archiveDigests: [
+                ArtifactDigest.sha256(Array("no-blob".utf8)).description
+            ],
+            seed: "a"))
+
+    // Naming what is wrong is the point: this runs before any packaging, so
+    // the report is the only thing the operator has to go on.
+    await #expect { try await fixture.assertServable() } throws: { error in
+        "\(error)".contains("products the store does not hold")
     }
 }

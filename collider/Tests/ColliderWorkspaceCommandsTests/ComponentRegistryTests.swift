@@ -590,7 +590,17 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 .readWrite,
                 scope: .output(sourceSnapshotOutput.removingLastComponent())))
             == true)
-    #expect(selected == [LinuxTaskIDs.packageStorageRetention])
+    // Two roots rather than one. Retention consumes every publication and
+    // qualification, so the rest of the lane is reachable through it; the
+    // storage assertion consumes nothing on purpose, because what it inspects
+    // is the cohort a previous run left, and a dependency on this run's
+    // publication would move it to the end where it answers too late to be
+    // worth asking.
+    #expect(
+        selected == [
+            LinuxTaskIDs.packageStorageAssertion,
+            LinuxTaskIDs.packageStorageRetention,
+        ])
     let retention = try #require(
         catalog.tasks.first { $0.id == LinuxTaskIDs.packageStorageRetention })
     #expect(retention.action?.kind == "linux.retain-package-storage")

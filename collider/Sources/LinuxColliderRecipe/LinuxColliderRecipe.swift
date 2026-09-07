@@ -119,6 +119,9 @@ package enum LinuxTaskIDs {
 
     package static let packageStorageRetention = TaskID(
         rawValue: "linux.package-storage-retention")
+
+    package static let packageStorageAssertion = TaskID(
+        rawValue: "linux.package-storage-assertion")
 }
 
 private let linuxSwiftPMExecutionLock = TaskLock.checkout(
@@ -345,6 +348,15 @@ public enum LinuxColliderRecipe: ColliderComponent {
             configuration: runtimeArtifact)
         tasks.append(packageStorageRetention)
         packageTasks.insert(packageStorageRetention.id)
+        // Declared without consuming any publication, because what it asks
+        // about is the cohort a previous run left. Retention answers the same
+        // question, and has to answer it last because it also collects; this
+        // one answers it first, which is the only thing that decides whether a
+        // corrupt host is reported in seconds or in a quarter of an hour.
+        let packageStorageAssertion = try packageStorageAssertionTask(
+            configuration: runtimeArtifact)
+        tasks.append(packageStorageAssertion)
+        packageTasks.insert(packageStorageAssertion.id)
         var storage: [StorageDeclaration] = []
         storage.append(
             StorageDeclaration(
@@ -1199,6 +1211,33 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     lanes: lanes,
                     productStoreRoot: configuration.productStoreRoot,
                     rollbackGenerationCount: rollbackGenerationCount)))
+    }
+
+    private static func packageStorageAssertionTask(
+        configuration: LinuxRuntimeArtifactConfiguration
+    ) throws -> TaskDeclaration {
+        let lanes = try PlatformArchitecture.allCases.map { architecture in
+            guard let lane = configuration.lanes[architecture] else {
+                throw LinuxRuntimeArtifactFailure.missingArchitecture(architecture)
+            }
+            return LinuxPackageStorageRetentionLane(
+                architecture: architecture,
+                packageRoot: lane.packageRoot)
+        }
+        return TaskBuilder(
+            id: LinuxTaskIDs.packageStorageAssertion,
+            component: descriptor.id
+        ).build(
+            locks: lanes.map {
+                .shared($0.packageRoot.appending(".publish.lock"))
+            } + [
+                .shared(configuration.productStoreRoot.appending(".publish.lock"))
+            ],
+            assessmentPolicy: .always,
+            action: try AnyColliderAction(
+                LinuxPackageStorageAssertionAction(
+                    lanes: lanes,
+                    productStoreRoot: configuration.productStoreRoot)))
     }
 
     package static func architectureLane(

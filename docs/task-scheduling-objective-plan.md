@@ -179,20 +179,37 @@ running.
 
 ## Phase 3: Separate the invariant a task checks from the state it changes
 
-Status: pending
+Status: complete.
 
 Retention answers a question and then acts on it. The question -- whether
-every generation the store must serve is one the store can serve -- is
-read-only and answerable at any point in the run. The action must follow
-publication. Splitting them lets the check run under Phase 2's reservation
-while collection stays where correctness requires, which is the same
-separation the
-[build store retention plan](build-store-retention-plan.md) already made
-between collection and deletion in its Phase 5.
+every product the active cohort names is one the store holds -- is read-only
+and about state a previous run left, so it is answerable before this run
+touches anything. The action must follow publication, because it collects what
+publication leaves behind. `linux.package-storage-assertion` asks the question
+and consumes nothing, which is what keeps it at the front; retention keeps the
+collection and its exclusive claims where correctness requires them.
+
+The assertion deliberately does not reuse `validateLinuxNativePackagePublication`,
+which retention still performs afterwards. That function validates a complete
+publication -- every family and package, each archive digest, envelope, and
+payload tree -- and a task that reported a host corrupt for any of those
+reasons would be reporting on this run's work before this run had done any.
+The assertion asks only the one thing a run interrupted between a cohort
+becoming durable and its products reaching the store can get wrong.
+
+This gives the packaging entrypoint two roots rather than one. Retention
+consumes every publication and qualification, so the lane is reachable through
+it; the assertion is a second root precisely because it depends on nothing,
+and a dependency on this run's publication would move it back to the end.
 
 Gate: the corruption that failed run 34053908633 -- an active cohort naming
-products the store does not hold -- is reported by a task that runs before
-any packaging work, and collection still runs after publication.
+products the store does not hold -- is reported by a task that runs before any
+packaging work, and collection still runs after publication.
+
+Behavior tests: a host carrying an active cohort the store cannot serve is
+reported, and the report names what is wrong rather than failing for an
+unrelated reason; a host carrying a servable cohort is not; and a host that
+has published nothing is not, because a cold machine is not a corrupt one.
 
 ## Phase 4: Record what a failing run measured
 
