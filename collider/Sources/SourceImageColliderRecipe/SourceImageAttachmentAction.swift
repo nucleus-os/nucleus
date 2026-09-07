@@ -71,7 +71,7 @@ package struct SourceImageAttachmentAction: ColliderAction {
             command: [
                 "-c",
                 "stat -c %i /source/readable; stat -c %i /source/nested/hardlink; "
-                    + "stat -c %a /source/executable; "
+                    + "stat -c %a /source/executable; stat -c %a /source/readable; "
                     + "readlink /source/relative-link; cat /source/readable",
             ],
             environment: [:],
@@ -95,6 +95,11 @@ package struct SourceImageAttachmentAction: ColliderAction {
         try context.files.createDirectory(tree.appending("nested"))
         try context.files.write(
             Array("portable contents\n".utf8), to: tree.appending("readable"))
+        // Stated rather than inherited. A written file takes the writing
+        // process's umask, and the guest runs as the builder rather than as
+        // the owner the image records, so a fixture that does not say what it
+        // grants is a fixture the container cannot read.
+        try context.files.setPermissions(0o644, for: tree.appending("readable"))
         try context.files.write(
             Array("#!/bin/sh\nexit 0\n".utf8), to: tree.appending("executable"))
         try context.files.setPermissions(0o755, for: tree.appending("executable"))
@@ -113,9 +118,9 @@ package struct SourceImageAttachmentAction: ColliderAction {
         let lines = result.standardOutput
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
-        guard lines.count == 5 else {
+        guard lines.count == 6 else {
             throw SourceImageAttachmentFailure(
-                "the guest reported \(lines.count) facts rather than five: \(lines)")
+                "the guest reported \(lines.count) facts rather than six: \(lines)")
         }
         // The guest kernel resolving both names to one inode is the claim the
         // host-side reading cannot make on the kernel's behalf.
@@ -127,13 +132,20 @@ package struct SourceImageAttachmentAction: ColliderAction {
             throw SourceImageAttachmentFailure(
                 "the guest sees mode \(lines[2]) where the tree had 755")
         }
-        guard lines[3] == "readable" else {
+        // Asserted rather than assumed, because the mode is what decides
+        // whether the guest can read the file at all: the run that found this
+        // reported four facts and a permission denial.
+        guard lines[3] == "644" else {
             throw SourceImageAttachmentFailure(
-                "the guest resolves the symbolic link to \(lines[3])")
+                "the guest sees mode \(lines[3]) where the tree had 644")
         }
-        guard lines[4] == "portable contents" else {
+        guard lines[4] == "readable" else {
             throw SourceImageAttachmentFailure(
-                "the guest reads \(lines[4]) where the tree held its contents")
+                "the guest resolves the symbolic link to \(lines[4])")
+        }
+        guard lines[5] == "portable contents" else {
+            throw SourceImageAttachmentFailure(
+                "the guest reads \(lines[5]) where the tree held its contents")
         }
     }
 }
