@@ -52,15 +52,56 @@ package struct SourceImageAttachmentAction: ColliderAction {
             sourceImage: root.appending("source.img"))
     }
 
-    package var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: [ActionEffect(.readWrite, scope: .output(root))],
-            persistentWorkspaceEffects: [
-                ActionPersistentWorkspaceEffect(
+    /// What the guest runs, and the single description the effects come from.
+    ///
+    /// Listing the effects by hand beside an execution is two descriptions of
+    /// one thing, and the first sweep found them disagreeing: the container
+    /// read the builder image, which the task consumed and the action had not
+    /// declared. Deriving them means adding a mount cannot leave the
+    /// declaration behind.
+    private var execution: OCIExecution {
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: imageID,
+            hostname: "collider-source-image",
+            workingDirectory: "/source",
+            hostWorkingDirectory: root,
+            mounts: [],
+            persistentWorkspaceMounts: [
+                OCIPersistentWorkspaceMount(
                     workspace: workspace,
                     target: "/source",
                     access: .readOnly)
             ],
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: OCIResourceLimits(
+                cpuCount: 2,
+                memoryBytes: 1_024 * 1_024 * 1_024,
+                processCount: 256),
+            containerEnvironment: [:],
+            // One line per fact, so a disagreement names which one.
+            command: [
+                "sh", "-c",
+                "stat -c %i /source/readable; stat -c %i /source/nested/hardlink; "
+                    + "stat -c %a /source/executable; "
+                    + "readlink /source/relative-link; cat /source/readable",
+            ],
+            environment: [:],
+            output: .captured(limit: 64 * 1_024))
+    }
+
+    package var requirements: ActionRequirements {
+        let container = ociActionRequirements(execution: execution)
+        return ActionRequirements(
+            effects: ([ActionEffect(.readWrite, scope: .output(root))]
+                + container.effects).uniqued(),
+            persistentWorkspaceEffects: container.persistentWorkspaceEffects,
+            // The action itself runs on the host: it writes the tree and the
+            // image before anything can read them.
             executionPlatform: .macOSARM64Native)
     }
 
@@ -84,39 +125,7 @@ package struct SourceImageAttachmentAction: ColliderAction {
 
         try SourceTreeImage.write(tree: tree, to: root.appending("source.img"))
 
-        // One line per fact, so a disagreement names which one.
-        let result = try await context.containers.execute(
-            OCIExecution(
-                executionPlatform: .linuxARM64OCI,
-                artifactTarget: .linuxARM64,
-                imageID: imageID,
-                hostname: "collider-source-image",
-                workingDirectory: "/source",
-                hostWorkingDirectory: root,
-                mounts: [],
-                persistentWorkspaceMounts: [
-                    OCIPersistentWorkspaceMount(
-                        workspace: workspace,
-                        target: "/source",
-                        access: .readOnly)
-                ],
-                userPolicy: .builder,
-                capabilityPolicy: .dropAll,
-                privilegePolicy: .prohibitAcquisition,
-                processFilesystemPolicy: .standard,
-                resourceLimits: OCIResourceLimits(
-                    cpuCount: 2,
-                    memoryBytes: 1_024 * 1_024 * 1_024,
-                    processCount: 256),
-                containerEnvironment: [:],
-                command: [
-                    "sh", "-c",
-                    "stat -c %i /source/readable; stat -c %i /source/nested/hardlink; "
-                        + "stat -c %a /source/executable; "
-                        + "readlink /source/relative-link; cat /source/readable",
-                ],
-                environment: [:],
-                output: .captured(limit: 64 * 1_024)))
+        let result = try await context.containers.execute(execution)
         let lines = result.standardOutput
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
