@@ -235,6 +235,23 @@ workspace with capacity, residency, and reconciliation semantics -- which is
 why declaring one dragged four retention invariants into a task that wanted to
 read a file -- and becomes what it always was: an artifact, mounted.
 
+`test.source-image.attachment` qualifies that on every revision. It builds a
+fixture tree, writes an image from it, mounts the image read-only as a block
+device, and requires the guest to report one inode under both of a hard link's
+names, the modes, the symbolic link's target and the file's contents. The tree
+is a fixture rather than the prepared Chromium source, because what is in
+question is the mechanism and a fixture that fits in a second exercises it as
+completely as one that takes five minutes.
+
+The first guest to read an image reported four of five facts and
+`cat: /source/readable: Permission denied`. The image was right: it carried
+the mode the tree had, and the tree had 0600 because a written file takes the
+writing process's umask and nothing had said otherwise. A guest runs as the
+builder rather than as the owner an image records, so a fixture that does not
+state what it grants is one the container cannot read. The fixture states its
+modes now and the guest confirms them, which is the difference between a test
+that assumes a permission and one that checks it.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
