@@ -141,6 +141,13 @@ directories on the wall clock still left thirty-two differing bytes. Every
 addition is optional and defaults to the existing behaviour, so it is
 upstreamable and the fork is meant to be temporary.
 
+Gate evidence: [protected-main run 34083694012](https://github.com/nucleus-os/nucleus/actions/runs/34083694012)
+verified `95fabbe3` and passed `twoImagesOfOneTreeAreByteIdentical` on the
+builder account, which is a stronger result than the one that motivated it:
+reproducibility holds across accounts and caches, not only across two runs in
+one shell. The stale-scratch recovery this required locally did not recur
+there, so a resolution that has never seen the old URL needs no repair.
+
 Keying the artifact by source id instead was the alternative and was rejected.
 That is the same hand-maintained key this phase exists to delete, relocated
 from `.nucleus-source-id` into a task declaration, and it would exempt the
