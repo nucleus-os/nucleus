@@ -117,11 +117,40 @@ read-only.
 Where the image is built is the decision this phase makes. Building it inside a
 container, reading the host tree through its mount once, reuses the existing
 mechanics and pays one traversal per source revision. Building it on the host
-with a pinned e2fsprogs -- `mke2fs -d` populates an ext4 image from a directory
-without mounting it or requiring root -- pays none, because the host reads its
-own filesystem natively. Take the container first, because it is a strict
-improvement over Phase 1 and it settles the fidelity question; treat the host
-as a follow-on once the image is trusted.
+pays none, because the host reads its own filesystem natively, and that is the
+only variant that retires the open-file exposure rather than bounding it.
+
+The host variant needs no `e2fsprogs`. `ContainerizationEXT4` is already
+vendored and formats an ext4 image from Swift, without a mount and without
+root, so the host build has no tooling prerequisite the container build avoids.
+`SourceImageAssembly.SourceTreeImage` is that builder: entries are visited
+shallowest first and sorted within a depth, so the shallowest name for a
+multiply linked file holds the inode, and every timestamp is fixed at the
+epoch, because a checkout stamps its own mtimes and preserving them would give
+two builds of identical content two addresses.
+
+Three things the first implementation established, none of which the plan
+anticipated:
+
+The image cannot be byte-reproducible through the vendored formatter's public
+API. It stamps a fresh filesystem UUID and reads its own wall clock in two
+places, and none of the three is a parameter. Either the fork accepts a seed
+and a clock, or the artifact is keyed by the source id it reproduces rather
+than by its own digest -- which is what this phase already says, and is the
+cheaper answer. What is stable, and what the build graph needs, is the tree the
+image reproduces; two images of one tree reproduce identical contents.
+
+Fidelity is proven for files, permissions, and symbolic links, and is not yet
+proven for hard links. Verification reads the image back through
+`EXT4Reader.export`, and that path drops one of a hard link's two names
+whichever name holds the inode, so it cannot distinguish an image that lost a
+link from a reader that did. Proving it needs the image read the way a consumer
+reads it, which is a container attaching it.
+
+An image written under the tree it reproduces makes the walk read the image it
+is still writing. The first attempt grew past 128 GiB from a two-file fixture
+before the formatter refused it, so the builder now rejects that arrangement by
+name.
 
 If the container stack cannot attach one image read-only to several containers
 at once, clone the image per consumer. On APFS that is a copy-on-write clone:

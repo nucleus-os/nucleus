@@ -201,6 +201,15 @@ let package = Package(
                 .product(name: "ColliderPersistence", package: "engine"),
             ]),
         .target(
+            name: "SourceImageAssembly",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(
+                    name: "ContainerizationEXT4",
+                    package: "containerization",
+                    condition: .when(platforms: [.macOS])),
+            ]),
+        .target(
             name: "NativeBuilderColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
@@ -325,6 +334,16 @@ let package = Package(
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(name: "ColliderTesting", package: "engine"),
                 "SwiftTargetSDKColliderRecipe",
+            ]),
+        .testTarget(
+            name: "SourceImageAssemblyTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(
+                    name: "ContainerizationEXT4",
+                    package: "containerization",
+                    condition: .when(platforms: [.macOS])),
+                "SourceImageAssembly",
             ]),
         .testTarget(
             name: "LinuxColliderRecipeTests",
