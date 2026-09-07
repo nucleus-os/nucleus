@@ -293,6 +293,14 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     /// are reconstructed by definition; a source workspace holds a tree whose
     /// cost is worth a decision.
     public let residency: StorageResidency?
+    /// A prebuilt filesystem image this workspace is established from.
+    ///
+    /// A workspace is a directory holding an image, so a producer that already
+    /// addresses an image by its content has produced the thing a workspace
+    /// would otherwise format empty and a task would then fill. Naming it here
+    /// hands it over intact, which is what keeps a source tree from being
+    /// written once into an artifact and again into a volume.
+    public let sourceImage: FilePath?
 
     public init(
         identity: PersistentWorkspaceIdentity,
@@ -300,7 +308,8 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
         filesystem: PersistentWorkspaceFilesystem,
         journal: PersistentWorkspaceJournal,
         retentionPolicy: StorageRetentionPolicy = .explicitClean,
-        residency: StorageResidency? = nil
+        residency: StorageResidency? = nil,
+        sourceImage: FilePath? = nil
     ) {
         self.identity = identity
         self.capacityBytes = capacityBytes
@@ -308,6 +317,7 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
         self.journal = journal
         self.retentionPolicy = retentionPolicy
         self.residency = residency
+        self.sourceImage = sourceImage
     }
 
     /// The allocation past which this workspace is treated as out of room.

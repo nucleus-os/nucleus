@@ -206,6 +206,20 @@ The formatter's four-kilobyte transfer buffer is not the cost, and `create`
 takes a `fileBuffer` to replace it. Supplying four megabytes measured 35.5 s
 against 31.9 s without on the same subtree, so the parameter is left alone.
 
+Consumers attach the image as a workspace established from it, rather than
+through a mount kind invented for the purpose. A workspace is already a
+directory holding an ext4 image, which is exactly what this phase produces, so
+the shorter path is to let one be established from a prebuilt image instead of
+formatted empty and then filled. `PersistentWorkspaceDeclaration.sourceImage`
+names it, the `source` driver option carries it, and `nucleus-os/container`
+clones it into place where the filesystem supports that, so a read-only volume
+of this size does not pay for its bytes twice.
+
+Recording the image among the options a volume is compared against is what
+makes a changed image a difference the manager sees. A workspace established
+from a different image holds different bytes under the same name, and the
+alternative to reconciling it is a consumer reading the wrong tree.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
