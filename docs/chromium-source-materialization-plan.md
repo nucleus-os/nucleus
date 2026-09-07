@@ -215,13 +215,20 @@ names it, the `source` driver option carries it, and `nucleus-os/container`
 clones it into place where the filesystem supports that, so a read-only volume
 of this size does not pay for its bytes twice.
 
-Verifying that a guest kernel agrees has to happen in the graph, not beside
-it. The container service lives in the builder's domain, so a test bundle
-started by an interactive account reaches it as `XPC connection error:
-Connection invalid` however healthy the service is; reaching it means executing
-as the builder, which is what running a task graph does. An attachment test
-exists and states this, but the verification it performs belongs in a task the
-sweep runs -- which merges it with the recipe work rather than preceding it.
+Verifying that a guest kernel agrees happens in the graph, not beside it. The
+container service lives in the builder's domain, so a test bundle started by an
+interactive account reaches it as `XPC connection error: Connection invalid`
+however healthy the service is; reaching it means executing as the builder,
+which is what running a task graph does. `test.source-image.attachment` is
+that task: it builds a fixture image, establishes a workspace from it, mounts
+it read-only, and requires the guest to report one inode under both of a hard
+link's names, the executable bit, the link target, and the contents. The sweep
+selects it, so the mechanism is qualified on every revision rather than by
+whoever next tries to use it.
+
+The tree is a fixture rather than the prepared Chromium source, because what is
+in question is the mechanism and a fixture that fits in a second exercises it
+as completely as one that takes five minutes.
 
 Recording the image among the options a volume is compared against is what
 makes a changed image a difference the manager sees. A workspace established

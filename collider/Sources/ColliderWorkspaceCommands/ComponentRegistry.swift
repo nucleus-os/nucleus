@@ -10,6 +10,7 @@ import LinuxColliderRecipe
 import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
+import SourceImageColliderRecipe
 import ShellColliderRecipe
 import SwiftTargetSDKColliderRecipe
 import SystemPackage
@@ -378,6 +379,7 @@ package struct ComponentRegistry {
             BenchmarkColliderRecipe.self,
             SanitizerColliderRecipe.self,
             ReleaseGateColliderRecipe.self,
+            SourceImageColliderRecipe.self,
             ShellColliderRecipe.self,
             LinuxColliderRecipe.self,
             CompositorColliderRecipe.self,
@@ -678,6 +680,7 @@ package struct ComponentRegistry {
         expose(SanitizerKind.undefined.entrypoint, to: ["sanitize"])
         expose(SanitizerKind.thread.entrypoint, to: ["sanitize"])
         expose(ReleaseGateEntrypoints.test, to: ["release-gate"])
+        expose(SourceImageEntrypoints.test, to: ["source-image"])
         expose(CoreEntrypoints.androidBuild, to: ["core"])
         expose(CoreEntrypoints.androidNative, to: ["core"])
         expose(CoreEntrypoints.androidVerify, to: ["core"])
@@ -830,6 +833,14 @@ package struct ComponentRegistry {
             ComponentEntrypointRequest(
                 entrypoint: ReleaseGateEntrypoints.test,
                 selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
+        // What a source image is worth depends on a guest kernel reading it
+        // the way a consumer will, and only a task can ask one. A sweep that
+        // did not select this would leave that unasked, which is the state
+        // this qualification exists to leave behind.
+        requests.append(
+            ComponentEntrypointRequest(
+                entrypoint: SourceImageEntrypoints.test,
+                selection: SourceImageColliderRecipe.descriptor.canonicalName))
         // Packaging belongs to verification rather than after it. Building and
         // testing prove the products compile and behave; packaging is what
         // proves they assemble and qualify into the cohorts actually
