@@ -147,9 +147,31 @@ No task declares its own priority. A declaration that names its urgency is a
 second scheduling policy maintained by hand, and it would drift from the graph
 it describes.
 
-Gate: the first protected-main sweep carrying this schedules every ready
-`hostExclusive` task before it fills other lanes, and its total execution does
-not regress beyond measurement noise against run 34066753916's 1,002.5 s.
+Gate evidence: [protected-main run 34072936558](https://github.com/nucleus-os/nucleus/actions/runs/34072936558)
+verified `2d87bd7f` with the same 84 clean and 73 executed split as run
+34066753916, so the two are directly comparable. All three host-exclusive
+tasks ran consecutively from the first boundary and none appears in the
+deferred list:
+
+| task | before | after |
+| --- | --- | --- |
+| `swift.package.test…c15ea713` | started 655.5 s | started 0.0 s |
+| `linux.package-source-snapshot` | started 823.9 s | started 38.8 s |
+| `swift.package.test…54dc1ff6` | started 892.7 s | started 42.1 s |
+
+Execution fell from 1,002.5 s to 794.5 s and accumulated scheduling wait from
+5,424.8 s to 2,941.3 s. The deferred count is unchanged at 53 against 54,
+which is the expected result of leaving the other two lanes alone.
+
+An unattributed part of that improvement is worth naming rather than claimed.
+The exclusive work itself cost 205.2 s in the earlier run and 78.8 s in this
+one, and running on a quiet machine rather than after 900 s of container
+builds is a plausible reason -- but the retained samples for those two suites
+span 30.3 s to 197.1 s, so a single pair of runs cannot separate the placement
+from the variance. If the effect is real, barrier placement governs what the
+work costs and not only when its result arrives, which would be a larger
+reason to front-load than the one this phase was built on. The duration store
+now holds the samples to settle it over more runs.
 
 Behavior test: a cheap host-exclusive leaf that is outranked by an expensive
 task owning a successor still starts first when both are ready and nothing is
