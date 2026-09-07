@@ -600,6 +600,66 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     #expect(report.criticalPathDurationNanoseconds > 0)
 }
 
+@Test func aFailingRunKeepsWhatItsCompletedTasksMeasured() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-partial-durations-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let probe = ParallelismProbe()
+    let completedOutput = root.appending("completed")
+    let completed = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.partial-durations.completed"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(path: completedOutput, validation: .regularFile)
+        ],
+        action: try AnyColliderAction(
+            ParallelismProbeAction(
+                identity: ParallelismProbeIdentity(name: "completed"),
+                probe: probe,
+                output: completedOutput,
+                lane: .lightweight,
+                duration: .milliseconds(30))))
+    let failingOutput = root.appending("failing")
+    let failing = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.partial-durations.failing"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [completed.id],
+        outputs: [
+            OutputDeclaration(path: failingOutput, validation: .regularFile)
+        ],
+        action: try AnyColliderAction(
+            FailAfterWriteAction(output: failingOutput)))
+    let tasks = [completed, failing]
+
+    await #expect(throws: (any Error).self) {
+        _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+            graph: TaskGraph(tasks),
+            selected: tasks.map(\.id),
+            stateRoot: stateRoot,
+            options: TaskExecutionOptions(
+                laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+    }
+
+    // Read the durable archive rather than an estimate, because an estimate
+    // for an unrecorded workload answers from its lane and would report a
+    // sample that was never taken.
+    let archive = try JSONSerialization.jsonObject(
+        with: Data(
+            contentsOf: URL(
+                fileURLWithPath:
+                    stateRoot.appending("duration-estimates/history.json").string)))
+    let records =
+        ((archive as? [String: Any])?["records"] as? [[String: Any]]) ?? []
+    let recorded = Set(
+        records.compactMap { ($0["workload"] as? [String: Any])?["task"] as? String })
+    #expect(recorded.contains(completed.id.rawValue))
+    // A task that failed produced no measurement of how long it takes to
+    // succeed, and the group never returns it, so it must not appear.
+    #expect(!recorded.contains(failing.id.rawValue))
+}
+
 @Test func anIdleMachineRunsReadyExclusiveWorkBeforeFillingLanes() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-barrier-placement-\(UUID().uuidString)")

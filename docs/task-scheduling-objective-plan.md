@@ -196,15 +196,29 @@ any packaging work, and collection still runs after publication.
 
 ## Phase 4: Record what a failing run measured
 
-Status: pending
+Status: complete.
 
 Persist duration samples for the tasks that completed, whether or not the run
 did. A task that ran to completion produced a measurement, and discarding it
 because a different task failed is what freezes the estimates during the
 streaks that most need them current.
 
-Gate: a run whose last task fails records samples for every task that
-succeeded before it, and a subsequent run's priorities reflect them.
+The recording moved from the runtime's return value to a sink the runtime
+calls on the way out, because a run that fails returns nothing. Nothing widens
+what is treated as a sample: the timings the sink receives are the ones the
+task group returned, so failed and cancelled work never reaches it, and a task
+that failed has measured nothing about how long it takes to succeed.
+
+Gate: a run whose last task fails records samples for the tasks that succeeded
+before it, and records nothing for the task that failed. The behavior test
+reads the durable archive rather than an estimate, because an estimate for an
+unrecorded workload answers from its lane and would report a sample that was
+never taken; without the sink the archive does not exist at all.
+
+This also makes the open question under Phase 2 answerable. Whether barrier
+placement changes what the work costs, or whether those two suites simply vary
+by a factor of four, needs samples from more runs than the green ones, which
+is what this phase supplies.
 
 ## Non-goals
 

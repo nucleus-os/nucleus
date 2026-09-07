@@ -321,7 +321,10 @@ extension ColliderRuntime {
         registry: RunRegistry? = nil,
         options: TaskExecutionOptions = TaskExecutionOptions(),
         planningDurationNanoseconds: UInt64,
-        selectedInputHashingDurationNanoseconds: UInt64
+        selectedInputHashingDurationNanoseconds: UInt64,
+        recordingCompletedTimings: (
+            @Sendable ([TaskExecutionTiming], [TaskPlanEntry]) -> Void
+        )? = nil
     ) async throws -> TaskExecutionReport {
         let previousOutputPresentation = taskOutputPresentation
         taskOutputPresentation =
@@ -461,6 +464,14 @@ extension ColliderRuntime {
         var pendingTasks = ordered.indices.filter { !plan[$0].isClean }
         var executed: [TaskID] = []
         var taskTimings: [TaskExecutionTiming] = []
+        // A task that completed produced a measurement, and a different task
+        // failing afterwards does not unmake it. Reporting on the way out
+        // rather than after the return is what lets a failing run contribute
+        // what it observed: estimates that only ever refresh on green runs go
+        // stale across exactly the streaks that change the graph most.
+        // `taskTimings` holds only tasks the group returned, so failed and
+        // cancelled work never reaches it.
+        defer { recordingCompletedTimings?(taskTimings, swiftBuildPlans + plan) }
         var containerExecutionTimings: [TaskContainerExecutionTiming] = []
         var running: [ScheduledTask: TaskExecutionLane] = [:]
         var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]

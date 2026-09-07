@@ -152,7 +152,21 @@ public struct ColliderEngine: Sendable {
                 )
             }
         let (plan, hashingDuration, planningDuration) = planningResult
-        let report = try await runtime.execute(
+        // Handed to the runtime rather than applied to what it returns,
+        // because a run that fails returns nothing and its completed tasks
+        // measured just as much as a passing run's.
+        @Sendable func recordDurations(
+            _ timings: [TaskExecutionTiming],
+            _ plan: [TaskPlanEntry]
+        ) {
+            try? durationStore.record(
+                Dictionary(
+                    uniqueKeysWithValues: timings.map {
+                        ($0.task, $0.durationNanoseconds)
+                    }),
+                plan: plan)
+        }
+        return try await runtime.execute(
             plan: plan,
             stateRoot: stateRoot,
             workflowLocks: workflowLocks,
@@ -160,15 +174,7 @@ public struct ColliderEngine: Sendable {
             registry: registry,
             options: options,
             planningDurationNanoseconds: planningDuration,
-            selectedInputHashingDurationNanoseconds: hashingDuration)
-        if !options.dryRun {
-            try? durationStore.record(
-                Dictionary(
-                    uniqueKeysWithValues: report.taskTimings.map {
-                        ($0.task, $0.durationNanoseconds)
-                    }),
-                plan: report.plan)
-        }
-        return report
+            selectedInputHashingDurationNanoseconds: hashingDuration,
+            recordingCompletedTimings: options.dryRun ? nil : recordDurations)
     }
 }
