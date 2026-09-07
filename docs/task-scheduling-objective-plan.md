@@ -1,6 +1,6 @@
 # Task scheduling objective
 
-Status: active
+Status: complete
 
 ## Invariant
 

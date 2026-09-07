@@ -383,7 +383,23 @@ Phases 1 and 2 reduce how many times the tree is materialized and what it
 costs to read each file. Neither reduces how many files are read, which stays
 at the whole tree for every source revision.
 
-That is the dominant cost in practice, because the common revision is small.
+That was stated as the dominant cost in practice, and the measurement now
+available does not support it as written. A source revision costs the checkout
+plus the image. The image is a known 330 s. The checkout has exactly one
+recorded sample, 605.8 s, and which path it took is ambiguous: the action
+returns early when a generation already exists, and that early path still runs
+`git repack -a -d` over the CEF checkout, which could account for much of it.
+So the honest total is somewhere between six and sixteen minutes per revision,
+against Chromium builds measured in hours.
+
+That does not retire this phase, but it does reorder it. Before cloning
+anything, record what a source preparation actually spends -- checkout, hooks,
+clang, sysroots, the repack -- the way execution startup already records its
+own phases. Optimizing the half that is cheap while guessing at the half that
+is expensive is how this plan would waste its own effort. The premise below is
+kept as written so that the measurement can agree or disagree with it.
+
+The original reasoning follows.
 Rolling one dependency changes a handful of files and produces a new source id,
 and the id is what selects the tree: generation `fd51051519b837fadac158bb`
 became `10255f992ea45e6120f7966e` for a one-line change to a single Dawn
