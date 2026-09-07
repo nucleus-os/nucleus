@@ -252,6 +252,14 @@ state what it grants is one the container cannot read. The fixture states its
 modes now and the guest confirms them, which is the difference between a test
 that assumes a permission and one that checks it.
 
+Gate evidence: [protected-main run 34155852540](https://github.com/nucleus-os/nucleus/actions/runs/34155852540)
+verified `355ff322`, and the guest reported all six facts -- inode 14 under
+both of the hard link's names, 755, 644, the link's target, and the contents.
+The mechanism this phase rests on is qualified end to end: an image built on
+the host, addressed by its content, mounted read-only as a block device, and
+read correctly by a kernel other than the library that wrote it. What remains
+is to point it at the prepared Chromium tree.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
