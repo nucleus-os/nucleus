@@ -221,6 +221,130 @@ private func attributes(_ path: URL) throws -> [FileAttributeKey: Any] {
         "the supplied owner did not reach the image")
 }
 
+/// An archive holding names the host filesystem cannot.
+///
+/// The Linux sysroots carry `xt_CONNMARK.h` beside `xt_connmark.h` and a
+/// `sys` directory beside `SYS`, and the host volume is case insensitive, so
+/// a staged copy keeps one of each pair. The archive is therefore written
+/// entry by entry rather than tarred from a directory: the fixture could not
+/// exist on disk here any more than the sysroot can.
+private func writeCollidingArchive(to url: URL) throws {
+    let writer = try ArchiveWriter(
+        configuration: ArchiveWriterConfiguration(
+            format: .paxRestricted, filter: .gzip))
+    try writer.open(file: url)
+    func write(
+        _ path: String,
+        _ type: URLFileResourceType,
+        _ permissions: mode_t,
+        contents: String = "",
+        hardlink: String? = nil,
+        symlinkTarget: String? = nil
+    ) throws {
+        let entry = WriteEntry()
+        entry.path = path
+        entry.fileType = type
+        entry.permissions = permissions
+        entry.owner = 0
+        entry.group = 0
+        entry.hardlink = hardlink
+        entry.symlinkTarget = symlinkTarget
+        guard type == .regular, hardlink == nil else {
+            try unsafe writer.writeEntry(entry: entry, data: nil)
+            return
+        }
+        let bytes = Data(contents.utf8)
+        entry.size = Int64(bytes.count)
+        try writer.writeEntry(entry: entry, data: bytes)
+    }
+    try write("./", .directory, 0o755)
+    try write("./upper", .regular, 0o644, contents: "UPPER\n")
+    try write("./UPPER", .regular, 0o600, contents: "upper\n")
+    try write("./aliased", .regular, 0o644, hardlink: "./upper")
+    try write("./pointer", .symbolicLink, 0o777, symlinkTarget: "upper")
+    try writer.finishEncoding()
+}
+
+@Test func anOverlayCarriesNamesTheHostCannotHold() throws {
+    let fixture = try FixtureTree()
+    defer { fixture.remove() }
+    let work = fixture.root.deletingLastPathComponent()
+        .appendingPathComponent("work-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: work, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let archive = work.appendingPathComponent("overlay.tar.gz")
+    try writeCollidingArchive(to: archive)
+    let image = FilePath(work.appendingPathComponent("source.img").path)
+
+    try SourceTreeImage.write(
+        tree: FilePath(fixture.root.path),
+        to: image,
+        overlays: [
+            ArchiveOverlay(
+                archive: FilePath(archive.path),
+                destination: "/nested/sysroot",
+                stamp: Array("https://example.invalid/sysroot\n".utf8))
+        ])
+    let entries = try EXT4.EXT4Reader(blockDevice: image).entries()
+    let byPath = Dictionary(
+        uniqueKeysWithValues: entries.map { ($0.path.string, $0) })
+
+    // Both names, distinguished by case, which is the whole reason the
+    // archive is read here rather than extracted first.
+    #expect(try #require(byPath["/nested/sysroot/upper"]).permissions == 0o644)
+    #expect(try #require(byPath["/nested/sysroot/UPPER"]).permissions == 0o600)
+    // The rest of what a sysroot is made of survives the same path.
+    #expect(
+        try #require(byPath["/nested/sysroot/aliased"]).inode
+            == #require(byPath["/nested/sysroot/upper"]).inode)
+    #expect(try #require(byPath["/nested/sysroot/pointer"]).isSymbolicLink)
+    #expect(byPath["/nested/sysroot/.stamp"] != nil)
+    // The tree still reaches the image around the overlay.
+    #expect(byPath["/readable"] != nil)
+    #expect(byPath["/nested/hardlink"] != nil)
+}
+
+@Test func anOverlayReplacesWhatTheTreeHoldsAtItsDestination() throws {
+    let fixture = try FixtureTree()
+    defer { fixture.remove() }
+    // What the host left behind at the destination: the damaged copy, plus
+    // the bookkeeping the installer leaves beside it. Neither belongs in the
+    // image, and walking the directory at all is what this asserts against.
+    let occupied = fixture.root.appendingPathComponent("nested/sysroot")
+    try FileManager.default.createDirectory(
+        at: occupied, withIntermediateDirectories: true)
+    try Data("stale\n".utf8).write(to: occupied.appendingPathComponent("upper"))
+    try Data("cache\n".utf8).write(
+        to: occupied.appendingPathComponent("installer-bookkeeping"))
+    defer { fixture.remove() }
+    let work = fixture.root.deletingLastPathComponent()
+        .appendingPathComponent("work-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: work, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let archive = work.appendingPathComponent("overlay.tar.gz")
+    try writeCollidingArchive(to: archive)
+    let image = FilePath(work.appendingPathComponent("source.img").path)
+
+    try SourceTreeImage.write(
+        tree: FilePath(fixture.root.path),
+        to: image,
+        overlays: [
+            ArchiveOverlay(
+                archive: FilePath(archive.path),
+                destination: "/nested/sysroot")
+        ])
+    let entries = try EXT4.EXT4Reader(blockDevice: image).entries()
+    let byPath = Dictionary(
+        uniqueKeysWithValues: entries.map { ($0.path.string, $0) })
+
+    #expect(
+        byPath["/nested/sysroot/installer-bookkeeping"] == nil,
+        "the tree's copy of the destination reached the image")
+    #expect(byPath["/nested/sysroot/UPPER"] != nil)
+}
+
 @Test func aSourceTreeImageRefusesAnEntryItCannotReproduce() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
         "source-image-fifo-\(UUID().uuidString)")

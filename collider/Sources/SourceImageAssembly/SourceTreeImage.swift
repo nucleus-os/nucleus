@@ -19,6 +19,43 @@ import SystemPackage
 /// The image is written by `ContainerizationEXT4`, which is already vendored,
 /// so this needs neither a mount, nor root, nor an `e2fsprogs` the host does
 /// not carry.
+/// An archive written into the image at a path, in place of what the tree
+/// holds there.
+///
+/// Not every part of a prepared tree can exist on the host that prepares it.
+/// The Linux sysroots are Debian roots carrying names that differ only in
+/// case -- `xt_CONNMARK.h` beside `xt_connmark.h`, and a `sys` directory
+/// beside `SYS` -- and the host volume is case insensitive, so the copy
+/// `gclient runhooks` leaves behind is already missing twenty-four entries.
+/// The container that consumes the tree repaired that by deleting the
+/// directory and extracting the archive itself, onto a filesystem that can
+/// hold both names.
+///
+/// Writing the image is where that repair now belongs: the archive is read
+/// and its entries are placed into the image directly, so the names never
+/// have to survive a round trip through a filesystem that cannot represent
+/// them. What the tree holds at `destination` is not walked at all, because
+/// it is the damaged copy.
+public struct ArchiveOverlay: Sendable {
+    /// The archive to read.
+    public let archive: FilePath
+    /// Where its entries are written, as an absolute path in the image.
+    public let destination: FilePath
+    /// Contents for a `.stamp` file written inside `destination`.
+    ///
+    /// Chromium records an installed sysroot by the URL its archive came
+    /// from, and reinstalls one whose stamp disagrees. The image is not a
+    /// place a build can install anything, so the stamp travels with the
+    /// entries it describes.
+    public let stamp: [UInt8]?
+
+    public init(archive: FilePath, destination: FilePath, stamp: [UInt8]? = nil) {
+        self.archive = archive
+        self.destination = destination
+        self.stamp = stamp
+    }
+}
+
 public enum SourceTreeImage {
     /// Write `tree` into a new ext4 image at `image`.
     ///
@@ -37,12 +74,15 @@ public enum SourceTreeImage {
     ///   runs as rather than root: it keeps what a consumer can read a
     ///   property of the tree's modes rather than of the transport. Stated as
     ///   the type an execution states it with, so the two cannot drift apart.
+    /// - Parameter overlays: Archives written in place of what the tree holds
+    ///   at each destination. See `ArchiveOverlay`.
     public static func write(
         tree: FilePath,
         to image: FilePath,
         blockSize: UInt32 = 4096,
         identity: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
-        owner: OCIUserPolicy = .builder
+        owner: OCIUserPolicy = .builder,
+        overlays: [ArchiveOverlay] = []
     ) throws {
         guard try entry(at: tree).type == .typeDirectory else {
             throw SourceTreeImageFailure("source tree is not a directory: \(tree)")
@@ -76,7 +116,9 @@ public enum SourceTreeImage {
         // names, and writing it once per name would silently turn one inode
         // into several. The shallowest name holds the inode; the rest link.
         var linkedNames: [UInt64: FilePath] = [:]
-        for (source, destination, entry) in try entries(tree: tree) {
+        for (source, destination, entry) in try entries(
+            tree: tree, excluding: overlays.map(\.destination))
+        {
             switch entry.type {
             case .typeDirectory:
                 try unsafe formatter.create(
@@ -124,7 +166,120 @@ public enum SourceTreeImage {
                         + "or symbolic link: \(source)")
             }
         }
+        // After the walk, so an overlay's destination is written over a tree
+        // that has already established every directory above it, and in one
+        // order whatever order the caller supplied.
+        for overlay in overlays.sorted(by: {
+            $0.destination.string < $1.destination.string
+        }) {
+            try unpack(overlay, into: formatter, timestamps: timestamps, owner: owner)
+        }
         try formatter.close()
+    }
+
+    /// Write one archive's entries under its destination.
+    ///
+    /// Entry order is the archive's own, which is a property of bytes the
+    /// caller addresses rather than of the host, so two images of one archive
+    /// agree. Hard links are resolved after the entries they name exist,
+    /// because a tar may name a link before its target.
+    private static func unpack(
+        _ overlay: ArchiveOverlay,
+        into formatter: EXT4.Formatter,
+        timestamps: FileTimestamps,
+        owner: OCIUserPolicy
+    ) throws {
+        try unsafe formatter.create(
+            path: overlay.destination,
+            mode: EXT4.Inode.Mode(.S_IFDIR, 0o755),
+            ts: timestamps,
+            uid: owner.userID,
+            gid: owner.groupID)
+        var links: [(link: FilePath, target: FilePath)] = []
+        let reader = try ArchiveReader(file: overlay.archive.url)
+        for (entry, contents) in reader.makeStreamingIterator() {
+            guard let name = entry.path else { continue }
+            let relative = try relativePath(name, in: overlay)
+            // A tar names its own root, and that name is the destination.
+            let path =
+                relative.components.isEmpty
+                ? overlay.destination : overlay.destination.pushing(relative)
+            let permissions = UInt16(entry.permissions & 0o7777)
+            if let hardlink = entry.hardlink {
+                links.append(
+                    (
+                        path,
+                        overlay.destination.pushing(
+                            try relativePath(hardlink, in: overlay))
+                    ))
+                continue
+            }
+            switch entry.fileType {
+            case .directory:
+                try unsafe formatter.create(
+                    path: path,
+                    mode: EXT4.Inode.Mode(.S_IFDIR, permissions),
+                    ts: timestamps,
+                    uid: owner.userID,
+                    gid: owner.groupID)
+            case .regular:
+                try unsafe formatter.create(
+                    path: path,
+                    mode: EXT4.Inode.Mode(.S_IFREG, permissions),
+                    ts: timestamps,
+                    buf: contents,
+                    uid: owner.userID,
+                    gid: owner.groupID)
+            case .symbolicLink:
+                guard let target = entry.symlinkTarget else {
+                    throw SourceTreeImageFailure(
+                        "the archive holds a symbolic link with no target: \(name)")
+                }
+                try unsafe formatter.create(
+                    path: path,
+                    link: FilePath(target),
+                    mode: EXT4.Inode.Mode(.S_IFLNK, permissions),
+                    ts: timestamps,
+                    uid: owner.userID,
+                    gid: owner.groupID)
+            default:
+                // The same refusal the walk makes, for the same reason: an
+                // entry carried wrongly and an entry dropped quietly both
+                // produce an image that disagrees with what it claims to be.
+                throw SourceTreeImageFailure(
+                    "the archive holds an entry that is not a file, directory "
+                        + "or symbolic link: \(name)")
+            }
+        }
+        for link in links {
+            try formatter.link(link: link.link, target: link.target)
+        }
+        if let stamp = overlay.stamp {
+            let contents = InputStream(data: Data(stamp))
+            contents.open()
+            defer { contents.close() }
+            try unsafe formatter.create(
+                path: overlay.destination.appending(".stamp"),
+                mode: EXT4.Inode.Mode(.S_IFREG, 0o644),
+                ts: timestamps,
+                buf: contents,
+                uid: owner.userID,
+                gid: owner.groupID)
+        }
+    }
+
+    /// One archive name as a path relative to an overlay's destination.
+    private static func relativePath(
+        _ name: String,
+        in overlay: ArchiveOverlay
+    ) throws -> FilePath {
+        let relative = FilePath(root: nil, FilePath(name).components)
+            .lexicallyNormalized()
+        guard relative.components.first?.kind != .parentDirectory else {
+            throw SourceTreeImageFailure(
+                "the archive names an entry outside \(overlay.destination): \(name)")
+        }
+        return relative
     }
 
     private struct Entry {
@@ -143,8 +298,12 @@ public enum SourceTreeImage {
     /// archive whose link precedes its target. Sorting within a depth is what
     /// keeps two builds of one tree identical, since the image is going to be
     /// addressed by its content and directory order is a property of the host.
+    /// - Parameter excluding: Destinations an overlay writes. The tree's own
+    ///   copy of one is not read at all, so a name the host could not hold is
+    ///   never asked of it.
     private static func entries(
-        tree: FilePath
+        tree: FilePath,
+        excluding excluded: [FilePath]
     ) throws -> [(source: FilePath, destination: FilePath, entry: Entry)] {
         var collected: [(source: FilePath, destination: FilePath, entry: Entry)] = []
         var frontier = [(tree, FilePath("/"))]
@@ -156,6 +315,9 @@ public enum SourceTreeImage {
                 ).sorted() {
                     let source = directory.appending(name)
                     let destination = relative.appending(name)
+                    if excluded.contains(where: { destination.starts(with: $0) }) {
+                        continue
+                    }
                     let found = try entry(at: source)
                     collected.append((source, destination, found))
                     if found.type == .typeDirectory {

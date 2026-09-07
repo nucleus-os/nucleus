@@ -215,6 +215,10 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 .product(
+                    name: "ContainerizationArchive",
+                    package: "containerization",
+                    condition: .when(platforms: [.macOS])),
+                .product(
                     name: "ContainerizationEXT4",
                     package: "containerization",
                     condition: .when(platforms: [.macOS])),
