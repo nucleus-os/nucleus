@@ -93,6 +93,14 @@ one thing separating a consumer judged against completed content from one
 judged against whatever was on disk when planning ran. Assessment answers a
 deferral; it does not undo one.
 
+[Run 34079734763](https://github.com/nucleus-os/nucleus/actions/runs/34079734763)
+carries the correction and partitions cleanly: 119 tasks recorded a deferred
+assessment, 60 of them reusing after it and 59 executing after it, and the 39
+that recorded none carry only explanations that describe work needing no
+producer wait. No deferred task carries a non-assessment explanation and no
+undeferred task carries an assessment one, so the three states the gate asks
+for are distinguishable in the record rather than merely present in it.
+
 ## Phase 3: Prove the protected-main boundary and resume nightly finalization
 
 Status: active
