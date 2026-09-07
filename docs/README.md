@@ -77,39 +77,34 @@ verification below.
    the full catalog with the new identity model, record the one-time identity
    transition separately from steady-state invalidation, and re-audit the
    nightly finalization plan against these contracts.
-3. Confirm Phase 2 of
-   [Chromium source materialization](chromium-source-materialization-plan.md)
-   against a full Chromium build. The prepared tree was the last major build
-   input that was not an artifact -- a wipe-and-refill into a mutable
-   workspace, keyed by a `.nucleus-source-id` the graph could not see, which
-   contradicted the invariant step 2 establishes. It is now a reproducible
-   ext4 image written on the host by `SourceImageAssembly`, attached read-only
-   as a block device by every consumer, which retired the wipe-and-refill's
-   non-atomicity, the hand-maintained key, the source lock, and the host
-   open-file ceiling that failed the sweep on 2026-09-01. Raising
-   `kern.maxfiles` is an unblock, not a substitute, and this step is why it is
-   not needed. What the mechanism has not yet been shown to do is carry the
-   real tree: 1.2 million entries and 29 GiB, compiled against for four hours.
-   The sysroots are the part to watch, because the host filesystem cannot hold
-   their case-colliding names and the image writes them from their archives
-   rather than from the tree.
-4. Complete Phase 3 of
+3. Complete Phase 3 of
    [Chromium source materialization](chromium-source-materialization-plan.md),
    building each generation from its predecessor so that rolling one
-   dependency stops costing a full checkout and a full materialization. Its
-   safety property is that a generation built incrementally is
-   indistinguishable from one built whole, which is what step 2's
-   content-based assessment exists to verify.
-5. Complete the reuse and reproduction acceptance in Phase 4 of the
+   dependency stops costing a full checkout and a full image. Phases 1 and 2
+   are done: the prepared tree was the last major build input that was not an
+   artifact -- a wipe-and-refill into a mutable workspace, keyed by a
+   `.nucleus-source-id` the graph could not see -- and it is now a reproducible
+   ext4 image written on the host by `SourceImageAssembly` and attached
+   read-only as a block device by every consumer. That retired the
+   wipe-and-refill's non-atomicity, the hand-maintained key, the source lock,
+   and the host open-file ceiling that failed the sweep on 2026-09-01, so
+   raising `kern.maxfiles` is not needed. What remains costly is that a
+   one-line dependency roll still rebuilds the whole tree and rewrites the
+   whole 29 GiB image, which is what Phase 3 addresses. Its safety property is
+   that a generation built incrementally is indistinguishable from one built
+   whole, which is what step 2's content-based assessment exists to verify.
+4. Complete the reuse and reproduction acceptance in Phase 4 of the
    [placement-independent build plan](placement-independent-build-plan.md).
    Product execution uses canonical paths, and Phase 3's product-identity
    rejection boundary has passed protected-main packaging. Record the
    remaining local-to-automated cache reuse and cross-machine evidence. This
-   follows step 3 rather than preceding it, because position independence
-   cannot be claimed while a primary input is established by a hand-keyed
-   mutable workspace. The macOS host-tool VM phase remains deferred until host
-   execution produces a delivered artifact.
-6. Complete the remaining gates in Phases 4, 5, and 7 of the
+   was ordered after the Chromium source work because position independence
+   could not be claimed while a primary input was established by a hand-keyed
+   mutable workspace; that input is now a content-addressed image whose
+   filesystem identity and timestamps are derived from the pinned inputs, so
+   the evidence is the only thing still outstanding. The macOS host-tool VM
+   phase remains deferred until host execution produces a delivered artifact.
+5. Complete the remaining gates in Phases 4, 5, and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md).
    The protected-main host-contract, provenance, build, and test lanes already
    run successfully, and the installed root boot coordinator restores the
@@ -118,14 +113,14 @@ verification below.
    host restart and a protected-main supersession, and complete the
    container-network, quarantine, and recovery gates. These are control-plane
    exercises rather than code.
-7. Complete the product-store qualification and delivery remaining in Phase 6
+6. Complete the product-store qualification and delivery remaining in Phase 6
    of the [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md),
    closing the verification graph against the artifacts steps 2 through 5
    establish.
 
 ### Delivery
 
-8. Execute `collider build swift-sdk --rebuild`, the deliberate forced
+7. Execute `collider build swift-sdk --rebuild`, the deliberate forced
    production proving the target SDK builds from the snapshot host. Every
    Ubuntu package now resolves through a declared `snapshot.ubuntu.com`
    timestamp, so the availability risk that gate covered is already retired.
@@ -133,63 +128,63 @@ verification below.
    remains blocked upstream: retiring the `/opt/swift-compat` closure waits on
    swift.org publishing a 6.4 Ubuntu 26.04 toolchain, and no reordering
    advances it.
-9. Execute the one outstanding gate of the completed
+8. Execute the one outstanding gate of the completed
    [build store retention plan](build-store-retention-plan.md): delete the
    on-demand AOSP source-input cache and re-hydrate 73.4 GiB over host
    networking to prove the tree it promises to reconstruct.
-10. Complete Phases 5 and 6 of the
+9. Complete Phases 5 and 6 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
     the exact version-bearing cohorts, assemble signed repository snapshots
     offline, and remove Collider's remaining product-installation commands.
-11. Complete Phases 1 through 5 of the
+10. Complete Phases 1 through 5 of the
     [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
     Protected-main packaging does not wait for this reliability work. Measure
     the translated host workload against the existing generations, then supply
     the missing native host toolchains and prove both products without
     translation before unattended Android qualification can be accepted.
-12. Complete Phase 6 of the
+11. Complete Phase 6 of the
     [Linux distribution portability plan](linux-distribution-portability-plan.md)
     using the signed local repository snapshots: qualify each unchanged
     artifact digest across the declared distribution matrix without rebuilding
     it.
-13. Complete the remaining qualification plans in the order listed below.
+12. Complete the remaining qualification plans in the order listed below.
     Their agent-runnable gates bind native, physical, security, and product
     evidence to the package cohorts, and complete the qualification portion of
     the protected-main verification graph.
-14. Complete Phase 7 of the
+13. Complete Phase 7 of the
     [Linux distribution portability plan](linux-distribution-portability-plan.md)
     on physical arm64 and x86_64 hardware. After the Android application and
     container-security gates are complete, execute Phase 6 of the
     [Android architecture parity plan](android-architecture-parity-plan.md) on
     physical arm64 hardware as part of the same hardware-qualification stage.
-15. Complete Phase 7 of the
+14. Complete Phase 7 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to publish qualified repository cohorts through the separated GitHub
     Release and R2 authorities.
-16. Complete Phase 8 of the
+15. Complete Phase 8 of the
     [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
     against the native package, repository, and qualification pipeline. Its
     declared cold reconstruction is the machine-scale gate on steps 2 through
     5, which is why it stays last among the CI phases.
-17. Complete Phase 8 of the
+16. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to publish and qualify the nightly native update lifecycle.
-18. Complete the
+17. Complete the
     [Collider architecture simplification plan](collider-architecture-simplification-plan.md)
     after the nightly lifecycle fixes the build, packaging, qualification, and
     publication contracts. Decompose catalog construction, storage policy,
     package assembly, recipe ownership, and command execution policy before
     adding new development-host execution surfaces.
-19. Complete Phase 9 of the
+18. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to add non-installed remote development generations over the established
     product-artifact contract.
-20. Complete Phases 2 through 6 of
+19. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-21. Complete Phases 3 through 13 of the
+20. Complete Phases 3 through 13 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor workflow adds backend-neutral execution, a private
     content-addressed action cache for Siso, Swift, and qualified compiler

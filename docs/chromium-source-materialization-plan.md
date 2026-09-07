@@ -340,17 +340,42 @@ rather than multiply it. That claim is now made under its own name,
 made on measurement rather than an accident of renaming. The wall clock that is
 actually recoverable is in the compiler cache and in Phase 3.
 
-The workspace this phase retires is still resident, exactly as Phase 1's were:
-`chromium-source` holds about 45 GiB claimed by no declaration now, and nothing
-reclaims a container volume on its own. That is a step to be taken with
-`collider cache prune`, not a defect to be fixed.
+The workspace this phase retires was resident, exactly as Phase 1's were:
+`chromium-source` held about 45 GiB claimed by no declaration once the last
+consumer stopped naming it. `collider cache prune` collected it along with
+Phase 1's two orphans, taking the volume from 428 GiB free to 700 GiB.
 
-Fidelity was the risk worth naming, and it is settled for files, permissions,
-symbolic links, hard links, ownership, byte reproducibility, and the
-case-colliding names only the overlay path can carry. What is not yet settled
-is the tree at full scale: the attachment task proves the mechanism on a
-fixture, and only a Chromium build proves that 1.2 million entries and 29 GiB
-arrive intact and readable.
+Gate evidence: [protected-main run 34164726541](https://github.com/nucleus-os/nucleus/actions/runs/34164726541)
+verified `630846ed` -- 121 clean, 39 executed, 0 failed, elapsed 1420.0 s.
+All four Chromium builds executed against the image and succeeded, linking
+`libcef.so` for both architectures, which is the claim no fixture could make:
+1.2 million entries and 29 GiB arrive intact and readable by a compiler that
+runs for minutes against them. The sysroots are proven by the same run rather
+than separately, because the tree's own copy of that directory is excluded
+from the walk -- had the overlay not run, the sysroot would have been empty
+and both builds would have failed for want of a libc header rather than
+succeeding. `test.source-image.attachment` reported its ten facts identically
+from two containers holding the image open at once, including the contents of
+a file only its owner may read.
+
+Writing the image costs 330 s for the whole generation, measured across the
+task's own log: 315 s of tree, and the rest the two sysroot archives. Reading
+it back is not free either, and in a debug binary it is prohibitive -- the same
+`FilePath.ComponentView._invariantCheck` that made a debug write 1,478 s makes
+a debug enumeration of 1.2 million entries impractical, which is worth knowing
+before anyone writes a validator that walks a published image.
+
+What this run also measures is the cost of the serialization that remains.
+Execution took 1380.4 s against a critical path of 497.2 s, and
+`browser.cef.arm64.build` waited 891.7 s to run 284.8 s. Roughly nine hundred
+seconds of a warm sweep is the capacity lock, which is now the question it was
+always going to become: whether four builds sharing twenty-four cores finish
+sooner than four builds taking them in turn, and whether four concurrent link
+steps fit in memory. That is a measurement to take deliberately, on a cold
+sweep as well as a warm one, not a lock to drop because it no longer has its
+original reason.
+
+Status: complete.
 
 ## Phase 3: Build each generation from its predecessor
 
