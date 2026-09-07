@@ -20,10 +20,18 @@ import SystemPackage
 /// not carry.
 public enum SourceTreeImage {
     /// Write `tree` into a new ext4 image at `image`.
+    ///
+    /// - Parameter identity: The filesystem UUID stamped into the image. A
+    ///   formatter would otherwise generate one, which makes two images of
+    ///   identical content differ in bytes. A caller addressing images by the
+    ///   tree they reproduce should derive this from that address, so that two
+    ///   distinct trees never claim one filesystem identity; the default keeps
+    ///   a single tree's builds identical, which is what the graph compares.
     public static func write(
         tree: FilePath,
         to image: FilePath,
-        blockSize: UInt32 = 4096
+        blockSize: UInt32 = 4096,
+        identity: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     ) throws {
         guard try entry(at: tree).type == .typeDirectory else {
             throw SourceTreeImageFailure("source tree is not a directory: \(tree)")
@@ -39,15 +47,20 @@ public enum SourceTreeImage {
         else {
             throw SourceTreeImageFailure("could not create the image file: \(image)")
         }
-        let formatter = try EXT4.Formatter(image, blockSize: blockSize)
-        // Every timestamp is fixed. The image is addressed by its content, and
-        // a checkout stamps its own mtimes when it materializes, so preserving
-        // them would give two builds of identical content two addresses. One
-        // epoch also leaves every source older than every output, which is
-        // what a build comparing the two should conclude.
+        // Every timestamp is fixed and the filesystem identity is supplied.
+        // The image is addressed by its content, and a checkout stamps its own
+        // mtimes when it materializes, so preserving them would give two
+        // builds of identical content two addresses. One epoch also leaves
+        // every source older than every output, which is what a build
+        // comparing the two should conclude.
         let epoch = Date(timeIntervalSince1970: 0)
+        let formatter = try EXT4.Formatter(
+            image,
+            blockSize: blockSize,
+            reproducibility: EXT4.Formatter.Reproducibility(
+                uuid: identity, timestamp: epoch))
         let timestamps = FileTimestamps(
-            access: epoch, modification: epoch, creation: epoch)
+            access: epoch, modification: epoch, creation: epoch, now: epoch)
         // A file with more than one link is one content reachable by several
         // names, and writing it once per name would silently turn one inode
         // into several. The shallowest name holds the inode; the rest link.

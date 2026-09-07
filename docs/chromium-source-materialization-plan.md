@@ -132,13 +132,28 @@ two builds of identical content two addresses.
 Three things the first implementation established, none of which the plan
 anticipated:
 
-The image cannot be byte-reproducible through the vendored formatter's public
-API. It stamps a fresh filesystem UUID and reads its own wall clock in two
-places, and none of the three is a parameter. Either the fork accepts a seed
-and a clock, or the artifact is keyed by the source id it reproduces rather
-than by its own digest -- which is what this phase already says, and is the
-cheaper answer. What is stable, and what the build graph needs, is the tree the
-image reproduces; two images of one tree reproduce identical contents.
+The image is byte-reproducible, through a fork. `ContainerizationEXT4` stamped
+a fresh filesystem UUID and read its own wall clock, so two images of one tree
+differed. `nucleus-os/containerization` adds a `Formatter.Reproducibility` that
+supplies both, reaching every value the formatter invents rather than the
+obvious ones: leaving the root inode, `lost+found`, and filled-in parent
+directories on the wall clock still left thirty-two differing bytes. Every
+addition is optional and defaults to the existing behaviour, so it is
+upstreamable and the fork is meant to be temporary.
+
+Keying the artifact by source id instead was the alternative and was rejected.
+That is the same hand-maintained key this phase exists to delete, relocated
+from `.nucleus-source-id` into a task declaration, and it would exempt the
+image from the content-based consumer assessment every other artifact obeys.
+
+Repointing a dependency at a fork is a one-time cost the graph resolver does
+not absorb. A resolution scratch records the URL each identity resolved to, and
+`--only-use-versions-from-resolved-file` forbids the re-resolution that would
+correct it, so a machine that has already resolved reports a clone failure for
+a URL that is reachable. Recovering means re-resolving once in an environment
+that can clone. Every package in the closure must also name the same URL:
+`third-party/container` depends on containerization too, and one identity
+resolving to two URLs is a conflict.
 
 Fidelity is proven for files, permissions, and symbolic links, and is not yet
 proven for hard links. Verification reads the image back through

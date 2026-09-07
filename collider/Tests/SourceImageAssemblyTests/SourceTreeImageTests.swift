@@ -118,7 +118,7 @@ private func attributes(_ path: URL) throws -> [FileAttributeKey: Any] {
     // failing; what remains unproven is only that the link survives.
 }
 
-@Test func twoImagesOfOneTreeReproduceTheSameContents() throws {
+@Test func twoImagesOfOneTreeAreByteIdentical() throws {
     let fixture = try FixtureTree()
     defer { fixture.remove() }
     let work = fixture.root.deletingLastPathComponent()
@@ -126,28 +126,45 @@ private func attributes(_ path: URL) throws -> [FileAttributeKey: Any] {
     try FileManager.default.createDirectory(
         at: work, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: work) }
+    let first = FilePath(work.appendingPathComponent("first.img").path)
+    let second = FilePath(work.appendingPathComponent("second.img").path)
 
-    func contents(_ name: String) throws -> [String] {
-        let image = FilePath(work.appendingPathComponent("\(name).img").path)
-        let archive = FilePath(work.appendingPathComponent("\(name).tar").path)
-        let restored = work.appendingPathComponent(name)
-        try FileManager.default.createDirectory(
-            at: restored, withIntermediateDirectories: true)
-        try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: image)
-        try EXT4.EXT4Reader(blockDevice: image).export(archive: archive)
-        _ = try ArchiveReader(file: archive.url).extractContents(to: restored)
-        let walked =
-            (FileManager.default.enumerator(atPath: restored.path)?.allObjects
-                as? [String]) ?? []
-        return walked.sorted()
-    }
+    try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: first)
+    try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: second)
 
-    // Not a byte comparison. The vendored formatter stamps a fresh filesystem
-    // UUID and its own wall clock into every image it writes, neither of which
-    // this can pass in, so two images of one tree are never byte-identical.
-    // What has to be stable is the tree they reproduce, and that is what the
-    // build graph needs from an output it will address.
-    #expect(try contents("first") == contents("second"))
+    // The image is addressed by its content, so two builds of one tree that
+    // differ in any byte would address the same source twice. A formatter
+    // stamps a fresh filesystem UUID and its own wall clock unless both are
+    // supplied, which is why they are.
+    #expect(
+        FileManager.default.contentsEqual(
+            atPath: first.string, andPath: second.string),
+        "two images of the same tree are not byte identical")
+}
+
+@Test func aDistinctIdentityChangesTheImage() throws {
+    let fixture = try FixtureTree()
+    defer { fixture.remove() }
+    let work = fixture.root.deletingLastPathComponent()
+        .appendingPathComponent("work-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: work, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let first = FilePath(work.appendingPathComponent("first.img").path)
+    let second = FilePath(work.appendingPathComponent("second.img").path)
+
+    try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: first)
+    try SourceTreeImage.write(
+        tree: FilePath(fixture.root.path),
+        to: second,
+        identity: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!)
+
+    // Determinism must not become a single filesystem identity shared by every
+    // image, or two distinct trees would claim to be the same filesystem.
+    #expect(
+        !FileManager.default.contentsEqual(
+            atPath: first.string, andPath: second.string),
+        "the supplied filesystem identity did not reach the image")
 }
 
 @Test func aSourceTreeImageRefusesAnEntryItCannotReproduce() throws {
