@@ -509,7 +509,11 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             path: imaging.image,
             validation: .regularFile)
         let sourceImageTask = sourceImageBuilder.build(
-            inputs: sourceInputs,
+            // The generation, and nothing that produced it. What the image
+            // holds comes from the tree, which arrives as the consumed
+            // provenance; the pinned inputs behind that tree reach this task
+            // only through the identity they gave it.
+            inputs: [.string(name: "source-id", value: layout.sourceID)],
             locks: [
                 .shared(cache.appending("locks/source-image.lock"))
             ],

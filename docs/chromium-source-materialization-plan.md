@@ -179,7 +179,12 @@ remove, so it merges the reader's hard-link table as well.
 
 A container attaching the image is still required, but for consumers rather
 than for this gate; what it would add is that the guest kernel agrees, not
-that the image is right.
+that the image is right. It also answers a question only a container can:
+several consumers attach one image at the same time -- two artifact
+assemblies, two test runs -- so the attachment task reads the image from two
+containers concurrently and requires them to agree. Whether a read-only image
+can be shared is a property the mechanism has to have, and finding out four
+hours into a build is the expensive way to learn it.
 
 Gate evidence: [protected-main run 34087038233](https://github.com/nucleus-os/nucleus/actions/runs/34087038233)
 verified `3eeb3b62` with every source-image behaviour passing on the builder

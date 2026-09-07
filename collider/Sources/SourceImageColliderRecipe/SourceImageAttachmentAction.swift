@@ -36,12 +36,12 @@ package struct SourceImageAttachmentAction: ColliderAction {
     /// read the builder image, which the task consumed and the action had not
     /// declared. Deriving them means adding a mount cannot leave the
     /// declaration behind.
-    private var execution: OCIExecution {
+    private func execution(hostname: String) -> OCIExecution {
         OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .linuxARM64,
             imageID: imageID,
-            hostname: "collider-source-image",
+            hostname: hostname,
             workingDirectory: "/source",
             hostWorkingDirectory: root,
             mounts: [],
@@ -80,8 +80,21 @@ package struct SourceImageAttachmentAction: ColliderAction {
             output: .captured(limit: 64 * 1_024))
     }
 
+    /// The two readers, which differ only in which container they are.
+    ///
+    /// One image is attached by several consumers at once -- two artifact
+    /// assemblies, two test runs -- so whether a read-only image can be shared
+    /// is a property the mechanism has to have, not one to discover four hours
+    /// into a build. Both are the same execution otherwise, so a disagreement
+    /// between them is about sharing and nothing else.
+    private var executions: [OCIExecution] {
+        ["collider-source-image", "collider-source-image-sharing"]
+            .map(execution(hostname:))
+    }
+
     package var requirements: ActionRequirements {
-        let container = ociActionRequirements(execution: execution)
+        let container = ociActionRequirements(
+            execution: execution(hostname: "collider-source-image"))
         return ActionRequirements(
             effects: ([ActionEffect(.readWrite, scope: .output(root))]
                 + container.effects).uniqued(),
@@ -124,10 +137,26 @@ package struct SourceImageAttachmentAction: ColliderAction {
 
         try SourceTreeImage.write(tree: tree, to: root.appending("source.img"))
 
-        let result = try await context.containers.execute(execution)
-        let lines = result.standardOutput
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .map(String.init)
+        // Concurrently, because that is the claim: several containers holding
+        // one read-only image open at the same moment.
+        let readings = try await withThrowingTaskGroup(
+            of: [String].self, returning: [[String]].self
+        ) { group in
+            for execution in executions {
+                group.addTask {
+                    try await context.containers.execute(execution)
+                        .standardOutput
+                        .split(separator: "\n", omittingEmptySubsequences: true)
+                        .map(String.init)
+                }
+            }
+            return try await group.reduce(into: []) { $0.append($1) }
+        }
+        guard let lines = readings.first, readings.allSatisfy({ $0 == lines })
+        else {
+            throw SourceImageAttachmentFailure(
+                "two containers reading one image disagree: \(readings)")
+        }
         guard lines.count == 10 else {
             throw SourceImageAttachmentFailure(
                 "the guest reported \(lines.count) facts rather than ten: \(lines)")
