@@ -600,6 +600,57 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     #expect(report.criticalPathDurationNanoseconds > 0)
 }
 
+@Test func anIdleMachineRunsReadyExclusiveWorkBeforeFillingLanes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-barrier-placement-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    func probeTask(
+        _ name: String,
+        lane: TaskExecutionLane,
+        duration: Duration,
+        dependencies: [TaskID] = []
+    ) throws -> TaskDeclaration {
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.barrier-placement.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            dependencies: dependencies,
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    lane: lane,
+                    duration: duration)))
+    }
+
+    // `long` outranks `barrier` on the only key the scheduler has: it is
+    // estimated more expensive and it owns a successor, while `barrier` is a
+    // cheap leaf. Both are ready at the first boundary. Ordering by that key
+    // alone hands the machine to `long`, after which the barrier cannot run
+    // until everything drains -- so the cheapest moment to pay for it is spent
+    // on work that did not need the whole machine.
+    let long = try probeTask("long", lane: .oci, duration: .milliseconds(400))
+    let successor = try probeTask(
+        "successor", lane: .lightweight, duration: .milliseconds(1),
+        dependencies: [TaskID(rawValue: "fixture.barrier-placement.long")])
+    let barrier = try probeTask(
+        "barrier", lane: .hostExclusive, duration: .milliseconds(50))
+    let tasks = [long, successor, barrier]
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    #expect(await probe.startOrder().first == "barrier")
+}
+
 @Test func aDeferredTaskRecordsItsWaitAndABlockedTaskDoesNot() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-deferral-\(UUID().uuidString)")

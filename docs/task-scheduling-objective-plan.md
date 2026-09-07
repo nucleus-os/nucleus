@@ -105,43 +105,55 @@ draw: a task the scheduler deferred records a wait exceeding its own duration,
 and a task the graph blocked records a shorter one, because it was not ready
 until its dependency finished.
 
-## Phase 2: Give the ready order a second key
+## Phase 2: Let a barrier take the machine while it is free
 
-Status: pending
+Status: complete.
 
-Phase 1's first measurement moved this phase's target. Of the 73 tasks that
-recorded a wait, 54 waited longer than they ran, which is not by itself the
-finding: 33 of those are `oci` tasks contending for two container lanes, where
-deferral is arithmetic rather than a decision. The finding is where the
-deferral is disproportionate. All three `hostExclusive` tasks in the run were
-deferred, they occupy the first three positions by delay, and together they
-waited 2,373 s to perform 205 s of work -- an eleven-to-one ratio on a lane
-that runs one task at a time. `linux.package-source-snapshot` is the extreme
-and was not predicted: 824.2 s of waiting for 3.3 s of work.
+Phase 1's first measurement moved this phase's target twice. Of the 73 tasks
+that recorded a wait, 54 waited longer than they ran, which is not by itself
+the finding: 33 are `oci` tasks contending for two container lanes, where
+deferral is arithmetic rather than a decision, and the 18 `lightweight` ones
+account for 161 s of waiting over 25 s of work. The disproportion is on the
+exclusive lane. All three `hostExclusive` tasks were deferred, they hold the
+first three positions by delay, and together they waited 2,373 s to perform
+205 s of work. `linux.package-source-snapshot` is the extreme and was not
+predicted: 824.2 s of waiting for 3.3 s of work.
 
-Aim the reservation at that lane first. Sort the ready queue on longest
-remaining path as now, and admit work that is ready, cheap, and terminal ahead
-of it up to a bounded share of the available lanes. The bound is what keeps
-this from becoming a second makespan policy competing with the first: the
-reservation may not exceed lanes that would otherwise sit idle, which run
-34066753916 had in quantity -- 1,002.5 s of execution against a 468.0 s
-critical path.
+Reading that lane moved the target again. `canSchedule` admits host-exclusive
+work only when `running.isEmpty`, so it is not a lane of size one -- it is a
+whole-machine barrier. That changes what deferring it costs. A barrier's own
+duration is paid wherever it runs, because nothing overlaps it in any
+position; the variable cost is the drain that empties the machine to raise it.
+The drain is zero exactly when nothing is running, which makes an idle machine
+the cheapest moment a run will ever offer for a barrier, and a run is idle at
+its first scheduling boundary and rarely again.
 
-Whether a single exclusive lane is the right shape is a question this raises
-and does not answer. Reordering within it is sufficient for the measured
-case -- three tasks totalling 205 s finish by roughly that mark if scheduled
-first, against 1,014 s scheduled last -- so widening the lane is not this
-plan's business unless reordering proves insufficient.
+The rule could never find that moment. It drained only when the barrier's
+priority was at least that of every ready and running task, and a barrier
+cheap enough to be worth an idle machine is by construction outranked by the
+work it would otherwise run beside. So the cheapest moment went to work that
+did not need the whole machine, and the barrier waited for a full one to
+drain. All three of run 34066753916's host-exclusive tasks were ready at the
+first boundary; none started before 655 s.
 
-Cheapness is read from the estimate the scheduler already computes, and
-terminality from the successor map it already builds. No task declares its own
-priority: a declaration that names its urgency is a second scheduling policy
-maintained by hand, and it would drift from the graph it describes.
+A ready exclusive task therefore takes an idle machine. There is no cheapness
+test on it, because there is nothing to trade: the duration is position
+independent, so an expensive barrier is no worse a use of an idle machine than
+a cheap one, and a test on cost would reintroduce the comparison that hid the
+moment. Nothing here reserves lanes or reorders the other two lanes, whose
+deferral the measurement showed is not worth machinery.
 
-Gate: replaying run 34066753916's plan schedules all three `hostExclusive`
-tasks within the first 250 s, and its total execution does not regress beyond
-measurement noise. A run whose only failure is a cheap terminal task reports
-that failure before it begins any container work.
+No task declares its own priority. A declaration that names its urgency is a
+second scheduling policy maintained by hand, and it would drift from the graph
+it describes.
+
+Gate: the first protected-main sweep carrying this schedules every ready
+`hostExclusive` task before it fills other lanes, and its total execution does
+not regress beyond measurement noise against run 34066753916's 1,002.5 s.
+
+Behavior test: a cheap host-exclusive leaf that is outranked by an expensive
+task owning a successor still starts first when both are ready and nothing is
+running.
 
 ## Phase 3: Separate the invariant a task checks from the state it changes
 
@@ -185,14 +197,14 @@ succeeded before it, and a subsequent run's priorities reflect them.
 
 ## Risk surface
 
-The load-bearing assumption is that early lanes are genuinely idle rather
-than merely appearing so in a warm run. Run 34061148632 was 80 clean and 77
-executed; a cold run's early lanes are occupied by the source and toolchain
-work everything else waits on, and a reservation that preempts it would cost
-makespan for evidence that arrives no sooner. Phase 1 exists to measure this
-before Phase 2 changes anything, and the Phase 2 gate is stated against a
-replay rather than against a live sweep so a regression is visible before it
-is spent.
+Phase 2 spends a run's first moments on work that owns the whole machine, and
+the case that would make that wrong is a cold run, where a long barrier
+admitted at the first boundary delays the source and toolchain work everything
+else waits on. The arithmetic says the duration is paid in either position, so
+moving it should be free, but only warm sweeps have exercised that and a warm
+sweep does not stand in for a cold one. The Phase 2 gate is a live sweep
+rather than a replay for this reason, and the cold reconstruction the CI
+plan's Phase 8 already requires is where the assumption is genuinely tested.
 
 Phase 4 widens what a failing run writes to durable state. Samples are an
 estimate rather than a contract, and no artifact identity or qualification

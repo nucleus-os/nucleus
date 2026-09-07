@@ -516,6 +516,19 @@ extension ColliderRuntime {
                             declaredPlans: plan) == .hostExclusive
                     }.flatMap { exclusive -> ScheduledTask? in
                         guard let first = ready.first else { return nil }
+                        // Exclusive work runs alone, so what it costs is its
+                        // own duration -- paid wherever it runs -- plus
+                        // whatever had to drain to give it the machine. The
+                        // drain is zero exactly when nothing is running, which
+                        // makes an idle machine the cheapest moment a run will
+                        // ever offer for a barrier. The comparison below can
+                        // never find that moment: a barrier cheap enough to be
+                        // worth taking it is by construction outranked by the
+                        // work it would run beside, so it waits for a full
+                        // machine to drain instead. Every host-exclusive task
+                        // in run 34066753916 was ready at the first scheduling
+                        // boundary and none started before 655 s.
+                        if running.isEmpty { return exclusive }
                         let exclusiveID = scheduledTaskID(
                             exclusive,
                             swiftBuilds: swiftBuilds,
