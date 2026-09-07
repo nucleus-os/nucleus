@@ -162,12 +162,29 @@ that can clone. Every package in the closure must also name the same URL:
 `third-party/container` depends on containerization too, and one identity
 resolving to two URLs is a conflict.
 
-Fidelity is proven for files, permissions, and symbolic links, and is not yet
-proven for hard links. Verification reads the image back through
-`EXT4Reader.export`, and that path drops one of a hard link's two names
-whichever name holds the inode, so it cannot distinguish an image that lost a
-link from a reader that did. Proving it needs the image read the way a consumer
-reads it, which is a container attaching it.
+Fidelity is proven for files, permissions, symbolic links, and hard links.
+Proving the last needed a reader that could be asked. `EXT4Reader.export`
+answers by writing an archive, and an archive keeps a hard link's two names
+only if its format and extractor agree on ordering, so a lost link and a lossy
+export look identical -- which is what the first attempt saw. The fork adds
+`EXT4Reader.entries()`, reporting each name with the inode it names, so two
+names for one file are visible as two entries sharing an inode rather than as
+two files with equal contents.
+
+Writing that found a second omission worth naming: a name reusing an inode the
+reader has already seen is given no tree node, because the tree models the
+filesystem's shape and a hard link adds a name rather than a shape. An
+enumeration walking only the tree reproduces exactly the blindness it exists to
+remove, so it merges the reader's hard-link table as well.
+
+A container attaching the image is still required, but for consumers rather
+than for this gate; what it would add is that the guest kernel agrees, not
+that the image is right.
+
+Every pin bump on the fork repeats the resolution cost above, not only the
+first repoint. A scratch that has resolved a revision cannot fetch a newer one
+under `--only-use-versions-from-resolved-file`, and the recovery is the same
+single re-resolve in an environment that can fetch.
 
 An image written under the tree it reproduces makes the walk read the image it
 is still writing. The first attempt grew past 128 GiB from a two-file fixture

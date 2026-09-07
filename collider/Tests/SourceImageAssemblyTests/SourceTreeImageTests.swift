@@ -108,14 +108,39 @@ private func attributes(_ path: URL) throws -> [FileAttributeKey: Any] {
                 == target)
     }
 
-    // Hard links are deliberately not asserted here. This verification reads
-    // the image back through `EXT4Reader.export`, and that path drops one of
-    // the two names whichever name holds the inode, so it cannot distinguish
-    // an image that lost a link from a reader that did. Establishing hard-link
-    // fidelity needs the image read the way a consumer reads it, which is a
-    // container attaching it, and that is not something this target can do.
-    // The fixture keeps the link so the builder still has to handle it without
-    // failing; what remains unproven is only that the link survives.
+}
+
+@Test func aSourceTreeImageKeepsOneInodeForTwoNames() throws {
+    let fixture = try FixtureTree()
+    defer { fixture.remove() }
+    let work = fixture.root.deletingLastPathComponent()
+        .appendingPathComponent("work-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: work, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let image = FilePath(work.appendingPathComponent("source.img").path)
+
+    try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: image)
+    let entries = try EXT4.EXT4Reader(blockDevice: image).entries()
+    let byPath = Dictionary(
+        uniqueKeysWithValues: entries.map { ($0.path.string, $0) })
+
+    // Read from the inode table rather than through an exported archive. An
+    // archive keeps a hard link's two names only if its format and extractor
+    // agree on ordering, so a lost link and a lossy export look the same.
+    let readable = try #require(byPath["/readable"])
+    let hardlink = try #require(byPath["/nested/hardlink"])
+    #expect(
+        readable.inode == hardlink.inode,
+        "the two names hold different inodes, so the link became a copy")
+    #expect(readable.isRegularFile)
+
+    // Types and modes from the same reading, so one traversal covers what the
+    // archive round trip covers and the thing it cannot.
+    #expect(try #require(byPath["/nested"]).isDirectory)
+    #expect(try #require(byPath["/relative-link"]).isSymbolicLink)
+    #expect(try #require(byPath["/executable"]).permissions == 0o755)
+    #expect(try #require(byPath["/readable"]).permissions == 0o644)
 }
 
 @Test func twoImagesOfOneTreeAreByteIdentical() throws {

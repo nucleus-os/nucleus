@@ -20,7 +20,7 @@ let package = Package(
         .package(path: "../../third-party/container"),
         .package(
             url: "https://github.com/nucleus-os/containerization.git",
-            revision: "3c65513f8f7fc997358743ef0cd1e5aa98dcb5da"),
+            revision: "71d4b746a84b17cf7de09225c10b6b38316172ec"),
         .package(
             url: "https://github.com/nucleus-os/swift-system.git",
             revision: "2b0f3ac4a6b12719c7f72ebe7db26a34dabd7979"),

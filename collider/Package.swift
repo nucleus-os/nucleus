@@ -8,7 +8,7 @@ var packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
     .package(
         url: "https://github.com/nucleus-os/containerization.git",
-        revision: "3c65513f8f7fc997358743ef0cd1e5aa98dcb5da"),
+        revision: "71d4b746a84b17cf7de09225c10b6b38316172ec"),
 ]
 let nucleusSessionDependencies: [Target.Dependency] = [
     .product(
