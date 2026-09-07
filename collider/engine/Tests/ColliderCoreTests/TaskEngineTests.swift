@@ -329,6 +329,43 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     #expect(forced.executed == [downstream.id])
 }
 
+@Test func anAssessedConsumerRecordsThatItsAssessmentWaited() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-deferred-record-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "fixture.deferred-record.producer"),
+        component: ComponentID(rawValue: "fixture"))
+    let artifact = try producer.output(
+        "value", path: root.appending("value"), validation: .regularFile)
+    var consumer = TaskBuilder(
+        id: TaskID(rawValue: "fixture.deferred-record.consumer"),
+        component: ComponentID(rawValue: "fixture"))
+    consumer.consume(artifact)
+    let result = try consumer.output(
+        "result", path: root.appending("result"), validation: .regularFile)
+    let consumerTask = consumer.build(
+        action: try fixtureWriteAction(result.path, bytes: [42]))
+    let producerTask = producer.build(
+        action: try fixtureWriteAction(artifact.path, bytes: [1]))
+
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph([producerTask, consumerTask]),
+        selected: [consumerTask.id],
+        stateRoot: root.appending("state"))
+
+    // A record that says only what the assessment concluded cannot show that
+    // the consumer was judged against completed content rather than against
+    // whatever happened to be on disk when planning ran.
+    #expect(
+        report.plan.first { $0.task == consumerTask.id }?.isDeferred == true)
+    // The producer consumes nothing, so nothing deferred it and the two states
+    // stay distinguishable in the same record.
+    #expect(
+        report.plan.first { $0.task == producerTask.id }?.isDeferred == false)
+}
+
 @Test func taskSchedulerRunsIndependentTasksConcurrently() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-concurrency-\(UUID().uuidString)")

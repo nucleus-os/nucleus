@@ -69,13 +69,14 @@ verification below.
    preceding fourteen consecutive non-green runs, each of which stopped before
    reaching it. Every step below is verified through this scheduler, which
    makes its objective the multiplier on all of them.
-2. Complete Phases 1 and 2 of the
-   [build consumption identity correction](build-consumption-identity-plan.md)
-   and record their protected-main evidence. The implementation covers
-   content-based late assessment and conservative final-key propagation, but
-   CI evidence remains pending, and identity is the definition every step
-   below depends on. It removes package-wide invalidation and propagation
-   through producer recipe identities exposed by the nightly allocator.
+2. Complete Phase 3 of the
+   [build consumption identity correction](build-consumption-identity-plan.md).
+   Phases 1 and 2 are complete: their evidence was pending on the engine test
+   target, which no sweep could run until `58d1bb1e`, and four consecutive
+   sweeps have now executed it. Phase 3 remains the acceptance gate -- verify
+   the full catalog with the new identity model, record the one-time identity
+   transition separately from steady-state invalidation, and re-audit the
+   nightly finalization plan against these contracts.
 3. Complete Phase 2 of
    [Chromium source materialization](chromium-source-materialization-plan.md),
    building the image on the host rather than in a container. The prepared

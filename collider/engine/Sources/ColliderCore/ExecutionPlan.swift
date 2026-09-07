@@ -94,6 +94,13 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.identityComponents = identityComponents
     }
 
+    /// The same entry with what assessment concluded.
+    ///
+    /// Assessment answers a deferral; it does not undo one. Dropping
+    /// `isDeferred` here leaves a record that says what the assessment decided
+    /// and not that the decision waited for a producer, which is the one thing
+    /// separating a consumer judged against completed content from one judged
+    /// against whatever was on disk when planning ran.
     public func assessed(identity: ArtifactDigest, isClean: Bool, explanation: String) -> Self {
         Self(
             task: task, identity: identity, isClean: isClean, explanation: explanation,
@@ -101,6 +108,7 @@ public struct TaskPlanEntry: Codable, Sendable {
             attribution: attribution, durationWorkload: durationWorkload,
             durationEstimate: durationEstimate,
             identityComponents: identityComponents, recipeIdentity: recipeIdentity,
+            isDeferred: isDeferred,
             isForced: isForced)
     }
 }

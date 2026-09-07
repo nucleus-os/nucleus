@@ -15,7 +15,7 @@ An unchanged published artifact stops invalidation at that boundary.
 
 ## Phase 1: Resolve SwiftPM semantics at the selected target closure
 
-Status: active
+Status: complete.
 
 Retain the full evaluated package configuration and the full evaluated target
 and product declarations. Fingerprint package-wide build settings and only the
@@ -29,14 +29,21 @@ cache read. Package-location metadata is excluded; inferred snippet targets
 use their resolved declarations. CI compiled the implementation and identified
 both boundaries during catalog planning; their regression gates are included.
 
-Gate: adding an unrelated target or changing manifest formatting preserves an
-existing product identity. Changing a selected target's settings, resources,
-dependency closure, product type, or package-wide compiler configuration changes
-it. Preparation still completes before every invocation that needs it.
+Gate evidence: the manifest identity behavior tests run in
+`ColliderWorkspaceCommandsTests`, which every protected-main sweep has
+executed, and [run 34076288592](https://github.com/nucleus-os/nucleus/actions/runs/34076288592)
+records `manifestPackageLocationDoesNotEnterSemanticIdentity`,
+`evaluatedManifestIdentitySeparatesSelectedDeclarationsAndPreservesUnknownSettings`,
+`inferredSnippetTargetsUseResolvedConfigurationAndMissingDeclaredTargetsFailClosed`,
+and `duplicateManifestDeclarationsAreRejected` among its results. Adding an
+unrelated target or changing manifest formatting preserves an existing product
+identity; changing a selected target's settings, resources, dependency
+closure, product type, or package-wide compiler configuration changes it, and
+preparation still completes before every invocation that needs it.
 
 ## Phase 2: Assess consumers from completed artifact content
 
-Status: active
+Status: complete.
 
 Freeze each task's source and recipe identity during planning. Combine it with
 the identities of the consumed artifact contents to form the execution cache
@@ -57,7 +64,34 @@ validation. Retained run manifests receive a one-time in-place migration;
 historical identities remain evidence, not replayable recipes. Source recipe
 capture stays frozen while artifact hashing waits for producer completion.
 Behavior tests cover cold deferral, equal-byte reuse, changed-byte propagation,
-missing-output restoration, and explicit rebuilds. CI evidence remains pending.
+missing-output restoration, and explicit rebuilds.
+
+Gate evidence: those tests live in the nested `collider/engine` package, and
+that package's test target did not compile and had never executed in any
+retained run log until `58d1bb1e` and `9858a62c`. The evidence was not pending
+on the behavior; it was pending on a target no sweep could run.
+[Run 34076288592](https://github.com/nucleus-os/nucleus/actions/runs/34076288592)
+is the fourth consecutive sweep to execute it, and records
+`coldConsumersDeferWithoutReadingUnproducedArtifacts`,
+`artifactConsumptionStopsAtUnchangedBytesAndPropagatesChangedBytes`,
+`missingCurrentOCIImageInvalidatesRecordedTaskOutput`,
+`outputContractChangesInvalidatePriorTaskState`, and
+`taskEngineExplainsInvalidationAndThenSkipsCleanWork`.
+
+The same run's manifest shows the model working at catalog scale rather than
+only in fixtures: 79 tasks recorded `consumed artifact content and outputs are
+current`, 37 recorded `execution required after artifact assessment`, and 29
+were clean without needing one. A changed producer that republishes identical
+bytes did not execute its consumer, seventy-nine times.
+
+One clause of the gate was not met and is now. `TaskPlanEntry.assessed`
+forwarded `recipeIdentity` and `isForced` but dropped `isDeferred`, two lines
+after the engine read that same flag to choose the explanation. Every deferred
+task therefore recorded `isDeferred: false`, so a record kept what the
+assessment concluded but not that it had waited for a producer -- which is the
+one thing separating a consumer judged against completed content from one
+judged against whatever was on disk when planning ran. Assessment answers a
+deferral; it does not undo one.
 
 ## Phase 3: Prove the protected-main boundary and resume nightly finalization
 
