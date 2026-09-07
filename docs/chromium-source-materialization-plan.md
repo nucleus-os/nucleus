@@ -215,6 +215,14 @@ names it, the `source` driver option carries it, and `nucleus-os/container`
 clones it into place where the filesystem supports that, so a read-only volume
 of this size does not pay for its bytes twice.
 
+Verifying that a guest kernel agrees has to happen in the graph, not beside
+it. The container service lives in the builder's domain, so a test bundle
+started by an interactive account reaches it as `XPC connection error:
+Connection invalid` however healthy the service is; reaching it means executing
+as the builder, which is what running a task graph does. An attachment test
+exists and states this, but the verification it performs belongs in a task the
+sweep runs -- which merges it with the recipe work rather than preceding it.
+
 Recording the image among the options a volume is compared against is what
 makes a changed image a difference the manager sees. A workspace established
 from a different image holds different bytes under the same name, and the

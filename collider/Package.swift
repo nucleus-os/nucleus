@@ -340,6 +340,10 @@ let package = Package(
         .testTarget(
             name: "SourceImageAssemblyTests",
             dependencies: [
+                .product(
+                    name: "ColliderAppleContainer",
+                    package: "engine",
+                    condition: .when(platforms: [.macOS])),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(
                     name: "ContainerizationEXT4",
