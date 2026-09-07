@@ -181,6 +181,11 @@ A container attaching the image is still required, but for consumers rather
 than for this gate; what it would add is that the guest kernel agrees, not
 that the image is right.
 
+Gate evidence: [protected-main run 34087038233](https://github.com/nucleus-os/nucleus/actions/runs/34087038233)
+verified `3eeb3b62` with every source-image behaviour passing on the builder
+account, which completes the fidelity proof this phase requires before any
+consumer moves to the image.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
