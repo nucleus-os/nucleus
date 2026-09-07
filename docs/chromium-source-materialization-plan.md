@@ -186,6 +186,26 @@ verified `3eeb3b62` with every source-image behaviour passing on the builder
 account, which completes the fidelity proof this phase requires before any
 consumer moves to the image.
 
+Building the real tree costs 315 s. That is the whole prepared source
+generation -- 29.1 GiB across 1,197,620 entries, more than twice the file count
+this plan estimated -- written on the host by
+`sourceTreeImageScaleMeasurement`, which is opt-in behind
+`COLLIDER_MEASURE_SOURCE_IMAGE`. Five minutes per source revision, paid once
+for every product and architecture that reads it, is a cost this phase can
+carry.
+
+Measure it in release. The same tree takes 1,478 s built by a debug binary, a
+forty-two-fold difference, and a profile puts two thirds of that debug time in
+`FilePath.ComponentView._invariantCheck` -- swift-system re-validating a path
+on every construction. `ColliderSelfComponent` already records the same effect
+for the test bundles. Any host-side measurement of path-heavy work in this
+repository is meaningless in debug, and this one would have concluded the host
+build takes seven hours and abandoned the phase.
+
+The formatter's four-kilobyte transfer buffer is not the cost, and `create`
+takes a `fileBuffer` to replace it. Supplying four megabytes measured 35.5 s
+against 31.9 s without on the same subtree, so the parameter is left alone.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
