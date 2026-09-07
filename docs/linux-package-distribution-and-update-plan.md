@@ -405,9 +405,20 @@ state backup, final package lifecycle qualification, package-manager ordering
 checks, deterministic repository assembly, and signing remain pending. The
 reservation concurrency, retry, calendar, corruption, and process-boundary tests
 passed [protected-main verification](https://github.com/nucleus-os/nucleus/actions/runs/33987869473)
-at `3eea96c724ccfefa4009f7c68cb549984e300a17`. Build consumption identity is the
-prerequisite to the next increment; reservation admission and version-bearing
-finalization retain the boundaries above.
+at `3eea96c724ccfefa4009f7c68cb549984e300a17`. Build consumption identity was
+named as the prerequisite to the next increment and is now complete, audited
+against these contracts: a consumer is keyed by the content of what it
+consumes, assessment is deferred until its producers complete, and packaging
+inputs never become compiler inputs, so repackaging exactly the qualified
+payload trees rests on enforced behavior rather than on convention. That audit
+also found a second prerequisite this text did not name. The gate below
+requires that independently repeated assembly over one reservation, package
+set, and signing identity produce the same release index and repository
+contents, and that determinism is the [placement-independent build
+plan](placement-independent-build-plan.md)'s outstanding reproduction evidence.
+The next increment is unblocked with respect to identity and still gated on
+reproduction; reservation admission and version-bearing finalization retain the
+boundaries above.
 
 Add protected nightly finalization after content-derived native package
 production and qualification. Select one exact successfully verified `main`

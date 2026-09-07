@@ -38,17 +38,17 @@ This inverts the previous sequence, which placed production artifact identity,
 qualification, packaging, CI, signing, publication, and distribution ahead of
 the architectural work on the theory that delivery contracts constrain the
 architecture serving them. The inversion is deliberate and it is not free:
-steps 1 through 5 deliver no product. It was taken because two invariants the
+steps 1 through 4 deliver no product. It was taken because two invariants the
 delivery contracts depend on were not held, and the plans that establish them
 had been scheduled last. Chromium's prepared tree was a mutable workspace
 addressed by a hand-maintained cache key the graph could not see, and
 reproducibility across checkouts cannot be proven while a primary build input
 is established that way. That one is now held: the tree is a reproducible
 image whose filesystem identity and timestamps derive from the pinned inputs.
-What the remaining foundations still owe is the evidence -- reuse and
-reproduction across machines -- and the identity model's full-catalog
-acceptance. Delivering against unproven reproducibility remains the larger
-risk.
+The identity model's full-catalog acceptance is
+held too. What the remaining foundations still owe is the evidence that
+follows from both: reuse and reproduction across machines. Delivering against
+unproven reproducibility remains the larger risk.
 
 One consequence is recorded rather than silently accepted: the Collider
 architecture simplification stays late. It is pure restructuring that changes
@@ -62,15 +62,7 @@ verification below.
 
 ### Foundations
 
-1. Complete Phase 3 of the
-   [build consumption identity correction](build-consumption-identity-plan.md).
-   Phases 1 and 2 are complete: their evidence was pending on the engine test
-   target, which no sweep could run until `58d1bb1e`, and four consecutive
-   sweeps have now executed it. Phase 3 remains the acceptance gate -- verify
-   the full catalog with the new identity model, record the one-time identity
-   transition separately from steady-state invalidation, and re-audit the
-   nightly finalization plan against these contracts.
-2. Complete Phase 3 of
+1. Complete Phase 3 of
    [Chromium source materialization](chromium-source-materialization-plan.md),
    building each generation from its predecessor so that rolling one
    dependency stops costing a full checkout and a full image. Phases 1 and 2
@@ -85,8 +77,9 @@ verification below.
    one-line dependency roll still rebuilds the whole tree and rewrites the
    whole 29 GiB image, which is what Phase 3 addresses. Its safety property is
    that a generation built incrementally is indistinguishable from one built
-   whole, which is what step 1's content-based assessment exists to verify.
-3. Complete the reuse and reproduction acceptance in Phase 4 of the
+   whole, which is what the content-based assessment in [build consumption
+   identity](build-consumption-identity-plan.md) exists to verify.
+2. Complete the reuse and reproduction acceptance in Phase 4 of the
    [placement-independent build plan](placement-independent-build-plan.md).
    Product execution uses canonical paths, and Phase 3's product-identity
    rejection boundary has passed protected-main packaging. Record the
@@ -97,7 +90,7 @@ verification below.
    filesystem identity and timestamps are derived from the pinned inputs, so
    the evidence is the only thing still outstanding. The macOS host-tool VM
    phase remains deferred until host execution produces a delivered artifact.
-4. Complete the remaining gates in Phases 4, 5, and 7 of the
+3. Complete the remaining gates in Phases 4, 5, and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md).
    The protected-main host-contract, provenance, build, and test lanes already
    run successfully, and the installed root boot coordinator restores the
@@ -106,14 +99,14 @@ verification below.
    host restart and a protected-main supersession, and complete the
    container-network, quarantine, and recovery gates. These are control-plane
    exercises rather than code.
-5. Complete the product-store qualification and delivery remaining in Phase 6
+4. Complete the product-store qualification and delivery remaining in Phase 6
    of the [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md),
-   closing the verification graph against the artifacts steps 1 through 3
+   closing the verification graph against the artifacts steps 1 and 2
    establish.
 
 ### Delivery
 
-6. Execute `collider build swift-sdk --rebuild`, the deliberate forced
+5. Execute `collider build swift-sdk --rebuild`, the deliberate forced
    production proving the target SDK builds from the snapshot host. Every
    Ubuntu package now resolves through a declared `snapshot.ubuntu.com`
    timestamp, so the availability risk that gate covered is already retired.
@@ -121,63 +114,63 @@ verification below.
    remains blocked upstream: retiring the `/opt/swift-compat` closure waits on
    swift.org publishing a 6.4 Ubuntu 26.04 toolchain, and no reordering
    advances it.
-7. Execute the one outstanding gate of the completed
+6. Execute the one outstanding gate of the completed
    [build store retention plan](build-store-retention-plan.md): delete the
    on-demand AOSP source-input cache and re-hydrate 73.4 GiB over host
    networking to prove the tree it promises to reconstruct.
-8. Complete Phases 5 and 6 of the
+7. Complete Phases 5 and 6 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to reserve immutable `YYYY.MM.DD.N` nightly versions, finalize and qualify
     the exact version-bearing cohorts, assemble signed repository snapshots
     offline, and remove Collider's remaining product-installation commands.
-9. Complete Phases 1 through 5 of the
+8. Complete Phases 1 through 5 of the
     [Android native arm64 host toolchain plan](android-native-arm64-host-toolchain-plan.md).
     Protected-main packaging does not wait for this reliability work. Measure
     the translated host workload against the existing generations, then supply
     the missing native host toolchains and prove both products without
     translation before unattended Android qualification can be accepted.
-10. Complete Phase 6 of the
+9. Complete Phase 6 of the
     [Linux distribution portability plan](linux-distribution-portability-plan.md)
     using the signed local repository snapshots: qualify each unchanged
     artifact digest across the declared distribution matrix without rebuilding
     it.
-11. Complete the remaining qualification plans in the order listed below.
+10. Complete the remaining qualification plans in the order listed below.
     Their agent-runnable gates bind native, physical, security, and product
     evidence to the package cohorts, and complete the qualification portion of
     the protected-main verification graph.
-12. Complete Phase 7 of the
+11. Complete Phase 7 of the
     [Linux distribution portability plan](linux-distribution-portability-plan.md)
     on physical arm64 and x86_64 hardware. After the Android application and
     container-security gates are complete, execute Phase 6 of the
     [Android architecture parity plan](android-architecture-parity-plan.md) on
     physical arm64 hardware as part of the same hardware-qualification stage.
-13. Complete Phase 7 of the
+12. Complete Phase 7 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to publish qualified repository cohorts through the separated GitHub
     Release and R2 authorities.
-14. Complete Phase 8 of the
+13. Complete Phase 8 of the
     [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md)
     against the native package, repository, and qualification pipeline. Its
-    declared cold reconstruction is the machine-scale gate on steps 1 through
-    3, which is why it stays last among the CI phases.
-15. Complete Phase 8 of the
+    declared cold reconstruction is the machine-scale gate on steps 1 and 2,
+    which is why it stays last among the CI phases.
+14. Complete Phase 8 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to publish and qualify the nightly native update lifecycle.
-16. Complete the
+15. Complete the
     [Collider architecture simplification plan](collider-architecture-simplification-plan.md)
     after the nightly lifecycle fixes the build, packaging, qualification, and
     publication contracts. Decompose catalog construction, storage policy,
     package assembly, recipe ownership, and command execution policy before
     adding new development-host execution surfaces.
-17. Complete Phase 9 of the
+16. Complete Phase 9 of the
     [Linux package distribution and update plan](linux-package-distribution-and-update-plan.md)
     to add non-installed remote development generations over the established
     product-artifact contract.
-18. Complete Phases 2 through 6 of
+17. Complete Phases 2 through 6 of
     [macOS remote development](macos-remote-development-plan.md), including the
     private-host, session-continuity, admission, presentation-target, and final
     cutover gates.
-19. Complete Phases 3 through 13 of the
+18. Complete Phases 3 through 13 of the
     [Linux x86_64 development host plan](linux-x86-64-development-host-plan.md).
     The contributor workflow adds backend-neutral execution, a private
     content-addressed action cache for Siso, Swift, and qualified compiler
@@ -220,6 +213,16 @@ that physical arm64 result.
 
 ## Completed architecture consolidation
 
+- [Build consumption identity](build-consumption-identity-plan.md) made a task
+  identified by its own semantic configuration and the content of the artifacts
+  it consumes, rather than by the recipe that produced them. Ordering and
+  package preparation establish readiness without becoming semantic inputs, a
+  consumer waits for its producers before its final assessment, and an
+  unchanged published artifact stops invalidation at that boundary. Two
+  consecutive sweeps separate what that costs once from what it costs
+  thereafter: a change to the execution encoding re-derived every container
+  task, and a change of comparable size to one component invalidated that
+  component and its consumers alone.
 - [Task scheduling objective](task-scheduling-objective-plan.md) gave the
   scheduler a second objective beside makespan: a run that is going to fail
   should say so early. It records what each task waited for scheduling

@@ -1,6 +1,6 @@
 # Build consumption identity
 
-Status: active
+Status: complete.
 
 ## Invariant
 
@@ -103,7 +103,7 @@ for are distinguishable in the record rather than merely present in it.
 
 ## Phase 3: Prove the protected-main boundary and resume nightly finalization
 
-Status: active
+Status: complete.
 
 Protected-main run `34041675293` reported the expanded dependency cycle instead
 of crashing: AOSP image assembly requires a signing identity, which requires
@@ -140,9 +140,42 @@ read-only. Regression coverage checks both paths without a whole-checkout mount;
 the other packaging actions already use their bounded exports as working
 directories. The full catalog remains the acceptance gate.
 
-Verify the full catalog with the new identity model, including the reservation
-tests and both architectures' package cohorts. Record the one-time identity
-transition separately from steady-state invalidation. Exercise an unrelated
-target declaration and an unchanged producer output through behavior tests.
-Re-audit the nightly finalization plan against these contracts before continuing
-its next increment.
+Gate evidence: [protected-main run 34164726541](https://github.com/nucleus-os/nucleus/actions/runs/34164726541)
+verified the full catalog with the new identity model -- 121 clean, 39
+executed, 0 failed -- including `reservationRequestCannotChangeItsBinding` and
+`reservationsSurviveReopeningAndRetryAcrossMidnight`, and both architectures'
+package cohorts and lifecycle qualifications. The two behavior tests this phase
+asks for ran on the builder account in the same sweep:
+`semanticProductInputsExcludeUnrelatedDeclarationsButIncludeSelectedConfiguration`
+for an unrelated target declaration, and
+`artifactConsumptionStopsAtUnchangedBytesAndPropagatesChangedBytes` for an
+unchanged producer output.
+
+The one-time transition separates from steady-state invalidation because two
+consecutive sweeps show them side by side.
+[Run 34155852540](https://github.com/nucleus-os/nucleus/actions/runs/34155852540)
+reported 41 clean and 118 executed: adding a field to `OCIExecution`'s identity
+encoding changed what a container execution is, so every container task
+re-derived its identity. That is the shape of a change to the model, and it is
+paid once. Run 34164726541 reported 121 clean and 39 executed for a change of
+comparable size to how Chromium receives its source, and the 39 are wholly
+accounted for -- the tasks whose own configuration changed (four builds, four
+artifact assemblies, one new image task), what consumes their outputs (both
+product publications), and the tasks declared to run every time. Nothing in the
+Linux runtime, the Swift SDK, Android, the compositor, or the shell re-ran.
+Invalidation was proportional to the change rather than to the tool, which is
+the property the model exists to provide and the one a blanket tool-revision
+key would destroy.
+
+Re-audit of nightly finalization: the contracts it rests on are held. A
+consumer is keyed by the content of what it consumes, assessment is deferred
+until its producers complete, and packaging inputs never become compiler
+inputs, so "repackage only the exact qualified payload trees" and "do not
+compile source or substitute an input" rest on enforced behavior rather than on
+convention. The plan names build consumption identity as the prerequisite to
+its next increment; that is now satisfied, and it is not the only one. Its own
+gate requires that independently repeated assembly over the same reservation,
+package set, and signing inputs produce the same release index and repository
+contents, and that determinism is the placement-independent plan's outstanding
+evidence rather than this plan's. The next increment is unblocked with respect
+to identity and still gated on reproduction.
