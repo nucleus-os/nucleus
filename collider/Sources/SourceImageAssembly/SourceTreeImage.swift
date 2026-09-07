@@ -1,5 +1,6 @@
 #if os(macOS)
 
+import ColliderCore
 import ContainerizationArchive
 import ContainerizationEXT4
 import Foundation
@@ -27,11 +28,21 @@ public enum SourceTreeImage {
     ///   tree they reproduce should derive this from that address, so that two
     ///   distinct trees never claim one filesystem identity; the default keeps
     ///   a single tree's builds identical, which is what the graph compares.
+    /// - Parameter owner: The identity every entry is recorded under.
+    ///   An ext4 image records an owner per inode, so a reader that is not
+    ///   that owner reads only what the mode grants everyone -- and a checkout
+    ///   is not uniformly world readable. The copy this replaces untarred with
+    ///   `--no-same-owner`, leaving the tree owned by the builder that
+    ///   extracted it, which is why the default is the identity a container
+    ///   runs as rather than root: it keeps what a consumer can read a
+    ///   property of the tree's modes rather than of the transport. Stated as
+    ///   the type an execution states it with, so the two cannot drift apart.
     public static func write(
         tree: FilePath,
         to image: FilePath,
         blockSize: UInt32 = 4096,
-        identity: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        identity: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+        owner: OCIUserPolicy = .builder
     ) throws {
         guard try entry(at: tree).type == .typeDirectory else {
             throw SourceTreeImageFailure("source tree is not a directory: \(tree)")
@@ -71,7 +82,9 @@ public enum SourceTreeImage {
                 try unsafe formatter.create(
                     path: destination,
                     mode: EXT4.Inode.Mode(.S_IFDIR, entry.permissions),
-                    ts: timestamps)
+                    ts: timestamps,
+                    uid: owner.userID,
+                    gid: owner.groupID)
             case .typeSymbolicLink:
                 try unsafe formatter.create(
                     path: destination,
@@ -79,7 +92,9 @@ public enum SourceTreeImage {
                         try FileManager.default.destinationOfSymbolicLink(
                             atPath: source.string)),
                     mode: EXT4.Inode.Mode(.S_IFLNK, entry.permissions),
-                    ts: timestamps)
+                    ts: timestamps,
+                    uid: owner.userID,
+                    gid: owner.groupID)
             case .typeRegular:
                 if entry.linkCount > 1, let target = linkedNames[entry.inode] {
                     try formatter.link(link: destination, target: target)
@@ -94,7 +109,9 @@ public enum SourceTreeImage {
                     path: destination,
                     mode: EXT4.Inode.Mode(.S_IFREG, entry.permissions),
                     ts: timestamps,
-                    buf: contents)
+                    buf: contents,
+                    uid: owner.userID,
+                    gid: owner.groupID)
                 if entry.linkCount > 1 {
                     linkedNames[entry.inode] = destination
                 }

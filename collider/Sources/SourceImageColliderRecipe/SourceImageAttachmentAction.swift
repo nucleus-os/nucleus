@@ -72,7 +72,9 @@ package struct SourceImageAttachmentAction: ColliderAction {
                 "-c",
                 "stat -c %i /source/readable; stat -c %i /source/nested/hardlink; "
                     + "stat -c %a /source/executable; stat -c %a /source/readable; "
-                    + "readlink /source/relative-link; cat /source/readable",
+                    + "readlink /source/relative-link; cat /source/readable; "
+                    + "stat -c %u /source/readable; stat -c %g /source/readable; "
+                    + "stat -c %a /source/owner-only; cat /source/owner-only",
             ],
             environment: [:],
             output: .captured(limit: 64 * 1_024))
@@ -103,6 +105,14 @@ package struct SourceImageAttachmentAction: ColliderAction {
         try context.files.write(
             Array("#!/bin/sh\nexit 0\n".utf8), to: tree.appending("executable"))
         try context.files.setPermissions(0o755, for: tree.appending("executable"))
+        // The file the transport decides. A checkout is not uniformly world
+        // readable, and an owner-only file is readable through the image only
+        // if the image records the reader as its owner -- so this is the entry
+        // that fails when the ownership question is answered wrongly, rather
+        // than a Chromium build failing four hours in.
+        try context.files.write(
+            Array("owner only\n".utf8), to: tree.appending("owner-only"))
+        try context.files.setPermissions(0o600, for: tree.appending("owner-only"))
         try context.files.replaceSymlink(
             at: tree.appending("relative-link"), target: "readable")
         // The declared filesystem has no hard link operation, because nothing
@@ -118,9 +128,9 @@ package struct SourceImageAttachmentAction: ColliderAction {
         let lines = result.standardOutput
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
-        guard lines.count == 6 else {
+        guard lines.count == 10 else {
             throw SourceImageAttachmentFailure(
-                "the guest reported \(lines.count) facts rather than six: \(lines)")
+                "the guest reported \(lines.count) facts rather than ten: \(lines)")
         }
         // The guest kernel resolving both names to one inode is the claim the
         // host-side reading cannot make on the kernel's behalf.
@@ -146,6 +156,28 @@ package struct SourceImageAttachmentAction: ColliderAction {
         guard lines[5] == "portable contents" else {
             throw SourceImageAttachmentFailure(
                 "the guest reads \(lines[5]) where the tree held its contents")
+        }
+        // The reader and the recorded owner are the same identity, which is
+        // what makes the modes above mean for the guest what they meant on the
+        // host. A root-owned image passes every assertion before this one and
+        // fails the build that reads a file only its owner may read.
+        guard lines[6] == "\(OCIUserPolicy.builder.userID)" else {
+            throw SourceImageAttachmentFailure(
+                "the guest sees uid \(lines[6]) where the image records "
+                    + "\(OCIUserPolicy.builder.userID)")
+        }
+        guard lines[7] == "\(OCIUserPolicy.builder.groupID)" else {
+            throw SourceImageAttachmentFailure(
+                "the guest sees gid \(lines[7]) where the image records "
+                    + "\(OCIUserPolicy.builder.groupID)")
+        }
+        guard lines[8] == "600" else {
+            throw SourceImageAttachmentFailure(
+                "the guest sees mode \(lines[8]) where the tree had 600")
+        }
+        guard lines[9] == "owner only" else {
+            throw SourceImageAttachmentFailure(
+                "the guest reads \(lines[9]) from a file only its owner may read")
         }
     }
 }

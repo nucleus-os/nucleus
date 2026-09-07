@@ -1,5 +1,6 @@
 #if os(macOS)
 
+import ColliderCore
 import ContainerizationArchive
 import ContainerizationEXT4
 import Foundation
@@ -190,6 +191,34 @@ private func attributes(_ path: URL) throws -> [FileAttributeKey: Any] {
         !FileManager.default.contentsEqual(
             atPath: first.string, andPath: second.string),
         "the supplied filesystem identity did not reach the image")
+}
+
+@Test func aDistinctOwnerChangesTheImage() throws {
+    let fixture = try FixtureTree()
+    defer { fixture.remove() }
+    let work = fixture.root.deletingLastPathComponent()
+        .appendingPathComponent("work-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: work, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let first = FilePath(work.appendingPathComponent("first.img").path)
+    let second = FilePath(work.appendingPathComponent("second.img").path)
+
+    try SourceTreeImage.write(tree: FilePath(fixture.root.path), to: first)
+    try SourceTreeImage.write(
+        tree: FilePath(fixture.root.path),
+        to: second,
+        owner: OCIUserPolicy(userID: 4242, groupID: 4243))
+
+    // Ownership decides what a reader may read: the fixture carries a file
+    // only its owner may open, and an image recording the wrong owner grants
+    // nothing for it. That the owner reaches the bytes is what this asserts;
+    // that a guest kernel then reads the file is what the attachment task
+    // asserts, because only a kernel other than the writer can say so.
+    #expect(
+        !FileManager.default.contentsEqual(
+            atPath: first.string, andPath: second.string),
+        "the supplied owner did not reach the image")
 }
 
 @Test func aSourceTreeImageRefusesAnEntryItCannotReproduce() throws {
