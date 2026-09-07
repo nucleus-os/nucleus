@@ -278,6 +278,54 @@ private func inertActionFileSystem() -> ActionFileSystem {
     #expect(result.status == 19)
 }
 
+@Test func aBlockImageMountIsBoundedLikeEveryOtherPathAnExecutionReaches()
+    async throws
+{
+    let image = FilePath("/artifacts/source/sha256-fixture/source.img")
+    let imageID = FilePath("/fixture/image-id")
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: imageID,
+        hostname: "fixture",
+        workingDirectory: "/source",
+        hostWorkingDirectory: FilePath("/fixture"),
+        mounts: [],
+        blockImageMounts: [
+            OCIBlockImageMount(image: image, target: "/source", access: .readOnly)
+        ],
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [:],
+        command: ["true"],
+        environment: [:],
+        output: .captured(limit: 1_024))
+    let executor = ActionContainerExecutor(run: { _ in CommandResult(status: 0) })
+
+    // A filesystem attached as a block device is a file the container reads,
+    // and an action that did not say so has not declared what it reaches. The
+    // mechanism is new; the boundary is not.
+    await #expect(throws: ActionContainerScopeFailure.self) {
+        _ = try await executor.scoped(
+            to: ActionRequirements(
+                effects: [ActionEffect(.read, scope: .input(imageID))],
+                executionPlatform: .macOSARM64Native)
+        ).execute(execution)
+    }
+
+    let declared = executor.scoped(
+        to: ActionRequirements(
+            effects: [
+                ActionEffect(.read, scope: .input(imageID)),
+                ActionEffect(.read, scope: .input(image)),
+            ],
+            executionPlatform: .macOSARM64Native))
+    #expect(try await declared.execute(execution).status == 0)
+}
+
 @Test func actionFileSystemRejectsUndeclaredAndEscapingEffects() throws {
     let files = inertActionFileSystem().scoped(to: [
         ActionEffect(.read, scope: .input(FilePath("/inputs"))),

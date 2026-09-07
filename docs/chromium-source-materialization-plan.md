@@ -206,34 +206,34 @@ The formatter's four-kilobyte transfer buffer is not the cost, and `create`
 takes a `fileBuffer` to replace it. Supplying four megabytes measured 35.5 s
 against 31.9 s without on the same subtree, so the parameter is left alone.
 
-Consumers attach the image as a workspace established from it, rather than
-through a mount kind invented for the purpose. A workspace is already a
-directory holding an ext4 image, which is exactly what this phase produces, so
-the shorter path is to let one be established from a prebuilt image instead of
-formatted empty and then filled. `PersistentWorkspaceDeclaration.sourceImage`
-names it, the `source` driver option carries it, and `nucleus-os/container`
-clones it into place where the filesystem supports that, so a read-only volume
-of this size does not pay for its bytes twice.
+Consumers attach the image as a read-only block device. The runtime carries
+that primitive already: `Filesystem.block(format:source:destination:options:)`
+builds a `Filesystem` whose `FSType` is `.block`, `ContainerConfiguration`
+exposes `mounts` as a public array of them, and the guest receives it over
+virtio-blk. An ext4 image built anywhere on the host is therefore mountable as
+it stands, with no volume, no service change, and no copy.
 
-Verifying that a guest kernel agrees happens in the graph, not beside it. The
-container service lives in the builder's domain, so a test bundle started by an
-interactive account reaches it as `XPC connection error: Connection invalid`
-however healthy the service is; reaching it means executing as the builder,
-which is what running a task graph does. `test.source-image.attachment` is
-that task: it builds a fixture image, establishes a workspace from it, mounts
-it read-only, and requires the guest to report one inode under both of a hard
-link's names, the executable bit, the link target, and the contents. The sweep
-selects it, so the mechanism is qualified on every revision rather than by
-whoever next tries to use it.
+The first attempt did not find that, and the reason is worth recording because
+it is a mistake this plan could make again. Collider composes container
+requests as command-line strings -- `name:/target:ro` -- and hands them to
+`Utility.containerConfigFromFlags`, which parses them with `Parser.mounts`.
+That parser accepts `virtiofs`, `tmpfs`, and `volume`, and rejects everything
+else as an unsupported mount type. Read from there, a named volume looks like
+the only way to give a container a filesystem, and the work turns into finding
+a way to smuggle an image into one: adopting a prebuilt image in the volume
+service, which cannot run because the service is an installed root-owned
+binary and Collider links only the client; or writing the image into the
+volume's block file behind the service's back, which couples Collider to an
+on-disk layout it does not own. The restriction is in the command-line
+grammar, not in the runtime. A capability should be looked for in the API
+before the surface that happens to be in use is taken for the boundary.
 
-The tree is a fixture rather than the prepared Chromium source, because what is
-in question is the mechanism and a fixture that fits in a second exercises it
-as completely as one that takes five minutes.
-
-Recording the image among the options a volume is compared against is what
-makes a changed image a difference the manager sees. A workspace established
-from a different image holds different bytes under the same name, and the
-alternative to reconciling it is a consumer reading the wrong tree.
+So the execution declares the image and the runtime mounts it, and none of the
+following is needed: a `source` driver option, a workspace established from an
+image, or a fork of the volume service. What a source image is stops being a
+workspace with capacity, residency, and reconciliation semantics -- which is
+why declaring one dragged four retention invariants into a task that wanted to
+read a file -- and becomes what it always was: an artifact, mounted.
 
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one

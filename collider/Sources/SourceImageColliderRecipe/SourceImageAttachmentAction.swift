@@ -29,29 +29,6 @@ package struct SourceImageAttachmentAction: ColliderAction {
         Identity(root: root, imageID: imageID)
     }
 
-    /// The workspace the guest reads.
-    ///
-    /// Established from the image this action writes rather than formatted
-    /// empty, which is the mechanism under qualification. The declaration names
-    /// the image by the path it will occupy: the workspace is resolved when the
-    /// container starts, which is after the image exists.
-    private var workspace: PersistentWorkspaceDeclaration {
-        PersistentWorkspaceDeclaration(
-            identity: PersistentWorkspaceIdentity(
-                key: "source-image-attachment",
-                artifactTarget: nil,
-                role: "source"),
-            capacityBytes: 128 * 1_024 * 1_024,
-            filesystem: .ext4,
-            journal: .writeback64MiB,
-            retentionPolicy: .explicitClean,
-            // Nothing depends on this surviving a sweep. The image it is
-            // established from is rebuilt by the same task that reads it, so
-            // reclaiming it costs one fixture and a second.
-            residency: .onDemand(reconstructedBy: SourceImageTaskIDs.attachment),
-            sourceImage: root.appending("source.img"))
-    }
-
     /// What the guest runs, and the single description the effects come from.
     ///
     /// Listing the effects by hand beside an execution is two descriptions of
@@ -68,9 +45,12 @@ package struct SourceImageAttachmentAction: ColliderAction {
             workingDirectory: "/source",
             hostWorkingDirectory: root,
             mounts: [],
-            persistentWorkspaceMounts: [
-                OCIPersistentWorkspaceMount(
-                    workspace: workspace,
+            // The image is mounted where it lies. There is no volume to
+            // establish from it and no copy of its bytes: an artifact that
+            // happens to be a filesystem is attached as one.
+            blockImageMounts: [
+                OCIBlockImageMount(
+                    image: root.appending("source.img"),
                     target: "/source",
                     access: .readOnly)
             ],
@@ -83,9 +63,13 @@ package struct SourceImageAttachmentAction: ColliderAction {
                 memoryBytes: 1_024 * 1_024 * 1_024,
                 processCount: 256),
             containerEnvironment: [:],
+            // The builder image dispatches on a build mode, and this is not
+            // one of them. Reading a filesystem needs a shell rather than a
+            // builder, so the entrypoint is replaced instead of argued with.
+            imageEntrypointOverride: "/bin/sh",
             // One line per fact, so a disagreement names which one.
             command: [
-                "sh", "-c",
+                "-c",
                 "stat -c %i /source/readable; stat -c %i /source/nested/hardlink; "
                     + "stat -c %a /source/executable; "
                     + "readlink /source/relative-link; cat /source/readable",

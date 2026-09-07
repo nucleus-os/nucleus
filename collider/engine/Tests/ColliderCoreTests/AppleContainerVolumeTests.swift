@@ -23,8 +23,7 @@ private func fixtureVolumeDeclaration(
     key: String = "build-output",
     target: ArtifactTarget? = .linuxARM64,
     role: String = "build",
-    capacityBytes: UInt64 = 2 * 1_024 * 1_024 * 1_024,
-    sourceImage: FilePath? = nil
+    capacityBytes: UInt64 = 2 * 1_024 * 1_024 * 1_024
 ) -> PersistentWorkspaceDeclaration {
     PersistentWorkspaceDeclaration(
         identity: PersistentWorkspaceIdentity(
@@ -33,8 +32,7 @@ private func fixtureVolumeDeclaration(
             role: role),
         capacityBytes: capacityBytes,
         filesystem: .ext4,
-        journal: .writeback64MiB,
-        sourceImage: sourceImage)
+        journal: .writeback64MiB)
 }
 
 private actor FixtureAppleVolumeStore {
@@ -219,81 +217,6 @@ private actor FixtureAppleVolumeStore {
 /// Reconciliation is for shape. A volume whose ownership labels disagree is not
 /// this declaration's to destroy, and recreating it would discard another
 /// owner's state.
-/// A workspace established from an image is that image's workspace.
-///
-/// The image carries the whole content, so a volume built from a different one
-/// holds different bytes under the same name. Recording the image among the
-/// options the volume is compared against is what makes that a difference the
-/// manager sees rather than one a consumer discovers by reading the wrong
-/// tree.
-@Test func appleVolumeManagerRebuildsAWorkspaceWhoseSourceImageChanged()
-    async throws
-{
-    let store = FixtureAppleVolumeStore()
-    let manager = ApplePersistentWorkspaceManager(
-        configuration: fixtureVolumeConfiguration(),
-        operations: store.operations())
-    let declaration = fixtureVolumeDeclaration(
-        sourceImage: FilePath("/artifacts/source/sha256-second/source.img"))
-    let name = try manager.physicalName(for: declaration.identity)
-    await store.insert(
-        VolumeConfiguration(
-            name: name,
-            driver: "local",
-            format: "ext4",
-            source: "/fixture/\(name)/volume.img",
-            labels: try manager.labels(for: declaration.identity),
-            options: [
-                "size": String(declaration.capacityBytes),
-                "journal": "\(declaration.journal.mode.rawValue):\(declaration.journal.sizeBytes)",
-                "source": "/artifacts/source/sha256-first/source.img",
-            ],
-            sizeInBytes: declaration.capacityBytes))
-
-    let resolution = try await manager.resolve([
-        OCIPersistentWorkspaceMount(
-            workspace: declaration, target: "/source", access: .readOnly)
-    ])
-
-    #expect(await store.deletedNames() == [name])
-    #expect(resolution.reconciled.first?.reason.contains("driver options") == true)
-    #expect(resolution.created.count == 1)
-}
-
-@Test func appleVolumeManagerKeepsAWorkspaceBuiltFromTheSameImage() async throws {
-    let store = FixtureAppleVolumeStore()
-    let manager = ApplePersistentWorkspaceManager(
-        configuration: fixtureVolumeConfiguration(),
-        operations: store.operations())
-    let image = FilePath("/artifacts/source/sha256-first/source.img")
-    let declaration = fixtureVolumeDeclaration(sourceImage: image)
-    let name = try manager.physicalName(for: declaration.identity)
-    await store.insert(
-        VolumeConfiguration(
-            name: name,
-            driver: "local",
-            format: "ext4",
-            source: "/fixture/\(name)/volume.img",
-            labels: try manager.labels(for: declaration.identity),
-            options: [
-                "size": String(declaration.capacityBytes),
-                "journal": "\(declaration.journal.mode.rawValue):\(declaration.journal.sizeBytes)",
-                "source": image.string,
-            ],
-            sizeInBytes: declaration.capacityBytes))
-
-    let resolution = try await manager.resolve([
-        OCIPersistentWorkspaceMount(
-            workspace: declaration, target: "/source", access: .readOnly)
-    ])
-
-    // Rebuilding a twenty-nine gigabyte image because nothing changed is the
-    // failure this pairs with: the option has to be compared, and compare equal.
-    #expect(await store.deletedNames().isEmpty)
-    #expect(resolution.reconciled.isEmpty)
-    #expect(resolution.created.isEmpty)
-}
-
 @Test func appleVolumeManagerRefusesAWorkspaceItDoesNotOwn() async throws {
     let store = FixtureAppleVolumeStore()
     let manager = ApplePersistentWorkspaceManager(

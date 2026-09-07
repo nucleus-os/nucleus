@@ -624,12 +624,25 @@ struct AppleContainerLifecycle: Sendable {
             log: Logger(label: configuration.loggerLabel) { _ in
                 SwiftLogNoOpLogHandler()
             })
+        // Appended rather than flagged. A block image is a filesystem the
+        // runtime attaches over virtio-blk, and `ContainerConfiguration.mounts`
+        // is where that is said; the command-line grammar these flags speak
+        // knows only virtiofs, tmpfs and volume, so an image expressed there
+        // would be rejected for a limit the runtime does not have.
+        var attached = configuration
+        attached.mounts += execution.blockImageMounts.map { mount in
+            Filesystem.block(
+                format: mount.format,
+                source: mount.image.string,
+                destination: mount.target,
+                options: mount.access == .readOnly ? ["ro"] : [])
+        }
         let configurationDuration = elapsedNanoseconds(since: configurationStart)
 
         try Task.checkCancellation()
         let creationStart = ContinuousClock().now
         try await client.create(
-            configuration: configuration,
+            configuration: attached,
             options: .default,
             kernel: kernel,
             initImage: initImage)

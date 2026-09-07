@@ -397,6 +397,15 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
             workspace.append(mount.target)
             workspace.appendEnum(mount.access)
         }
+        // The image's path carries its content address, so encoding it is what
+        // makes a consumer of one source generation a different task from a
+        // consumer of another.
+        encoder.appendSequence(execution.blockImageMounts) { block, mount in
+            block.append(path: mount.image)
+            block.append(mount.target)
+            block.append(mount.format)
+            block.appendEnum(mount.access)
+        }
         encoder.append(UInt64(execution.userPolicy.userID))
         encoder.append(UInt64(execution.userPolicy.groupID))
         encoder.append(execution.capabilityPolicy.rawValue)
@@ -546,6 +555,15 @@ public func ociActionRequirements(
             mount.isReadOnly ? .read : .readWrite,
             scope: mount.isReadOnly
                 ? .input(mount.source) : .output(mount.source))
+        if !effects.contains(effect) { effects.append(effect) }
+    }
+    // A block image is a file the container reads, so it is bounded like every
+    // other path an execution reaches rather than by a rule of its own.
+    for mount in execution.blockImageMounts {
+        let effect = ActionEffect(
+            mount.access == .readOnly ? .read : .readWrite,
+            scope: mount.access == .readOnly
+                ? .input(mount.image) : .output(mount.image))
         if !effects.contains(effect) { effects.append(effect) }
     }
     let persistentWorkspaceEffects = execution.persistentWorkspaceMounts.map {

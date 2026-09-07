@@ -280,18 +280,11 @@ struct ApplePersistentWorkspaceManager: Sendable {
     private func options(
         for declaration: PersistentWorkspaceDeclaration
     ) -> [String: String] {
-        var values = [
+        [
             "size": String(declaration.capacityBytes),
             "journal":
                 "\(declaration.journal.mode.rawValue):\(declaration.journal.sizeBytes)",
         ]
-        // Part of the options the volume is compared against, not a detail of
-        // how it was made, because a workspace established from one image is
-        // not the same workspace when the image changes.
-        if let image = declaration.sourceImage {
-            values["source"] = image.string
-        }
-        return values
     }
 
     private func owner() throws -> String {

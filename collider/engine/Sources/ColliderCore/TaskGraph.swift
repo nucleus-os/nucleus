@@ -293,14 +293,6 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     /// are reconstructed by definition; a source workspace holds a tree whose
     /// cost is worth a decision.
     public let residency: StorageResidency?
-    /// A prebuilt filesystem image this workspace is established from.
-    ///
-    /// A workspace is a directory holding an image, so a producer that already
-    /// addresses an image by its content has produced the thing a workspace
-    /// would otherwise format empty and a task would then fill. Naming it here
-    /// hands it over intact, which is what keeps a source tree from being
-    /// written once into an artifact and again into a volume.
-    public let sourceImage: FilePath?
 
     public init(
         identity: PersistentWorkspaceIdentity,
@@ -308,8 +300,7 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
         filesystem: PersistentWorkspaceFilesystem,
         journal: PersistentWorkspaceJournal,
         retentionPolicy: StorageRetentionPolicy = .explicitClean,
-        residency: StorageResidency? = nil,
-        sourceImage: FilePath? = nil
+        residency: StorageResidency? = nil
     ) {
         self.identity = identity
         self.capacityBytes = capacityBytes
@@ -317,7 +308,6 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
         self.journal = journal
         self.retentionPolicy = retentionPolicy
         self.residency = residency
-        self.sourceImage = sourceImage
     }
 
     /// The allocation past which this workspace is treated as out of room.
@@ -338,6 +328,33 @@ public struct PersistentWorkspaceDeclaration: Codable, Hashable, Sendable {
     /// replace.
     public var exhaustionThresholdBytes: UInt64 {
         capacityBytes - capacityBytes / 5
+    }
+}
+
+/// A filesystem image attached to a container as a block device.
+///
+/// The runtime carries this primitive already, and it is what an artifact that
+/// happens to be a filesystem needs: the image is mounted where it lies, with
+/// no volume to establish from it and no copy of its bytes. A source tree
+/// built once and addressed by its content is attached to every consumer this
+/// way.
+public struct OCIBlockImageMount: Hashable, Sendable {
+    public let image: FilePath
+    public let target: String
+    public let access: OCIPersistentWorkspaceMount.Access
+    /// The filesystem inside the image, as the guest must be told to mount it.
+    public let format: String
+
+    public init(
+        image: FilePath,
+        target: String,
+        access: OCIPersistentWorkspaceMount.Access,
+        format: String = "ext4"
+    ) {
+        self.image = image
+        self.target = target
+        self.access = access
+        self.format = format
     }
 }
 
@@ -482,6 +499,7 @@ public struct OCIExecution: Hashable, Sendable {
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
     public let persistentWorkspaceMounts: [OCIPersistentWorkspaceMount]
+    public let blockImageMounts: [OCIBlockImageMount]
     public let userPolicy: OCIUserPolicy
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
@@ -509,6 +527,7 @@ public struct OCIExecution: Hashable, Sendable {
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
         persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
+        blockImageMounts: [OCIBlockImageMount] = [],
         userPolicy: OCIUserPolicy,
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
@@ -529,6 +548,7 @@ public struct OCIExecution: Hashable, Sendable {
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
         self.persistentWorkspaceMounts = persistentWorkspaceMounts
+        self.blockImageMounts = blockImageMounts
         self.userPolicy = userPolicy
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy
