@@ -202,9 +202,20 @@ consumes every publication and qualification, so the lane is reachable through
 it; the assertion is a second root precisely because it depends on nothing,
 and a dependency on this run's publication would move it back to the end.
 
-Gate: the corruption that failed run 34053908633 -- an active cohort naming
-products the store does not hold -- is reported by a task that runs before any
-packaging work, and collection still runs after publication.
+Gate evidence: [protected-main run 34076288592](https://github.com/nucleus-os/nucleus/actions/runs/34076288592)
+verified `a2c34033`. The assertion started at 133.7 s, the first Linux
+packaging task at 185.3 s, and retention at 622.5 s, so the question is asked
+before any packaging and the collection still follows publication.
+
+Its position is bounded below by Phase 2 rather than by anything in this
+phase. Host-exclusive work runs alone, so the three barriers Phase 2 moved to
+the front occupy the machine until 133 s and nothing else can start before
+them. The two phases compose in the intended direction -- the barriers are the
+cheapest work to front-load and the assertion is the next -- but a run whose
+barriers grow will push this check later, and the margin over packaging is
+52 s rather than something comfortable. If that margin closes, the answer is
+not to reorder against Phase 2; it is that the assertion belongs in the
+barrier block, since it is a read-only check that could share it.
 
 Behavior tests: a host carrying an active cohort the store cannot serve is
 reported, and the report names what is wrong rather than failing for an
