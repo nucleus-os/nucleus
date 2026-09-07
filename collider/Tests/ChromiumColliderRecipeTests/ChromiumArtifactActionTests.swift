@@ -8,8 +8,14 @@ import LinuxPackageContracts
 import SystemPackage
 import Testing
 
+/// The build reads the source and never establishes it.
+///
+/// A materialization step used to run first, filling a writable workspace from
+/// a host mount. It is gone because the image it would have filled is already
+/// a filesystem, so what proves the change is the absence of a second
+/// execution and the presence of a read-only block mount at `/source`.
 @Test
-func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() async throws {
+func chromiumBuildReadsTheSourceImageWithoutMaterializingIt() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-chromium-build-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -42,7 +48,8 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
             buildManifest: FilePath(
                 metadata.appendingPathComponent("build-manifest.json").path),
             inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
-            sourceWorkspace: chromiumSourceWorkspace(),
+            sourceImage: FilePath(
+                directory.appendingPathComponent("source.img").path),
             outputWorkspace: chromiumOutputWorkspace(
                 product: .browser,
                 target: target),
@@ -59,7 +66,7 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
         recording: executions,
         containerRun: { execution in
             switch execution.command.first {
-            case "materialize-source", "build":
+            case "build":
                 return CommandResult(status: 0)
             default:
                 Issue.record(
@@ -69,29 +76,26 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
         })
     let recorded = await executions.values()
     #expect(
-        recorded.map(\.command.first) == [
-            "materialize-source", "build",
-        ])
-    let build = try #require(recorded.dropFirst().first)
+        recorded.map(\.command.first) == ["build"],
+        "the build ran something other than the build")
+    let build = try #require(recorded.first)
     #expect(
         build.command == [
             "build", "0123456789abcdef01234567", "is_debug=false", "12",
             "chrome",
         ])
-    let materialization = try #require(recorded.first)
+    // Attached, not established: the source arrives as a block device holding
+    // a filesystem, and nothing the build runs may write to it.
+    #expect(build.blockImageMounts.map(\.target) == ["/source"])
+    #expect(build.blockImageMounts.first?.access == .readOnly)
     #expect(
-        materialization.mounts.map(\.target)
-            == ["/collider-entrypoints/fixture", "/host-source"])
-    #expect(materialization.persistentWorkspaceMounts.map(\.target) == ["/source"])
-    #expect(materialization.persistentWorkspaceMounts.first?.access == .readWrite)
-    #expect(materialization.executableRequirements.isEmpty)
-    for execution in recorded.dropFirst() {
-        #expect(!execution.mounts.contains { $0.target == "/source" })
-        #expect(
-            execution.persistentWorkspaceMounts.first?.target == "/source")
-        #expect(
-            execution.persistentWorkspaceMounts.first?.access == .readOnly)
-    }
+        build.blockImageMounts.first?.image
+            == FilePath(directory.appendingPathComponent("source.img").path))
+    #expect(!build.mounts.contains { $0.target == "/source" })
+    #expect(!build.persistentWorkspaceMounts.contains { $0.target == "/source" })
+    #expect(
+        build.persistentWorkspaceMounts.map(\.target).sorted()
+            == ["/build", "/ccache"])
 }
 
 /// Chromium compiles every translation unit with `-fmodules`, and ccache
@@ -136,7 +140,8 @@ func chromiumBuildMaterializesSourceOnceBeforeUsingOnlyPersistentWorkspaces() as
             buildManifest: FilePath(
                 metadata.appendingPathComponent("build-manifest.json").path),
             inputRoot: FilePath(metadata.appendingPathComponent("inputs").path),
-            sourceWorkspace: chromiumSourceWorkspace(),
+            sourceImage: FilePath(
+                directory.appendingPathComponent("source.img").path),
             outputWorkspace: chromiumOutputWorkspace(
                 product: .cef,
                 target: target),
@@ -238,7 +243,8 @@ func browserArtifactAssemblyPublishesAValidatedImmutableGeneration(
         target: target,
         chromiumSource: FilePath(source.path),
         buildManifest: FilePath(buildManifest.path),
-        sourceWorkspace: chromiumSourceWorkspace(),
+        sourceImage: FilePath(
+            directory.appendingPathComponent("source.img").path),
         outputWorkspace: chromiumOutputWorkspace(
             product: .browser,
             target: target),
@@ -438,7 +444,8 @@ func cefArtifactAssemblyPublishesSDKAndChecksummedArchive(
         target: target,
         chromiumSource: FilePath(chromium.path),
         buildManifest: FilePath(buildManifest.path),
-        sourceWorkspace: chromiumSourceWorkspace(),
+        sourceImage: FilePath(
+            directory.appendingPathComponent("source.img").path),
         outputWorkspace: chromiumOutputWorkspace(
             product: .cef,
             target: target),

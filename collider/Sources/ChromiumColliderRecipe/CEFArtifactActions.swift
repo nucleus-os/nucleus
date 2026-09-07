@@ -47,10 +47,8 @@ package struct AssembleCEFArtifactAction: ColliderAction {
                     boundedExport: distributionCandidate,
                     target: "/distribution")
             ],
-            persistentWorkspaceMounts: [
-                assembly.readOnlySourceMount,
-                assembly.readOnlyOutputMount,
-            ],
+            persistentWorkspaceMounts: [assembly.readOnlyOutputMount],
+            blockImageMounts: [assembly.readOnlySourceMount],
             environment: commandEnvironment,
             assembly: assembly,
             context: context)
@@ -163,7 +161,8 @@ private func encodeCEFArtifactIdentity(
         nested: OCIMountedEntrypointActionIdentity(assembly.entrypoint))
     encoder.append(assembly.target.architecture.rawValue)
     encoder.append(assembly.outputWorkspace.identity.key)
-    encoder.append(assembly.sourceWorkspace.identity.key)
+    // The source is an artifact this task consumes rather than a workspace it
+    // names, so what it read is already part of what this task is.
 }
 
 private func cefArtifactRequirements(
@@ -173,6 +172,7 @@ private func cefArtifactRequirements(
     ActionRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
+            ActionEffect(.read, scope: .input(assembly.sourceImage)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
             assembly.entrypoint.effect,
@@ -188,13 +188,9 @@ private func cefArtifactRequirements(
         ],
         persistentWorkspaceEffects: [
             ActionPersistentWorkspaceEffect(
-                workspace: assembly.sourceWorkspace,
-                target: "/source",
-                access: .readOnly),
-            ActionPersistentWorkspaceEffect(
                 workspace: assembly.outputWorkspace,
                 target: "/build",
-                access: .readOnly),
+                access: .readOnly)
         ],
         executionPlatform: .linuxARM64OCI,
         artifactTarget: assembly.target.artifactTarget)
@@ -254,7 +250,7 @@ private func validateCEFSDK(
                 OCIMount(source: sdk, target: "/sdk", access: .readOnly),
                 OCIMount(boundedExport: smoke, target: "/smoke"),
             ],
-            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
+            blockImageMounts: [assembly.readOnlySourceMount],
             // Unlike every other tool execution, this one compiles: it builds
             // a consumer against the SDK to prove the SDK is consumable. The
             // compiler is Chromium's checked-in x86_64 clang, so this is the
@@ -292,6 +288,7 @@ private func requireCEFContainerSuccess(
     hostWorkingDirectory: FilePath,
     mounts: [OCIMount],
     persistentWorkspaceMounts: [OCIPersistentWorkspaceMount] = [],
+    blockImageMounts: [OCIBlockImageMount] = [],
     environment: [String: String],
     assembly: CEFArtifactAssembly,
     context: ActionContext
@@ -305,6 +302,7 @@ private func requireCEFContainerSuccess(
             hostWorkingDirectory: hostWorkingDirectory,
             mounts: mounts,
             persistentWorkspaceMounts: persistentWorkspaceMounts,
+            blockImageMounts: blockImageMounts,
             command: command,
             environment: environment))
     guard result.succeeded else {

@@ -37,6 +37,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         Set(tasks.map(\.id)).isSuperset(
             of: [
                 ChromiumTaskIDs.source,
+                ChromiumTaskIDs.sourceImage,
                 ChromiumTaskIDs.retention,
                 ChromiumTaskIDs.builderDependencies,
                 ChromiumTaskIDs.testRuntimeDependencies,
@@ -59,12 +60,21 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     }
     #expect(productActions.count == 4)
     #expect(Set(productActions.map(\.identity)).count == 4)
+    // Two workspaces, not three. The source is no longer a workspace a build
+    // establishes and then reads; it is an image the build consumes, and a
+    // consumed artifact is not a persistent workspace effect.
     #expect(
         productActions.allSatisfy {
             $0.requirements.executionPlatform == .linuxARM64OCI
                 && $0.requirements.lane == .oci
-                && $0.requirements.persistentWorkspaceEffects.count == 3
+                && $0.requirements.persistentWorkspaceEffects.count == 2
         })
+    // Every build waits for the image, because reading a filesystem means the
+    // filesystem has to exist.
+    #expect(
+        tasks.filter {
+            $0.action?.kind == ActionKind(rawValue: "browser.build-product")
+        }.allSatisfy { $0.dependencies.contains(ChromiumTaskIDs.sourceImage) })
     #expect(
         Set(productActions.compactMap(\.requirements.artifactTarget))
             == [.linuxARM64, .linuxX86_64])
@@ -81,7 +91,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         try await ociExecutions(in: test.action).first)
     #expect(testAction.kind == "browser.run-tests")
     // The layout above asks for 16 jobs, which is what a product build gets
-    // because the source lock gives it the host. The two ozone runs overlap
+    // because the capacity lock gives it the host. The two ozone runs overlap
     // each other instead, one per architecture, so each is bounded by the
     // twelve CPUs its own container is actually given.
     #expect(
@@ -96,7 +106,9 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             == "/collider-entrypoints/chromium-test/build-entrypoint.sh")
     #expect(
         execution.persistentWorkspaceMounts.map(\.target)
-            == ["/source", "/build", "/ccache"])
+            == ["/build", "/ccache"])
+    #expect(execution.blockImageMounts.map(\.target) == ["/source"])
+    #expect(execution.blockImageMounts.first?.access == .readOnly)
     #expect(
         test.dependencies.contains(ChromiumTaskIDs.testRuntimeDependencies))
     let testRuntime = try #require(

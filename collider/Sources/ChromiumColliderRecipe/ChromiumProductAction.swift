@@ -25,8 +25,10 @@ package struct BuildChromiumProductAction: ColliderAction {
             encoder.append(build.outputWorkspace.capacityBytes)
             encoder.append(build.compilerCacheWorkspace.identity.key)
             encoder.append(build.compilerCacheWorkspace.capacityBytes)
-            encoder.append(build.sourceWorkspace.identity.key)
-            encoder.append(build.sourceWorkspace.capacityBytes)
+            // The source needs no line of its own. A workspace has a name and
+            // a size and no content the graph can see, so its identity had to
+            // be stated here; the image is an artifact this task consumes, and
+            // consuming it is already what says which source was read.
         }
     }
 
@@ -45,16 +47,13 @@ package struct BuildChromiumProductAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.read, scope: .input(build.sourceRoot)),
+                ActionEffect(.read, scope: .input(build.sourceImage)),
                 ActionEffect(.read, scope: .input(build.entrypoint.image.path)),
                 build.entrypoint.effect,
                 ActionEffect(.readWrite, scope: .scratch(build.inputRoot)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildManifest)),
             ],
             persistentWorkspaceEffects: [
-                ActionPersistentWorkspaceEffect(
-                    workspace: build.sourceWorkspace,
-                    target: "/source",
-                    access: .readWrite),
                 ActionPersistentWorkspaceEffect(
                     workspace: build.outputWorkspace,
                     target: "/build",
@@ -79,8 +78,6 @@ package struct BuildChromiumProductAction: ColliderAction {
         let sourceID = try sourceID(
             in: sourceManifest,
             files: context.files)
-        try await context.containers.run(
-            sourceMaterializationExecution(sourceID: sourceID))
         let gnArguments = try stagedGNArguments(files: context.files)
         try await context.containers.run(
             containerExecution(
@@ -158,19 +155,21 @@ package struct BuildChromiumProductAction: ColliderAction {
                     access: .readOnly),
             ],
             persistentWorkspaceMounts: [
-                build.sourceMount,
                 build.outputMount,
                 build.compilerCacheMount,
             ],
+            blockImageMounts: [build.sourceMount],
             userPolicy: .builder,
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
             executableRequirements: chromiumBuildExecutableRequirements,
-            // The source lock serializes every Chromium product build, so this
-            // one has the host to itself and asking for half of it leaves the
-            // other half idle for four hours. Resource limits are outside task
-            // identity, so this changes what a build is given, not what it is.
+            // The Chromium builds are still serialized, so this one has the
+            // host to itself and asking for half of it leaves the other half
+            // idle for four hours. What serializes them is now stated as the
+            // capacity limit it is rather than as the source lock it was.
+            // Resource limits are outside task identity, so this changes what
+            // a build is given, not what it is.
             resourceLimits: .build,
             // The compiler cache settings belong here and nowhere else: this
             // is the dictionary the container process is given. Declared as
@@ -191,39 +190,6 @@ package struct BuildChromiumProductAction: ColliderAction {
             command: command,
             environment: build.environment,
             output: output)
-    }
-
-    private func sourceMaterializationExecution(sourceID: String) -> OCIExecution {
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: build.target.artifactTarget,
-            imageID: build.entrypoint.image.path,
-            hostname: "chromium-source-materialization",
-            workingDirectory: "/",
-            hostWorkingDirectory: build.sourceRoot,
-            mounts: [
-                build.entrypoint.mount,
-                OCIMount(
-                    source: build.sourceRoot,
-                    target: "/host-source",
-                    access: .readOnly),
-            ],
-            persistentWorkspaceMounts: [build.writableSourceMount],
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            resourceLimits: chromiumToolResourceLimits,
-            containerEnvironment: [
-                "HOME": "/tmp/nucleus-home",
-                "LANG": "C.UTF-8",
-                "LC_ALL": "C.UTF-8",
-                "TZ": "UTC",
-            ],
-            imageEntrypointOverride: build.entrypoint.containerPath,
-            command: ["materialize-source", sourceID],
-            environment: build.environment,
-            output: .logged)
     }
 
     private func buildManifest(

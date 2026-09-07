@@ -260,6 +260,48 @@ the host, addressed by its content, mounted read-only as a block device, and
 read correctly by a kernel other than the library that wrote it. What remains
 is to point it at the prepared Chromium tree.
 
+Pointing it there found a defect this plan had no reason to expect, and it is
+the reason the tree alone was never enough. The Linux sysroots are Debian roots
+carrying names that differ only in case -- `xt_CONNMARK.h` beside
+`xt_connmark.h`, `ipt_ECN.h` beside `ipt_ecn.h`, and a `sys` directory beside
+`SYS` -- and the host volume is case insensitive APFS. The copy `gclient
+runhooks` leaves in the tree is therefore already missing twenty-four entries
+of the arm64 archive's 20,824, and nothing noticed, because `materialize-source`
+deleted that directory and re-extracted the archive onto a filesystem that can
+hold both names:
+
+    rm -rf "$sysroot" && mkdir -p "$sysroot" && tar mxf "$archive" -C "$sysroot"
+
+That repair was load bearing, and an image built by walking the tree would have
+carried the damage instead -- a build compiling against a sysroot missing eight
+netfilter headers, failing somewhere unrelated hours later, or worse succeeding.
+So the image writer performs the repair rather than inheriting it: an overlay
+reads the archive and writes its entries into the image directly, and the
+tree's copy of that directory is not walked at all. Nothing is staged, so no
+name has to survive a round trip through a filesystem that cannot represent it.
+Extracting on the host before imaging was the obvious design and is the wrong
+one for exactly this reason.
+
+Ownership is the second thing the tree alone does not settle. An ext4 image
+records an owner per inode; the copy this replaces untarred with
+`--no-same-owner`, leaving every file owned by the builder that extracted it. A
+root-owned image would grant a consumer only what the mode grants everyone, and
+the tree is not uniformly world readable -- `source-provenance.json` is 0640 and
+the sysroot's own `./debian/` is 0750. The image therefore records the identity
+a container runs as, stated with the type an execution states it with so the
+two cannot drift apart, and the attachment task proves it by reading a file
+only its owner may read.
+
+Timestamps interact with the build tool in a way worth stating. Every entry is
+written at one fixed time, because the image is addressed by its content and a
+checkout stamps mtimes of its own; that is what makes two preparations of one
+revision agree. Siso caches an input's digest against the mtime it last saw, so
+across two source revisions an unchanged mtime could let it keep a digest for
+content that changed. The build entrypoint already learns that the source
+identity moved -- it re-runs `gn gen` when it does -- so that is where Siso's
+filesystem state is dropped, which makes it read the tree again rather than
+remember it.
+
 Every pin bump on the fork repeats the resolution cost above, not only the
 first repoint. A scratch that has resolved a revision cannot fetch a newer one
 under `--only-use-versions-from-resolved-file`, and the recovery is the same
@@ -275,18 +317,35 @@ at once, clone the image per consumer. On APFS that is a copy-on-write clone:
 metadata only, no file traversal, and the clones share storage. The vendored
 containerization stack already clones block images.
 
-This phase deletes `materialize-source`, the `.nucleus-source-id` protocol, the
-`rm -rf`, the source lock Phase 1 introduced, and the residency justification
-below, because a reproducible content-addressed artifact needs none of them.
-Retiring the lock makes concurrent product builds possible again, though on a
-twenty-four core host that is a scheduling choice rather than an automatic
-gain. The wall clock that is actually recoverable is in the compiler cache and
-in Phase 3: a cold sweep is four full builds, and almost every sweep should be
-finding most of its objects already compiled.
+Deleted: `materialize-source`, the `.nucleus-source-id` protocol, the `rm -rf`
+wipe-and-refill, the writable source workspace, `chromiumSourceWorkspace` and
+its residency justification, and the source lock. A reproducible
+content-addressed artifact needs none of them, and each consumer -- the four
+product builds, the CEF and browser artifact assemblies, and the two ozone test
+runs -- now attaches the image read-only where it used to mount the workspace.
 
-Fidelity is the risk worth naming: the Chromium tree carries symlinks,
-hardlinks, and executable bits that the image must preserve exactly. Prove the
-image against the tree Phase 1 materializes before moving any consumer to it.
+The source lock and the serialization it caused are not the same thing, and
+only one of them is gone. The lock existed because a shared tree was refilled
+in place and the refill was not atomic; an image is written once, never
+rewritten, and opened read only, which leaves that lock nothing to guard. What
+remains is capacity, which Phase 1 recorded as deliberate: each build asks for
+twelve jobs of twenty-four cores, so four at once would divide the machine
+rather than multiply it. That claim is now made under its own name,
+`chromium-build-capacity.lock`, so removing it later is a scheduling decision
+made on measurement rather than an accident of renaming. The wall clock that is
+actually recoverable is in the compiler cache and in Phase 3.
+
+The workspace this phase retires is still resident, exactly as Phase 1's were:
+`chromium-source` holds about 45 GiB claimed by no declaration now, and nothing
+reclaims a container volume on its own. That is a step to be taken with
+`collider cache prune`, not a defect to be fixed.
+
+Fidelity was the risk worth naming, and it is settled for files, permissions,
+symbolic links, hard links, ownership, byte reproducibility, and the
+case-colliding names only the overlay path can carry. What is not yet settled
+is the tree at full scale: the attachment task proves the mechanism on a
+fixture, and only a Chromium build proves that 1.2 million entries and 29 GiB
+arrive intact and readable.
 
 ## Phase 3: Build each generation from its predecessor
 

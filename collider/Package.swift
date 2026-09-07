@@ -166,6 +166,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "LinuxPackageContracts",
+                "SourceImageAssembly",
             ]),
         .target(
             name: "CompositorColliderRecipe",

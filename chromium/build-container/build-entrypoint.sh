@@ -30,44 +30,6 @@ target_runtime() {
 }
 
 case "${1:-}" in
-  materialize-source)
-    if [[ $# -ne 2 \
-        || ! "$2" =~ ^[0-9a-f]{24}$ \
-        || ! -f /host-source/source-provenance.json \
-        || ! -w /source ]]; then
-      echo "error: materialize-source requires an immutable host source and writable workspace" >&2
-      exit 64
-    fi
-    source_id="$2"
-    marker=/source/.nucleus-source-id
-    if [[ -f "$marker" ]] \
-        && [[ "$(<"$marker")" == "$source_id" ]] \
-        && [[ ! -e /source/chromium/src/cef/.git/objects/info/alternates ]]; then
-      exit 0
-    fi
-    find /source -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    tar -C /host-source -cf - \
-      chromium linux-sysroot-archives source-provenance.json \
-      | tar -C /source --no-same-owner -xf -
-    archive_root=/source/linux-sysroot-archives
-    for archive in "$archive_root"/*.tar.xz; do
-      [[ -f "$archive" ]] || continue
-      sysroot="${archive%.tar.xz}"
-      sysroot="/source/chromium/src/build/linux/${sysroot##*/}"
-      stamp="$archive_root/${sysroot##*/}.stamp"
-      [[ -f "$stamp" ]] || {
-        echo "error: Chromium sysroot archive has no stamp: $archive" >&2
-        exit 1
-      }
-      rm -rf "$sysroot"
-      mkdir -p "$sysroot"
-      tar mxf "$archive" -C "$sysroot"
-      cp "$stamp" "$sysroot/.stamp"
-    done
-    printf '%s\n' "$source_id" > /source/.nucleus-source-id.preparing
-    mv /source/.nucleus-source-id.preparing "$marker"
-    exit 0
-    ;;
   run-test)
     if [[ $# -lt 2 ]]; then
       echo "error: run-test requires an executable under /build" >&2
@@ -107,6 +69,14 @@ configure_build() {
     trap - EXIT
     return
   fi
+  # Every source file carries the same fixed timestamp, because the image is
+  # addressed by its content and a checkout stamps mtimes of its own. Siso
+  # caches an input's digest against the mtime it last saw, so across two
+  # source revisions an unchanged mtime would let it keep a digest for content
+  # that changed. This is the moment the source identity is known to have
+  # moved, so it is the moment to make Siso read the tree again rather than
+  # remember it.
+  rm -f /build/.siso_fs_state /build/.siso_fs_state.0
   /source/chromium/src/buildtools/linux64/gn \
     gen /build \
     "--args=$gn_arguments"

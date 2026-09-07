@@ -202,33 +202,58 @@ package func chromiumCompilerCacheWorkspace(
         retentionPolicy: .toolManagedLimit(maximumBytes: 30 * 1_024 * 1_024 * 1_024))
 }
 
-/// One materialized tree for every Chromium product and architecture.
+/// The prepared tree, attached as the filesystem it is.
 ///
-/// The tree is a pure function of the pinned source revision: every consumer
-/// mounts it read-only, and the only writer is the materialization step, which
-/// copies the same bytes whatever target asked for it. Keying this workspace by
-/// artifact target therefore bought nothing and cost a second full copy --
-/// around half a million files each, read through the host mount, with both
-/// architectures materializing at once. That is what exhausted the host's
-/// system-wide file table and failed the build. `artifactTarget` is optional
-/// precisely so source can say it belongs to no single target.
-package func chromiumSourceWorkspace() -> PersistentWorkspaceDeclaration {
-    PersistentWorkspaceDeclaration(
-        identity: PersistentWorkspaceIdentity(
-            key: "chromium-source",
-            artifactTarget: nil,
-            role: "source"),
-        capacityBytes: 64 * 1_024 * 1_024 * 1_024,
-        filesystem: .ext4,
-        journal: .writeback64MiB,
-        retentionPolicy: .explicitClean,
-        // Resident. Unlike AOSP there is no second copy to fall back on: the
-        // host holds the pinned inputs but not a materialized tree, so
-        // collecting this one turns the next Chromium build into a full
-        // source materialization.
-        residency: .resident(
-            reason: "the only materialized Chromium tree; the host holds "
-                + "pinned inputs but nothing checked out"))
+/// The tree is a pure function of the pinned source revision and every
+/// consumer reads it without writing to it, which makes it an artifact rather
+/// than a workspace. A workspace had to be filled before it could be read, and
+/// filling it meant copying a million entries through the host file sharing
+/// layer once per source revision -- the copy that exhausted the machine wide
+/// open file table -- guarded by a hand written cache key the graph could not
+/// see and a lock held for the whole of every build because the refill was not
+/// atomic. An image is already the filesystem, so it is attached rather than
+/// established, and none of those three costs has anywhere to live.
+package func chromiumSourceMount(image: FilePath) -> OCIBlockImageMount {
+    OCIBlockImageMount(image: image, target: "/source", access: .readOnly)
+}
+
+/// Writing one source generation into the image its consumers read.
+package struct ChromiumSourceImaging: Hashable, Sendable {
+    /// The generation being imaged.
+    package let sourceID: String
+    /// The prepared tree on the host.
+    package let sourceRoot: FilePath
+    /// Where images are published, one generation to a directory.
+    package let images: FilePath
+    /// This generation's directory under `images`.
+    package let imageRoot: FilePath
+    /// The link naming the generation in use.
+    package let current: FilePath
+    package let environment: [String: String]
+
+    package init(
+        sourceID: String,
+        sourceRoot: FilePath,
+        images: FilePath,
+        imageRoot: FilePath,
+        current: FilePath,
+        environment: [String: String]
+    ) {
+        self.sourceID = sourceID
+        self.sourceRoot = sourceRoot
+        self.images = images
+        self.imageRoot = imageRoot
+        self.current = current
+        self.environment = environment
+    }
+
+    /// The image itself.
+    package var image: FilePath { imageRoot.appending("source.img") }
+
+    /// Where the tree's archived sysroots are kept.
+    package var sysrootArchives: FilePath {
+        sourceRoot.appending("linux-sysroot-archives")
+    }
 }
 
 package struct ChromiumProductBuild: Hashable, Sendable {
@@ -237,7 +262,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
     package let sourceRoot: FilePath
     package let buildManifest: FilePath
     package let inputRoot: FilePath
-    package let sourceWorkspace: PersistentWorkspaceDeclaration
+    package let sourceImage: FilePath
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let compilerCacheWorkspace: PersistentWorkspaceDeclaration
     package let entrypoint: OCIMountedEntrypoint
@@ -252,7 +277,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         sourceRoot: FilePath,
         buildManifest: FilePath,
         inputRoot: FilePath,
-        sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceImage: FilePath,
         outputWorkspace: PersistentWorkspaceDeclaration,
         compilerCacheWorkspace: PersistentWorkspaceDeclaration,
         entrypoint: OCIMountedEntrypoint,
@@ -266,7 +291,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
         self.sourceRoot = sourceRoot
         self.buildManifest = buildManifest
         self.inputRoot = inputRoot
-        self.sourceWorkspace = sourceWorkspace
+        self.sourceImage = sourceImage
         self.outputWorkspace = outputWorkspace
         self.compilerCacheWorkspace = compilerCacheWorkspace
         self.entrypoint = entrypoint
@@ -283,18 +308,8 @@ package struct ChromiumProductBuild: Hashable, Sendable {
             access: .readWrite)
     }
 
-    package var sourceMount: OCIPersistentWorkspaceMount {
-        OCIPersistentWorkspaceMount(
-            workspace: sourceWorkspace,
-            target: "/source",
-            access: .readOnly)
-    }
-
-    package var writableSourceMount: OCIPersistentWorkspaceMount {
-        OCIPersistentWorkspaceMount(
-            workspace: sourceWorkspace,
-            target: "/source",
-            access: .readWrite)
+    package var sourceMount: OCIBlockImageMount {
+        chromiumSourceMount(image: sourceImage)
     }
 
     package var readOnlyOutputMount: OCIPersistentWorkspaceMount {
@@ -316,7 +331,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
     package let buildManifest: FilePath
-    package let sourceWorkspace: PersistentWorkspaceDeclaration
+    package let sourceImage: FilePath
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let entrypoint: OCIMountedEntrypoint
     package let distributionRoot: FilePath
@@ -328,7 +343,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
         buildManifest: FilePath,
-        sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceImage: FilePath,
         outputWorkspace: PersistentWorkspaceDeclaration,
         entrypoint: OCIMountedEntrypoint,
         distributionRoot: FilePath,
@@ -339,7 +354,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
         self.target = target
         self.chromiumSource = chromiumSource
         self.buildManifest = buildManifest
-        self.sourceWorkspace = sourceWorkspace
+        self.sourceImage = sourceImage
         self.outputWorkspace = outputWorkspace
         self.entrypoint = entrypoint
         self.distributionRoot = distributionRoot
@@ -355,11 +370,8 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
             access: .readOnly)
     }
 
-    package var readOnlySourceMount: OCIPersistentWorkspaceMount {
-        OCIPersistentWorkspaceMount(
-            workspace: sourceWorkspace,
-            target: "/source",
-            access: .readOnly)
+    package var readOnlySourceMount: OCIBlockImageMount {
+        chromiumSourceMount(image: sourceImage)
     }
 }
 
@@ -367,7 +379,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
     package let target: ChromiumLinuxTarget
     package let chromiumSource: FilePath
     package let buildManifest: FilePath
-    package let sourceWorkspace: PersistentWorkspaceDeclaration
+    package let sourceImage: FilePath
     package let outputWorkspace: PersistentWorkspaceDeclaration
     package let entrypoint: OCIMountedEntrypoint
     package let distributionRoot: FilePath
@@ -379,7 +391,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         target: ChromiumLinuxTarget,
         chromiumSource: FilePath,
         buildManifest: FilePath,
-        sourceWorkspace: PersistentWorkspaceDeclaration,
+        sourceImage: FilePath,
         outputWorkspace: PersistentWorkspaceDeclaration,
         entrypoint: OCIMountedEntrypoint,
         distributionRoot: FilePath,
@@ -390,7 +402,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         self.target = target
         self.chromiumSource = chromiumSource
         self.buildManifest = buildManifest
-        self.sourceWorkspace = sourceWorkspace
+        self.sourceImage = sourceImage
         self.outputWorkspace = outputWorkspace
         self.entrypoint = entrypoint
         self.distributionRoot = distributionRoot
@@ -406,10 +418,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
             access: .readOnly)
     }
 
-    package var readOnlySourceMount: OCIPersistentWorkspaceMount {
-        OCIPersistentWorkspaceMount(
-            workspace: sourceWorkspace,
-            target: "/source",
-            access: .readOnly)
+    package var readOnlySourceMount: OCIBlockImageMount {
+        chromiumSourceMount(image: sourceImage)
     }
 }

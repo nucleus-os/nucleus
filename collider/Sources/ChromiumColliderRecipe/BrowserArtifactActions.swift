@@ -130,7 +130,8 @@ private func encodeBrowserArtifactIdentity(
         nested: OCIMountedEntrypointActionIdentity(assembly.entrypoint))
     encoder.append(assembly.target.architecture.rawValue)
     encoder.append(assembly.outputWorkspace.identity.key)
-    encoder.append(assembly.sourceWorkspace.identity.key)
+    // The source is an artifact this task consumes rather than a workspace it
+    // names, so what it read is already part of what this task is.
 }
 
 private func browserArtifactRequirements(
@@ -140,6 +141,7 @@ private func browserArtifactRequirements(
     ActionRequirements(
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
+            ActionEffect(.read, scope: .input(assembly.sourceImage)),
             ActionEffect(.read, scope: .input(assembly.buildManifest)),
             ActionEffect(.read, scope: .input(assembly.entrypoint.image.path)),
             assembly.entrypoint.effect,
@@ -153,13 +155,9 @@ private func browserArtifactRequirements(
         ],
         persistentWorkspaceEffects: [
             ActionPersistentWorkspaceEffect(
-                workspace: assembly.sourceWorkspace,
-                target: "/source",
-                access: .readOnly),
-            ActionPersistentWorkspaceEffect(
                 workspace: assembly.outputWorkspace,
                 target: "/build",
-                access: .readOnly),
+                access: .readOnly)
         ],
         executionPlatform: .linuxARM64OCI,
         artifactTarget: assembly.target.artifactTarget)
@@ -205,7 +203,7 @@ private func validateBrowserGeneration(
                     target: "/artifact",
                     access: .readOnly)
             ],
-            persistentWorkspaceMounts: [assembly.readOnlySourceMount],
+            blockImageMounts: [assembly.readOnlySourceMount],
             command: ["validate-browser", assembly.target.architecture.rawValue],
             environment: environment,
             output: .captured(limit: 4 * 1_024 * 1_024)))

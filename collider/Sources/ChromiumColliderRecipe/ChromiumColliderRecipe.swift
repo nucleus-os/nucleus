@@ -5,6 +5,7 @@ import SystemPackage
 
 package enum ChromiumTaskIDs {
     package static let source = TaskID(rawValue: "browser.source")
+    package static let sourceImage = TaskID(rawValue: "browser.source-image")
     package static let builderDependencies = TaskID(
         rawValue: "browser.builder-dependencies")
     package static let testRuntimeDependencies = TaskID(
@@ -151,6 +152,18 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 retentionPolicy: .keepActiveAndRollback(
                     count: ChromiumRetention.sourceRollbackGenerationCount),
                 activeGenerationLink: cacheRoot.appending("source-generations/current"),
+                generationNaming: .contentIdentity,
+                interruptedCandidateNaming: .contentIdentityCandidate),
+            StorageDeclaration(
+                id: "browser-source-images",
+                owner: descriptor.id,
+                producers: producers(ChromiumTaskIDs.sourceImage, retention),
+                storageClass: .generation,
+                root: cacheRoot.appending("source-images"),
+                safetyRoot: cacheRoot,
+                retentionPolicy: .keepActiveAndRollback(
+                    count: ChromiumRetention.sourceRollbackGenerationCount),
+                activeGenerationLink: cacheRoot.appending("source-images/current"),
                 generationNaming: .contentIdentity,
                 interruptedCandidateNaming: .contentIdentityCandidate),
             StorageDeclaration(
@@ -479,6 +492,30 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     PrepareChromiumSourceAction(
                         preparation: sourcePreparation)))
+        let sourceImages = cache.appending("source-images")
+        let imaging = ChromiumSourceImaging(
+            sourceID: layout.sourceID,
+            sourceRoot: source,
+            images: sourceImages,
+            imageRoot: sourceImages.appending(layout.sourceID),
+            current: sourceImages.appending("current"),
+            environment: childEnvironment)
+        var sourceImageBuilder = TaskBuilder(
+            id: ChromiumTaskIDs.sourceImage,
+            component: ComponentID(rawValue: "browser"))
+        sourceImageBuilder.consume(sourceProvenance)
+        let sourceImage: ArtifactReference = try sourceImageBuilder.output(
+            "image",
+            path: imaging.image,
+            validation: .regularFile)
+        let sourceImageTask = sourceImageBuilder.build(
+            inputs: sourceInputs,
+            locks: [
+                .shared(cache.appending("locks/source-image.lock"))
+            ],
+            action:
+                try AnyColliderAction(
+                    BuildChromiumSourceImageAction(imaging: imaging)))
         var dependencyImageBuilder = TaskBuilder(
             id: ChromiumTaskIDs.builderDependencies,
             component: ComponentID(rawValue: "browser"))
@@ -587,7 +624,6 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 let metadata = buildMetadata.appending(
                     "\(target.identifier)/\(product.rawValue)")
                 let manifest = metadata.appending("build-manifest.json")
-                let sourceWorkspace = chromiumSourceWorkspace()
                 let outputWorkspace = chromiumOutputWorkspace(
                     product: product,
                     target: target)
@@ -605,7 +641,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     sourceRoot: source,
                     buildManifest: manifest,
                     inputRoot: metadata.appending("inputs"),
-                    sourceWorkspace: sourceWorkspace,
+                    sourceImage: imaging.image,
                     outputWorkspace: outputWorkspace,
                     compilerCacheWorkspace: compilerCacheWorkspace,
                     entrypoint: buildTool,
@@ -621,6 +657,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     id: ChromiumTaskIDs.build(product, target),
                     component: ComponentID(rawValue: "browser"))
                 buildBuilder.consume(sourceProvenance)
+                buildBuilder.consume(sourceImage)
                 buildBuilder.consume(buildTool.image)
                 let buildArtifact: ArtifactReference =
                     try buildBuilder.output(
@@ -636,18 +673,20 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                     "locks/\(product.rawValue)-"
                                         + "\(target.architecture.rawValue)-build.lock"
                                 )),
-                            // One materialized tree now serves every product
-                            // and architecture, and materialization wipes it
-                            // before refilling it. That is not atomic, so a
-                            // second build starting while the first refills
-                            // would read a half-written tree. Holding one lock
-                            // across the whole build is coarse -- it serializes
-                            // the Chromium builds outright -- but the tree is
-                            // only safe to share while nothing else can be
-                            // rebuilding it. Making the materialized tree an
-                            // immutable content-addressed artifact is what
-                            // removes this lock rather than widening it.
-                            .shared(cache.appending("locks/chromium-source.lock")),
+                            // Not the source lock. That one existed because a
+                            // materialized tree was refilled in place and the
+                            // refill was not atomic, so a build starting
+                            // during one could read a half written tree; an
+                            // image is written once, never rewritten, and
+                            // opened read only, which leaves that lock nothing
+                            // to guard. What remains is capacity, which is a
+                            // different claim on the same host: each build
+                            // asks for twelve jobs of twenty-four cores, so
+                            // four at once would divide the machine rather
+                            // than multiply it. The name says which of the two
+                            // this is, because they were removed and kept for
+                            // opposite reasons.
+                            .shared(cache.appending("locks/chromium-build-capacity.lock")),
                         ],
                         action:
                             try AnyColliderAction(
@@ -662,6 +701,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     id: ChromiumTaskIDs.artifact(product, target),
                     component: ComponentID(rawValue: "browser"))
                 artifactBuilder.consume(sourceProvenance)
+                artifactBuilder.consume(sourceImage)
                 artifactBuilder.consume(buildArtifact)
                 artifactBuilder.consume(artifactTool.image)
                 let publication: ArtifactReference =
@@ -681,7 +721,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 target: target,
                                 chromiumSource: chromiumSource,
                                 buildManifest: manifest,
-                                sourceWorkspace: sourceWorkspace,
+                                sourceImage: imaging.image,
                                 outputWorkspace: outputWorkspace,
                                 entrypoint: artifactTool,
                                 distributionRoot: distributionRoot,
@@ -695,7 +735,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 target: target,
                                 chromiumSource: chromiumSource,
                                 buildManifest: manifest,
-                                sourceWorkspace: sourceWorkspace,
+                                sourceImage: imaging.image,
                                 outputWorkspace: outputWorkspace,
                                 entrypoint: artifactTool,
                                 distributionRoot: distributionRoot,
@@ -784,6 +824,18 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 root: sources,
                 retain: 0,
                 naming: .contentIdentityCandidate),
+            // One image to a generation, reclaimed with the generation it
+            // images: an image outliving its tree is a copy of a revision
+            // nothing can build.
+            DirectoryRetentionRule(
+                root: sourceImages,
+                current: sourceImages.appending("current"),
+                retain: ChromiumRetention.sourceRollbackGenerationCount,
+                naming: .contentIdentity),
+            DirectoryRetentionRule(
+                root: sourceImages,
+                retain: 0,
+                naming: .contentIdentityCandidate),
         ]
         var artifactRetentionRules: [DirectoryRetentionRule] = []
         for target in chromiumLinuxTargets {
@@ -857,6 +909,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 component: ComponentID(rawValue: "browser"))
             testBuilder.consume(publication)
             testBuilder.consume(manifest)
+            testBuilder.consume(sourceImage)
             testBuilder.consume(testRuntimeTool.image)
             testTasks.append(
                 testBuilder.build(
@@ -873,8 +926,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                         inputRoot: manifest.path
                                             .removingLastComponent()
                                             .appending("inputs"),
-                                        sourceWorkspace:
-                                            chromiumSourceWorkspace(),
+                                        sourceImage: imaging.image,
                                         outputWorkspace: workspace,
                                         compilerCacheWorkspace:
                                             chromiumCompilerCacheWorkspace(
@@ -892,7 +944,8 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         return PreparedTasks(
             tasks: [
                 depotToolsTask, depotBootstrap,
-                sourceTask, builderDependencyTask, testRuntimeTask,
+                sourceTask, sourceImageTask, builderDependencyTask,
+                testRuntimeTask,
             ] + buildTasks + artifactTasks + packageInputTasks + [retention]
                 + testTasks,
             packageInputs: preparedPackageInputs)
@@ -1499,7 +1552,7 @@ private func chromiumBuildExecution(
     entrypoint: OCIMountedEntrypoint,
     source: FilePath,
     inputRoot: FilePath,
-    sourceWorkspace: PersistentWorkspaceDeclaration,
+    sourceImage: FilePath,
     outputWorkspace: PersistentWorkspaceDeclaration,
     compilerCacheWorkspace: PersistentWorkspaceDeclaration,
     jobs: Int,
@@ -1523,10 +1576,6 @@ private func chromiumBuildExecution(
         ],
         persistentWorkspaceMounts: [
             OCIPersistentWorkspaceMount(
-                workspace: sourceWorkspace,
-                target: "/source",
-                access: .readOnly),
-            OCIPersistentWorkspaceMount(
                 workspace: outputWorkspace,
                 target: "/build",
                 access: .readWrite),
@@ -1535,6 +1584,7 @@ private func chromiumBuildExecution(
                 target: "/ccache",
                 access: .readWrite),
         ],
+        blockImageMounts: [chromiumSourceMount(image: sourceImage)],
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,

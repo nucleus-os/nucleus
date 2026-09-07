@@ -77,22 +77,22 @@ verification below.
    the full catalog with the new identity model, record the one-time identity
    transition separately from steady-state invalidation, and re-audit the
    nightly finalization plan against these contracts.
-3. Complete Phase 2 of
-   [Chromium source materialization](chromium-source-materialization-plan.md),
-   building the image on the host rather than in a container. The prepared
-   tree is the last major build input that is not an artifact: a
-   wipe-and-refill into a mutable workspace, keyed by a `.nucleus-source-id`
-   the graph cannot see, which contradicts the invariant step 2 establishes.
-   `mke2fs -d` populates the ext4 image directly from the host filesystem
-   without mounting it or requiring root, so the host file-sharing layer
-   leaves the path entirely; prove fidelity against the tree Phase 1
-   materializes. The plan sequences the container-built image first to keep
-   the fidelity question separate from the mechanism question, and comparing
-   against the existing Phase 1 tree keeps them separate without building the
-   container variant. This retires the wipe-and-refill's non-atomicity, the
-   hand-maintained key, the source lock, and the host open-file ceiling that
-   failed the sweep on 2026-09-01. Raising `kern.maxfiles` is an unblock, not
-   a substitute, and this step is why it is not needed.
+3. Confirm Phase 2 of
+   [Chromium source materialization](chromium-source-materialization-plan.md)
+   against a full Chromium build. The prepared tree was the last major build
+   input that was not an artifact -- a wipe-and-refill into a mutable
+   workspace, keyed by a `.nucleus-source-id` the graph could not see, which
+   contradicted the invariant step 2 establishes. It is now a reproducible
+   ext4 image written on the host by `SourceImageAssembly`, attached read-only
+   as a block device by every consumer, which retired the wipe-and-refill's
+   non-atomicity, the hand-maintained key, the source lock, and the host
+   open-file ceiling that failed the sweep on 2026-09-01. Raising
+   `kern.maxfiles` is an unblock, not a substitute, and this step is why it is
+   not needed. What the mechanism has not yet been shown to do is carry the
+   real tree: 1.2 million entries and 29 GiB, compiled against for four hours.
+   The sysroots are the part to watch, because the host filesystem cannot hold
+   their case-colliding names and the image writes them from their archives
+   rather than from the tree.
 4. Complete Phase 3 of
    [Chromium source materialization](chromium-source-materialization-plan.md),
    building each generation from its predecessor so that rolling one
