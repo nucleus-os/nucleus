@@ -307,6 +307,7 @@ that physical arm64 result.
 - [Linux kernel leverage](linux-kernel-leverage.md)
 - [RN TurboModule inventory](rn-turbomodule-inventory.md)
 - [Nvidia DRM observations](drm-scanout-nvidia.md)
+- [Linux build toolchain faults](linux-build-toolchain-faults.md)
 - [Compositor hardware qualification](compositor-followups.md)
 - [WWDC26 Swift what's new transcript](wwdc26-swift-whatsnew.txt)
 - [Chromium/CEF](../chromium/README.md), [CEF](../cef/README.md), and [Android runtime](../android-runtime/README.md) contain component qualification commands and current runtime contracts.
