@@ -82,3 +82,67 @@ import Testing
         ])
     #expect(IdentityTrace.componentsContaining("unrelated", in: nodes) == ["unrelated"])
 }
+
+@Test func identityDifferenceNamesTheComponentThatChanged() throws {
+    func encoded(lock: String, tool: [UInt8]) -> [IdentityTrace.Node] {
+        var encoder = IdentityEncoder()
+        encoder.append("swift-package-dependencies")
+        encoder.appendSequence(["Package.swift", lock]) { $0.append($1) }
+        encoder.append(bytes: tool)
+        return IdentityTrace.decode(encoder.bytes) ?? []
+    }
+
+    let recorded = encoded(lock: "Package.resolved", tool: [1, 2, 3])
+    let planned = encoded(lock: "Package.resolved", tool: [4, 5, 6])
+    let difference = IdentityTrace.difference(
+        recorded: recorded, planned: planned
+    ).joined(separator: "\n")
+
+    // The digest of the resolved tool, not the lockfile beside it. Naming the
+    // component is the whole point: both identities are one digest otherwise.
+    #expect(difference.contains("bytes(3) 010203"))
+    #expect(difference.contains("bytes(3) 040506"))
+    #expect(!difference.contains("Package.resolved"))
+    #expect(!difference.contains("swift-package-dependencies"))
+}
+
+@Test func identityDifferenceLocatesAChangeInsideASequence() throws {
+    func encoded(second: String) -> [IdentityTrace.Node] {
+        var encoder = IdentityEncoder()
+        encoder.appendSequence(["first", second, "third"]) { $0.append($1) }
+        return IdentityTrace.decode(encoder.bytes) ?? []
+    }
+
+    let difference = IdentityTrace.difference(
+        recorded: encoded(second: "second"),
+        planned: encoded(second: "changed"))
+
+    let location = try #require(difference.first)
+    #expect(location.contains("[0] > [1]"))
+    #expect(difference.contains { $0.contains("recorded") && $0.contains("second") })
+    #expect(difference.contains { $0.contains("planned") && $0.contains("changed") })
+}
+
+@Test func identityDifferenceReportsAShapeChangeRatherThanComparingPastIt() throws {
+    var shorter = IdentityEncoder()
+    shorter.appendSequence(["one"]) { $0.append($1) }
+    var longer = IdentityEncoder()
+    longer.appendSequence(["one", "two"]) { $0.append($1) }
+
+    let difference = IdentityTrace.difference(
+        recorded: IdentityTrace.decode(shorter.bytes) ?? [],
+        planned: IdentityTrace.decode(longer.bytes) ?? []
+    ).joined(separator: "\n")
+
+    #expect(difference.contains("sequence(1)"))
+    #expect(difference.contains("sequence(2)"))
+}
+
+@Test func identicalIdentitiesHaveNoDifference() {
+    var encoder = IdentityEncoder()
+    encoder.append("same")
+    encoder.appendSequence(["a", "b"]) { $0.append($1) }
+    let nodes = IdentityTrace.decode(encoder.bytes) ?? []
+
+    #expect(IdentityTrace.difference(recorded: nodes, planned: nodes).isEmpty)
+}

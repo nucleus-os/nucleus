@@ -116,6 +116,91 @@ public enum IdentityTrace {
         return found
     }
 
+    /// Where two encodings of one task's identity stop agreeing.
+    ///
+    /// Two identities that differ are two digests, and a digest says only that
+    /// something changed. Comparing the components says which one, which is
+    /// the difference between rereading a task's inputs and knowing already
+    /// that the answer is its lockfile, or the resolved location of a tool.
+    ///
+    /// Reported in encounter order and capped, because a genuinely unrelated
+    /// pair disagrees everywhere and printing all of it buries the first
+    /// disagreement, which is usually the informative one.
+    public static func difference(
+        recorded: [Node],
+        planned: [Node],
+        limit: Int = 20
+    ) -> [String] {
+        var lines: [String] = []
+        var reported = 0
+        var truncated = false
+
+        func describe(_ node: Node) -> String {
+            render([node], indent: 0).first ?? "<empty>"
+        }
+
+        func report(_ location: [String], _ recorded: String, _ planned: String) {
+            guard reported < limit else {
+                truncated = true
+                return
+            }
+            reported += 1
+            lines.append(location.isEmpty ? "identity" : location.joined(separator: " > "))
+            lines.append("  recorded  " + recorded)
+            lines.append("  planned   " + planned)
+        }
+
+        func compare(_ left: [Node], _ right: [Node], at location: [String]) {
+            if left.count != right.count {
+                report(
+                    location,
+                    "\(left.count) components",
+                    "\(right.count) components")
+            }
+            for offset in 0..<min(left.count, right.count) {
+                compare(left[offset], right[offset], at: location + ["[\(offset)]"])
+            }
+        }
+
+        func compare(_ left: Node, _ right: Node, at location: [String]) {
+            switch (left, right) {
+            case (.nested(let a), .nested(let b)),
+                (.record(let a), .record(let b)):
+                compare(a, b, at: location)
+            case (.optional(let a), .optional(let b)):
+                switch (a, b) {
+                case (.some(let a), .some(let b)):
+                    compare(a, b, at: location)
+                case (.none, .none):
+                    break
+                default:
+                    report(location, describe(left), describe(right))
+                }
+            case (.sequence(let a), .sequence(let b)):
+                if a.count != b.count {
+                    report(
+                        location,
+                        "sequence(\(a.count))",
+                        "sequence(\(b.count))")
+                }
+                for offset in 0..<min(a.count, b.count) {
+                    compare(a[offset], b[offset], at: location + ["[\(offset)]"])
+                }
+            default:
+                let recorded = describe(left)
+                let planned = describe(right)
+                guard recorded != planned else { return }
+                report(location, recorded, planned)
+            }
+        }
+
+        compare(recorded, planned, at: [])
+        if truncated {
+            lines.append("  <further differences not listed>")
+        }
+        return lines
+    }
+
     private static func quoted(_ value: String) -> String {
         "\"\(value)\""
     }

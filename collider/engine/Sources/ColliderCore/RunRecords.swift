@@ -301,17 +301,32 @@ public struct TaskStateRecord: Codable, Sendable {
     public let identity: ArtifactDigest
     public let outputs: [String]
     public let completedAt: String
+    /// What the identity was computed from, kept so a later plan that
+    /// disagrees can say where.
+    ///
+    /// The digest alone answers whether this task must run again and nothing
+    /// about why. Two accounts or two machines planning one revision
+    /// differently is then a pair of hashes, and locating the disagreement
+    /// means rereading every input by hand. Base64 rather than a byte array
+    /// because this is written for every executed task and JSON spends four
+    /// characters on each byte of the latter.
+    ///
+    /// Optional because records written before this existed decode without
+    /// it, and because a plan that carried no components has nothing to keep.
+    public let identityComponents: Data?
 
     public init(
         task: TaskID,
         identity: ArtifactDigest,
         outputs: [String],
-        completedAt: String
+        completedAt: String,
+        identityComponents: [UInt8]? = nil
     ) {
         self.task = task
         self.identity = identity
         self.outputs = outputs
         self.completedAt = completedAt
+        self.identityComponents = identityComponents.map { Data($0) }
     }
 }
 

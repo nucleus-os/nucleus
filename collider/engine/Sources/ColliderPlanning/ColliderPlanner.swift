@@ -62,6 +62,7 @@ public struct ColliderPlanner {
         var identities: [TaskID: ArtifactDigest] = [:]
         var current: [TaskID: Bool] = [:]
         var entries: [TaskPlanEntry] = []
+        var identityComponents: [TaskID: [UInt8]] = [:]
 
         for task in ordered {
             let snapshot: TaskIdentitySnapshot
@@ -75,6 +76,7 @@ public struct ColliderPlanner {
                 identityCache[task.id] = snapshot
             }
             let recipeIdentity = snapshot.digest
+            identityComponents[task.id] = snapshot.bytes
             let deferred = task.dependencies.contains { current[$0] != true }
             let identity =
                 try deferred
@@ -134,6 +136,7 @@ public struct ColliderPlanner {
         // SwiftPM context directories are named for exactly these digests.
         for entry in lowered where !entry.identityBytes.isEmpty {
             services.observeIdentity?(entry.task.id, entry.identityBytes)
+            identityComponents[entry.task.id] = entry.identityBytes
         }
         _ = try TaskGraph(ordered + lowered.map(\.task))
         let loweredOwners = Set(lowered.flatMap(\.logicalOwners))
@@ -212,7 +215,8 @@ public struct ColliderPlanner {
             declaredTasks: ordered,
             declaredEntries: entries,
             loweredTasks: lowered,
-            loweredEntries: loweredEntries)
+            loweredEntries: loweredEntries,
+            identityComponents: identityComponents)
     }
 
     private func assessment(
@@ -240,6 +244,9 @@ public struct ColliderPlanner {
             record = value
         }
         guard record.identity == identity else {
+            if let components = record.identityComponents {
+                services.observeRecordedIdentity?(task.id, Array(components))
+            }
             return TaskAssessment(
                 isClean: false,
                 explanation:

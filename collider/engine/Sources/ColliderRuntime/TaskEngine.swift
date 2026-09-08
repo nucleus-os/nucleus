@@ -14,6 +14,10 @@ public struct TaskExecutionOptions: Sendable {
     /// them, for an inspection that needs to read an identity rather than
     /// compare two digests. It observes only.
     public var identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
+    /// Receives the components a prior execution recorded for a task whose
+    /// planned identity no longer matches them, which is the other half of
+    /// the comparison `identityObserver` supplies. It observes only.
+    public var recordedIdentityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
     /// Receives the source closures a frozen plan read, and the identity each
     /// had when planning read it, before anything that plan describes runs. A
     /// run revalidates against these rather than against the checkout at
@@ -28,6 +32,7 @@ public struct TaskExecutionOptions: Sendable {
         machineReadable: Bool = false,
         laneLimits: TaskLaneLimits = TaskLaneLimits(),
         identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
+        recordedIdentityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
         sourceClosureObserver: (@Sendable ([PlannedSourceClosure]) -> Void)? = nil
     ) {
         self.dryRun = dryRun
@@ -37,6 +42,7 @@ public struct TaskExecutionOptions: Sendable {
         self.machineReadable = machineReadable
         self.laneLimits = laneLimits
         self.identityObserver = identityObserver
+        self.recordedIdentityObserver = recordedIdentityObserver
         self.sourceClosureObserver = sourceClosureObserver
     }
 }
@@ -360,6 +366,9 @@ extension ColliderRuntime {
         try FileManager.default.createDirectory(
             atPath: stateRoot.string, withIntermediateDirectories: true)
         let taskStateStore = TaskStateStore(root: stateRoot)
+        // Captured once: a completing task records what its identity was
+        // computed from, so a later plan that disagrees can say where.
+        let plannedIdentityComponents = frozenPlan.identityComponents
         let eventRegistry = registry ?? logging?.registry
         let eventRun = run ?? logging?.run
         let workflowHeldLocks: [ColliderFileLock]
@@ -710,6 +719,8 @@ extension ColliderRuntime {
                                 let observations = try await self.executePlannedTask(
                                     execution.task,
                                     plan: execution.plan,
+                                    identityComponents: plannedIdentityComponents[
+                                        execution.task.id],
                                     stateRoot: stateRoot,
                                     stateStore: taskStateStore,
                                     eventRun: eventRun,
@@ -740,6 +751,8 @@ extension ColliderRuntime {
                             let observations = try await self.executePlannedTask(
                                 execution.task,
                                 plan: execution.plan,
+                                identityComponents: plannedIdentityComponents[
+                                    execution.task.id],
                                 stateRoot: stateRoot,
                                 stateStore: taskStateStore,
                                 eventRun: eventRun,
@@ -843,6 +856,7 @@ extension ColliderRuntime {
     private func executePlannedTask(
         _ task: TaskDeclaration,
         plan: TaskPlanEntry,
+        identityComponents: [UInt8]?,
         stateRoot: FilePath,
         stateStore: TaskStateStore,
         eventRun: RunHandle?,
@@ -876,7 +890,8 @@ extension ColliderRuntime {
                     task: task.id,
                     identity: plan.identity,
                     outputs: task.outputs.map { $0.path.string },
-                    completedAt: ISO8601DateFormatter().string(from: Date())))
+                    completedAt: ISO8601DateFormatter().string(from: Date()),
+                    identityComponents: identityComponents))
             if let eventRun, let eventRegistry {
                 try await eventRegistry.recordTaskDuration(
                     elapsedNanoseconds(since: taskStart),

@@ -48,7 +48,8 @@ package struct TaskControls: Sendable {
             verbose: verbose,
             quiet: quiet,
             machineReadable: format == .json,
-            identityObserver: identityExplanations.observer)
+            identityObserver: identityExplanations.observer,
+            recordedIdentityObserver: identityExplanations.recordedObserver)
     }
 
     func renderDryRun(_ report: TaskExecutionReport, console: CommandConsole) throws {

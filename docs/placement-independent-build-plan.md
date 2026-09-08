@@ -375,11 +375,20 @@ identity is not the problem -- every path in it canonicalizes to a declared
 root, `${workspace}` and `${cache}` and nothing else -- so what differs is the
 digest of what the task reads rather than the encoding of what it is.
 
-That distinction is where the tooling stops. `--explain-identity` exists because
-two plans that disagree should report where rather than only that, and it does
-that for identities; there is no equivalent for inputs, so a divergence in the
-input digest reports only that it happened. Closing this gate needs that
-explanation first.
+That distinction is where the tooling stopped. `--explain-identity` exists
+because two plans that disagree should report where rather than only that, and
+it did that for one side only: a task's state record kept its identity as a
+single digest, so the plan that disagreed with it had nothing to disagree
+against.
+
+An executed task now records what its identity was computed from, and a plan
+that rejects that record reports where the two stop matching -- the component,
+not the digest. Recomputing an identity answers what the inputs are now, which
+is the one question that was never in doubt; the record is the only account of
+what they were when the task last ran, and it is exactly that which is gone
+once they change. Records written before this decode without it and are simply
+unexplainable, so the first sweep after it lands is what makes the outstanding
+`swift.package.dependencies` divergence readable.
 
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only

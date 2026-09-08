@@ -192,12 +192,24 @@ public struct ExecutionPlan: Sendable {
     public let declaredEntries: [TaskPlanEntry]
     public let loweredTasks: [LoweredExecutionTask]
     public let loweredEntries: [TaskPlanEntry]
+    /// What each task's identity was computed from, for the state record it
+    /// writes when it completes.
+    ///
+    /// Every task, unlike `TaskPlanEntry.identityComponents`, which a run's
+    /// history keeps only where planning cannot recompute it. A state record
+    /// is the opposite case. Recomputing an identity answers what the inputs
+    /// are now; the record is the only account of what they were when the task
+    /// last ran, and that is precisely what is gone once they change. Held
+    /// beside the entries rather than on them so it reaches the record without
+    /// enlarging what every run persists.
+    public let identityComponents: [TaskID: [UInt8]]
 
     public init(
         declaredTasks: [TaskDeclaration],
         declaredEntries: [TaskPlanEntry],
         loweredTasks: [LoweredExecutionTask],
-        loweredEntries: [TaskPlanEntry]
+        loweredEntries: [TaskPlanEntry],
+        identityComponents: [TaskID: [UInt8]] = [:]
     ) {
         precondition(declaredTasks.count == declaredEntries.count)
         precondition(loweredTasks.count == loweredEntries.count)
@@ -205,6 +217,7 @@ public struct ExecutionPlan: Sendable {
         self.declaredEntries = declaredEntries
         self.loweredTasks = loweredTasks
         self.loweredEntries = loweredEntries
+        self.identityComponents = identityComponents
     }
 
     public var reportedEntries: [TaskPlanEntry] {
@@ -258,6 +271,11 @@ public struct TaskPlanningServices {
     /// only that they disagree; this is how an inspection reads back what went
     /// into one. It observes and must not influence what is encoded.
     public let observeIdentity: ((TaskID, [UInt8]) -> Void)?
+    /// Receives the components a prior execution recorded, for a task whose
+    /// planned identity no longer matches them. Paired with `observeIdentity`
+    /// this is both sides of a disagreement, which is what turns "the identity
+    /// changed" into which part of it did.
+    public let observeRecordedIdentity: ((TaskID, [UInt8]) -> Void)?
 
     public init(
         runnerPlatform: RunnerPlatform = .current,
@@ -274,11 +292,13 @@ public struct TaskPlanningServices {
         durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
         validateOutputs: @escaping (TaskDeclaration) throws -> Void,
         observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
+        observeRecordedIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
         digestArtifact: ((ArtifactReference) throws -> ArtifactDigest)? = nil
     ) {
         self.runnerPlatform = runnerPlatform
         self.identityPathMap = identityPathMap
         self.observeIdentity = observeIdentity
+        self.observeRecordedIdentity = observeRecordedIdentity
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree

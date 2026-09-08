@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderEngine
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -1723,4 +1724,78 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
         try String(
             contentsOf: generation.appendingPathComponent("payload"),
             encoding: .utf8) == "artifact")
+}
+
+@Test func aChangedInputIsLocatedAgainstTheRecordedIdentity() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-identity-divergence-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let input = root.appending("input")
+    let output = root.appending("output")
+    try Data("before".utf8).write(to: URL(fileURLWithPath: input.string))
+
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.explained"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.file(input)],
+        outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+        action: try fixtureWriteAction(output, bytes: [1]))
+    let graph = try TaskGraph([task])
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph, selected: [task.id], stateRoot: stateRoot)
+
+    // The same source, planned again: the record matches and there is nothing
+    // to explain, because a task that agrees with its record is not rerun.
+    let unchanged = Mutex<[TaskID: [UInt8]]>([:])
+    let matching = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot,
+        options: TaskExecutionOptions(
+            dryRun: true,
+            recordedIdentityObserver: { task, bytes in
+                unchanged.withLock { $0[task] = bytes }
+            }))
+    #expect(matching.plan.allSatisfy { $0.isClean })
+    #expect(unchanged.withLock { $0 }.isEmpty)
+
+    try Data("after".utf8).write(to: URL(fileURLWithPath: input.string))
+
+    let planned = Mutex<[TaskID: [UInt8]]>([:])
+    let recorded = Mutex<[TaskID: [UInt8]]>([:])
+    let diverged = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot,
+        options: TaskExecutionOptions(
+            dryRun: true,
+            identityObserver: { task, bytes in
+                planned.withLock { if $0[task] == nil { $0[task] = bytes } }
+            },
+            recordedIdentityObserver: { task, bytes in
+                recorded.withLock { $0[task] = bytes }
+            }))
+    #expect(diverged.plan.allSatisfy { !$0.isClean })
+
+    // Both sides of the disagreement, which is what makes it locatable. The
+    // recorded side exists only because the execution above kept it.
+    let recordedBytes = recorded.withLock { $0 }[task.id] ?? []
+    let plannedBytes = planned.withLock { $0 }[task.id] ?? []
+    let recordedNodes = try #require(IdentityTrace.decode(recordedBytes))
+    let plannedNodes = try #require(IdentityTrace.decode(plannedBytes))
+    let difference = IdentityTrace.difference(
+        recorded: recordedNodes, planned: plannedNodes)
+
+    #expect(!difference.isEmpty)
+    // The input's digest changed and its path did not, so the report names one
+    // and not the other. Reporting the path too would say the task reads a
+    // file, which was never in question.
+    let rendered = difference.joined(separator: "\n")
+    #expect(rendered.contains("bytes("))
+    #expect(!rendered.contains(input.string))
 }
