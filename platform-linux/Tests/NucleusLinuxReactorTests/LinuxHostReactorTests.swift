@@ -23,8 +23,21 @@ struct LinuxHostReactorTests {
         #expect(taskRan)
         #expect(batch.wasExplicitlyWoken)
         #expect(!batch.didReachDeadline)
-        #expect(batch.executorResumeLatencyNanoseconds != nil)
         let metrics = reactor.metrics
+        // A resume latency is reported only where there was a suspension to
+        // measure. A wake is available the instant it is issued, so it can
+        // resume the continuation immediately, or already be a completion by
+        // the time the first drain runs, and the reactor documents that it
+        // then has nothing to report. Which of those happens is the
+        // scheduler's to decide and not something this test can arrange, so
+        // what it holds the reactor to is that the two agree.
+        // `deadlineResumeReportsExecutorLatency` covers the measurement
+        // itself, against a wakeup that cannot arrive early.
+        if batch.executorResumeLatencyNanoseconds != nil {
+            #expect(metrics.immediateContinuationResumes == 0)
+        } else {
+            #expect(metrics.maximumExecutorResumeLatencyNanoseconds == 0)
+        }
         #expect(metrics.waitCalls == 1)
         #expect(metrics.batchesReturned == 1)
         #expect(metrics.pollsPrepared == 2)
@@ -33,6 +46,30 @@ struct LinuxHostReactorTests {
         #expect(metrics.completionsConsumed >= 1)
         #expect(metrics.completionSourceWakeups >= 1)
         #expect(metrics.controlSignalWriteFailures == 0)
+        await reactor.shutdown()
+    }
+
+    /// The measurement `waitingSuspendsTheMainActor` cannot pin down.
+    ///
+    /// A deadline is the one wakeup that cannot be ready early: nothing can
+    /// complete an idle wait before it elapses, so the continuation has to
+    /// suspend to observe it and the resume carries a latency by
+    /// construction.
+    @Test
+    func deadlineResumeReportsExecutorLatency() async throws {
+        let reactor = try LinuxHostReactor(queueDepth: 16)
+        let batch = try await reactor.wait(
+            interests: [],
+            // Far longer than the window this has to clear -- submitting the
+            // timeout and reaching the first drain -- which is the window
+            // that makes a wake-driven measurement racy under load.
+            timeoutNanoseconds: 200_000_000)
+
+        #expect(batch.didReachDeadline)
+        let latency = try #require(batch.executorResumeLatencyNanoseconds)
+        let metrics = reactor.metrics
+        #expect(metrics.immediateContinuationResumes == 0)
+        #expect(metrics.maximumExecutorResumeLatencyNanoseconds == latency)
         await reactor.shutdown()
     }
 
