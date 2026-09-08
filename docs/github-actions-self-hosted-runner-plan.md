@@ -761,7 +761,27 @@ completed, but the following automated plan selected the prior CI identity for
 two plans isolated a physical checkout path in environment values and host
 SwiftPM arguments, which now resolves through the declared placement map. The
 next local-to-automated pair establishes these corrected identities and measures
-the placement gate. Tests, packaging, and package lifecycle qualification now
+the placement gate.
+
+Attempting that pair on 2026-09-08 found it blocked, and not by identity.
+`core.sources` is declared to run every time and reconciles Skia's DEPS
+externals by writing into the checkout -- `git remote set-url` on each external
+whose checkout is not already exact. The authoritative local checkout is owned
+by the interactive account, and a command that executes a task graph re-enters
+as `nucleus-builder`, so the write fails with `could not lock config file
+.git/config: Permission denied` and the run ends at 11 of 135 tasks. Every
+selection whose closure reaches the Linux lane includes that task, so no
+narrower local production avoids it.
+
+The reconciliation is conditional, which is why this is not continuously
+visible: while the externals are exact the task writes nothing and a local run
+proceeds. Once they drift -- here `angle` is absent and two others sit at
+revisions DEPS does not name -- the local run fails permanently, because the
+identity that could reconcile them is the one that cannot write the tree they
+live in. Closing this gate therefore needs either the builder given write
+access to the authoritative checkout, or a verification that does not mutate
+the tree it verifies. The second is the better shape and is not free: Skia's
+externals are submodule content and genuinely have to be written somewhere. Tests, packaging, and package lifecycle qualification now
 run in the protected-main sweep; product-store qualification and delivery
 remain pending. Their execution does not establish the reverse-order cache
 reuse gate.
