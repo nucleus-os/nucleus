@@ -129,7 +129,7 @@ import Testing
     }
     #expect(executions.count == 2)
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
-    #expect(executions.allSatisfy { $0.resourceLimits == .parallelBuild })
+    #expect(executions.allSatisfy { $0.resourceLimits == .build })
     #expect(Set(executions.map(\.artifactTarget)) == [.linuxARM64, .linuxX86_64])
     #expect(
         executions.allSatisfy {

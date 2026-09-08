@@ -623,7 +623,7 @@ private enum ObservationFixtureFailure: Error {
                                 architecture: .x86_64,
                                 executable: "/fixture/x86-tool")
                         ],
-                        resourceLimits: .parallelBuild,
+                        resourceLimits: .build,
                         status: 0,
                         timings: OCIExecutionTimings(
                             configurationDurationNanoseconds: 1,

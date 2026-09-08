@@ -10,8 +10,8 @@ import LinuxColliderRecipe
 import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
-import SourceImageColliderRecipe
 import ShellColliderRecipe
+import SourceImageColliderRecipe
 import SwiftTargetSDKColliderRecipe
 import SystemPackage
 import VulkanColliderRecipe
@@ -1216,7 +1216,7 @@ package struct ComponentRegistry {
                     retentionPolicy: .toolManagedLimit(
                         maximumBytes: 50 * 1_024 * 1_024 * 1_024)),
                 hostDependencyCache: swiftPMDependencyCache,
-                resourceLimits: .parallelBuild,
+                resourceLimits: .build,
                 containerEnvironment: [
                     "CCACHE_DIR": "/ccache",
                     "HOME": "/home/nucleus-build",

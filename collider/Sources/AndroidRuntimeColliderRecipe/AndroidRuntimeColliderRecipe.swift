@@ -1432,7 +1432,7 @@ private func gfxstreamExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: [
             "CC": "/usr/bin/clang",
             "CCACHE_DIR": "/ccache",

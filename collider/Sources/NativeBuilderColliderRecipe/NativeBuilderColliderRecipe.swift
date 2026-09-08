@@ -127,7 +127,7 @@ public enum NativeBuilderColliderRecipe {
                 target: .host(identity: "aarch64-unknown-linux-gnu"),
                 toolchainIdentity: "swift-6.4-swiftbuild-"
                     + overlayManifest.swiftBuildRevision,
-                maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
+                maximumParallelism: SwiftBuildContext.defaultMaximumParallelism,
                 execution: .oci(
                     SwiftPMOCIExecution(
                         executionPlatform: .linuxARM64OCI,
@@ -151,7 +151,7 @@ public enum NativeBuilderColliderRecipe {
                             journal: .writeback64MiB),
                         hostDependencyCache: cacheRoot.appending(
                             "swiftbuild-regression/dependency-cache"),
-                        resourceLimits: .parallelBuild,
+                        resourceLimits: .build,
                         containerEnvironment: [
                             "HOME": "/home/nucleus-build",
                             "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"
@@ -190,7 +190,7 @@ public enum NativeBuilderColliderRecipe {
                 target: .host(identity: "aarch64-unknown-linux-gnu"),
                 toolchainIdentity: "swift-6.4-"
                     + overlayManifest.swiftPackageManagerRevision,
-                maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
+                maximumParallelism: SwiftBuildContext.defaultMaximumParallelism,
                 execution: .oci(
                     SwiftPMOCIExecution(
                         executionPlatform: .linuxARM64OCI,
@@ -209,7 +209,7 @@ public enum NativeBuilderColliderRecipe {
                             journal: .writeback64MiB),
                         hostDependencyCache: cacheRoot.appending(
                             "swiftpm-overlay/dependency-cache"),
-                        resourceLimits: .parallelBuild,
+                        resourceLimits: .build,
                         containerEnvironment: [
                             "HOME": "/home/nucleus-build",
                             "LD_LIBRARY_PATH": "/opt/swift/usr/lib/swift/linux:"

@@ -164,12 +164,14 @@ package struct BuildChromiumProductAction: ColliderAction {
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
             executableRequirements: chromiumBuildExecutableRequirements,
-            // The Chromium builds are still serialized, so this one has the
-            // host to itself and asking for half of it leaves the other half
-            // idle for four hours. What serializes them is now stated as the
-            // capacity limit it is rather than as the source lock it was.
-            // Resource limits are outside task identity, so this changes what
-            // a build is given, not what it is.
+            // One container runs at a time, so this build has the host and
+            // asking for half of it would leave the other half idle for four
+            // hours. What serializes it is the scheduler's own lane limit
+            // rather than a lock this recipe holds: the two locks it did hold
+            // are both gone, one because an immutable image needs no guard and
+            // one because capacity is a property of the machine rather than of
+            // Chromium. Resource limits are outside task identity, so this
+            // changes what a build is given, not what it is.
             resourceLimits: .build,
             // The compiler cache settings belong here and nowhere else: this
             // is the dictionary the container process is given. Declared as

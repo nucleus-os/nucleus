@@ -152,25 +152,30 @@ public struct SwiftBuildContext: Hashable, Sendable {
     /// the jobs that matter. A compiler process is memory-hungry, and this is
     /// the count at which they still fit.
     ///
-    /// Both values reach task identity, and that is why they are constants
-    /// rather than being read from the machine the way container allocation
-    /// now is. `SwiftPMDriverRequest` carries the job count and is JSON
-    /// encoded wholesale into `SwiftPMInvocationAction.Identity`, so a count
-    /// derived from the host would give the same package build a different
-    /// identity on every differently sized machine, and a CI builder and a
-    /// developer would share nothing. Raising either therefore does rebuild:
-    /// it is a deliberate cost, not a free tuning knob.
+    /// This reaches task identity, and that is why it is a constant rather
+    /// than read from the machine the way container allocation is.
+    /// `SwiftPMDriverRequest` carries the job count and is JSON encoded
+    /// wholesale into `SwiftPMInvocationAction.Identity`, so a count derived
+    /// from the host would give the same package build a different identity on
+    /// every differently sized machine, and a CI builder and a developer would
+    /// share nothing. Raising it therefore does rebuild: it is a deliberate
+    /// cost, not a free tuning knob.
     ///
-    /// Making these follow the allocation means first taking the job count out
-    /// of what a Swift build *is*, as the Chromium product build does. Until
-    /// then a host with a different processor count runs these at the counts
-    /// below and its containers are sized separately.
+    /// Making it follow the allocation means first taking the job count out of
+    /// what a Swift build *is*, as the Chromium product build does. Until then
+    /// a host with a different processor count runs at the count below and its
+    /// containers are sized separately.
+    ///
+    /// One count, because there is one machine and one build on it. A separate
+    /// container count of twelve existed to match a resource class sized for
+    /// two concurrent guests; with one guest there is nothing to halve, and a
+    /// container faces the same sixteen performance cores the host does.
+    /// Twenty-four is not the answer for the same reason it was not the
+    /// answer here: the remaining eight are efficiency cores, several times
+    /// slower at this work, and they compete for memory bandwidth with the
+    /// jobs that matter. What a container makes of those cores is still
+    /// unmeasured; this is the one count this machine has evidence for.
     public static let defaultMaximumParallelism: UInt32 = 16
-    /// Matches `OCIResourceLimits.parallelBuild` on a twenty-four core host,
-    /// which is the machine these were tuned on. Container work is bounded by
-    /// memory across concurrent virtual machines rather than by host cores,
-    /// and nothing here has measured it.
-    public static let concurrentOCIMaximumParallelism: UInt32 = 12
 
     public let packageRoot: FilePath
     public let buildSystem: SwiftPMBuildSystem
@@ -516,7 +521,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             executableRequirements: configuration.executableRequirements,
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
-            command: configuration.commandPrefix + processorAffinityArguments
+            command: configuration.commandPrefix
                 + [swiftPMCommand.executable]
                 + swiftPMCommand.arguments,
             environment: environment,
@@ -635,7 +640,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             executableRequirements: configuration.executableRequirements,
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
-            command: configuration.commandPrefix + processorAffinityArguments
+            command: configuration.commandPrefix
                 + [
                     executionExecutablePath(
                         executable,
@@ -644,11 +649,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
                 ] + arguments,
             environment: environment,
             output: .logged)
-    }
-
-    private var processorAffinityArguments: [String] {
-        let lastProcessor = context.maximumParallelism - 1
-        return ["taskset", "--cpu-list", "0-\(lastProcessor)"]
     }
 
     public func commandArguments(_ arguments: [String]) -> [String] {

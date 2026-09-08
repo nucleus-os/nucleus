@@ -1278,7 +1278,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             options: SwiftTestOptions(
                 skips: ["gpu(DRM|Loader|Headless)_"],
                 parallel: true,
-                workers: Int(SwiftBuildContext.concurrentOCIMaximumParallelism)))
+                workers: Int(SwiftBuildContext.defaultMaximumParallelism)))
         let loaderRequirement = swiftPM.testProduct(
             package: "nucleus",
             testProduct: "NucleusLinuxPlatformPackageTests",

@@ -971,7 +971,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             capabilityPolicy: .dropAll,
                             privilegePolicy: .prohibitAcquisition,
                             processFilesystemPolicy: .standard,
-                            resourceLimits: .parallelBuild,
+                            resourceLimits: .build,
                             containerEnvironment: containerEnvironment,
                             imageEntrypointOverride: "/runtime-builder/entrypoint.sh",
                             command: ["--reconfigure"],

@@ -329,15 +329,15 @@ content-addressed artifact needs none of them, and each consumer -- the four
 product builds, the CEF and browser artifact assemblies, and the two ozone test
 runs -- now attaches the image read-only where it used to mount the workspace.
 
-The source lock and the serialization it caused are not the same thing, and
-only one of them is gone. The lock existed because a shared tree was refilled
-in place and the refill was not atomic; an image is written once, never
-rewritten, and opened read only, which leaves that lock nothing to guard. What
-remains is capacity, which Phase 1 recorded as deliberate: each build asks for
-twelve jobs of twenty-four cores, so four at once would divide the machine
-rather than multiply it. That claim is now made under its own name,
-`chromium-build-capacity.lock`, so removing it later is a scheduling decision
-made on measurement rather than an accident of renaming. The wall clock that is
+Both of this recipe's locks are gone, for different reasons. The source lock
+existed because a shared tree was refilled in place and the refill was not
+atomic; an image is written once, never rewritten, and opened read only, which
+leaves it nothing to guard. The capacity lock that briefly replaced it is gone
+because capacity is a property of the machine rather than of Chromium, and it
+now lives where the machine is known: the scheduler runs one container task at
+a time and gives it the whole host. A recipe asserting a machine-wide fact by
+holding a lock was the wrong place to say it, and saying it once in the
+scheduler covers every build rather than these four. The wall clock that is
 actually recoverable is in the compiler cache and in Phase 3.
 
 The workspace this phase retires was resident, exactly as Phase 1's were:
@@ -365,15 +365,17 @@ it back is not free either, and in a debug binary it is prohibitive -- the same
 a debug enumeration of 1.2 million entries impractical, which is worth knowing
 before anyone writes a validator that walks a published image.
 
-What this run also measures is the cost of the serialization that remains.
-Execution took 1380.4 s against a critical path of 497.2 s, and
-`browser.cef.arm64.build` waited 891.7 s to run 284.8 s. Roughly nine hundred
-seconds of a warm sweep is the capacity lock, which is now the question it was
-always going to become: whether four builds sharing twenty-four cores finish
-sooner than four builds taking them in turn, and whether four concurrent link
-steps fit in memory. That is a measurement to take deliberately, on a cold
-sweep as well as a warm one, not a lock to drop because it no longer has its
-original reason.
+What this run also measures is the cost of serializing. Execution took 1380.4 s
+against a critical path of 497.2 s, and `browser.cef.arm64.build` waited 891.7 s
+to run 284.8 s, so roughly nine hundred seconds of a warm sweep is builds
+waiting for each other. That question is now settled by arithmetic rather than
+by experiment. Four builds sharing twenty-four cores have twenty-four cores
+between them, which is what one build already has, so dividing conserves
+aggregate throughput; the only recoverable time is the serial link tail, about
+ninety seconds of a two hundred and eighty-five second build. Against that, the
+class sized for sharing was twelve cores and 56 GiB, so four at once would ask
+for 224 GiB of a 128 GiB machine. Bounded upside, unbounded downside, and the
+answer is to stop dividing: one container at a time, with the machine.
 
 Status: complete.
 

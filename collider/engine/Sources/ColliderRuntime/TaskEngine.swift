@@ -41,11 +41,26 @@ public struct TaskExecutionOptions: Sendable {
     }
 }
 
+/// How many tasks of a lane may run at once.
+///
+/// One container at a time. Two ran concurrently, each sized for half the
+/// machine, and the two settings were kept consistent with each other so that
+/// two halves made a whole. Halving both sides conserves aggregate throughput
+/// -- twelve cores twice is twenty-four cores once -- while doubling the ways
+/// a machine can be oversubscribed, so what the division bought was a memory
+/// ceiling rather than speed. A container build now takes the machine, and the
+/// lightweight lane still overlaps it, so host work is not blocked behind a
+/// four-hour build.
+///
+/// What this costs is the short container tasks that used to pair up and now
+/// queue. Most container executions in a warm sweep run for tens of seconds,
+/// so the loss is bounded and measurable in the next sweep's execution time
+/// against its critical path; the oversubscription it removes was not bounded.
 public struct TaskLaneLimits: Hashable, Sendable {
     public let lightweight: Int
     public let oci: Int
 
-    public init(lightweight: Int = 4, oci: Int = 2) {
+    public init(lightweight: Int = 4, oci: Int = 1) {
         precondition(lightweight > 0)
         precondition(oci > 0)
         self.lightweight = lightweight

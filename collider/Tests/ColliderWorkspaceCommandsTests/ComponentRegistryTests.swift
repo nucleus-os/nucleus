@@ -738,7 +738,9 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 in: action,
                 files: nativePackageObservationFileSystem()
             ).first)
-        #expect(execution.resourceLimits.cpuCount == 12)
+        #expect(
+            execution.resourceLimits.cpuCount
+                == OCIResourceLimits.build.cpuCount)
         #expect(execution.executionPlatform == .linuxARM64OCI)
         #expect(execution.artifactTarget.architecture == architecture)
         #expect(execution.executableRequirements.isEmpty)
@@ -1010,8 +1012,13 @@ private func fixtureReactNativeNodeModules(
         builder: builder,
         checkoutRoots: checkoutRoots)
 
-    #expect(arm64.context.maximumParallelism == 12)
-    #expect(amd64.context.maximumParallelism == 12)
+    // The one job count there is, rather than a number written twice.
+    #expect(
+        arm64.context.maximumParallelism
+            == SwiftBuildContext.defaultMaximumParallelism)
+    #expect(
+        amd64.context.maximumParallelism
+            == SwiftBuildContext.defaultMaximumParallelism)
     #expect(arm64.context.buildSystem == .swiftbuild)
     #expect(amd64.context.buildSystem == .swiftbuild)
     #expect(
@@ -1297,12 +1304,18 @@ private func fixtureReactNativeNodeModules(
         catalog.tasks.first { $0.id == TaskID(rawValue: "linux.arm64.test") })
     let nativeTestRequirement = try #require(nativeTest.swiftTests.first)
     #expect(nativeTestRequirement.options.parallel)
-    #expect(nativeTestRequirement.options.workers == 12)
+    #expect(
+        nativeTestRequirement.options.workers
+            == Int(SwiftBuildContext.defaultMaximumParallelism))
     #expect(nativeTestRequirement.options.skips == ["gpu(DRM|Loader|Headless)_"])
-    #expect(nativeTestRequirement.invocation.context.maximumParallelism == 12)
+    #expect(
+        nativeTestRequirement.invocation.context.maximumParallelism
+            == SwiftBuildContext.defaultMaximumParallelism)
     if case .oci(let execution) = nativeTestRequirement.invocation.context.execution {
-        #expect(execution.resourceLimits == .parallelBuild)
-        #expect(execution.resourceLimits.cpuCount == 12)
+        #expect(execution.resourceLimits == .build)
+        #expect(
+            execution.resourceLimits.cpuCount
+                == OCIResourceLimits.build.cpuCount)
     } else {
         Issue.record("native Linux tests must execute in the ARM64 OCI builder")
     }

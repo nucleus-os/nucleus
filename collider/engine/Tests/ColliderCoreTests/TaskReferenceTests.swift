@@ -113,7 +113,14 @@ private func inertActionFileSystem() -> ActionFileSystem {
         return encoder.bytes
     }
 
-    #expect(try identity(resourceLimits: .build) == identity(resourceLimits: .parallelBuild))
+    // How much a task is given is not what it produced, so two allocations
+    // of one execution are one identity. Stated with a value written here
+    // rather than a second production class, because there is only one.
+    #expect(
+        try identity(resourceLimits: .build)
+            == identity(
+                resourceLimits: OCIResourceLimits(
+                    cpuCount: 2, memoryBytes: 2_147_483_648, processCount: 256)))
     #expect(
         try identity(resourceLimits: .build)
             != identity(
@@ -226,7 +233,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: [:],
         command: ["false"],
         environment: [:],
@@ -261,7 +268,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: [:],
         command: ["false"],
         environment: [:],
@@ -298,7 +305,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: [:],
         command: ["true"],
         environment: [:],
@@ -530,7 +537,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
 /// `ociResourceLimitsDoNotInvalidateActionResults` above asserts directly.
 @Test func allocationTiersFollowTheMachineRatherThanOneMachinesNumbers() {
     let whole = OCIResourceLimits.build
-    let shared = OCIResourceLimits.parallelBuild
+    let shared = OCIResourceLimits.build
     let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
 
     #expect(whole.cpuCount == processors)

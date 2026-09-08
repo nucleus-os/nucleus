@@ -58,11 +58,9 @@ extension WorkspaceContext {
             resolvedToolchainIdentity =
                 "host-swift-\(hostSwiftTarget)-\(compilerSelection)"
         }
-        let maximumParallelism =
-            switch execution {
-            case .host: SwiftBuildContext.defaultMaximumParallelism
-            case .oci: SwiftBuildContext.concurrentOCIMaximumParallelism
-            }
+        // One count for both, because a container build and a host build now
+        // face the same machine with nothing else on it.
+        let maximumParallelism = SwiftBuildContext.defaultMaximumParallelism
         // A compilation records where it read its sources, and a container is
         // already given the canonical location, so only host execution needs
         // the recorded paths mapped. Adding the mapping to a container build

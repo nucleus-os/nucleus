@@ -123,7 +123,7 @@ package struct PackageLinuxRuntimeCohortAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            resourceLimits: .parallelBuild,
+            resourceLimits: .build,
             containerEnvironment: containerEnvironment,
             command: assemblerOCI.commandPrefix + [
                 "fakeroot",

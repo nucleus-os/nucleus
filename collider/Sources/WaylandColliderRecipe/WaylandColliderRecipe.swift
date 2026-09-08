@@ -812,7 +812,7 @@ private func nativeExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: containerEnvironment,
         command: ["wayland"] + command,
         environment: environment,

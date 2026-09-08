@@ -304,7 +304,7 @@ struct MaterializeAOSPSourceAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            resourceLimits: .parallelBuild,
+            resourceLimits: .build,
             containerEnvironment: [
                 "AOSP_SYNC_JOBS": String(materialization.syncJobs),
                 "AOSP_REPO_LAUNCHER":

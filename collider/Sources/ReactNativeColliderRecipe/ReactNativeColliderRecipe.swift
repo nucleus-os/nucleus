@@ -1434,7 +1434,7 @@ private func nativeContainerOperation(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: [
             "CCACHE_DIR": "/ccache",
             "PKG_CONFIG_LIBDIR":

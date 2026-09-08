@@ -1439,7 +1439,7 @@ private func skiaTask(
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
-            resourceLimits: .parallelBuild,
+            resourceLimits: .build,
             containerEnvironment: containerEnvironment.merging(
                 ["CCACHE_LOGFILE": "/ccache/ccache.log"],
                 uniquingKeysWith: { configured, _ in configured }),

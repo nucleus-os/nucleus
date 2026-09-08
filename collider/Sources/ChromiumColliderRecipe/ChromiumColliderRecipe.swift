@@ -676,21 +676,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 cache.appending(
                                     "locks/\(product.rawValue)-"
                                         + "\(target.architecture.rawValue)-build.lock"
-                                )),
-                            // Not the source lock. That one existed because a
-                            // materialized tree was refilled in place and the
-                            // refill was not atomic, so a build starting
-                            // during one could read a half written tree; an
-                            // image is written once, never rewritten, and
-                            // opened read only, which leaves that lock nothing
-                            // to guard. What remains is capacity, which is a
-                            // different claim on the same host: each build
-                            // asks for twelve jobs of twenty-four cores, so
-                            // four at once would divide the machine rather
-                            // than multiply it. The name says which of the two
-                            // this is, because they were removed and kept for
-                            // opposite reasons.
-                            .shared(cache.appending("locks/chromium-build-capacity.lock")),
+                                ))
                         ],
                         action:
                             try AnyColliderAction(
@@ -896,13 +882,11 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 safetyRoot: artifacts,
                                 rules: artifactRetentionRules),
                         ])))
-        // A product build holds the source lock and so has the host to itself,
-        // but the two ozone test runs overlap each other, one per architecture.
-        // They are bounded by the allocation their container actually gets
-        // rather than by what a lone build may take.
+        // Every container task has the host to itself, so a test run is
+        // bounded by the same machine a build is.
         let parallelJobs = min(
             layout.jobs,
-            Int(OCIResourceLimits.parallelBuild.cpuCount ?? 12))
+            Int(OCIResourceLimits.build.cpuCount ?? 12))
         var testTasks: [TaskDeclaration] = []
         for target in chromiumLinuxTargets {
             let publication = try required(browserPublications[target])
@@ -1594,7 +1578,7 @@ private func chromiumBuildExecution(
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
         executableRequirements: chromiumBuildExecutableRequirements,
-        resourceLimits: .parallelBuild,
+        resourceLimits: .build,
         containerEnvironment: chromiumCompilerCacheEnvironment.merging([
             "DEPOT_TOOLS_UPDATE": "0",
             "HOME": "/tmp/nucleus-home",

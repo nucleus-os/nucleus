@@ -439,14 +439,17 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
         self.openFileCount = openFileCount
     }
 
-    /// What one machine keeps for itself while a container has the rest.
+    /// Everything the machine has, for the task that has the machine.
     ///
-    /// A guest sized to the whole host leaves the host nothing to run the
-    /// supervising process, the container service, and the file sharing the
-    /// guest itself reads through.
-    static let hostReserveBytes: UInt64 = 16 * 1_024 * 1_024 * 1_024
-
-    /// Everything the machine has, for a task that has the machine.
+    /// This is the only class there is. A second one existed for a task that
+    /// might be sharing the machine -- half the cores, and half of what was
+    /// left of memory once the host kept a reserve -- and it was sized to be
+    /// consistent with a scheduler that ran two container tasks at once. Two
+    /// halves and one whole are the same aggregate, so dividing bought no
+    /// throughput; what it bought was four builds that could together ask for
+    /// 224 GiB of a 128 GiB machine, and a compiler pinned to half the cores
+    /// while the other half sat idle. One build at a time, with the machine,
+    /// is both simpler and never oversubscribed.
     ///
     /// These were transcribed by hand -- twenty-four CPUs and 128 GiB, which
     /// is one particular Mac Studio and no other host. Reading the machine
@@ -459,27 +462,6 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
         memoryBytes: hostMemoryBytes,
         processCount: 32_768,
         openFileCount: 131_072)
-
-    /// Half a machine, for a task that may be sharing it.
-    ///
-    /// Half the cores, and half of what is left of memory once the host keeps
-    /// its reserve, so that two such tasks together still leave the host able
-    /// to run. On a twenty-four core, 128 GiB host that is the twelve CPUs and
-    /// 56 GiB these were previously written as.
-    public static let parallelBuild = OCIResourceLimits(
-        cpuCount: max(1, hostProcessorCount / 2),
-        memoryBytes: parallelBuildMemoryBytes,
-        processCount: 16_384,
-        openFileCount: 65_536)
-
-    /// Half of what is left once the host keeps its reserve. A machine too
-    /// small to spare the reserve splits what it has rather than wrapping past
-    /// zero and claiming the whole address space.
-    static var parallelBuildMemoryBytes: UInt64 {
-        let total = hostMemoryBytes
-        let shareable = total > hostReserveBytes ? total - hostReserveBytes : total
-        return max(1_024 * 1_024 * 1_024, shareable / 2)
-    }
 
     static var hostProcessorCount: UInt32 {
         UInt32(max(1, ProcessInfo.processInfo.activeProcessorCount))

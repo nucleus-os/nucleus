@@ -90,7 +90,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     /// The job count this build can actually use.
     ///
     /// `buildJobs` is a ceiling declared in the product lock. The container it
-    /// runs in is sized by `OCIResourceLimits.parallelBuild`, because an AOSP
+    /// runs in is sized by `OCIResourceLimits.build`, because an AOSP
     /// compile shares the machine with the rest of the graph rather than
     /// holding it, and asking soong for more concurrent compilations than the
     /// guest has processors does not finish them sooner. It makes them contend
@@ -100,7 +100,7 @@ struct AOSPProductBuild: Hashable, Sendable {
     /// Clamped here rather than lowered in the lock so that the declared
     /// ceiling, which reaches the build identity, stays what it was.
     var effectiveBuildJobs: UInt32 {
-        min(buildJobs, OCIResourceLimits.parallelBuild.cpuCount ?? buildJobs)
+        min(buildJobs, OCIResourceLimits.build.cpuCount ?? buildJobs)
     }
     let expectedPlatformSDK: UInt32
     let expectedVendorAPILevel: UInt32
