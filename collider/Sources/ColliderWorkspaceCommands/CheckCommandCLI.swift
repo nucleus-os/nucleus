@@ -17,31 +17,31 @@ struct Check: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
     @Argument var target: CheckTarget
 
+    var requiresExclusiveVerification: Bool { requiresExecutionAdmission }
+
     mutating func run(in context: WorkspaceContext) async throws {
-        try await context.withExclusiveVerification {
-            switch target {
-            case .sanitizers:
-                try await SanitizerCommand(context: context).run(
-                    .all, controls: taskOptions.controls)
-            case .addressSanitizer:
-                try await SanitizerCommand(context: context).run(
-                    .address, controls: taskOptions.controls)
-            case .undefinedBehaviorSanitizer:
-                try await SanitizerCommand(context: context).run(
-                    .undefined, controls: taskOptions.controls)
-            case .threadSanitizer:
-                try await SanitizerCommand(context: context).run(
-                    .thread, controls: taskOptions.controls)
-            case .androidSourceLock:
-                try await ComponentRegistry(context: context)
-                    .verifyAndroidRuntimeSourceLock(controls: taskOptions.controls)
-            case .protectedMainSource:
-                try await ProtectedMainSourceAssertion(
-                    environment: context.environment
-                ).validate(
-                    repositoryRoot: context.root,
-                    observe: context.sourceCaptureReporter())
-            }
+        switch target {
+        case .sanitizers:
+            try await SanitizerCommand(context: context).run(
+                .all, controls: taskOptions.controls)
+        case .addressSanitizer:
+            try await SanitizerCommand(context: context).run(
+                .address, controls: taskOptions.controls)
+        case .undefinedBehaviorSanitizer:
+            try await SanitizerCommand(context: context).run(
+                .undefined, controls: taskOptions.controls)
+        case .threadSanitizer:
+            try await SanitizerCommand(context: context).run(
+                .thread, controls: taskOptions.controls)
+        case .androidSourceLock:
+            try await ComponentRegistry(context: context)
+                .verifyAndroidRuntimeSourceLock(controls: taskOptions.controls)
+        case .protectedMainSource:
+            try await ProtectedMainSourceAssertion(
+                environment: context.environment
+            ).validate(
+                repositoryRoot: context.root,
+                observe: context.sourceCaptureReporter())
         }
     }
 }

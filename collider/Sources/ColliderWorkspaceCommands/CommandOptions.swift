@@ -116,6 +116,15 @@ package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfigure
     /// question lives in the builder's session while the question itself
     /// changes nothing and need not serialize against a running build.
     var requiresBuilderIdentity: Bool { get }
+    /// Whether this command must be the only verification on the host.
+    ///
+    /// Distinct again from admission. Admission says the host may execute one
+    /// thing at a time; this says two verifications may not interleave over
+    /// one build store even where each would be admitted. A command that
+    /// plans without executing is not a verification: it produces no result
+    /// for another to race, and it stays in the invoking account, which
+    /// cannot take a builder-owned lock at all.
+    var requiresExclusiveVerification: Bool { get }
     mutating func run(in context: WorkspaceContext) async throws
 }
 
@@ -126,6 +135,9 @@ extension ColliderWorkspaceCommand {
     /// Durable run history belongs to the builder-owned store. Commands that
     /// stay in the invoking account are inspections and never write it.
     package var recordsRun: Bool { requiresBuilderIdentity }
+    /// Verifications declare this. Everything else builds, inspects, or
+    /// provisions, and none of those serialize against a verification.
+    package var requiresExclusiveVerification: Bool { false }
 
     package mutating func run() async throws {
         throw WorkspaceFailure.message(

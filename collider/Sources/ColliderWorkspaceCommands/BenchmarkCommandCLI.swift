@@ -7,10 +7,10 @@ import SystemPackage
 struct Benchmark: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
 
+    var requiresExclusiveVerification: Bool { requiresExecutionAdmission }
+
     mutating func run(in context: WorkspaceContext) async throws {
-        try await context.withExclusiveVerification {
-            try await BenchmarkCommand(context: context).run(
-                controls: taskOptions.controls)
-        }
+        try await BenchmarkCommand(context: context).run(
+            controls: taskOptions.controls)
     }
 }

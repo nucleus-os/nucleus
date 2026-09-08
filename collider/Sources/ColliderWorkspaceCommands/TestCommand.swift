@@ -21,12 +21,12 @@ struct Test: TaskControlledCommand {
                 + "records the component's full test task as satisfied."))
     var filter: String?
 
+    var requiresExclusiveVerification: Bool { requiresExecutionAdmission }
+
     mutating func run(in context: WorkspaceContext) async throws {
         var controls = taskOptions.controls
         controls.testFilter = filter
-        try await context.withExclusiveVerification {
-            try await ComponentRegistry(context: context).test(
-                selection: component, controls: controls)
-        }
+        try await ComponentRegistry(context: context).test(
+            selection: component, controls: controls)
     }
 }

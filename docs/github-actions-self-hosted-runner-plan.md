@@ -807,6 +807,14 @@ developer-owned record or mutate builder-owned planning state; it also makes the
 plan's read-only interactive boundary true by construction rather than by
 permissive directory modes.
 
+That boundary reached the verification lock last. `verify` exempted a dry plan
+from it, while `test`, `check`, and `benchmark` took it unconditionally, so
+planning one of those from the interactive account failed on a builder-owned
+lock instead of answering. Whether a command serializes against other
+verifications is now declared beside its admission and its run recording, and
+the lock is taken around the command rather than inside it, so no dry plan of
+any of the four reaches for it.
+
 The clean checkout resolves every URL-based forked SwiftPM dependency from its
 public immutable revision, which equals its gitlink commit. Checkout-local
 submodule repositories are not package remotes: Actions guarantees the gitlink

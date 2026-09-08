@@ -218,6 +218,50 @@ func dryRunsDoNotAcquireAdmissionOrWriteRunHistory() throws {
 }
 
 @Test
+func planningAVerificationTakesNoVerificationLock() throws {
+    // The lock is builder-owned and exclusive. A dry plan that took it would
+    // not merely over-serialize: it stays in the invoking account, which
+    // cannot lock that file at all, so planning would fail on permissions
+    // where it is supposed to answer a question.
+    for arguments in [
+        ["verify", "all"],
+        ["test", "runtime"],
+        ["check", "sanitizers"],
+        ["benchmark"],
+    ] {
+        let executing = try ColliderCommand.parseAsRoot(arguments)
+        let executingCommand = try #require(
+            executing as? any ColliderWorkspaceCommand)
+        #expect(executingCommand.requiresExclusiveVerification)
+
+        let planning = try ColliderCommand.parseAsRoot(arguments + ["--dry-run"])
+        let planningCommand = try #require(
+            planning as? any ColliderWorkspaceCommand)
+        #expect(!planningCommand.requiresExclusiveVerification)
+        #expect(!planningCommand.requiresExecutionAdmission)
+    }
+}
+
+@Test
+func onlyVerificationsSerializeAgainstEachOther() throws {
+    // Building and packaging take host execution admission, which is what
+    // keeps one thing running at a time. Serializing them against
+    // verifications as well would say two different things about the same
+    // exclusion.
+    for arguments in [
+        ["build", "core"],
+        ["package", "linux-runtime"],
+        ["clean", "core"],
+        ["cache", "prune"],
+    ] {
+        let parsed = try ColliderCommand.parseAsRoot(arguments)
+        let command = try #require(parsed as? any ColliderWorkspaceCommand)
+        #expect(!command.requiresExclusiveVerification)
+        #expect(command.requiresExecutionAdmission)
+    }
+}
+
+@Test
 func plannedIdentityCanBeReadAsTheBuilderWithoutExecuting() throws {
     let parsed = try ColliderCommand.parseAsRoot([
         "build", "all", "--dry-run", "--as-builder",

@@ -169,9 +169,16 @@ extension WorkspaceContext {
         }
     }
 
-    func withExclusiveVerification<Result>(
+    /// Serializes verifications against each other.
+    ///
+    /// `enabled` rather than a caller-side branch, because the answer belongs
+    /// to the command being run and a second place to decide it is a second
+    /// place for it to disagree.
+    package func withExclusiveVerification<Result>(
+        enabled: Bool,
         _ body: () async throws -> Result
     ) async throws -> Result {
+        guard enabled else { return try await body() }
         let directory =
             lockRoot
         try FileManager.default.createDirectory(

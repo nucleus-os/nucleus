@@ -9,17 +9,11 @@ struct Verify: TaskControlledCommand {
     @Argument(help: "all, runtime, or a runtime component name.")
     var component: String?
 
+    var requiresExclusiveVerification: Bool { requiresExecutionAdmission }
+
     mutating func run(in context: WorkspaceContext) async throws {
-        if taskOptions.dryRun {
-            try await ComponentRegistry(context: context).verify(
-                selection: component,
-                controls: taskOptions.controls)
-            return
-        }
-        try await context.withExclusiveVerification {
-            try await ComponentRegistry(context: context).verify(
-                selection: component,
-                controls: taskOptions.controls)
-        }
+        try await ComponentRegistry(context: context).verify(
+            selection: component,
+            controls: taskOptions.controls)
     }
 }

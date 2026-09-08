@@ -209,12 +209,20 @@ public struct ColliderCommand: AsyncParsableCommand {
             if workspaceCommand.presentationKind == .taskGraph {
                 try await stageHostToolchain(in: application.workspace)
             }
-            if workspaceCommand.presentationKind == .phase {
-                try await hostPhases.withPhase(commandPhaseName(arguments)) {
+            // Held around the command rather than inside it. Which commands
+            // serialize against each other is a property of the command, and
+            // a command that takes the lock itself decides that twice: once
+            // in what it declares and once in what it does.
+            try await application.workspace.withExclusiveVerification(
+                enabled: workspaceCommand.requiresExclusiveVerification
+            ) {
+                if workspaceCommand.presentationKind == .phase {
+                    try await hostPhases.withPhase(commandPhaseName(arguments)) {
+                        try await workspaceCommand.run(in: application.workspace)
+                    }
+                } else {
                     try await workspaceCommand.run(in: application.workspace)
                 }
-            } else {
-                try await workspaceCommand.run(in: application.workspace)
             }
             await application.runtime.shutdown()
             try await rejectSupersededSource(revalidation)
