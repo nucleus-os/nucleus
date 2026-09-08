@@ -271,11 +271,17 @@ public struct TaskPlanningServices {
     /// only that they disagree; this is how an inspection reads back what went
     /// into one. It observes and must not influence what is encoded.
     public let observeIdentity: ((TaskID, [UInt8]) -> Void)?
-    /// Receives the components a prior execution recorded, for a task whose
-    /// planned identity no longer matches them. Paired with `observeIdentity`
-    /// this is both sides of a disagreement, which is what turns "the identity
-    /// changed" into which part of it did.
-    public let observeRecordedIdentity: ((TaskID, [UInt8]) -> Void)?
+    /// Receives both encodings behind a rejected record: what a prior
+    /// execution recorded and what this plan computed.
+    ///
+    /// Both sides together rather than the recorded one alone, because only
+    /// planning knows which encoding it compared. A lowered task is named by
+    /// one identity and assessed by another -- `observeIdentity` reports the
+    /// first, so that a name lowering invents can be explained at all -- and
+    /// pairing the recorded side with that would compare two things that were
+    /// never meant to match.
+    public let observeIdentityDivergence:
+        ((TaskID, _ recorded: [UInt8], _ planned: [UInt8]) -> Void)?
 
     public init(
         runnerPlatform: RunnerPlatform = .current,
@@ -292,13 +298,14 @@ public struct TaskPlanningServices {
         durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
         validateOutputs: @escaping (TaskDeclaration) throws -> Void,
         observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
-        observeRecordedIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
+        observeIdentityDivergence:
+            ((TaskID, [UInt8], [UInt8]) -> Void)? = nil,
         digestArtifact: ((ArtifactReference) throws -> ArtifactDigest)? = nil
     ) {
         self.runnerPlatform = runnerPlatform
         self.identityPathMap = identityPathMap
         self.observeIdentity = observeIdentity
-        self.observeRecordedIdentity = observeRecordedIdentity
+        self.observeIdentityDivergence = observeIdentityDivergence
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree

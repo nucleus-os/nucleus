@@ -13,10 +13,13 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let collector = IdentityExplanationCollector(selection: "fixture.explained")
     let task = TaskID(rawValue: "fixture.explained")
     let planned = try #require(collector.observer)
-    let recorded = try #require(collector.recordedObserver)
+    let diverged = try #require(collector.divergenceObserver)
 
     planned(task, encodedIdentity { $0.appendSequence(["a", "planned"]) { $0.append($1) } })
-    recorded(task, encodedIdentity { $0.appendSequence(["a", "recorded"]) { $0.append($1) } })
+    diverged(
+        task,
+        encodedIdentity { $0.appendSequence(["a", "recorded"]) { $0.append($1) } },
+        encodedIdentity { $0.appendSequence(["a", "planned"]) { $0.append($1) } })
 
     let report = collector.report().joined(separator: "\n")
 
@@ -47,12 +50,12 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let collector = IdentityExplanationCollector(selection: "fixture")
     let task = TaskID(rawValue: "fixture.inherited")
     let planned = try #require(collector.observer)
-    let recorded = try #require(collector.recordedObserver)
+    let diverged = try #require(collector.divergenceObserver)
 
     planned(task, encodedIdentity { $0.append("planned") })
     // What every record written before components were kept looks like.
     // Silence here reads as agreement, which is the opposite of the truth.
-    recorded(task, [])
+    diverged(task, [], encodedIdentity { $0.append("planned") })
 
     let report = collector.report().joined(separator: "\n")
 

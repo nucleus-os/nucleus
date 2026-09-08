@@ -14,10 +14,9 @@ public struct TaskExecutionOptions: Sendable {
     /// them, for an inspection that needs to read an identity rather than
     /// compare two digests. It observes only.
     public var identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
-    /// Receives the components a prior execution recorded for a task whose
-    /// planned identity no longer matches them, which is the other half of
-    /// the comparison `identityObserver` supplies. It observes only.
-    public var recordedIdentityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
+    /// Receives both encodings behind a rejected record, the one a prior
+    /// execution kept and the one this plan computed. It observes only.
+    public var identityDivergenceObserver: (@Sendable (TaskID, [UInt8], [UInt8]) -> Void)?
     /// Receives the source closures a frozen plan read, and the identity each
     /// had when planning read it, before anything that plan describes runs. A
     /// run revalidates against these rather than against the checkout at
@@ -32,7 +31,8 @@ public struct TaskExecutionOptions: Sendable {
         machineReadable: Bool = false,
         laneLimits: TaskLaneLimits = TaskLaneLimits(),
         identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
-        recordedIdentityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
+        identityDivergenceObserver:
+            (@Sendable (TaskID, [UInt8], [UInt8]) -> Void)? = nil,
         sourceClosureObserver: (@Sendable ([PlannedSourceClosure]) -> Void)? = nil
     ) {
         self.dryRun = dryRun
@@ -42,7 +42,7 @@ public struct TaskExecutionOptions: Sendable {
         self.machineReadable = machineReadable
         self.laneLimits = laneLimits
         self.identityObserver = identityObserver
-        self.recordedIdentityObserver = recordedIdentityObserver
+        self.identityDivergenceObserver = identityDivergenceObserver
         self.sourceClosureObserver = sourceClosureObserver
     }
 }

@@ -1758,36 +1758,31 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
         stateRoot: stateRoot,
         options: TaskExecutionOptions(
             dryRun: true,
-            recordedIdentityObserver: { task, bytes in
-                unchanged.withLock { $0[task] = bytes }
+            identityDivergenceObserver: { task, recorded, _ in
+                unchanged.withLock { $0[task] = recorded }
             }))
     #expect(matching.plan.allSatisfy { $0.isClean })
     #expect(unchanged.withLock { $0 }.isEmpty)
 
     try Data("after".utf8).write(to: URL(fileURLWithPath: input.string))
 
-    let planned = Mutex<[TaskID: [UInt8]]>([:])
-    let recorded = Mutex<[TaskID: [UInt8]]>([:])
+    let compared = Mutex<[TaskID: (recorded: [UInt8], planned: [UInt8])]>([:])
     let diverged = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: graph,
         selected: [task.id],
         stateRoot: stateRoot,
         options: TaskExecutionOptions(
             dryRun: true,
-            identityObserver: { task, bytes in
-                planned.withLock { if $0[task] == nil { $0[task] = bytes } }
-            },
-            recordedIdentityObserver: { task, bytes in
-                recorded.withLock { $0[task] = bytes }
+            identityDivergenceObserver: { task, recorded, planned in
+                compared.withLock { $0[task] = (recorded, planned) }
             }))
     #expect(diverged.plan.allSatisfy { !$0.isClean })
 
     // Both sides of the disagreement, which is what makes it locatable. The
     // recorded side exists only because the execution above kept it.
-    let recordedBytes = recorded.withLock { $0 }[task.id] ?? []
-    let plannedBytes = planned.withLock { $0 }[task.id] ?? []
-    let recordedNodes = try #require(IdentityTrace.decode(recordedBytes))
-    let plannedNodes = try #require(IdentityTrace.decode(plannedBytes))
+    let pair = try #require(compared.withLock { $0 }[task.id])
+    let recordedNodes = try #require(IdentityTrace.decode(pair.recorded))
+    let plannedNodes = try #require(IdentityTrace.decode(pair.planned))
     let difference = IdentityTrace.difference(
         recorded: recordedNodes, planned: plannedNodes)
 
@@ -1798,4 +1793,82 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     let rendered = difference.joined(separator: "\n")
     #expect(rendered.contains("bytes("))
     #expect(!rendered.contains(input.string))
+}
+
+private struct SeparatelyNamedLowering: TaskPlanLowering {
+    let input: FilePath
+    let output: FilePath
+
+    func lower(_ tasks: [AssessedTaskDeclaration]) throws -> [LoweredExecutionTask] {
+        var naming = IdentityEncoder()
+        naming.append("names-the-task-and-nothing-else")
+        return [
+            LoweredExecutionTask(
+                task: TaskDeclaration(
+                    id: TaskID(rawValue: "fixture.lowered.assessed"),
+                    component: ComponentID(rawValue: "fixture"),
+                    inputs: [.file(input)],
+                    outputs: [
+                        OutputDeclaration(path: output, validation: .regularFile)
+                    ],
+                    action: try fixtureWriteAction(output, bytes: [2])),
+                attribution: "fixture",
+                logicalOwners: [],
+                prerequisites: [],
+                identityBytes: naming.bytes)
+        ]
+    }
+}
+
+@Test func aLoweredTaskIsComparedByWhatAssessesItNotByWhatNamesIt() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-lowered-divergence-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let input = root.appending("lowered-input")
+    try Data("before".utf8).write(to: URL(fileURLWithPath: input.string))
+
+    let owner = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.owner"),
+        component: ComponentID(rawValue: "fixture"),
+        assessmentPolicy: .always)
+    let lowering = SeparatelyNamedLowering(
+        input: input, output: root.appending("lowered-output"))
+    let graph = try TaskGraph([owner])
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: [owner.id],
+        stateRoot: stateRoot,
+        lowerings: [lowering])
+
+    try Data("after".utf8).write(to: URL(fileURLWithPath: input.string))
+
+    let compared = Mutex<[TaskID: (recorded: [UInt8], planned: [UInt8])]>([:])
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: [owner.id],
+        stateRoot: stateRoot,
+        lowerings: [lowering],
+        options: TaskExecutionOptions(
+            dryRun: true,
+            identityDivergenceObserver: { task, recorded, planned in
+                compared.withLock { $0[task] = (recorded, planned) }
+            }))
+
+    // A lowering names its task from one encoding and the plan assesses it by
+    // another. Recording the name would compare two things that never had to
+    // agree, and would report no difference while the task reran anyway.
+    let pair = try #require(
+        compared.withLock { $0 }[TaskID(rawValue: "fixture.lowered.assessed")])
+    let recorded = try #require(IdentityTrace.decode(pair.recorded))
+    let rendered = IdentityTrace.render(recorded).joined(separator: "\n")
+    #expect(rendered.contains(input.string))
+    #expect(!rendered.contains("names-the-task-and-nothing-else"))
+
+    let planned = try #require(IdentityTrace.decode(pair.planned))
+    #expect(!IdentityTrace.difference(recorded: recorded, planned: planned).isEmpty)
 }

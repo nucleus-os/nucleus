@@ -96,7 +96,11 @@ public struct ColliderPlanner {
                 : deferred
                     ? TaskAssessment(
                         isClean: false, explanation: "awaiting consumed artifact content")
-                    : assessment(of: task, identity: identity, services: services)
+                    : assessment(
+                        of: task,
+                        identity: identity,
+                        components: snapshot.bytes,
+                        services: services)
             current[task.id] = assessment.isClean
             let coordinates = try executionCoordinates(
                 for: task.action,
@@ -155,10 +159,15 @@ public struct ColliderPlanner {
         // so the lowered entries are built in order rather than mapped.
         var loweredEntries: [TaskPlanEntry] = []
         for lowered in lowered {
-            let recipeIdentity = try await identityBuilder.build(
+            let snapshot = try await identityBuilder.build(
                 of: lowered.task,
-                services: services
-            ).digest
+                services: services)
+            let recipeIdentity = snapshot.digest
+            // Overwrites the naming bytes recorded above. A lowering's own
+            // encoding is what invents the task's name; what decides whether
+            // it runs again is this, and a record that kept the other would
+            // compare two encodings that never had to agree.
+            identityComponents[lowered.task.id] = snapshot.bytes
             let deferred = lowered.task.dependencies.contains { current[$0] != true }
             let identity =
                 try deferred
@@ -176,7 +185,11 @@ public struct ColliderPlanner {
                 : deferred
                     ? TaskAssessment(
                         isClean: false, explanation: "awaiting consumed artifact content")
-                    : assessment(of: lowered.task, identity: identity, services: services)
+                    : assessment(
+                        of: lowered.task,
+                        identity: identity,
+                        components: snapshot.bytes,
+                        services: services)
             current[lowered.task.id] = assessment.isClean
             let coordinates = try executionCoordinates(
                 for: lowered.task.action,
@@ -222,6 +235,7 @@ public struct ColliderPlanner {
     private func assessment(
         of task: TaskDeclaration,
         identity: ArtifactDigest,
+        components: [UInt8],
         services: TaskPlanningServices
     ) -> TaskAssessment {
         if ownsHostSwiftRequirement(task) {
@@ -247,8 +261,10 @@ public struct ColliderPlanner {
             // Signalled even where the record kept no components, because a
             // task that diverges and cannot say why is the answer to a
             // different question than one that never diverged at all.
-            services.observeRecordedIdentity?(
-                task.id, record.identityComponents.map(Array.init) ?? [])
+            services.observeIdentityDivergence?(
+                task.id,
+                record.identityComponents.map(Array.init) ?? [],
+                components)
             return TaskAssessment(
                 isClean: false,
                 explanation:

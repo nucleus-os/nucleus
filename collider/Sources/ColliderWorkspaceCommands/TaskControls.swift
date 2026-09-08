@@ -49,7 +49,7 @@ package struct TaskControls: Sendable {
             quiet: quiet,
             machineReadable: format == .json,
             identityObserver: identityExplanations.observer,
-            recordedIdentityObserver: identityExplanations.recordedObserver)
+            identityDivergenceObserver: identityExplanations.divergenceObserver)
     }
 
     func renderDryRun(_ report: TaskExecutionReport, console: CommandConsole) throws {

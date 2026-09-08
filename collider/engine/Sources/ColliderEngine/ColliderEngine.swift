@@ -118,7 +118,7 @@ public struct ColliderEngine: Sendable {
                             try imageValidator?.validate(task)
                         },
                         observeIdentity: options.identityObserver,
-                        observeRecordedIdentity: options.recordedIdentityObserver,
+                        observeIdentityDivergence: options.identityDivergenceObserver,
                         digestArtifact: planningInputs.digest(artifact:))
                 }
                 var plan = try await planning(services())
