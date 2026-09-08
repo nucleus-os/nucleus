@@ -1,5 +1,5 @@
-import Glibc
 import Foundation
+import Glibc
 import NucleusLinuxReactor
 import NucleusLinuxReactorC
 import Testing
@@ -77,9 +77,12 @@ struct LinuxHostReactorTests {
         var batch = try await reactor.wait(
             interests: [interest],
             timeoutNanoseconds: 1_000_000_000)
-        #expect(batch.events == [LinuxReactorEvent(
-            token: 42,
-            result: Int32(POLLIN))])
+        #expect(
+            batch.events == [
+                LinuxReactorEvent(
+                    token: 42,
+                    result: Int32(POLLIN))
+            ])
         drain(descriptor)
 
         signal(descriptors[1])
@@ -87,9 +90,10 @@ struct LinuxHostReactorTests {
             interests: [interest],
             timeoutNanoseconds: 1_000_000_000)
         #expect(batch.events.first?.token == 42)
-        #expect(batch.events.first.map {
-            $0.returnedEvents & Int16(POLLIN) != 0
-        } == true)
+        #expect(
+            batch.events.first.map {
+                $0.returnedEvents & Int16(POLLIN) != 0
+            } == true)
         await reactor.shutdown()
     }
 
@@ -117,17 +121,21 @@ struct LinuxHostReactorTests {
 
         do {
             _ = try await reactor.wait(
-                interests: [.init(
-                    token: 52,
-                    fileDescriptor: descriptors[0],
-                    events: Int16(POLLERR))],
+                interests: [
+                    .init(
+                        token: 52,
+                        fileDescriptor: descriptors[0],
+                        events: Int16(POLLERR))
+                ],
                 timeoutNanoseconds: nil)
             Issue.record("reactor accepted a result-only poll bit")
         } catch let error {
-            #expect(error == .invalidInterest(
-                token: 52,
-                fileDescriptor: descriptors[0],
-                events: Int16(POLLERR)))
+            #expect(
+                error
+                    == .invalidInterest(
+                        token: 52,
+                        fileDescriptor: descriptors[0],
+                        events: Int16(POLLERR)))
         }
         await reactor.shutdown()
     }
@@ -153,10 +161,11 @@ struct LinuxHostReactorTests {
             let batch = try await reactor.wait(
                 interests: [interest],
                 timeoutNanoseconds: 1_000_000_000)
-            #expect(batch.events.contains { event in
-                event.token == 51
-                    && event.returnedEvents & Int16(POLLIN) != 0
-            })
+            #expect(
+                batch.events.contains { event in
+                    event.token == 51
+                        && event.returnedEvents & Int16(POLLIN) != 0
+                })
             drain(descriptors[0])
         }
         await reactor.shutdown()
@@ -200,7 +209,8 @@ struct LinuxHostReactorTests {
                 interests: interests,
                 timeoutNanoseconds: 1_000_000_000)
             #expect(batch.events.count <= 1)
-            observedBoundedBacklog = observedBoundedBacklog
+            observedBoundedBacklog =
+                observedBoundedBacklog
                 || batch.didExhaustCompletionBudget
             for event in batch.events where delivered.insert(event.token).inserted {
                 drain(pipes[Int(event.token - 100)][0])
@@ -235,18 +245,22 @@ struct LinuxHostReactorTests {
 
         reactor.wake()
         _ = try await reactor.wait(
-            interests: [.init(
-                token: 7,
-                fileDescriptor: first,
-                events: Int16(POLLIN))],
+            interests: [
+                .init(
+                    token: 7,
+                    fileDescriptor: first,
+                    events: Int16(POLLIN))
+            ],
             timeoutNanoseconds: nil)
 
         signal(secondPipe[1])
         let batch = try await reactor.wait(
-            interests: [.init(
-                token: 7,
-                fileDescriptor: second,
-                events: Int16(POLLIN))],
+            interests: [
+                .init(
+                    token: 7,
+                    fileDescriptor: second,
+                    events: Int16(POLLIN))
+            ],
             timeoutNanoseconds: 1_000_000_000)
         #expect(batch.events.count == 1)
         #expect(batch.events[0].token == 7)
@@ -267,10 +281,12 @@ struct LinuxHostReactorTests {
 
         reactor.wake()
         _ = try await reactor.wait(
-            interests: [.init(
-                token: 19,
-                fileDescriptor: descriptors[0],
-                events: Int16(POLLIN))],
+            interests: [
+                .init(
+                    token: 19,
+                    fileDescriptor: descriptors[0],
+                    events: Int16(POLLIN))
+            ],
             timeoutNanoseconds: nil)
 
         signal(descriptors[1])
@@ -367,12 +383,14 @@ struct LinuxHostReactorTests {
                 interests: [],
                 timeoutNanoseconds: 1_000_000_000)
             await reactor.shutdown()
-            #expect(try processEntryCount(at: "/proc/self/fd")
-                == baselineDescriptors)
+            #expect(
+                try processEntryCount(at: "/proc/self/fd")
+                    == baselineDescriptors)
         }
 
-        #expect(try processEntryCount(at: "/proc/self/task")
-            <= baselineTasks + 1)
+        #expect(
+            try processEntryCount(at: "/proc/self/task")
+                <= baselineTasks + 1)
     }
 
     private func signal(_ descriptor: Int32) {
