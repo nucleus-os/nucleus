@@ -530,24 +530,30 @@ private func inertActionFileSystem() -> ActionFileSystem {
 
 /// Allocation used to be one machine's capacity transcribed by hand, correct
 /// on that machine and wrong on every other. What matters is not the numbers
-/// but the relationships: a task with the machine gets the machine, a task
-/// that may be sharing gets half the cores, and two of the latter together
-/// still leave the host memory to run in. Reading the machine at all is
-/// only safe because allocation stays outside task identity, which
-/// `ociResourceLimitsDoNotInvalidateActionResults` above asserts directly.
-@Test func allocationTiersFollowTheMachineRatherThanOneMachinesNumbers() {
+/// but that they follow the machine.
+///
+/// A second tier existed for a task that might be sharing -- half the cores,
+/// and half of what memory remained once the host kept a reserve -- and the
+/// pair had to satisfy a relationship: two sharers together still leaving the
+/// host room to run. That relationship was the whole reason the tier was
+/// safe, and it held only while the scheduler ran exactly two container
+/// tasks. Asserting the tiers without asserting the lane limit they were
+/// sized against was therefore asserting half the contract, which is why this
+/// now states both: one lane, one allocation, so what a container is given is
+/// never multiplied by what else is running.
+///
+/// Reading the machine at all is only safe because allocation stays outside
+/// task identity, which `ociResourceLimitsDoNotInvalidateActionResults` above
+/// asserts directly.
+@Test func oneContainerAtATimeIsGivenTheWholeMachine() throws {
     let whole = OCIResourceLimits.build
-    let shared = OCIResourceLimits.build
-    let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
 
-    #expect(whole.cpuCount == processors)
+    #expect(whole.cpuCount == UInt32(ProcessInfo.processInfo.activeProcessorCount))
     #expect(whole.memoryBytes == ProcessInfo.processInfo.physicalMemory)
-    #expect(shared.cpuCount == max(1, processors / 2))
-    #expect((shared.cpuCount ?? 0) >= 1)
+    #expect((whole.cpuCount ?? 0) >= 1)
+    #expect(try #require(whole.memoryBytes) >= 1_024 * 1_024 * 1_024)
 
-    let sharedMemory = try! #require(shared.memoryBytes)
-    let wholeMemory = try! #require(whole.memoryBytes)
-    // Two sharing tasks must not commit the host's last byte.
-    #expect(sharedMemory * 2 <= wholeMemory)
-    #expect(sharedMemory >= 1_024 * 1_024 * 1_024)
+    // The other half of the contract. A container is given the whole machine,
+    // which is only sound while one of them runs at a time.
+    #expect(TaskLaneLimits().oci == 1)
 }

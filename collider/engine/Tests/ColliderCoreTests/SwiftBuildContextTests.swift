@@ -337,7 +337,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             name: "swift-fixture-linux",
             targetTriple: "x86_64-unknown-linux-gnu"),
         toolchainIdentity: "nucleus-linux-build@fixture",
-        maximumParallelism: SwiftBuildContext.concurrentOCIMaximumParallelism,
+        maximumParallelism: SwiftBuildContext.defaultMaximumParallelism,
         execution: .oci(execution))
     let invocation = SwiftPMInvocation(
         context: context,
@@ -379,11 +379,16 @@ private let fixturePackageRoot = FilePath("/workspace")
                 architecture: .x86_64,
                 executable: "/opt/swift-x86_64/usr/bin/swift")
         ])
+    // The overlay driver, reached directly. A `taskset --cpu-list` confined it
+    // to the first half of the cores its container was given, which was how
+    // two concurrent guests were kept off each other; one guest at a time has
+    // nothing to be kept off, and pinning would only leave cores idle.
     #expect(
         operation.command.starts(with: [
-            "swiftpm", "taskset", "--cpu-list", "0-11",
+            "swiftpm",
             "/swiftpm-overlay/usr/bin/swift-package-manager", "--build-system",
         ]))
+    #expect(!operation.command.contains("taskset"))
     #expect(operation.containerEnvironment["PATH"] == nil)
     #expect(operation.containerEnvironment["PROJECT_MODE"] == "debug")
     #expect(operation.containerEnvironment["PROJECT_PRIVATE"] == nil)

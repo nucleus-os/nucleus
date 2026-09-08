@@ -40,7 +40,13 @@ Nucleus is a monorepo built with Swift 6.4 through SwiftPM.
   of Collider's own host Swift code needs neither the task graph nor the build
   store, so iterate on it with `swift test --package-path collider --filter
   <pattern>`; going through Collider there rebuilds the release executable and
-  crosses to the builder identity to exercise code that requires neither. This
+  crosses to the builder identity to exercise code that requires neither.
+  Collider's host Swift code is two packages, and `--package-path collider`
+  runs the tests of one: SwiftPM does not run a dependency package's tests, so
+  `collider/engine/Tests` is reached only by `swift test --package-path
+  collider/engine`. Run both before claiming the host tests pass, and say which
+  of them a reported count covers -- a green count from one package while the
+  other does not compile is what protected main reports as a build failure. This
   is the one place a Swift package's own tests run outside Collider, and it is
   not an exception to running builds through the `collider` command: it runs the
   package's tests, never the built Collider executable, and it produces nothing
