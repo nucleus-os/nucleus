@@ -47,6 +47,7 @@ import Testing
 
     try await executeSkiaDependencyAction(
         root: fixture.skia,
+        destination: fixture.destination,
         dependency: fixture.dependency)
 
     #expect(try Data(contentsOf: headLog) == headLogBefore)
@@ -66,7 +67,10 @@ import Testing
         commit: fixture.dependency.commit)
 
     await #expect(throws: (any Error).self) {
-        try await executeSkiaDependencyAction(root: fixture.skia, dependency: mismatched)
+        try await executeSkiaDependencyAction(
+            root: fixture.skia,
+            destination: fixture.destination,
+            dependency: mismatched)
     }
 
     #expect(
@@ -142,6 +146,8 @@ import Testing
 private struct SkiaDependencyFixture {
     let root: URL
     let skia: URL
+    /// Where the checkouts are written, which is not the tree DEPS came from.
+    let destination: URL
     let checkout: URL
     let dependency: SkiaGitDependency
 }
@@ -151,7 +157,9 @@ private func makeSkiaDependencyFixture() throws -> SkiaDependencyFixture {
         "collider-skia-fast-path-\(UUID().uuidString)")
     let remote = root.appendingPathComponent("remote")
     let skia = root.appendingPathComponent("skia")
-    let checkout = skia.appendingPathComponent("third_party/externals/example")
+    let destination = root.appendingPathComponent("materialized")
+    let checkout = destination.appendingPathComponent(
+        "third_party/externals/example")
     try FileManager.default.createDirectory(
         at: remote,
         withIntermediateDirectories: true)
@@ -184,6 +192,7 @@ private func makeSkiaDependencyFixture() throws -> SkiaDependencyFixture {
     return SkiaDependencyFixture(
         root: root,
         skia: skia,
+        destination: destination,
         checkout: checkout,
         dependency: SkiaGitDependency(
             relativePath: "third_party/externals/example",
@@ -193,6 +202,7 @@ private func makeSkiaDependencyFixture() throws -> SkiaDependencyFixture {
 
 private func executeSkiaDependencyAction(
     root: URL,
+    destination: URL,
     dependency: SkiaGitDependency
 ) async throws {
     let runtime = ColliderRuntime()
@@ -200,6 +210,7 @@ private func executeSkiaDependencyAction(
         _ = try await runtime.execute(
             MaterializeSkiaDependenciesAction(
                 skia: FilePath(root.path),
+                destination: FilePath(destination.path),
                 dependencies: [dependency],
                 environment: ProcessInfo.processInfo.environment))
         await runtime.shutdown()

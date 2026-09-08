@@ -410,9 +410,11 @@ public enum ReactNativeColliderRecipe {
         let workspaces = ReactNativeBuildWorkspaces(
             component: "hermes",
             target: target)
-        let icuSource = root.appending(
-            "../core/third-party/skia/third_party/externals/icu/source"
-        ).lexicallyNormalized()
+        // Derived from the artifact this already consumes rather than from
+        // where the checkout happens to keep it. The externals are no longer
+        // materialized into the Skia submodule, so a path spelled relative to
+        // the checkout would name a directory nothing writes.
+        let icuSource = skiaExternalSources.path.appending("icu/source")
         let icuLibraryDirectory = icuLibrary.path.removingLastComponent()
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),

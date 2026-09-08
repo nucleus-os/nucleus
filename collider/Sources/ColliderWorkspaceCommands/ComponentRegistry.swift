@@ -25,6 +25,12 @@ private struct NativeSDKCompilerConfiguration {
     /// see an include path for the flag naming it to mean anything, and the
     /// two drift the moment they are written down separately.
     let checkoutIncludeRoots: [FilePath]
+    /// The same obligation for headers that are materialized rather than
+    /// checked out. Stated apart from the checkout subtrees because the two
+    /// reach a container by different routes: a checkout subtree is a nested
+    /// directory of the package root view, which exists to project one tree,
+    /// while these are separate roots mounted where placement puts them.
+    let materializedIncludeRoots: [FilePath]
 }
 
 package struct ComponentRegistry {
@@ -1185,7 +1191,23 @@ package struct ComponentRegistry {
                         source: builder.swiftPMOverlay.path,
                         target: "/swiftpm-overlay",
                         access: .readOnly),
-                ],
+                ]
+                    // The Skia externals, which the render SDK's include tree
+                    // reaches by a root-relative path rather than through a
+                    // staged link. They are materialized outside the checkout,
+                    // so the package root view -- which projects the checkout
+                    // and nothing else -- cannot carry them, and each subtree
+                    // the flags name is mounted where placement puts it.
+                    //
+                    // Present before this runs because the build consumes the
+                    // render SDK, which is published from the Skia libraries,
+                    // which are compiled from these same checkouts.
+                    + nativeCompiler.materializedIncludeRoots.map {
+                        OCIMount(
+                            source: $0,
+                            target: placement.executionPath($0),
+                            access: .readOnly)
+                    },
                 buildWorkspace: PersistentWorkspaceDeclaration(
                     identity: PersistentWorkspaceIdentity(
                         key: "nucleus-swiftpm",
@@ -1386,8 +1408,17 @@ package struct ComponentRegistry {
         let rn = nativeSDK.appending("rn")
         let reactNative = rn.appending("include/react-native")
         let reactCommon = reactNative.appending("ReactCommon")
-        let icu = root.appending(
-            "core/third-party/skia/third_party/externals/icu/source")
+        // Skia's source root, for the part of it that is materialized rather
+        // than checked out. Skia's own tree spells a vendored header from this
+        // root -- `third_party/externals/icu/source/common/unicode/uchar.h` --
+        // and so does the Nucleus text backend built against it, which is what
+        // makes the root itself a search path rather than only the directories
+        // under it. Named by the recipe that materializes them, because a
+        // second spelling of the same layout is a second thing to keep true.
+        let skiaSources = CoreColliderRecipe.skiaMaterializationRoot(
+            cacheRoot: context.cacheRoot)
+        let externals = skiaSources.appending("third_party/externals")
+        let icu = externals.appending("icu/source")
         let includeDirectories = [
             root.appending("third-party/mesa/src/gfxstream/guest/iostream/include"),
             root.appending("third-party/mesa/src/gfxstream/guest/vulkan_enc"),
@@ -1399,12 +1430,29 @@ package struct ComponentRegistry {
             root.appending("react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
             root.appending("react-native/swift/Sources/NucleusReactRuntime/cxx/include"),
             root.appending("core/render-cxx/skia/include"),
+            // Ahead of the staged Skia link, and that order is load-bearing.
+            // The link resolves to the checkout, where externals from before
+            // they were materialized elsewhere may still sit; a host
+            // compilation reads real directories rather than a container's
+            // mounts, so it would find that copy first. Searching the root
+            // that is written ahead of the link that is not settles which tree
+            // a root-relative include reaches, and this root can shadow
+            // nothing else: what is materialized under it is what DEPS names,
+            // and no include here is spelled from any of those but
+            // `third_party/externals`.
+            skiaSources,
             render.appending("include/skia"),
             render.appending("include/skia/src"),
             render.appending("include/skia/include/third_party/vulkan"),
             render.appending("include/skia/src/gpu/vk/vulkanmemoryallocator"),
-            render.appending("include/skia/third_party/externals/vulkanmemoryallocator/include"),
-            render.appending("include/skia/third_party/externals/vulkan-headers/include"),
+            // Left where the paths these replace sat, after Skia's own
+            // vendored Vulkan headers. Skia checks a copy of the Khronos
+            // headers into `include/third_party/vulkan/vulkan` under the same
+            // names DEPS fetches into `vulkan-headers`, so their order decides
+            // which copy every Vulkan include resolves to. Moving them is a
+            // change to that answer, not to where a directory is read from.
+            externals.appending("vulkanmemoryallocator/include"),
+            externals.appending("vulkan-headers/include"),
             rn.appending("include"),
             reactCommon.appending("jsi"),
             rn.appending("include/hermes/API"),
@@ -1463,7 +1511,17 @@ package struct ComponentRegistry {
             checkoutIncludeRoots: checkoutIncludeRoots(
                 of: icuRoots + includeDirectories,
                 root: root,
-                nativeSDK: nativeSDK))
+                nativeSDK: nativeSDK),
+            // The subtrees read, not the root the flags are spelled from.
+            // DEPS names forty-eight checkouts and three of them hold headers
+            // these flags reach for, so attaching the root whole would carry
+            // the other forty-five into every compilation. That is the
+            // accounting `rootRelativeSubtrees` already makes for a staged
+            // link, applied to a tree materialized rather than checked out.
+            materializedIncludeRoots: icuRoots + [
+                externals.appending("vulkanmemoryallocator/include"),
+                externals.appending("vulkan-headers/include"),
+            ])
     }
 
     private func swiftTargetSDKGenerationConfiguration(

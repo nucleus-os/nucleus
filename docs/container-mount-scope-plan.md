@@ -199,6 +199,13 @@ through a link never names the link: `<folly/dynamic.h>` and
 `<double-conversion/double-conversion.h>` are both read against the React
 Native SDK's include root, and only folly is separately named by a flag.
 
+An include path can also name a tree the checkout does not contain. Skia's DEPS
+externals are materialized under the build cache, because reconciling them into
+the submodule made every verification write the tree it verified. This
+derivation returns nothing for such a path, which is its answer rather than a
+gap: the path names no checkout directory, and the lanes whose flags reach it
+attach the subtrees they read as mounts of their own.
+
 `Package.resolved` records `apple/swift-system` while the manifest declares the
 `nucleus-os` fork, and only `.swiftpm/configuration/mirrors.json` reconciles
 them. A view built from manifests alone omitted it and a container resolved the

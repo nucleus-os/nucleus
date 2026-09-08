@@ -39,6 +39,11 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package struct SkiaSourceArtifacts: Sendable {
         package let tasks: [TaskDeclaration]
+        /// Where the DEPS checkouts are materialized, mirroring the paths
+        /// Skia's own build names them by.
+        package let materializationRoot: FilePath
+        /// What DEPS names, so a consumer attaches exactly those paths.
+        package let dependencies: [SkiaGitDependency]
         package let externalSources: ArtifactReference
         package let gn: ExecutableReference
     }
@@ -85,9 +90,11 @@ public enum CoreColliderRecipe: ColliderComponent {
             for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let skiaInputRoot = context.cacheRoot.appending("inputs/skia")
+        let skiaSourceRoot = skiaMaterializationRoot(cacheRoot: context.cacheRoot)
         let sources = try prepareSkiaDependencies(
             root: root,
             downloadRoot: skiaInputRoot,
+            materializationRoot: skiaSourceRoot,
             environment: context.environment,
             builder: native.builder.base)
         var tasks = sources.tasks
@@ -164,17 +171,15 @@ public enum CoreColliderRecipe: ColliderComponent {
             StorageDeclaration(
                 id: "core-skia-source-materialization",
                 owner: descriptor.id,
-                producers: producers {
-                    $0 == CoreTaskIDs.sources.rawValue
-                        || $0 == CoreTaskIDs.gnInstall.rawValue
-                },
+                producers: producers { $0 == CoreTaskIDs.sources.rawValue },
                 storageClass: .source,
-                root: root.appending("third-party/skia"),
-                safetyRoot: root,
+                root: skiaSourceRoot,
+                safetyRoot: skiaSourceRoot.removingLastComponent(),
                 retentionPolicy: .protected,
                 residency: .resident(
-                    reason: "a submodule of the authoritative checkout, whose "
-                        + "working tree Collider materializes into but never owns")),
+                    reason: "forty-eight pinned checkouts fetched from as many "
+                        + "remotes, which a collection would make a build "
+                        + "re-fetch rather than re-derive")),
             StorageDeclaration(
                 id: "core-android-gradle",
                 owner: descriptor.id,
@@ -246,9 +251,20 @@ public enum CoreColliderRecipe: ColliderComponent {
             nativeSDKs: nativeSDKs)
     }
 
+    /// Where Skia's DEPS checkouts are materialized.
+    ///
+    /// One definition, because two consumers outside this recipe name paths
+    /// inside it and a second spelling is a second thing to keep true.
+    package static func skiaMaterializationRoot(
+        cacheRoot: FilePath
+    ) -> FilePath {
+        cacheRoot.appending("core/skia-sources")
+    }
+
     package static func prepareSkiaDependencies(
         root: FilePath,
         downloadRoot: FilePath,
+        materializationRoot: FilePath,
         environment: [String: String],
         builder: NativeOCIBaseConfiguration
     ) throws -> SkiaSourceArtifacts {
@@ -295,7 +311,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             component: ComponentID(rawValue: "core"))
         let externalSources: ArtifactReference = try sourceBuilder.output(
             "external-sources",
-            path: skia.appending("third_party/externals"),
+            path: materializationRoot.appending("third_party/externals"),
             validation: .nonEmptyDirectory)
         let sources = sourceBuilder.build(
             inputs: [
@@ -307,6 +323,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     MaterializeSkiaDependenciesAction(
                         skia: skia,
+                        destination: materializationRoot,
                         dependencies: dependencies,
                         environment: environment)))
 
@@ -333,6 +350,8 @@ public enum CoreColliderRecipe: ColliderComponent {
                         builder: builder)))
         return SkiaSourceArtifacts(
             tasks: [download, sources, install],
+            materializationRoot: materializationRoot,
+            dependencies: dependencies,
             externalSources: externalSources,
             gn: gn)
     }
@@ -386,6 +405,8 @@ public enum CoreColliderRecipe: ColliderComponent {
             artifactTarget: target.artifactTarget,
             containerEnvironment: targetEnvironment(target),
             externalSources: sources.externalSources,
+            materializationRoot: sources.materializationRoot,
+            dependencies: sources.dependencies,
             gn: sources.gn,
             builder: builder)
     }
@@ -422,6 +443,8 @@ public enum CoreColliderRecipe: ColliderComponent {
             artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
             containerEnvironment: [:],
             externalSources: sources.externalSources,
+            materializationRoot: sources.materializationRoot,
+            dependencies: sources.dependencies,
             gn: sources.gn,
             builder: builder)
     }
@@ -990,10 +1013,12 @@ package struct SkiaGitDependency: Hashable, Sendable {
 package struct MaterializeSkiaDependenciesAction: ColliderAction {
     package struct Identity: ColliderActionIdentity {
         let skia: FilePath
+        let destination: FilePath
         let dependencies: [SkiaGitDependency]
 
         package func encode(into encoder: inout IdentityEncoder) {
             encoder.append(path: skia)
+            encoder.append(path: destination)
             encoder.appendSequence(dependencies) { dependencyEncoder, dependency in
                 dependencyEncoder.append(dependency.relativePath)
                 dependencyEncoder.append(dependency.remote)
@@ -1005,45 +1030,52 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
     package static let kind: ActionKind = "core.materialize-skia-dependencies"
 
     package let skia: FilePath
+    /// Where the checkouts are written.
+    ///
+    /// Skia's DEPS name paths relative to its source root, and the build finds
+    /// them there, but that root is a submodule of a checkout this identity
+    /// may read and never own. Materializing into it made every graph run a
+    /// write to someone else's working tree, which fails outright once the
+    /// executing identity is not the checkout's owner. The paths are mirrored
+    /// under a root Collider does own, and the build is given them where it
+    /// expects them by a mount rather than by a copy.
+    package let destination: FilePath
     package let dependencies: [SkiaGitDependency]
     package let environment: [String: String]
 
     package init(
         skia: FilePath,
+        destination: FilePath,
         dependencies: [SkiaGitDependency],
         environment: [String: String]
     ) {
         self.skia = skia
+        self.destination = destination
         self.dependencies = dependencies
         self.environment = environment
     }
 
     package var identity: Identity {
-        Identity(skia: skia, dependencies: dependencies)
+        Identity(
+            skia: skia, destination: destination, dependencies: dependencies)
     }
 
     package var requirements: ActionRequirements {
-        let checkouts = dependencies.map { skia.appending($0.relativePath) }
-        let parents = Set(checkouts.map { $0.removingLastComponent() }).sorted {
-            $0.string < $1.string
-        }
-        return ActionRequirements(
+        ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "git", executable: .named("git"), role: .operational)
             ],
+            // What it reads from the checkout, and one place it writes. The
+            // per-checkout `.checkout` effects this replaces were the
+            // declaration that a verification writes the tree it verifies.
             effects: [
                 ActionEffect(.read, scope: .input(skia.appending("DEPS"))),
                 ActionEffect(
                     .read,
                     scope: .input(skia.appending("sync-deps.disable"))),
-            ]
-                + parents.map {
-                    ActionEffect(.readWrite, scope: .checkout($0))
-                }
-                + checkouts.map {
-                    ActionEffect(.readWrite, scope: .checkout($0))
-                },
+                ActionEffect(.readWrite, scope: .publication(destination)),
+            ],
             executionPlatform: .macOSARM64Native)
     }
 
@@ -1052,6 +1084,7 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
         guard try context.files.metadata(for: disabled) == nil else {
             throw SkiaDependencyFailure.disabled(disabled)
         }
+        try context.files.createDirectory(destination)
         let concurrencyLimit = 8
         for start in stride(from: 0, to: dependencies.count, by: concurrencyLimit) {
             let end = min(start + concurrencyLimit, dependencies.count)
@@ -1072,7 +1105,7 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
         context: ActionContext
     ) async throws {
         try context.cancellation.check()
-        let checkout = skia.appending(dependency.relativePath)
+        let checkout = destination.appending(dependency.relativePath)
         if try await checkoutIsExact(dependency, at: checkout, context: context) {
             return
         }
@@ -1082,16 +1115,16 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
         if try context.files.metadata(for: gitDirectory) == nil {
             try await requireSuccess(
                 ["init", checkout.string],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
             try await requireSuccess(
                 ["-C", checkout.string, "remote", "add", "origin", dependency.remote],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
         } else {
             let origin = try await git(
                 ["-C", checkout.string, "remote", "get-url", "origin"],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
             let operation = origin.succeeded ? "set-url" : "add"
             try await requireSuccess(
@@ -1099,13 +1132,13 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
                     "-C", checkout.string, "remote", operation, "origin",
                     dependency.remote,
                 ],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
         }
 
         let object = try await git(
             ["-C", checkout.string, "cat-file", "-e", "\(dependency.commit)^{commit}"],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         if object.status != 0 {
             try await requireSuccess(
@@ -1113,18 +1146,18 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
                     "-C", checkout.string, "fetch", "--no-tags", "--depth=1",
                     "origin", dependency.commit,
                 ],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
         }
         try await requireSuccess(
             ["-C", checkout.string, "checkout", "--detach", "--force", dependency.commit],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         guard try await checkoutIsExact(dependency, at: checkout, context: context)
         else {
             let resolved = try await git(
                 ["-C", checkout.string, "rev-parse", "HEAD"],
-                workingDirectory: skia,
+                workingDirectory: destination,
                 context: context)
             throw SkiaDependencyFailure.wrongCommit(
                 dependency.relativePath,
@@ -1143,22 +1176,22 @@ package struct MaterializeSkiaDependenciesAction: ColliderAction {
         }
         async let origin = git(
             ["-C", checkout.string, "remote", "get-url", "origin"],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         async let head = git(
             ["-C", checkout.string, "rev-parse", "HEAD"],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         async let expected = git(
             ["-C", checkout.string, "rev-parse", "\(dependency.commit)^{commit}"],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         async let status = git(
             [
                 "-C", checkout.string, "status", "--porcelain",
                 "--untracked-files=no",
             ],
-            workingDirectory: skia,
+            workingDirectory: destination,
             context: context)
         let (resolvedOrigin, resolvedHead, resolvedExpected, resolvedStatus) = try await (
             origin, head, expected, status
@@ -1361,6 +1394,37 @@ private func androidNDKCxxRuntimePath(_ ndk: FilePath) -> FilePath {
             + "aarch64-linux-android/libc++_shared.so")
 }
 
+/// The DEPS checkouts, attached where Skia's own build names them.
+///
+/// Skia's `BUILD.gn` files reach for `third_party/externals/...` relative to
+/// the source root, and that root is a read-only share of a checkout this
+/// identity does not own. The checkouts are materialized elsewhere and
+/// attached over the paths the build expects, which the runtime supports: a
+/// share nested inside another is established rather than shadowed, and
+/// `test.source-image.attachment` asserts that against a guest kernel.
+///
+/// `third_party/externals` is attached as one directory because every entry in
+/// it comes from DEPS, and anything DEPS names outside it is attached on its
+/// own, because its parent holds source the build also needs. Deriving the set
+/// this way means a DEPS entry added outside `third_party/externals` arrives
+/// with its own mount rather than silently missing.
+private func skiaDependencyMounts(
+    materializationRoot: FilePath,
+    dependencies: [SkiaGitDependency]
+) -> [OCIMount] {
+    let externals = "third_party/externals/"
+    let outside = dependencies.map(\.relativePath).filter {
+        !$0.hasPrefix(externals)
+    }
+    let roots = [String(externals.dropLast())] + outside.sorted()
+    return roots.map { relative in
+        OCIMount(
+            source: materializationRoot.appending(relative),
+            target: "/src/" + relative,
+            access: .readOnly)
+    }
+}
+
 private func skiaTask(
     id: TaskID,
     root: FilePath,
@@ -1371,6 +1435,8 @@ private func skiaTask(
     artifactTarget: ArtifactTarget,
     containerEnvironment: [String: String],
     externalSources: ArtifactReference,
+    materializationRoot: FilePath,
+    dependencies: [SkiaGitDependency],
     gn: ExecutableReference,
     builder: NativeOCIConfiguration
 ) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
@@ -1393,25 +1459,29 @@ private func skiaTask(
         filesystem: .ext4,
         journal: .writeback64MiB,
         retentionPolicy: .toolManagedLimit(maximumBytes: 50 * 1_024 * 1_024 * 1_024))
-    let mounts = [
-        OCIMount(
-            source: skia,
-            target: "/src",
-            access: .readOnly),
-        OCIMount(
-            boundedExport: exportDirectory,
-            target: "/export"),
-        OCIMount(
-            source: builder.swiftSDKRoot,
-            target: "/swift-sdk",
-            access: .readOnly),
-        // GN is mounted from the storage it was installed into, rather than
-        // read out of the read-only source mount it used to be written into.
-        OCIMount(
-            source: gn.path.removingLastComponent(),
-            target: "/gn",
-            access: .readOnly),
-    ]
+    let mounts =
+        [
+            OCIMount(
+                source: skia,
+                target: "/src",
+                access: .readOnly),
+            OCIMount(
+                boundedExport: exportDirectory,
+                target: "/export"),
+            OCIMount(
+                source: builder.swiftSDKRoot,
+                target: "/swift-sdk",
+                access: .readOnly),
+            // GN is mounted from the storage it was installed into, rather than
+            // read out of the read-only source mount it used to be written into.
+            OCIMount(
+                source: gn.path.removingLastComponent(),
+                target: "/gn",
+                access: .readOnly),
+        ]
+        + skiaDependencyMounts(
+            materializationRoot: materializationRoot,
+            dependencies: dependencies)
     let persistentWorkspaceMounts = [
         OCIPersistentWorkspaceMount(
             workspace: buildWorkspace,

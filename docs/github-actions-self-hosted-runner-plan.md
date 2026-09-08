@@ -780,11 +780,21 @@ revisions DEPS does not name -- the local run fails permanently, because the
 identity that could reconcile them is the one that cannot write the tree they
 live in. Closing this gate therefore needs either the builder given write
 access to the authoritative checkout, or a verification that does not mutate
-the tree it verifies. The second is the better shape and is not free: Skia's
-externals are submodule content and genuinely have to be written somewhere. Tests, packaging, and package lifecycle qualification now
-run in the protected-main sweep; product-store qualification and delivery
-remain pending. Their execution does not establish the reverse-order cache
-reuse gate.
+the tree it verifies.
+
+The second is now what happens. `core.sources` materializes the forty-eight
+pinned checkouts under the build cache, and reads the checkout only for `DEPS`
+and the file that disables reconciliation. Nothing that consumes them copies
+them back: Skia's own build finds them at `/src/third_party/externals` through
+a share nested inside its read-only source share, and the Linux lanes that
+compile against Skia's headers name the materialized root in their search paths
+and attach the three checkouts those paths reach. Materializing where Collider
+can write also removes a silent hazard the checkout version carried, in that a
+verification whose reconciliation succeeded left the tree it verified modified.
+
+Tests, packaging, and package lifecycle qualification now run in the
+protected-main sweep; product-store qualification and delivery remain pending.
+Their execution does not establish the reverse-order cache reuse gate.
 
 Read-only commands no longer create durable run records, reconcile abandoned
 builder runs, create task-state directories, or persist planning digest indexes.

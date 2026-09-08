@@ -1181,6 +1181,89 @@ private func fixtureReactNativeNodeModules(
     #expect(armCacheWorkspace.identity != x86CacheWorkspace.identity)
 }
 
+/// Nucleus C++ compiled against Skia spells a vendored header the way Skia's
+/// own tree does, from the source root: `third_party/externals/icu/...`. Those
+/// checkouts are no longer written into the submodule the render SDK's include
+/// link points at, so a flag naming them and a mount making them visible have
+/// to agree about the root they were materialized under. When they disagreed
+/// the compiler reported a header it had been pointed at as missing.
+@Test func skiaExternalHeadersAreNamedWhereTheyAreMaterialized() async throws {
+    let environment = ["HOME": "/tmp/nucleus-fixture"]
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: fixtureRepositoryRoot,
+            environment: environment,
+            runtime: ColliderRuntime()))
+    let builder = try fixtureNativeBuilder(
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/native/ccache"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+    let invocation = try await registry.linuxSwiftPMInvocation(
+        architecture: .arm64,
+        builder: builder,
+        checkoutRoots: [fixtureRepositoryRoot.appending("core/swift")])
+    guard case .oci(let execution) = invocation.context.execution else {
+        Issue.record("Linux SwiftPM builds must execute in OCI")
+        return
+    }
+    let placement = registry.context.identityPathMap
+    let materialized = CoreColliderRecipe.skiaMaterializationRoot(
+        cacheRoot: registry.context.cacheRoot)
+    let externals = placement.executionPath(
+        materialized.appending("third_party/externals"))
+    let flags = invocation.context.cFlags + invocation.context.cxxFlags
+
+    // The root a Skia-relative include resolves against. Every vendored header
+    // reached that way is unreachable without it, however much of the tree is
+    // mounted.
+    #expect(flags.contains("-I\(placement.executionPath(materialized))"))
+
+    // Nothing names the copy that used to be written into the submodule. That
+    // directory is not merely stale: no task writes it any more, so a flag
+    // naming it points at nothing and a mount of it would fail to attach.
+    let inTheCheckout = placement.executionPath(
+        fixtureRepositoryRoot.appending(
+            "core/third-party/skia/third_party/externals"))
+    let stale = flags.contains { $0.contains(inTheCheckout) }
+    #expect(!stale, "a compiler flag still names the externals in the checkout")
+
+    // Searched before the staged Skia link, which resolves to the checkout a
+    // previous materialization may have left its own externals in. A host
+    // build reads those directories rather than a container's mounts, so the
+    // order decides which tree a root-relative include reaches.
+    let stagedSkia = registry.context.nativeSDKRoot(
+        for: NativeLinuxTarget(architecture: .arm64)
+    ).appending("render/include/skia")
+    let materializedRoot = try #require(
+        flags.firstIndex(of: "-I\(placement.executionPath(materialized))"))
+    let stagedLink = try #require(
+        flags.firstIndex(of: "-I\(placement.executionPath(stagedSkia))"))
+    #expect(materializedRoot < stagedLink)
+
+    // Each directory of vendored headers the flags name is attached where they
+    // name it, and attached from the root that is actually written.
+    let mounts = execution.preparationMounts + execution.mounts
+    let named = flags.compactMap { flag -> String? in
+        let path = flag.hasPrefix("-I") ? String(flag.dropFirst(2)) : flag
+        return path.hasPrefix(externals + "/") ? path : nil
+    }
+    #expect(!named.isEmpty)
+    for path in named {
+        let mount = mounts.first {
+            path == $0.target || path.hasPrefix($0.target + "/")
+        }
+        let attached = try #require(
+            mount, "no mount makes \(path) visible to the container")
+        #expect(attached.source.starts(with: materialized))
+        #expect(attached.isReadOnly)
+        // Identity-mapped, so what the compiler records of a header's location
+        // says where it sat under a declared root and not which machine built
+        // it.
+        #expect(attached.target == placement.executionPath(attached.source))
+    }
+}
+
 @Test func reactNativeDependencyInstallRunsOnHostForLinuxMultiarch() async throws {
     let root = FilePath("/workspace/react-native")
     let task = try ReactNativeColliderRecipe.installJavaScriptDependencies(
@@ -2229,6 +2312,8 @@ private func artifactInput(
     let sources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: root,
         downloadRoot: FilePath("/cache/inputs/skia"),
+        materializationRoot: CoreColliderRecipe.skiaMaterializationRoot(
+            cacheRoot: FilePath("/cache")),
         environment: environment,
         builder: builder.base)
     let sourceTask = try #require(
@@ -2238,6 +2323,20 @@ private func artifactInput(
         return
     }
     #expect(sourceAction.kind == "core.materialize-skia-dependencies")
+    // Materializing DEPS used to write the Skia submodule, which made every
+    // graph run modify a checkout the executing identity does not own, and
+    // fails outright once it is not the owner. What it reads from the checkout
+    // is unchanged; what it writes is a root Collider owns.
+    let materializationRoot = CoreColliderRecipe.skiaMaterializationRoot(
+        cacheRoot: FilePath("/cache"))
+    let writesInsideTheCheckout = sourceAction.requirements.effects.contains {
+        $0.access != .read && $0.scope.root.starts(with: root)
+    }
+    #expect(!writesInsideTheCheckout, "materializing DEPS still writes the checkout")
+    let writesTheMaterializationRoot = sourceAction.requirements.effects.contains {
+        $0.access == .readWrite && $0.scope.root == materializationRoot
+    }
+    #expect(writesTheMaterializationRoot)
     let gnInstall = try #require(
         sources.tasks.first { $0.id == CoreTaskIDs.gnInstall })
     guard let gnAction = gnInstall.action else {
@@ -2265,6 +2364,17 @@ private func artifactInput(
         builder: builder
     ).task
     let linuxExecutions = try await ociExecutions(in: linuxTask.action)
+    // The build still finds the checkouts where Skia's own BUILD.gn files name
+    // them, by a share nested inside the read-only source share rather than by
+    // having been written into it.
+    let externals = try #require(
+        linuxExecutions[0].mounts.first {
+            $0.target == "/src/third_party/externals"
+        })
+    #expect(
+        externals.source == materializationRoot.appending("third_party/externals"))
+    #expect(externals.isReadOnly)
+    #expect(linuxExecutions[0].mounts.contains { $0.target == "/src" })
     #expect(
         linuxExecutions[0].command.contains {
             $0.contains(#"cc="/usr/bin/clang""#)
@@ -2375,6 +2485,8 @@ private func artifactInput(
     let sources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: root,
         downloadRoot: FilePath("/cache/inputs/skia"),
+        materializationRoot: CoreColliderRecipe.skiaMaterializationRoot(
+            cacheRoot: FilePath("/cache")),
         environment: environment,
         builder: builder.base)
     let task = try CoreColliderRecipe.buildSkiaLinux(
@@ -2419,6 +2531,8 @@ private func artifactInput(
     let skiaSources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: coreRoot,
         downloadRoot: FilePath("/cache/inputs/skia"),
+        materializationRoot: CoreColliderRecipe.skiaMaterializationRoot(
+            cacheRoot: FilePath("/cache")),
         environment: environment,
         builder: builder.base)
     let boost = try ReactNativeColliderRecipe.provisionBoost(
