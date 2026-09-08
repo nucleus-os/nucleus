@@ -53,9 +53,14 @@ public struct TaskExecutionOptions: Sendable {
 /// four-hour build.
 ///
 /// What this costs is the short container tasks that used to pair up and now
-/// queue. Most container executions in a warm sweep run for tens of seconds,
-/// so the loss is bounded and measurable in the next sweep's execution time
-/// against its critical path; the oversubscription it removes was not bounded.
+/// queue, and it was measured rather than guessed at. The sweep that first ran
+/// this way executed for 3,672 s against a critical path of 446 s, so roughly
+/// seven eighths of it was work waiting for the lane rather than for its
+/// inputs; `browser.arm64.test` waited 3,557 s to run 12.4 s. That cost is
+/// accepted deliberately. Admitting concurrent tasks while their declared
+/// allocations fit the machine would recover most of it, and is deliberately
+/// not done: it is a scheduler that reasons about capacity, which is more
+/// machinery than the wall clock it saves is worth.
 public struct TaskLaneLimits: Hashable, Sendable {
     public let lightweight: Int
     public let oci: Int

@@ -95,10 +95,14 @@ verification below.
    The protected-main host-contract, provenance, build, and test lanes already
    run successfully, and the installed root boot coordinator restores the
    builder-domain container and runner services without an interactive login.
-   Prove the corrected local-to-automated warm-state reuse, exercise a real
-   host restart and a protected-main supersession, and complete the
-   container-network, quarantine, and recovery gates. These are control-plane
-   exercises rather than code.
+   Protected-main supersession is accepted: a push admitted a newer revision
+   sixteen minutes into the previous sweep, the superseded run concluded
+   cancelled thirty-one seconds later and was recorded `interrupted` rather
+   than `failed`, and the superseding sweep took admission and passed with
+   nothing stranded. Prove the corrected local-to-automated warm-state reuse,
+   exercise a real host restart, and complete the container-network,
+   quarantine, and recovery gates. These are control-plane exercises rather
+   than code.
 4. Complete the product-store qualification and delivery remaining in Phase 6
    of the [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md),
    closing the verification graph against the artifacts steps 1 and 2

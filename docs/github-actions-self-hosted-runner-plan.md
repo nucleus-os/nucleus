@@ -1100,17 +1100,36 @@ run. Documentation-only pushes use a separate GitHub-hosted workflow and never
 enter M2 admission. Signal forwarding reaches live child process groups
 synchronously, a watchdog recovers a connected-but-deaf listener, and a root
 boot coordinator restores the builder-domain container and runner services
-without an interactive login. Protected-main supersession and host-restart
-acceptance remain pending. A dispatch keeps its own per-revision group, so it is
-neither cancelled by the tip nor able to cancel it, and it remains how a
-revision a supersession skipped gets verified.
+without an interactive login. Protected-main supersession is accepted;
+host-restart acceptance remains pending. A dispatch keeps its own per-revision
+group, so it is neither cancelled by the tip nor able to cancel it, and it
+remains how a revision a supersession skipped gets verified.
 
 A controlled local cancellation reached an active Linux Swift package test,
 forwarded the interruption to its child process group, recorded durable run
 `2026-08-29T18-05-30.774Z-3325` as `interrupted`, and left no builder SwiftPM,
 Swift test, or Collider child alive. The complete macOS builder doctor contract
-passed immediately afterward. Protected-main supersession and host-restart
-acceptance remain because they also exercise GitHub and launchd control planes.
+passed immediately afterward.
+
+Supersession is now accepted on the control plane the controlled cancellation
+could not reach. On 2026-09-07 a push admitted `630846ed` while the sweep for
+`4cc7a7d6` was sixteen minutes into its graph. The superseded run was created
+at 21:37:40Z, the superseding one at 21:53:17Z, and the superseded one
+concluded `cancelled` at 21:53:48Z -- thirty-one seconds -- so the concurrency
+group cancels rather than letting two sweeps contend for one admission.
+
+What the acceptance rests on is not that GitHub cancelled a run but what the
+machine was left holding. Collider recorded the superseded sweep as
+`2026-09-07T21-39-44.525Z-40521 interrupted`, distinct from `failed`, and the
+superseding sweep took admission at 21:56:19Z and completed `succeeded` with no
+container reclaimed and no intervention. A local `test source-image`
+interrupted in the same minute recorded
+`2026-09-07T21-42-37.671Z-43210 interrupted` as well, so an interactive run and
+an automated one leave the same evidence and neither strands the admission the
+next run needs.
+
+Host-restart acceptance remains, because it exercises the launchd control plane
+rather than GitHub's and needs the machine actually restarted.
 
 Reading the interrupt path suggested cancellation was already clean, and
 exercising it showed otherwise. Collider exits and the kernel releases both the
