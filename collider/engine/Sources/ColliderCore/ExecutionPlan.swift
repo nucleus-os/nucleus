@@ -187,6 +187,19 @@ public enum PlanningTaskState: Sendable {
     case record(TaskStateRecord)
 }
 
+/// Which of a task's encodings an observation carries.
+///
+/// Most tasks have one. A lowered task has two: the encoding a lowering
+/// derived its name from, and the encoding built from its declared inputs.
+/// Only the second decides whether it runs again, and the two are equal for
+/// neither the same reasons nor at the same times.
+public enum PlannedIdentityKind: Hashable, Sendable {
+    /// What planning compares against a record.
+    case assessment
+    /// What a lowering derived the task's name from.
+    case name
+}
+
 public struct ExecutionPlan: Sendable {
     public let declaredTasks: [TaskDeclaration]
     public let declaredEntries: [TaskPlanEntry]
@@ -270,7 +283,12 @@ public struct TaskPlanningServices {
     /// them. Identity is a digest, so two plans that disagree otherwise report
     /// only that they disagree; this is how an inspection reads back what went
     /// into one. It observes and must not influence what is encoded.
-    public let observeIdentity: ((TaskID, [UInt8]) -> Void)?
+    ///
+    /// A lowered task reports twice, because it has two encodings and they
+    /// answer different questions. Reporting only one leaves an inspection
+    /// showing components that cannot contain the difference it is being
+    /// asked about.
+    public let observeIdentity: ((TaskID, PlannedIdentityKind, [UInt8]) -> Void)?
     /// Receives both encodings behind a rejected record: what a prior
     /// execution recorded and what this plan computed.
     ///
@@ -297,7 +315,7 @@ public struct TaskPlanningServices {
         taskState: @escaping (TaskID) -> PlanningTaskState,
         durationEstimate: @escaping (TaskDurationWorkload) -> UInt64? = { _ in nil },
         validateOutputs: @escaping (TaskDeclaration) throws -> Void,
-        observeIdentity: ((TaskID, [UInt8]) -> Void)? = nil,
+        observeIdentity: ((TaskID, PlannedIdentityKind, [UInt8]) -> Void)? = nil,
         observeIdentityDivergence:
             ((TaskID, [UInt8], [UInt8]) -> Void)? = nil,
         digestArtifact: ((ArtifactReference) throws -> ArtifactDigest)? = nil

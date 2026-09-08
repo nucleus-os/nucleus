@@ -94,7 +94,7 @@ private func catalogComponent(
         },
         taskState: { _ in .missing },
         validateOutputs: { _ in },
-        observeIdentity: { task, _ in
+        observeIdentity: { task, _, _ in
             observations.withLock { $0.append(task) }
         })
     var session = try ColliderPlanningSession(catalog: catalog, services: services)

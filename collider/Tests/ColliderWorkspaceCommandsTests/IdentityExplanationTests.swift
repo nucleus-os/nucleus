@@ -15,7 +15,9 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let planned = try #require(collector.observer)
     let diverged = try #require(collector.divergenceObserver)
 
-    planned(task, encodedIdentity { $0.appendSequence(["a", "planned"]) { $0.append($1) } })
+    planned(
+        task, .assessment,
+        encodedIdentity { $0.appendSequence(["a", "planned"]) { $0.append($1) } })
     diverged(
         task,
         encodedIdentity { $0.appendSequence(["a", "recorded"]) { $0.append($1) } },
@@ -24,6 +26,7 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let report = collector.report().joined(separator: "\n")
 
     #expect(report.contains("identity  fixture.explained"))
+    #expect(report.contains("assessed by"))
     #expect(report.contains("diverged from the recorded identity at"))
     #expect(report.contains("\"recorded\""))
     #expect(report.contains("\"planned\""))
@@ -36,7 +39,7 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
 
     // Nothing observes a recorded identity for a task planning did not
     // reject, so an explanation of one is its components and no comparison.
-    planned(task, encodedIdentity { $0.append("only") })
+    planned(task, .assessment, encodedIdentity { $0.append("only") })
 
     let report = collector.report().joined(separator: "\n")
 
@@ -52,7 +55,7 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let planned = try #require(collector.observer)
     let diverged = try #require(collector.divergenceObserver)
 
-    planned(task, encodedIdentity { $0.append("planned") })
+    planned(task, .assessment, encodedIdentity { $0.append("planned") })
     // What every record written before components were kept looks like.
     // Silence here reads as agreement, which is the opposite of the truth.
     diverged(task, [], encodedIdentity { $0.append("planned") })
@@ -67,8 +70,9 @@ private func encodedIdentity(_ build: (inout IdentityEncoder) -> Void) -> [UInt8
     let collector = IdentityExplanationCollector(selection: "wanted")
     let planned = try #require(collector.observer)
 
-    planned(TaskID(rawValue: "fixture.wanted"), encodedIdentity { $0.append("kept") })
-    planned(TaskID(rawValue: "fixture.other"), encodedIdentity { $0.append("dropped") })
+    planned(TaskID(rawValue: "fixture.wanted"), .assessment, encodedIdentity { $0.append("kept") })
+    planned(
+        TaskID(rawValue: "fixture.other"), .assessment, encodedIdentity { $0.append("dropped") })
 
     let report = collector.report().joined(separator: "\n")
 

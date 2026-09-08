@@ -68,7 +68,7 @@ public struct ColliderPlanner {
             let snapshot: TaskIdentitySnapshot
             if let cached = identityCache[task.id] {
                 snapshot = cached
-                services.observeIdentity?(task.id, cached.bytes)
+                services.observeIdentity?(task.id, .assessment, cached.bytes)
             } else {
                 snapshot = try await identityBuilder.build(
                     of: task,
@@ -139,7 +139,7 @@ public struct ColliderPlanner {
         // lets a name that only lowering produces be explained at all, and the
         // SwiftPM context directories are named for exactly these digests.
         for entry in lowered where !entry.identityBytes.isEmpty {
-            services.observeIdentity?(entry.task.id, entry.identityBytes)
+            services.observeIdentity?(entry.task.id, .name, entry.identityBytes)
             identityComponents[entry.task.id] = entry.identityBytes
         }
         _ = try TaskGraph(ordered + lowered.map(\.task))

@@ -803,7 +803,8 @@ private func executeWithSwiftPM(
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path),
         options: TaskExecutionOptions(
-            identityObserver: { id, bytes in
+            identityObserver: { id, kind, bytes in
+                guard kind == .assessment else { return }
                 observed.withLock { $0[id] = bytes }
             }))
 
@@ -1211,4 +1212,77 @@ private func commitFixtureCheckout(_ package: URL) throws {
     try git(["config", "user.email", "collider@example.invalid"])
     try git(["add", "--all"])
     try git(["commit", "--quiet", "--message", "fixture"])
+}
+
+@Test func whoStartedABuildIsNotPartOfWhatItResolves() throws {
+    // Two accounts on one machine resolving one revision. `swift.package
+    // .dependencies` planned a different identity for each, because the host
+    // command encoded beside the action carried its own idea of which
+    // environment is volatile and that idea omitted the account variables.
+    // The rule is one definition now; this holds the two ends to it.
+    func dependencyAction(account: String) throws -> AnyColliderAction {
+        let packageRoot = FilePath("/fixture/package")
+        var imageBuilder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.image"),
+            component: ComponentID(rawValue: "fixture"))
+        let image: ArtifactReference = try imageBuilder.output(
+            "image-id",
+            path: FilePath("/fixture/image-id"),
+            validation: .regularFile)
+        let invocation = SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot,
+                configuration: .release,
+                target: .host(identity: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "fixture-toolchain",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: image,
+                        inputArtifacts: [],
+                        preparationArtifacts: [],
+                        hostname: "fixture",
+                        hostWorkingDirectory: packageRoot,
+                        mounts: [],
+                        hostDependencyCache: FilePath("/fixture/cache"),
+                        containerEnvironment: [:]))),
+            scratchPath: FilePath("/fixture/scratch"),
+            dependencyLock: packageRoot.appending("Package.resolved"))
+        let owner = TaskBuilder(
+            id: TaskID(rawValue: "fixture.product"),
+            component: ComponentID(rawValue: "fixture")
+        ).build(
+            swiftProducts: [
+                invocation.product(
+                    package: "fixture",
+                    product: "FixtureProduct",
+                    packageRoot: packageRoot,
+                    environment: [
+                        "HOME": "/Users/\(account)",
+                        "USER": account,
+                        "LOGNAME": account,
+                        "NUCLEUS_KEPT": "same",
+                    ])
+            ])
+        let lowered = try SwiftPMLowering().lower([
+            AssessedTaskDeclaration(task: imageBuilder.build(), isClean: false),
+            AssessedTaskDeclaration(task: owner, isClean: false),
+        ])
+        let host = try #require(
+            lowered.first {
+                $0.task.action?.requirements.executionPlatform == .macOSARM64Native
+            })
+        return try #require(host.task.action)
+    }
+
+    let builder = try dependencyAction(account: "nucleus-builder")
+    let interactive = try dependencyAction(account: "maddy")
+
+    #expect(builder.identity == interactive.identity)
+    // Not vacuous: the environment still reaches identity, and a variable that
+    // says something about the build rather than about who ran it still moves.
+    let other = try dependencyAction(account: "nucleus-builder")
+    #expect(builder.identity == other.identity)
+    #expect(builder.environment["HOME"] == "/Users/nucleus-builder")
 }

@@ -142,3 +142,34 @@ private func bigEndianBytes<T: FixedWidthInteger>(_ value: T) -> [UInt8] {
     var bigEndian = value.bigEndian
     return withUnsafeBytes(of: &bigEndian) { unsafe Array($0) }
 }
+
+/// The environment an identity records.
+///
+/// A variable naming the session or the account that started a build is not an
+/// input to what the build produces, and hashing one means the same source
+/// reuses nothing across two accounts on one machine or two machines running
+/// one revision. `HOME`, `USER`, and `LOGNAME` are that, as `PATH` and `TERM`
+/// are, and so is the run a command happens to belong to. A build whose output
+/// genuinely varies with one of them is a defect the byte comparison across
+/// checkouts catches, not something to encode here.
+///
+/// One definition because there were two. A task's action environment excluded
+/// the account variables while the host SwiftPM command encoded beside it did
+/// not, so `swift.package.dependencies` planned one identity for the builder
+/// and another for the interactive account on the same machine, and the
+/// difference was three strings naming who asked.
+public enum IdentityEnvironment {
+    public static let volatileNames: Set<String> = [
+        "HOME", "LOGNAME", "NUCLEUS_RUN_DIR", "NUCLEUS_RUN_LOG", "PATH",
+        "TERM", "USER",
+    ]
+
+    /// The entries to encode, in a stable order.
+    public static func recorded(
+        _ environment: [String: String]
+    ) -> [(key: String, value: String)] {
+        environment
+            .filter { !volatileNames.contains($0.key) }
+            .sorted { $0.key < $1.key }
+    }
+}

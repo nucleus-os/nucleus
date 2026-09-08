@@ -1064,11 +1064,8 @@ private struct HostSwiftPMCommandIdentity: ColliderActionIdentity {
 
     func encode(into encoder: inout IdentityEncoder) {
         encoder.append(path: command.workingDirectory)
-        let volatile = Set(["PATH", "NUCLEUS_RUN_DIR", "NUCLEUS_RUN_LOG", "TERM"])
         encoder.appendSequence(
-            command.environment.filter({
-                !volatile.contains($0.key)
-            }).sorted(by: { $0.key < $1.key })
+            IdentityEnvironment.recorded(command.environment)
         ) { environment, entry in
             environment.append(entry.key)
             environment.append(argument: entry.value)

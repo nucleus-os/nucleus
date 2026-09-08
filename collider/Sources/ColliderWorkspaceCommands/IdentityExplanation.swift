@@ -8,7 +8,7 @@ import Synchronization
 /// found, which is not part of the identity being explained.
 package final class IdentityExplanationCollector: Sendable {
     private let selection: String?
-    private let encoded = Mutex<[TaskID: [UInt8]]>([:])
+    private let encoded = Mutex<[TaskID: [PlannedIdentityKind: [UInt8]]]>([:])
     private let divergences = Mutex<[TaskID: (recorded: [UInt8], planned: [UInt8])]>([:])
 
     package init(selection: String?) {
@@ -17,11 +17,15 @@ package final class IdentityExplanationCollector: Sendable {
 
     package var isEnabled: Bool { selection != nil }
 
-    package var observer: (@Sendable (TaskID, [UInt8]) -> Void)? {
+    package var observer: (@Sendable (TaskID, PlannedIdentityKind, [UInt8]) -> Void)? {
         guard let selection else { return nil }
-        return { [self] task, bytes in
+        return { [self] task, kind, bytes in
             guard task.rawValue.contains(selection) else { return }
-            encoded.withLock { if $0[task] == nil { $0[task] = bytes } }
+            encoded.withLock {
+                if $0[task, default: [:]][kind] == nil {
+                    $0[task, default: [:]][kind] = bytes
+                }
+            }
         }
     }
 
@@ -54,13 +58,24 @@ package final class IdentityExplanationCollector: Sendable {
         var lines: [String] = []
         for task in collected.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
             lines.append("identity  \(task.rawValue)")
-            guard let nodes = IdentityTrace.decode(collected[task] ?? []) else {
-                lines.append("  <identity components are not decodable>")
-                continue
+            let encodings = collected[task] ?? [:]
+            // Assessment first, and labelled, because a lowered task has two
+            // encodings and only this one answers why it is running. The name
+            // follows for the same reason it is captured at all: nothing else
+            // can reconstruct it once the lowering that invented it is gone.
+            for (label, kind) in [
+                ("assessed by", PlannedIdentityKind.assessment),
+                ("named from", PlannedIdentityKind.name),
+            ] {
+                guard let bytes = encodings[kind] else { continue }
+                lines.append("  \(label)")
+                guard let nodes = IdentityTrace.decode(bytes) else {
+                    lines.append("    <identity components are not decodable>")
+                    continue
+                }
+                lines += IdentityTrace.render(nodes, indent: 2)
             }
-            lines += IdentityTrace.render(nodes, indent: 1)
-            lines += divergence(
-                of: task, displaying: collected[task] ?? [], in: diverged)
+            lines += divergence(of: task, in: diverged)
         }
         return lines
     }
@@ -72,24 +87,11 @@ package final class IdentityExplanationCollector: Sendable {
     /// has nothing to compare against.
     private func divergence(
         of task: TaskID,
-        displaying displayed: [UInt8],
         in diverged: [TaskID: (recorded: [UInt8], planned: [UInt8])]
     ) -> [String] {
         guard let pair = diverged[task] else { return [] }
-        // A lowering names its task from one encoding and planning assesses it
-        // by another, so for those the components above are not the components
-        // compared. Saying so beats leaving a reader to match a reported
-        // difference against lines that do not contain it.
-        let aside =
-            pair.planned == displayed
-            ? []
-            : [
-                "  compared by the identity that assesses this task, which is",
-                "  not the encoding shown above: a lowering names its task from",
-                "  one and planning decides whether to rerun it by the other.",
-            ]
         guard !pair.recorded.isEmpty else {
-            return aside + [
+            return [
                 "  diverged from a recorded identity that kept no components,",
                 "  which is every record written before they were kept. This",
                 "  task is locatable once it next executes.",
@@ -98,7 +100,7 @@ package final class IdentityExplanationCollector: Sendable {
         guard let recorded = IdentityTrace.decode(pair.recorded),
             let planned = IdentityTrace.decode(pair.planned)
         else {
-            return aside + ["  <the compared identity components are not decodable>"]
+            return ["  <the compared identity components are not decodable>"]
         }
         let difference = IdentityTrace.difference(
             recorded: recorded, planned: planned)
@@ -106,10 +108,9 @@ package final class IdentityExplanationCollector: Sendable {
             // Reachable: the digests differ while the components render
             // alike, which says the difference is in bytes the rendering
             // elides rather than in the shape of the encoding.
-            return aside
-                + ["  diverged from the recorded identity in undisplayed bytes"]
+            return ["  diverged from the recorded identity in undisplayed bytes"]
         }
-        return aside + ["  diverged from the recorded identity at"]
+        return ["  diverged from the recorded identity at"]
             + difference.map { "  " + $0 }
     }
 }

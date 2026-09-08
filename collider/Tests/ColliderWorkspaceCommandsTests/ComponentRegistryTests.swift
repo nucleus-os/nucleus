@@ -3574,7 +3574,7 @@ private func artifactInput(
         },
         taskState: { _ in .missing },
         validateOutputs: { _ in },
-        observeIdentity: { task, bytes in
+        observeIdentity: { task, _, bytes in
             _ = observed.withLock { $0.insert(task) }
             guard let nodes = IdentityTrace.decode(bytes) else { return }
             scan(task, nodes)

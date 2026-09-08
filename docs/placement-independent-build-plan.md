@@ -387,8 +387,31 @@ not the digest. Recomputing an identity answers what the inputs are now, which
 is the one question that was never in doubt; the record is the only account of
 what they were when the task last ran, and it is exactly that which is gone
 once they change. Records written before this decode without it and are simply
-unexplainable, so the first sweep after it lands is what makes the outstanding
-`swift.package.dependencies` divergence readable.
+unexplainable.
+
+That divergence is closed. It needed no sweep to read: planning the same
+revision on this machine as the builder found all three tasks clean while the
+interactive account found them dirty, which places it in the account rather
+than in the checkout, the machine, or CI. Rendering the encoding a lowered task
+is assessed by -- rather than the one it is named from, which is what an
+explanation showed and is identical across accounts by construction -- reduced
+it to three components:
+
+    string "HOME"      "/Users/nucleus-builder"  vs  "/Users/maddy"
+    string "LOGNAME"   "nucleus-builder"         vs  "maddy"
+    string "USER"      "nucleus-builder"         vs  "maddy"
+
+The account variables were already excluded from the environment an action's
+identity records. They were not excluded from the host command encoded beside
+it, which carried its own list of what counts as volatile, and that list had
+been written down separately and drifted. One definition serves both now, and
+both accounts plan identical digests for all three tasks.
+
+This is the sixth placement discriminator and the same mistake as the other
+five: an identity naming how a build arrived rather than what it contains. It
+outlived them because it was the one they could not see -- `/Users/maddy` is
+not a declared root, and `maddy` is not a path at all, so the placement
+assertion had nothing to reject.
 
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only

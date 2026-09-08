@@ -13,7 +13,7 @@ public struct TaskExecutionOptions: Sendable {
     /// Receives each task's encoded identity components as planning computes
     /// them, for an inspection that needs to read an identity rather than
     /// compare two digests. It observes only.
-    public var identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)?
+    public var identityObserver: (@Sendable (TaskID, PlannedIdentityKind, [UInt8]) -> Void)?
     /// Receives both encodings behind a rejected record, the one a prior
     /// execution kept and the one this plan computed. It observes only.
     public var identityDivergenceObserver: (@Sendable (TaskID, [UInt8], [UInt8]) -> Void)?
@@ -30,7 +30,8 @@ public struct TaskExecutionOptions: Sendable {
         quiet: Bool = false,
         machineReadable: Bool = false,
         laneLimits: TaskLaneLimits = TaskLaneLimits(),
-        identityObserver: (@Sendable (TaskID, [UInt8]) -> Void)? = nil,
+        identityObserver:
+            (@Sendable (TaskID, PlannedIdentityKind, [UInt8]) -> Void)? = nil,
         identityDivergenceObserver:
             (@Sendable (TaskID, [UInt8], [UInt8]) -> Void)? = nil,
         sourceClosureObserver: (@Sendable ([PlannedSourceClosure]) -> Void)? = nil
