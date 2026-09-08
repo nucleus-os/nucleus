@@ -68,6 +68,13 @@ package final class IdentityExplanationCollector: Sendable {
         priors: [TaskID: [UInt8]]
     ) -> [String] {
         guard let bytes = priors[task] else { return [] }
+        guard !bytes.isEmpty else {
+            return [
+                "  diverged from a recorded identity that kept no components,",
+                "  which is every record written before they were kept. This",
+                "  task is locatable once it next executes.",
+            ]
+        }
         guard let recorded = IdentityTrace.decode(bytes) else {
             return ["  <recorded identity components are not decodable>"]
         }

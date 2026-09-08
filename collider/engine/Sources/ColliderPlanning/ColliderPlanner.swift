@@ -244,9 +244,11 @@ public struct ColliderPlanner {
             record = value
         }
         guard record.identity == identity else {
-            if let components = record.identityComponents {
-                services.observeRecordedIdentity?(task.id, Array(components))
-            }
+            // Signalled even where the record kept no components, because a
+            // task that diverges and cannot say why is the answer to a
+            // different question than one that never diverged at all.
+            services.observeRecordedIdentity?(
+                task.id, record.identityComponents.map(Array.init) ?? [])
             return TaskAssessment(
                 isClean: false,
                 explanation:
