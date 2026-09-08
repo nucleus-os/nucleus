@@ -44,7 +44,25 @@ package struct SourceImageAttachmentAction: ColliderAction {
             hostname: hostname,
             workingDirectory: "/source",
             hostWorkingDirectory: root,
-            mounts: [],
+            // Two shares, the second inside the first. Whether the runtime
+            // establishes a mount nested within another decides how a source
+            // tree can be delivered when only part of it is materialized: an
+            // inner share lets the materialized part be attached over the
+            // checkout's own copy, and no inner share means the whole tree has
+            // to be assembled before anything can read it. The outer share
+            // holds its own file at the inner share's path, so the guest can
+            // tell an established inner mount from a shadowed one -- reading
+            // the outer copy would otherwise look like success.
+            mounts: [
+                OCIMount(
+                    source: root.appending("outer"),
+                    target: "/probe",
+                    access: .readOnly),
+                OCIMount(
+                    source: root.appending("inner"),
+                    target: "/probe/sub",
+                    access: .readOnly),
+            ],
             // The image is mounted where it lies. There is no volume to
             // establish from it and no copy of its bytes: an artifact that
             // happens to be a filesystem is attached as one.
@@ -74,7 +92,8 @@ package struct SourceImageAttachmentAction: ColliderAction {
                     + "stat -c %a /source/executable; stat -c %a /source/readable; "
                     + "readlink /source/relative-link; cat /source/readable; "
                     + "stat -c %u /source/readable; stat -c %g /source/readable; "
-                    + "stat -c %a /source/owner-only; cat /source/owner-only",
+                    + "stat -c %a /source/owner-only; cat /source/owner-only; "
+                    + "cat /probe/marker; cat /probe/sub/marker",
             ],
             environment: [:],
             output: .captured(limit: 64 * 1_024))
@@ -135,6 +154,20 @@ package struct SourceImageAttachmentAction: ColliderAction {
             atPath: tree.appending("readable").string,
             toPath: tree.appending("nested/hardlink").string)
 
+        // The nesting probe, built beside the image because it answers a
+        // question about the same delivery path. `outer/sub/marker` is what
+        // the guest reads if the inner share never took.
+        let outer = root.appending("outer")
+        try context.files.remove(outer)
+        try context.files.createDirectory(outer.appending("sub"))
+        try context.files.write(Array("outer\n".utf8), to: outer.appending("marker"))
+        try context.files.write(
+            Array("shadowed\n".utf8), to: outer.appending("sub/marker"))
+        let inner = root.appending("inner")
+        try context.files.remove(inner)
+        try context.files.createDirectory(inner)
+        try context.files.write(Array("inner\n".utf8), to: inner.appending("marker"))
+
         try SourceTreeImage.write(tree: tree, to: root.appending("source.img"))
 
         // Concurrently, because that is the claim: several containers holding
@@ -157,9 +190,9 @@ package struct SourceImageAttachmentAction: ColliderAction {
             throw SourceImageAttachmentFailure(
                 "two containers reading one image disagree: \(readings)")
         }
-        guard lines.count == 10 else {
+        guard lines.count == 12 else {
             throw SourceImageAttachmentFailure(
-                "the guest reported \(lines.count) facts rather than ten: \(lines)")
+                "the guest reported \(lines.count) facts rather than twelve: \(lines)")
         }
         // The guest kernel resolving both names to one inode is the claim the
         // host-side reading cannot make on the kernel's behalf.
@@ -207,6 +240,19 @@ package struct SourceImageAttachmentAction: ColliderAction {
         guard lines[9] == "owner only" else {
             throw SourceImageAttachmentFailure(
                 "the guest reads \(lines[9]) from a file only its owner may read")
+        }
+        guard lines[10] == "outer" else {
+            throw SourceImageAttachmentFailure(
+                "the guest does not see the outer share: \(lines[10])")
+        }
+        // The fact this task exists to establish for nested delivery. Reading
+        // `shadowed` means the runtime dropped the inner share rather than
+        // establishing it over the outer one, and a tree delivered that way
+        // would silently be the checkout's own copy.
+        guard lines[11] == "inner" else {
+            throw SourceImageAttachmentFailure(
+                "a share nested inside another was not established; the guest "
+                    + "read \(lines[11]) where the inner share holds 'inner'")
         }
     }
 }
