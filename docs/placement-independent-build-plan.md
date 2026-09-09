@@ -413,6 +413,47 @@ outlived them because it was the one they could not see -- `/Users/maddy` is
 not a declared root, and `maddy` is not a path at all, so the placement
 assertion had nothing to reject.
 
+The sweep that executed under the corrected encoding rewrote those records,
+and the two accounts now plan the complete verification selection identically:
+every one of its 160 tasks reaches the same state from the builder and from the
+interactive account, the three dependency tasks among them.
+
+What still separates the two plans is not an identity. Two Android tasks are
+assessed from outputs the inspecting account may not read, and fifteen tasks
+downstream of them wait on artifacts that assessment never confirms. One is by
+design and the storage layout says so: the identity that executes is the
+identity that signs, so local-development signing material is readable by the
+builder and by no one else, and an account that inspects without ever executing
+is asking a question it was deliberately denied. The other is a repo launcher
+fetched before the store had a read mode for its group, which the
+content-addressed check reports satisfied forever because content is all it
+compares. Acquisition now adopts the store's mode on the path that already
+found the file, so a store heals as it is used; and a denial is now reported as
+a denial rather than as a failed validation, because "output validation failed"
+claims a result went bad and sends whoever is comparing two plans looking for
+an input that differs. Nothing about the task differs. The reader does.
+
+The remaining divergence is deliberate and belongs to neither category.
+`linux.package-source-snapshot` plans differently from the sweep's record in
+both accounts and by the same three components:
+`NUCLEUS_PRODUCT_SOURCE_AUTHORITY`, `_COMMIT`, and `_REF`, which the sweep held
+as `protected-main`, the verified revision, and `refs/heads/main`, and which a
+local build does not have at all. These are the protected-main provenance
+assertions rather than placement. A package built locally must not be
+identity-equal to one a protected-main run published, because only one of them
+carries provenance that was verified, and an identity that could not tell them
+apart is precisely the confusion this plan exists to prevent. The reuse clause
+of the gate below therefore covers compilation and stops where provenance is
+stamped; the publication tail is expected to execute on both sides and is not
+evidence of a discriminator.
+
+Reading that took extending the explanation once more. A composite component
+reported only its header, so a value present on one side and absent on the
+other rendered as `optional` against `optional none`: the two shapes, when the
+value the present side held is the whole of the difference. Carrying the
+payload into the report, elided by depth rather than dropped at the header, is
+what named the three variables instead of locating three anonymous positions.
+
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
@@ -423,10 +464,12 @@ remain. The CI checkout is the supported second checkout on this host; the
 launcher deliberately admits no other local source location.
 
 Gate: an automated build followed by a local build of one effective source, and
-the reverse ordering, execute no compilation the other already performed; the
-product store resolves the same artifact coordinates and bytes from both
-checkouts; and a second machine reproduces the same product digests from the
-same source and toolchain.
+the reverse ordering, execute no compilation the other already performed,
+excluding the provenance-stamped publication tail, which is expected to differ
+because only one of the two carries verified provenance; the product store
+resolves the same artifact coordinates and bytes from both checkouts; and a
+second machine reproduces the same product digests from the same source and
+toolchain.
 
 ## Phase 5: Consume Reproducibility in Delivery
 
