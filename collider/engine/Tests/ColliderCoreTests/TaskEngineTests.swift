@@ -1396,7 +1396,7 @@ private struct CyclicOwnerCompletionLowering: TaskPlanLowering {
     // change, never to make the test agree with what the encoder now emits.
     #expect(
         report.plan[0].identity.description
-            == "sha256:3493e04dc9b66f3f85bb84119533c5c3a2f9e791ca23d176a1574cf4df2289a5")
+            == "sha256:08e4f4defc1ea0d4ebaca422a95d8b373390e00a77cf21c8d3fc4b44765964cb")
 }
 
 @Test func taskEngineExplainsInvalidationAndThenSkipsCleanWork() async throws {

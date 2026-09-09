@@ -75,11 +75,6 @@ struct TaskIdentityBuilder {
                 bytes: requirement.invocation.context.identityBytes(
                     identityPathMap: services.identityPathMap))
             requirementEncoder.appendSequence(requirement.prebuildTargets) { $0.append($1) }
-            requirementEncoder.appendSequence(requirement.expectedOutputs) {
-                outputEncoder, output in
-                outputEncoder.append(path: output.path)
-                outputEncoder.append(output.validation.rawValue)
-            }
         }
         encoder.appendSequence(
             task.swiftTests.sorted(by: {
@@ -100,11 +95,6 @@ struct TaskIdentityBuilder {
             requirementEncoder.append(requirement.options.parallel)
             requirementEncoder.appendOptional(requirement.options.workers) {
                 $0.append(UInt64($1))
-            }
-            requirementEncoder.appendSequence(requirement.expectedBuildOutputs) {
-                outputEncoder, output in
-                outputEncoder.append(path: output.path)
-                outputEncoder.append(output.validation.rawValue)
             }
         }
 
@@ -175,13 +165,21 @@ struct TaskIdentityBuilder {
                 inputEncoder.append(bytes: tool.digest.bytes)
             }
         }
+        // Declared outputs, and not the postconditions beside them. An output
+        // slot is the contract other tasks reference by name, so it belongs to
+        // what this task is. A postcondition is an assertion about the result,
+        // which `TaskOutputValidator` checks on every execution and on every
+        // reuse, and checking is the whole of what it is for.
+        //
+        // Keying on one made a task's identity depend on which consumers a
+        // selection happened to include, because a lowering merges its
+        // consumers' expectations into the task it produces. Two commands then
+        // computed two identities for one compilation whose every input,
+        // argument, and operation agreed, and each invalidated what the other
+        // had just built.
         encoder.appendSequence(task.outputs) { outputEncoder, output in
             outputEncoder.append(path: output.path)
             outputEncoder.append(output.validation.rawValue)
-        }
-        encoder.appendSequence(task.postconditions) { postconditionEncoder, postcondition in
-            postconditionEncoder.append(path: postcondition.path)
-            postconditionEncoder.append(postcondition.validation.rawValue)
         }
         try encode(
             action: task.action,

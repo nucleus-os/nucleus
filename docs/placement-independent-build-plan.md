@@ -458,6 +458,35 @@ value the present side held is the whole of the difference. Carrying the
 payload into the report, elided by depth rather than dropped at the header, is
 what named the three variables instead of locating three anonymous positions.
 
+Measuring the reuse pair found a seventh discriminator, and it is the first
+that has nothing to do with placement. A local build after a protected-main
+sweep reused thirty-three of the build closure's forty tasks and executed
+seven: five declared to run every time or their discovery children, and two
+Swift package builds. Running it again immediately executed five and compiled
+nothing, so the always-run roots are output-stable and a build reuses its own
+predecessor exactly. The reverse ordering re-executed the same two tasks, and
+comparing the two records showed every consumed artifact digest and every
+dependency identity agreeing; only the recipe differed.
+
+The cause was the command. A lowering merges its consumers' expected outputs
+into the postconditions of the task it produces, and those postconditions were
+encoded into that task's identity. Which consumers exist depends on what the
+selection reached, so `collider build all` and `collider verify all` computed
+two identities for one compilation whose every input, argument, and operation
+agreed -- differing only in `expectedOutputs`, a sequence of one against a
+sequence of two -- and each invalidated what the other had just built. Neither
+the checkout, the machine, nor the account was involved; the measurement had
+been comparing two selections and reading the result as a property of the two
+sides.
+
+A postcondition is an assertion about a result, not an input that determines
+one. It is now checked rather than keyed. `TaskOutputValidator` runs the
+postconditions on every execution and on every reuse, so a postcondition the
+retained outputs do not satisfy still refuses the record -- by checking rather
+than by keying, which is what makes reusing across selections safe, and which a
+weakened assertion no longer pays for with a rebuild. Declared output slots
+stay in identity: a slot is the contract other tasks reference by name.
+
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.

@@ -74,6 +74,53 @@ import Testing
     #expect(!difference.isEmpty)
 }
 
+@Test func assertingMoreAboutAResultDoesNotMakeItADifferentResult() async throws {
+    func identity(alsoExpecting extra: [PathPostcondition]) async throws -> ArtifactDigest {
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.build"),
+            component: ComponentID(rawValue: "fixture"))
+        let _: ArtifactReference = try builder.output(
+            "products",
+            path: FilePath("/products"),
+            validation: .nonEmptyDirectory)
+        let task = builder.build(
+            inputs: [.file(FilePath("/source"))],
+            postconditions: [
+                PathPostcondition(path: FilePath("/products"), validation: .nonEmptyDirectory)
+            ] + extra)
+        let digest = ArtifactDigest(bytes: Array(repeating: 9, count: 32))
+        let services = TaskPlanningServices(
+            digestBytes: { ArtifactDigest.sha256($0) },
+            digestFile: { _ in digest },
+            digestTree: { _ in digest },
+            digestSourceCheckout: { _ in digest },
+            semanticToolIdentity: { _, _ in
+                ToolIdentitySnapshot(path: FilePath("/tool"), digest: digest)
+            },
+            taskState: { _ in .missing },
+            validateOutputs: { _ in })
+        let plan = try await ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first).identity
+    }
+
+    // A lowering merges its consumers' expectations into the task it produces,
+    // so keying on them made one compilation carry as many identities as there
+    // were selections that reached it. Every input, argument and operation
+    // agreed; only what someone intended to check about the result differed.
+    let plain = try await identity(alsoExpecting: [])
+    let stricter = try await identity(alsoExpecting: [
+        PathPostcondition(
+            path: FilePath("/products/tool"),
+            validation: .executableFile)
+    ])
+    #expect(plain == stricter)
+}
+
 @Test func coldConsumersDeferWithoutReadingUnproducedArtifacts() async throws {
     var producer = TaskBuilder(
         id: TaskID(rawValue: "fixture.producer"),

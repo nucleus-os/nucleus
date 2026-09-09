@@ -30,7 +30,7 @@ import Testing
     }
 }
 
-@Test func sharedPostconditionParticipatesInIdentityAndCleanliness() async throws {
+@Test func sharedPostconditionIsCheckedOnReuseRatherThanKeyedInto() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-postcondition-\(UUID().uuidString)",
         isDirectory: true)
@@ -62,29 +62,46 @@ import Testing
         selected: [task.id],
         stateRoot: state,
         options: TaskExecutionOptions(dryRun: true))
+    func planning(postcondition: PathPostcondition) async throws -> TaskExecutionReport {
+        try await ColliderEngine(runtime: runtime).execute(
+            graph: TaskGraph([
+                TaskDeclaration(
+                    id: task.id,
+                    component: task.component,
+                    postconditions: [postcondition],
+                    action: task.action)
+            ]),
+            selected: [task.id],
+            stateRoot: state,
+            options: TaskExecutionOptions(dryRun: true))
+    }
+
+    // Asserting something weaker about a result that has not changed is not a
+    // reason to produce it again. What a lowering's consumers expect merges
+    // into the task they share, so keying on it gave one compilation as many
+    // identities as there were selections reaching it.
+    let weakened = try await planning(
+        postcondition: PathPostcondition(path: shared, validation: .exists))
+
+    // Asserting something the outputs do not satisfy still refuses the record,
+    // by checking rather than by keying, which is what keeps this safe.
+    let unsatisfied = try await planning(
+        postcondition: PathPostcondition(
+            path: shared.appending("absent"),
+            validation: .regularFile))
+
     try FileManager.default.removeItem(atPath: marker.string)
     let missing = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: state,
         options: TaskExecutionOptions(dryRun: true))
-    let changed = TaskDeclaration(
-        id: task.id,
-        component: task.component,
-        postconditions: [
-            PathPostcondition(path: shared, validation: .exists)
-        ],
-        action: task.action)
-    let changedPlan = try await ColliderEngine(runtime: runtime).execute(
-        graph: TaskGraph([changed]),
-        selected: [changed.id],
-        stateRoot: state,
-        options: TaskExecutionOptions(dryRun: true))
 
     #expect(first.executed == [task.id])
     #expect(clean.plan[0].isClean)
+    #expect(weakened.plan[0].isClean)
+    #expect(!unsatisfied.plan[0].isClean)
+    #expect(unsatisfied.plan[0].explanation.contains("validation failed"))
     #expect(!missing.plan[0].isClean)
     #expect(missing.plan[0].explanation.contains("validation failed"))
-    #expect(!changedPlan.plan[0].isClean)
-    #expect(changedPlan.plan[0].explanation.hasPrefix("input identity changed "))
 }
