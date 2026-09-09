@@ -6,8 +6,15 @@ import Testing
 struct ShellProcessTests {
     @Test func reapStatusPreservesTerminationSignal() throws {
         let child = fork()
-        let pid = try #require(child >= 0 ? child : nil)
-        if pid == 0 {
+        // Between fork and _exit the child holds one thread out of the many
+        // this process runs tests on, and every lock the others happened to
+        // hold at that instant is inherited locked with no owner to release
+        // it. So the child may touch nothing that allocates or enters the
+        // testing library. Recording an expectation does both, and a child
+        // that deadlocks there never exits: it survives as an orphan holding
+        // the runner's standard output open, and the harness waits for an end
+        // of file that cannot arrive.
+        if child == 0 {
             var signals = sigset_t()
             unsafe sigemptyset(&signals)
             unsafe sigaddset(&signals, SIGTERM)
@@ -16,6 +23,7 @@ struct ShellProcessTests {
             _ = raise(SIGTERM)
             _exit(99)
         }
+        let pid = try #require(child > 0 ? child : nil)
 
         var exitCode: Int32 = -1
         var result: Int32 = 0
