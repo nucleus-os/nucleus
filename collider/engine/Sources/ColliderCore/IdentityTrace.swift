@@ -126,36 +126,55 @@ public enum IdentityTrace {
     /// Reported in encounter order and capped, because a genuinely unrelated
     /// pair disagrees everywhere and printing all of it buries the first
     /// disagreement, which is usually the informative one.
+    /// `payloadLimit` bounds each reported side, so a composite that diverged
+    /// says what it held without a large subtree crowding out the differences
+    /// after it.
     public static func difference(
         recorded: [Node],
         planned: [Node],
-        limit: Int = 20
+        limit: Int = 20,
+        payloadLimit: Int = 8
     ) -> [String] {
         var lines: [String] = []
         var reported = 0
         var truncated = false
 
-        func describe(_ node: Node) -> String {
-            render([node], indent: 0).first ?? "<empty>"
+        // A composite renders as a header and the lines beneath it, and the
+        // header alone is what a differing side has in common with every
+        // other composite. Reporting `optional` against `optional none` says
+        // only that one side had a value, when the value is the whole of what
+        // diverged, so the payload is carried into the report and elided by
+        // depth rather than dropped at the header.
+        func describe(_ node: Node) -> [String] {
+            let rendered = render([node], indent: 0)
+            guard !rendered.isEmpty else { return ["<empty>"] }
+            guard rendered.count > payloadLimit else { return rendered }
+            return rendered.prefix(payloadLimit) + ["<\(rendered.count - payloadLimit) more lines>"]
         }
 
-        func report(_ location: [String], _ recorded: String, _ planned: String) {
+        func report(_ location: [String], _ recorded: [String], _ planned: [String]) {
             guard reported < limit else {
                 truncated = true
                 return
             }
             reported += 1
             lines.append(location.isEmpty ? "identity" : location.joined(separator: " > "))
-            lines.append("  recorded  " + recorded)
-            lines.append("  planned   " + planned)
+            func emit(_ label: String, _ rendered: [String]) {
+                lines.append("  " + label + rendered[0])
+                // Continuations align under the first line's value so a
+                // multi-line side stays attributable to its own label.
+                lines += rendered.dropFirst().map { String(repeating: " ", count: 12) + $0 }
+            }
+            emit("recorded  ", recorded)
+            emit("planned   ", planned)
         }
 
         func compare(_ left: [Node], _ right: [Node], at location: [String]) {
             if left.count != right.count {
                 report(
                     location,
-                    "\(left.count) components",
-                    "\(right.count) components")
+                    ["\(left.count) components"],
+                    ["\(right.count) components"])
             }
             for offset in 0..<min(left.count, right.count) {
                 compare(left[offset], right[offset], at: location + ["[\(offset)]"])
@@ -180,8 +199,8 @@ public enum IdentityTrace {
                 if a.count != b.count {
                     report(
                         location,
-                        "sequence(\(a.count))",
-                        "sequence(\(b.count))")
+                        ["sequence(\(a.count))"],
+                        ["sequence(\(b.count))"])
                 }
                 for offset in 0..<min(a.count, b.count) {
                     compare(a[offset], b[offset], at: location + ["[\(offset)]"])

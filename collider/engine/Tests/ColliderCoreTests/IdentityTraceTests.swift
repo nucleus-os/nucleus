@@ -138,6 +138,44 @@ import Testing
     #expect(difference.contains("sequence(2)"))
 }
 
+@Test func aValueOnlyOneSideHeldIsReportedRatherThanItsShape() throws {
+    func encoded(ref: String?) -> [IdentityTrace.Node] {
+        var encoder = IdentityEncoder()
+        encoder.append("NUCLEUS_PRODUCT_SOURCE_REF")
+        encoder.appendOptional(ref) { $0.append($1) }
+        return IdentityTrace.decode(encoder.bytes) ?? []
+    }
+
+    let difference = IdentityTrace.difference(
+        recorded: encoded(ref: "refs/heads/main"),
+        planned: encoded(ref: nil)
+    ).joined(separator: "\n")
+
+    // A present optional against an absent one differs precisely in the value
+    // the present one held, so reporting the two shapes answers nothing.
+    #expect(difference.contains("refs/heads/main"))
+    #expect(difference.contains("optional none"))
+}
+
+@Test func aDivergedCompositeIsElidedByDepthRatherThanDropped() throws {
+    func encoded(present: Bool) -> [IdentityTrace.Node] {
+        var encoder = IdentityEncoder()
+        encoder.appendOptional(present ? 0 : nil) { encoder, _ in
+            encoder.appendSequence(0..<6) { $0.append("entry-\($1)") }
+        }
+        return IdentityTrace.decode(encoder.bytes) ?? []
+    }
+
+    let difference = IdentityTrace.difference(
+        recorded: encoded(present: true),
+        planned: encoded(present: false),
+        payloadLimit: 4)
+
+    #expect(difference.contains { $0.contains("entry-0") })
+    #expect(!difference.contains { $0.contains("entry-5") })
+    #expect(difference.contains { $0.contains("more lines") })
+}
+
 @Test func identicalIdentitiesHaveNoDifference() {
     var encoder = IdentityEncoder()
     encoder.append("same")
