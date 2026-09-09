@@ -487,6 +487,12 @@ extension ColliderRuntime {
         var completed = Set(plan.filter(\.isClean).map(\.task))
         var resolvedIdentities = Dictionary(
             uniqueKeysWithValues: (plan + swiftBuildPlans).map { ($0.task, $0.identity) })
+        // What each identity was resolved over at execution time. Planning
+        // recorded the same for the plan it froze, but a run resolves again
+        // against the artifacts its own upstream tasks just produced, and the
+        // record has to describe the identity it stores rather than an earlier
+        // one that agreed by luck.
+        var resolvedIdentityComponents: [TaskID: [UInt8]] = [:]
         completed.formUnion(swiftBuildPlans.filter(\.isClean).map(\.task))
         var pendingBuilds = swiftBuilds.indices.filter {
             !swiftBuildPlans[$0].isClean
@@ -633,7 +639,7 @@ extension ColliderRuntime {
                             swiftBuildAttribution: nil,
                             recordsActiveArtifact: true)
                     }
-                    let resolvedIdentity = try TaskArtifactIdentity.resolve(
+                    let resolution = try TaskArtifactIdentity.resolve(
                         recipe: execution.plan.recipeIdentity, task: task,
                         dependencyIdentity: { resolvedIdentities[$0]! }
                     ) { reference in
@@ -642,7 +648,11 @@ extension ColliderRuntime {
                         artifactDigests[reference] = digest
                         return digest
                     }
+                    let resolvedIdentity = resolution.digest
                     resolvedIdentities[task.id] = resolvedIdentity
+                    if let components = resolution.components {
+                        resolvedIdentityComponents[task.id] = components
+                    }
                     var reusable = false
                     if !execution.plan.isForced, task.assessmentPolicy != .always,
                         case .record(let prior) = priorState.lookup(task.id),
@@ -712,16 +722,20 @@ extension ColliderRuntime {
                             taskSchedulingWait, task: task.id, in: eventRun)
                     }
                     executed.append(task.id)
+                    // Read out of the run's mutable resolution before the
+                    // concurrent task captures it.
+                    let recordedComponents =
+                        resolvedIdentityComponents[task.id]
+                        ?? plannedIdentityComponents[task.id]
 
-                    group.addTask { [execution = assessedExecution] in
+                    group.addTask { [execution = assessedExecution, recordedComponents] in
                         let taskStart = ContinuousClock().now
                         if let attribution = execution.swiftBuildAttribution {
                             do {
                                 let observations = try await self.executePlannedTask(
                                     execution.task,
                                     plan: execution.plan,
-                                    identityComponents: plannedIdentityComponents[
-                                        execution.task.id],
+                                    identityComponents: recordedComponents,
                                     stateRoot: stateRoot,
                                     stateStore: taskStateStore,
                                     eventRun: eventRun,
@@ -752,8 +766,7 @@ extension ColliderRuntime {
                             let observations = try await self.executePlannedTask(
                                 execution.task,
                                 plan: execution.plan,
-                                identityComponents: plannedIdentityComponents[
-                                    execution.task.id],
+                                identityComponents: recordedComponents,
                                 stateRoot: stateRoot,
                                 stateStore: taskStateStore,
                                 eventRun: eventRun,

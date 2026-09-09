@@ -78,12 +78,20 @@ public struct ColliderPlanner {
             let recipeIdentity = snapshot.digest
             identityComponents[task.id] = snapshot.bytes
             let deferred = task.dependencies.contains { current[$0] != true }
-            let identity =
+            let resolution =
                 try deferred
-                ? recipeIdentity
+                ? nil
                 : TaskArtifactIdentity.resolve(
                     recipe: recipeIdentity, task: task,
                     dependencyIdentity: { identities[$0]! }, digest: services.digestArtifact)
+            let identity = resolution?.digest ?? recipeIdentity
+            // Overwrites the recipe encoding recorded above wherever consumed
+            // content resolved on top of it. A task that reruns because an
+            // artifact it consumes changed cannot say which from the recipe,
+            // which is the encoding that did not change.
+            if let resolved = resolution?.components {
+                identityComponents[task.id] = resolved
+            }
             identities[task.id] = identity
             let forced =
                 rebuildSelected && explicitlySelected.contains(task.id)
@@ -169,19 +177,31 @@ public struct ColliderPlanner {
             // compare two encodings that never had to agree.
             identityComponents[lowered.task.id] = snapshot.bytes
             let deferred = lowered.task.dependencies.contains { current[$0] != true }
-            let identity =
+            let resolution =
                 try deferred
-                ? recipeIdentity
+                ? nil
                 : TaskArtifactIdentity.resolve(
                     recipe: recipeIdentity, task: lowered.task,
                     dependencyIdentity: { identities[$0]! }, digest: services.digestArtifact)
+            let identity = resolution?.digest ?? recipeIdentity
+            if let resolved = resolution?.components {
+                identityComponents[lowered.task.id] = resolved
+            }
             identities[lowered.task.id] = identity
-            let forced =
-                lowered.task.assessmentPolicy == .always
-                || (rebuildSelected && !explicitlySelected.isDisjoint(with: lowered.logicalOwners))
+            let rebuildRequested =
+                rebuildSelected && !explicitlySelected.isDisjoint(with: lowered.logicalOwners)
+            let forced = lowered.task.assessmentPolicy == .always || rebuildRequested
             let assessment =
                 forced
-                ? TaskAssessment(isClean: false, explanation: "rebuild required for lowered task")
+                // Both causes read as one sentence otherwise, and a plan whose
+                // whole purpose is to say what will run again should not make
+                // a task declared to run every time look like a rebuild
+                // something asked for.
+                ? TaskAssessment(
+                    isClean: false,
+                    explanation: rebuildRequested
+                        ? "rebuild requested for selected task"
+                        : "task is declared to run every time")
                 : deferred
                     ? TaskAssessment(
                         isClean: false, explanation: "awaiting consumed artifact content")

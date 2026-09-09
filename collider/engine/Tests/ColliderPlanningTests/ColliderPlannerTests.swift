@@ -6,6 +6,74 @@ import Synchronization
 import SystemPackage
 import Testing
 
+@Test func aRerunOnConsumedContentSaysWhichContent() async throws {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "fixture.producer"),
+        component: ComponentID(rawValue: "fixture"))
+    let artifact = try producer.output(
+        "value", path: FilePath("/produced"), validation: .regularFile)
+    var consumer = TaskBuilder(
+        id: TaskID(rawValue: "fixture.consumer"),
+        component: ComponentID(rawValue: "fixture"))
+    consumer.consume(artifact)
+    let producerTask = producer.build()
+    let consumerTask = consumer.build()
+    let recipe = ArtifactDigest(bytes: Array(repeating: 3, count: 32))
+
+    func plan(
+        artifactContent: [UInt8],
+        producerRecord: ArtifactDigest?
+    ) async throws -> ExecutionPlan {
+        let services = TaskPlanningServices(
+            digestBytes: { ArtifactDigest.sha256($0) },
+            digestFile: { _ in recipe },
+            digestTree: { _ in recipe },
+            digestSourceCheckout: { _ in recipe },
+            semanticToolIdentity: { _, _ in
+                ToolIdentitySnapshot(path: FilePath("/tool"), digest: recipe)
+            },
+            taskState: { id in
+                guard let producerRecord, id == producerTask.id else { return .missing }
+                return .record(
+                    TaskStateRecord(
+                        task: id,
+                        identity: producerRecord,
+                        outputs: [],
+                        completedAt: "2026-01-01T00:00:00Z"))
+            },
+            validateOutputs: { _ in },
+            digestArtifact: { _ in ArtifactDigest.sha256(artifactContent) })
+        return try await ColliderPlanner().plan(
+            graph: TaskGraph([producerTask, consumerTask]),
+            selected: [consumerTask.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+    }
+
+    // A clean producer is what lets the consumer resolve rather than defer,
+    // which is the only state in which consumed content reaches an identity.
+    let cold = try await plan(artifactContent: [1], producerRecord: nil)
+    let producerIdentity = try #require(
+        cold.declaredEntries.first { $0.task == producerTask.id }
+    ).identity
+    let first = try await plan(artifactContent: [1], producerRecord: producerIdentity)
+    let second = try await plan(artifactContent: [2], producerRecord: producerIdentity)
+
+    let a = try #require(first.identityComponents[consumerTask.id])
+    let b = try #require(second.identityComponents[consumerTask.id])
+    #expect(a != b)
+
+    // The recorded components must describe the identity that decided the
+    // rerun. Keeping the recipe encoding instead leaves them equal while the
+    // digests differ, and a divergence that cannot say why is the reason the
+    // components are kept at all.
+    let difference = IdentityTrace.difference(
+        recorded: try #require(IdentityTrace.decode(a)),
+        planned: try #require(IdentityTrace.decode(b)))
+    #expect(!difference.isEmpty)
+}
+
 @Test func coldConsumersDeferWithoutReadingUnproducedArtifacts() async throws {
     var producer = TaskBuilder(
         id: TaskID(rawValue: "fixture.producer"),
