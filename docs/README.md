@@ -82,14 +82,14 @@ verification below.
 2. Complete the reuse and reproduction acceptance in Phase 4 of the
    [placement-independent build plan](placement-independent-build-plan.md).
    Product execution uses canonical paths, and Phase 3's product-identity
-   rejection boundary has passed protected-main packaging. Record the
-   remaining local-to-automated cache reuse and cross-machine evidence. This
-   was ordered after the Chromium source work because position independence
-   could not be claimed while a primary input was established by a hand-keyed
-   mutable workspace; that input is now a content-addressed image whose
-   filesystem identity and timestamps are derived from the pinned inputs, so
-   the evidence is the only thing still outstanding. The macOS host-tool VM
-   phase remains deferred until host execution produces a delivered artifact.
+   rejection boundary has passed protected-main packaging. Record the remaining
+   local-to-automated cache reuse evidence. This was ordered after the Chromium
+   source work because position independence could not be claimed while a
+   primary input was established by a hand-keyed mutable workspace; that input
+   is now a content-addressed image whose filesystem identity and timestamps
+   are derived from the pinned inputs, so the evidence is the only thing still
+   outstanding. The macOS host-tool VM phase remains deferred until host
+   execution produces a delivered artifact.
 3. Complete the remaining gates in Phases 4, 5, and 7 of the
    [GitHub Actions self-hosted CI plan](github-actions-self-hosted-runner-plan.md).
    The protected-main host-contract, provenance, build, and test lanes already

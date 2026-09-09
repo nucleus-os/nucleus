@@ -61,13 +61,14 @@ the host checkout or store path; a Linux product built from two checkouts of
 one revision is byte-identical; and Linux task identities are unchanged by
 moving either checkout.
 
-Status: complete, except the gate's byte-identity clause, which Phase 4 owns and
-which needs a second machine to state. No task identity in the graph contains
-the checkout or the store, the lowered SwiftPM identities that contradicted that
-in a shared build store now agree, and every root this workspace resolves
-through is declared. What follows records how that was
-established, because the evidence took three forms and the cause was none of the
-things the values suggested.
+Status: complete. The gate's byte-identity clause is stated by two checkouts of
+one revision on this host, which is the whole of what it needs; a second
+machine was once expected to state it and is not part of the supported host
+matrix. No task identity in the graph contains the checkout or the store, the
+lowered SwiftPM identities that contradicted that in a shared build store now
+agree, and every root this workspace resolves through is declared. What follows
+records how that was established, because the evidence took three forms and the
+cause was none of the things the values suggested.
 
 The store says otherwise about the identities SwiftPM lowering produces. The
 authoritative checkout's test lanes use the host build contexts
@@ -145,14 +146,15 @@ workspace verification lock although a plan mutates nothing, so planning a test
 graph from the account that owns the checkout requires crossing identities.
 
 Until it is resolved, no collection may run automatically. An explicit prune
-costing the other checkout a rebuild is a choice someone made; the same eviction
-on every build would be the steady state. Every remaining host path in an identity is under
-the store, which both accounts share, so none of them divides this host's warm
-state; they divide only reproduction on a second machine. They are of three
-kinds: the host task environment, where a host path is what a host command
-needs; one value the container prints back so the host learns where an export
-landed, which the container never resolves; and the interim prefix-mapping
-flags, which now apply to host compilation alone.
+costing the other checkout a rebuild is a choice someone made; the same
+eviction on every build would be the steady state. Every remaining host path in
+an identity is under the store, which both accounts share, so none of them
+divides this host's warm state; they would divide reproduction between two
+macOS hosts, which the supported matrix does not have. They are of three kinds:
+the host task environment, where a host path is what a host command needs; one
+value the container prints back so the host learns where an export landed,
+which the container never resolves; and the interim prefix-mapping flags, which
+now apply to host compilation alone.
 
 Phase 3 begins here rather than waiting. A container is given the canonical
 location, so mapping its recorded paths maps a prefix that never appears.
@@ -339,9 +341,11 @@ reaching source from a debugger or an editor, which the host builds serve, and a
 product compiled in a container is not read that way. Its absence is why a
 product is now fifty-four files rather than seventy.
 
-What this does not establish is a second machine. Both productions share this
-host's toolchain, kernel, and container runtime, and only what a build derives
-locally has been made to differ.
+Both productions share this host's toolchain, kernel, and container runtime,
+and only what a build derives locally has been made to differ. That is the
+whole of what reproduction has to mean here: this host is the sole builder of
+anything delivered, so there is no second macOS machine whose agreement a
+product depends on.
 
 Discarding a working set remains impossible and is no longer in the way. It is
 declared with a runtime as its producer rather than a task, so no workflow lock
@@ -458,18 +462,30 @@ Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
-Local-to-automated reuse on an identical effective dirty tree, product-store
-digest agreement across the two checkouts, and reproduction on a second machine
-remain. The CI checkout is the supported second checkout on this host; the
-launcher deliberately admits no other local source location.
+Local-to-automated reuse on an identical effective dirty tree and product-store
+digest agreement across the two checkouts remain. The CI checkout is the
+supported second checkout on this host; the launcher deliberately admits no
+other local source location.
+
+Cross-machine reproduction was carried here as an acceptance clause and does
+not belong to this plan. This host is the sole CI builder and the primary
+development host, reached locally or remotely; Linux hosts develop, build, and
+test the graph they support and never execute CI. Nothing delivered is produced
+anywhere else, and qualification consumes no cache namespace, so no product
+depends on a second machine agreeing with this one.
+
+Where two hosts do meet is the shared content-addressed store the [Linux x86_64
+development host plan](linux-x86-64-development-host-plan.md) describes, and
+identity agreement there is a cache-hit property rather than a correctness one.
+A miss executes locally, a mismatched digest or inconsistent toolchain claim is
+quarantined and fails the action, and protected-main never consumes a developer
+mapping. That plan gates it, because that is where it first has consequences.
 
 Gate: an automated build followed by a local build of one effective source, and
 the reverse ordering, execute no compilation the other already performed,
 excluding the provenance-stamped publication tail, which is expected to differ
-because only one of the two carries verified provenance; the product store
-resolves the same artifact coordinates and bytes from both checkouts; and a
-second machine reproduces the same product digests from the same source and
-toolchain.
+because only one of the two carries verified provenance; and the product store
+resolves the same artifact coordinates and bytes from both checkouts.
 
 ## Phase 5: Consume Reproducibility in Delivery
 
@@ -493,3 +509,6 @@ signing or publication.
 - Do not relocate the authoritative checkout, the build store, or any
   persistent workspace to achieve this. Where the host keeps a tree stops
   mattering, which is the point.
+- Do not gate this plan on a second macOS machine reproducing a product. One
+  host builds everything delivered, and cross-host reuse is gated where it is
+  consumed rather than proven in advance here.
