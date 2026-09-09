@@ -104,6 +104,57 @@ import Testing
     #expect(entry.durationEstimate?.durationNanoseconds == 42_000)
 }
 
+@Test func anOutputThisAccountMayNotReadIsNotReportedAsAFailedResult() async throws {
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.signing-identity"),
+        component: ComponentID(rawValue: "fixture"))
+    let digest = ArtifactDigest(bytes: Array(repeating: 5, count: 32))
+
+    func assess(
+        validateOutputs: @escaping @Sendable (TaskDeclaration) throws -> Void,
+        recordedIdentity: ArtifactDigest?
+    ) async throws -> TaskPlanEntry {
+        let services = TaskPlanningServices(
+            digestBytes: { _ in digest },
+            digestFile: { _ in digest },
+            digestTree: { _ in digest },
+            digestSourceCheckout: { _ in digest },
+            semanticToolIdentity: { _, _ in
+                ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+            },
+            taskState: { id in
+                guard let recordedIdentity else { return .missing }
+                return .record(
+                    TaskStateRecord(
+                        task: id,
+                        identity: recordedIdentity,
+                        outputs: [],
+                        completedAt: "2026-01-01T00:00:00Z"))
+            },
+            validateOutputs: validateOutputs)
+        let plan = try await ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first)
+    }
+
+    let planned = try await assess(validateOutputs: { _ in }, recordedIdentity: nil)
+    let denied = try await assess(
+        validateOutputs: { _ in throw Errno.permissionDenied },
+        recordedIdentity: planned.identity)
+
+    // Inputs agreed; the outputs were unreadable. Some of what a build
+    // produces is legible only to the identity that executes, so an account
+    // that inspects reaches this on outputs it was never meant to open --
+    // which is not the same claim as a result that went bad.
+    #expect(!denied.isClean)
+    #expect(!denied.explanation.contains("output validation failed"))
+    #expect(denied.explanation.contains("not readable by this account"))
+}
+
 @Test func planningDoesNotReadUnselectedInputsOrValidateUnselectedOutputs() async throws {
     let selected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.selected"),

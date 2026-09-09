@@ -275,6 +275,22 @@ public struct ColliderPlanner {
             return TaskAssessment(
                 isClean: true,
                 explanation: "identity and outputs are valid")
+        } catch Errno.permissionDenied {
+            // The inputs agreed and the outputs could not be read. Part of what
+            // a build produces is legible only to the identity that executes --
+            // local-development signing keys among it -- so an account that
+            // inspects without ever executing reaches this on outputs it was
+            // never meant to open.
+            //
+            // Calling that a failed validation describes a result that went
+            // bad, and sends whoever is comparing two accounts' plans looking
+            // for an input that differs between them. Nothing about the task
+            // differs; the reader does.
+            return TaskAssessment(
+                isClean: false,
+                explanation:
+                    "outputs are not readable by this account; the identity that executes owns them"
+            )
         } catch {
             return TaskAssessment(
                 isClean: false,
