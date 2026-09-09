@@ -140,6 +140,34 @@ struct DownloadPolicyTests {
         #expect(permissions.uint16Value & 0o007 == 0)
     }
 
+    @Test func anInputAcquiredUnderAnOlderModeAdoptsTheStoreReadMode() async throws {
+        let body = Data("verified download".utf8)
+        let fixture = try fixture(
+            response: StubHTTPResponse(
+                status: 200,
+                headers: headers(for: body),
+                body: body))
+        defer { fixture.remove() }
+
+        try FileManager.default.createDirectory(
+            at: fixture.candidate.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try body.write(to: fixture.candidate)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: UInt16(0o600))],
+            ofItemAtPath: fixture.candidate.path)
+
+        try await fixture.download()
+
+        // Content already satisfies the request, so nothing rewrites the file
+        // and an owner-only mode would outlive every later download of it.
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: fixture.candidate.path)
+        let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+        #expect(permissions.uint16Value & 0o040 != 0)
+        #expect(permissions.uint16Value & 0o007 == 0)
+    }
+
     @Test func rejectsHTTPStatusBeforeBodyMetadata() async throws {
         try await expectFailure(
             StubHTTPResponse(status: 503, headers: [:], body: Data()),

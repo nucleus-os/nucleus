@@ -87,6 +87,7 @@ public actor ColliderDownloads {
     ) async throws {
         if FileManager.default.fileExists(atPath: candidate.string) {
             if try digest(file: candidate) == specification.expectedDigest {
+                try adoptStoreReadMode(candidate)
                 return
             }
             try FileManager.default.removeItem(atPath: candidate.string)
@@ -933,6 +934,25 @@ private func appendFile(_ source: FilePath, to destination: FilePath) throws {
 /// store, which reports it as a failed output validation against a file that
 /// is perfectly good.
 private let storeFilePermissions: FilePermissions = [.ownerReadWrite, .groupRead]
+
+/// Brings a file acquired earlier up to the mode the store lends its group.
+///
+/// The check above answers from content alone, so a file that landed under an
+/// earlier mode is reported satisfied forever and never rewritten. It stays
+/// readable to the account that acquired it and to no other, and that surfaces
+/// nowhere near here: another account planning the same task cannot digest the
+/// output it is validating and calls the task dirty for a reason unrelated to
+/// any of its inputs.
+private func adoptStoreReadMode(_ path: FilePath) throws {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path.string)
+    guard let mode = attributes[.posixPermissions] as? NSNumber else { return }
+    let current = mode.uint16Value
+    let required = UInt16(storeFilePermissions.rawValue)
+    guard current & required != required else { return }
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: current | required)],
+        ofItemAtPath: path.string)
+}
 
 private func copyFile(_ source: FilePath, to destination: FilePath) throws {
     let input = try FileDescriptor.open(source, .readOnly)
