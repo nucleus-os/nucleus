@@ -506,10 +506,24 @@ Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
-Product-store digest agreement across the two checkouts remains, as does reuse
-on an identical effective dirty tree rather than a committed revision. The CI
-checkout is the supported second checkout on this host; the launcher
-deliberately admits no other local source location.
+Product-store agreement across the two checkouts is established, and the store
+established it rather than a measurement. Thirty-six of the eighty-four
+products it holds carry provenance from both `local-development` and
+`protected-main` against one manifest -- the authoritative checkout at
+`1b32889d` and a protected-main run at `f1fb3d9b`, two revisions whose
+difference is documentation and therefore not a product input. Publishing an
+identity that already exists compares the whole incoming manifest against the
+stored one, archive digest and every file digest included, and refuses a
+mismatch as an artifact that "already exists with a different manifest". A
+second provenance can only attach where the bytes agreed, so those thirty-six
+are receipts rather than observations. The remaining forty-eight were produced
+by one side only.
+
+What is untested is the dirty tree. Both orderings above were measured on a
+committed revision, and a working tree with uncommitted changes is the case the
+gate's "one effective source" also covers. The CI checkout is the supported
+second checkout on this host; the launcher deliberately admits no other local
+source location.
 
 Cross-machine reproduction was carried here as an acceptance clause and does
 not belong to this plan. This host is the sole CI builder and the primary
