@@ -1018,6 +1018,7 @@ private func rendered(_ command: CommandSpec) -> String {
 public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
     case invalidOutput(String)
     case outputLimitExceeded(Int)
+    case outputSilenceExceeded(Duration)
     case swiftBuildFailed(attribution: String, reason: String)
     case unschedulableTaskPlan([String])
 
@@ -1025,6 +1026,9 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
         switch self {
         case .invalidOutput(let path): "task produced an invalid output at \(path)"
         case .outputLimitExceeded(let limit): "captured output exceeded \(limit) bytes"
+        case .outputSilenceExceeded(let bound):
+            "task wrote nothing for \(bound) and was stopped; its output is in "
+                + "the stage log up to the point it went quiet"
         case .swiftBuildFailed(let attribution, let reason):
             "Swift package build failed for \(attribution): \(reason)"
         case .unschedulableTaskPlan(let tasks):

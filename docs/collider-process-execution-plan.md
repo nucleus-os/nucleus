@@ -10,6 +10,14 @@ filled one pipe while the parent was reading another, and no execution blocks a
 cooperative thread while it waits. No layer reaches for `Foundation.Process`,
 because every layer has an execution path available to it.
 
+No execution waits without a bound. Output is read to end of file, and an
+execution that has stopped producing any is indistinguishable from one working
+quietly, so the bound is silence rather than elapsed time: a build of any
+length reports as it goes, and one that has reported nothing for an hour has
+stopped. Reaching the bound terminates the process group and fails the task
+with the reason, rather than holding the machine's single execution admission
+until someone notices.
+
 ## Current State
 
 Two mechanisms execute child processes. `ColliderRuntime` uses the pinned
@@ -226,9 +234,17 @@ compares provenance rather than trusting the conversion, and the whole
 repository's task identities are the check: an unchanged checkout that replans
 to different identities is the failure this phase must not produce.
 
-The deadlock is latent rather than observed. No capture has hung, and the
-argument for this work rests on the shape of the code, on the cooperative-thread
-blocking that is not latent at all, and on the descriptor defect already found
-at the same site. The reproduction the gate names — a child that fills both
-pipes — is written before the conversion, so the fix has something that fails
+The deadlock this phase names is still latent: no capture has hung on a child
+filling both pipes, and the argument for the work rests on the shape of the
+code, on the cooperative-thread blocking that is not latent at all, and on the
+descriptor defect already found at the same site. The reproduction the gate
+names is written before the conversion, so the fix has something that fails
 without it.
+
+An unbounded wait is no longer latent, though it arrived by another route. A
+test that forked and then recorded an expectation in the child left a process
+behind, its container never finished, and the task waited sixteen hours holding
+the only builder. That is what the silence bound in the invariant answers. It
+bounds the waiting rather than the work, because the products here take hours
+when they are healthy, and a wall-clock bound cannot tell a long build from a
+stopped one.

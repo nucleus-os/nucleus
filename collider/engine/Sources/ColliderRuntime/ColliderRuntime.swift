@@ -71,6 +71,8 @@ public actor ColliderRuntime {
     let taskOutputObserver: TaskOutputObserver
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
+    /// Overridable so a test can reach the bound without waiting for it.
+    let outputSilenceBound: Duration
     let ociBackend: (any OCIRuntimeBackend)?
     /// Reads the container store without the service that writes it.
     ///
@@ -92,7 +94,8 @@ public actor ColliderRuntime {
     public init(
         logging: CommandLogging? = nil,
         cancellation: RuntimeCancellation = RuntimeCancellation(),
-        taskOutputObserver: TaskOutputObserver = TaskOutputObserver()
+        taskOutputObserver: TaskOutputObserver = TaskOutputObserver(),
+        outputSilenceBound: Duration = defaultOutputSilenceBound
     ) {
         self.init(
             logging: logging,
@@ -100,6 +103,7 @@ public actor ColliderRuntime {
             taskOutputObserver: taskOutputObserver,
             downloadCacheRoot: defaultColliderDownloadCacheRoot(),
             ociConfiguration: .engineDefault,
+            outputSilenceBound: outputSilenceBound,
             ociBackend: nil,
             ociStore: nil)
     }
@@ -110,10 +114,12 @@ public actor ColliderRuntime {
         taskOutputObserver: TaskOutputObserver = TaskOutputObserver(),
         downloadCacheRoot: FilePath,
         ociConfiguration: OCIRuntimeConfiguration,
+        outputSilenceBound: Duration = defaultOutputSilenceBound,
         ociBackend: (any OCIRuntimeBackend)? = nil,
         ociStore: (any OCIStoreInspection)? = nil
     ) {
         self.logging = logging
+        self.outputSilenceBound = outputSilenceBound
         self.taskOutputObserver = taskOutputObserver
         downloads = ColliderDownloads(cacheRoot: downloadCacheRoot)
         self.cancellation = cancellation
@@ -663,20 +669,7 @@ public actor ColliderRuntime {
         onStarted: (@Sendable (Int32) async -> Void)?,
         process: CommandProcessCancellation
     ) async throws -> CommandResult {
-        guard let timeout = command.timeoutNanoseconds else {
-            do {
-                let result = try await executeWithoutTimeout(
-                    command,
-                    stage: stage,
-                    onStarted: onStarted,
-                    process: process)
-                process.finished()
-                return result
-            } catch {
-                process.finished()
-                throw error
-            }
-        }
+        let silence = OutputSilence()
         return try await withThrowingTaskGroup(
             of: TimedExecutionOutcome.self,
             returning: CommandResult.self
@@ -687,7 +680,8 @@ public actor ColliderRuntime {
                         command,
                         stage: stage,
                         onStarted: onStarted,
-                        process: process)
+                        process: process,
+                        silence: silence)
                     process.finished()
                     return .command(.success(result))
                 } catch {
@@ -695,28 +689,53 @@ public actor ColliderRuntime {
                     return .command(.failure(RuntimeExecutionFailure(error)))
                 }
             }
-            group.addTask {
-                try await ContinuousClock().sleep(for: .nanoseconds(Int64(timeout)))
-                return .deadline
-            }
-            let first = try await group.next()!
-            switch first {
-            case .command(let outcome):
-                group.cancelAll()
-                switch outcome {
-                case .success(let result):
-                    return result
-                case .failure(let failure):
-                    throw failure.underlying
+            if let timeout = command.timeoutNanoseconds {
+                group.addTask {
+                    try await ContinuousClock().sleep(for: .nanoseconds(Int64(timeout)))
+                    return .deadline
                 }
-            case .deadline:
-                process.requestTermination()
-                await waitForProcessCompletion(
-                    process.completion,
-                    gracePeriod: .seconds(2))
-                group.cancelAll()
-                return CommandResult(status: 0, timedOut: true)
             }
+            group.addTask {
+                await silence.awaitSilence(self.outputSilenceBound)
+                return .silent
+            }
+            var silenceExceeded = false
+            while let next = try await group.next() {
+                switch next {
+                case .command(let outcome):
+                    group.cancelAll()
+                    // A command stopped for silence reports that rather than the
+                    // signal it was stopped with, which describes the stopping
+                    // and not the reason for it.
+                    if silenceExceeded {
+                        throw RuntimeFailure.outputSilenceExceeded(self.outputSilenceBound)
+                    }
+                    switch outcome {
+                    case .success(let result):
+                        return result
+                    case .failure(let failure):
+                        throw failure.underlying
+                    }
+                case .deadline:
+                    process.requestTermination()
+                    await waitForProcessCompletion(
+                        process.completion,
+                        gracePeriod: .seconds(2))
+                    group.cancelAll()
+                    return CommandResult(status: 0, timedOut: true)
+                case .silent:
+                    // Terminating closes the descriptors the read is waiting on,
+                    // including any a left-behind process still holds, so the
+                    // command task finishes on its own and its partial output is
+                    // written before this reports why it stopped.
+                    process.requestTermination()
+                    await waitForProcessCompletion(
+                        process.completion,
+                        gracePeriod: .seconds(2))
+                    silenceExceeded = true
+                }
+            }
+            throw RuntimeFailure.outputSilenceExceeded(self.outputSilenceBound)
         }
     }
 
@@ -724,7 +743,8 @@ public actor ColliderRuntime {
         _ command: CommandSpec,
         stage: TaskID?,
         onStarted: (@Sendable (Int32) async -> Void)?,
-        process: CommandProcessCancellation
+        process: CommandProcessCancellation,
+        silence: OutputSilence
     ) async throws -> CommandResult {
         let presentation: TaskOutputPresentation? =
             switch command.input {
@@ -768,7 +788,8 @@ public actor ColliderRuntime {
                 input: NoInput.none,
                 stage: stage,
                 onStarted: onStarted,
-                process: process)
+                process: process,
+                silence: silence)
         case .terminal:
             return try await execute(
                 command,
@@ -778,7 +799,8 @@ public actor ColliderRuntime {
                 input: FileDescriptorInput.standardInput,
                 stage: stage,
                 onStarted: onStarted,
-                process: process)
+                process: process,
+                silence: silence)
         case .bytes(let bytes):
             return try await execute(
                 command,
@@ -788,7 +810,8 @@ public actor ColliderRuntime {
                 input: ArrayInput.array(bytes),
                 stage: stage,
                 onStarted: onStarted,
-                process: process)
+                process: process,
+                silence: silence)
         }
     }
 
@@ -800,7 +823,8 @@ public actor ColliderRuntime {
         input: consuming Input,
         stage: TaskID?,
         onStarted: (@Sendable (Int32) async -> Void)?,
-        process: CommandProcessCancellation
+        process: CommandProcessCancellation,
+        silence: OutputSilence
     ) async throws -> CommandResult {
         if command.output == .terminal {
             taskOutputObserver.terminalWillBegin()
@@ -834,7 +858,8 @@ public actor ColliderRuntime {
             logging: logging,
             stage: stage,
             onStarted: onStarted,
-            process: process)
+            process: process,
+            silence: silence)
     }
 
     private func executeStreaming<Input: InputProtocol>(
@@ -846,7 +871,8 @@ public actor ColliderRuntime {
         logging: CommandLogging?,
         stage: TaskID?,
         onStarted: (@Sendable (Int32) async -> Void)?,
-        process: CommandProcessCancellation
+        process: CommandProcessCancellation,
+        silence: OutputSilence
     ) async throws -> CommandResult {
         let file: FilePath? =
             switch command.output {
@@ -884,7 +910,8 @@ public actor ColliderRuntime {
                             execution.standardOutput,
                             limit: limit,
                             stream: .standardOutput,
-                            sink: sink)
+                            sink: sink,
+                            silence: silence)
                         await self.cancellation.unregisterProcessGroup(registration)
                         return bytes
                     } catch {
@@ -930,7 +957,8 @@ public actor ColliderRuntime {
                                         execution.standardOutput,
                                         limit: captureLimit,
                                         stream: .standardOutput,
-                                        sink: sink))
+                                        sink: sink,
+                                        silence: silence))
                             }
                             group.addTask {
                                 StreamResult(
@@ -939,7 +967,8 @@ public actor ColliderRuntime {
                                         execution.standardError,
                                         limit: nil,
                                         stream: .standardError,
-                                        sink: sink))
+                                        sink: sink,
+                                        silence: silence))
                             }
                             var captured: [UInt8] = []
                             for try await result in group where result.stream == .stdout {
@@ -1004,6 +1033,7 @@ extension CommandSpec {
 private enum TimedExecutionOutcome: Sendable {
     case command(Result<CommandResult, RuntimeExecutionFailure>)
     case deadline
+    case silent
 }
 
 private struct RuntimeExecutionFailure: Error, @unchecked Sendable {
@@ -1198,15 +1228,56 @@ package actor CommandOutputSink {
     }
 }
 
+/// How long a task may write nothing at all before the run stops waiting on it.
+///
+/// A task's output is read to end of file, and end of file needs every writer
+/// of the pipe to have closed it. A process that outlives the one this run
+/// started -- one it forked and left behind -- holds that descriptor open, so
+/// the read never ends even though the process being waited on has exited and
+/// been reaped. Nothing here can observe that: an execution offers its
+/// identifier and its streams, and its termination arrives as the return of the
+/// very read that is stuck.
+///
+/// So the bound is silence rather than elapsed time. A build of any length
+/// reports as it goes -- compiling, linking and resolving all print progress --
+/// and one that has printed nothing for an hour has stopped rather than slowed.
+/// A wall-clock bound cannot tell those apart, and the products here take hours
+/// when they are healthy.
+public let defaultOutputSilenceBound: Duration = .seconds(60 * 60)
+
+private final class OutputSilence: Sendable {
+    private let lastWrite = Mutex(ContinuousClock.now)
+
+    /// Shared by every stream of one execution, because a task is only quiet
+    /// when none of them is writing.
+    func noteWrite() {
+        lastWrite.withLock { $0 = ContinuousClock.now }
+    }
+
+    func awaitSilence(_ bound: Duration) async {
+        while !Task.isCancelled {
+            let idle = ContinuousClock.now - lastWrite.withLock { $0 }
+            guard idle < bound else { return }
+            do {
+                try await ContinuousClock().sleep(for: min(bound - idle, .seconds(60)))
+            } catch {
+                return
+            }
+        }
+    }
+}
+
 private func collect(
     _ sequence: SubprocessOutputSequence,
     limit: Int?,
     stream: TaskOutputStream,
-    sink: CommandOutputSink
+    sink: CommandOutputSink,
+    silence: OutputSilence?
 ) async throws -> [UInt8] {
     var captured: [UInt8] = []
     var exceededLimit = false
     for try await chunk in sequence {
+        silence?.noteWrite()
         let bytes = unsafe chunk.withUnsafeBytes { unsafe Array($0) }
         if let limit {
             let remaining = max(0, limit - captured.count)

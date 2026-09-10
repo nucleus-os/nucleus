@@ -558,3 +558,37 @@ private func openDescriptorCount() throws -> Int {
         atPath: descriptorDirectory
     ).count
 }
+
+@Test func aCommandThatGoesQuietIsStoppedRatherThanWaitedOn() async throws {
+    // Output then nothing. A task that has stopped and one that is working
+    // quietly are indistinguishable from here, so the bound is silence: a
+    // healthy build of any length reports as it goes.
+    let runtime = ColliderRuntime(outputSilenceBound: .seconds(2))
+    let started = ContinuousClock.now
+    let failure = await #expect(throws: (any Error).self) {
+        _ = try await runtime.execute(
+            CommandSpec(
+                executable: .named("sh"),
+                arguments: ["-c", "echo working; sleep 300"],
+                workingDirectory: FilePath("/tmp"),
+                environment: [:],
+                output: .captured(limit: 1 * 1_024 * 1_024)))
+    }
+    #expect(ContinuousClock.now - started < .seconds(60))
+    #expect(String(describing: try #require(failure)).contains("wrote nothing"))
+}
+
+@Test func aCommandThatKeepsReportingIsNotStopped() async throws {
+    // The bound must not fire on work that is simply long, which is why it
+    // measures silence and not duration.
+    let runtime = ColliderRuntime(outputSilenceBound: .seconds(3))
+    let result = try await runtime.execute(
+        CommandSpec(
+            executable: .named("sh"),
+            arguments: ["-c", "for i in 1 2 3 4 5 6; do echo tick; sleep 1; done"],
+            workingDirectory: FilePath("/tmp"),
+            environment: [:],
+            output: .captured(limit: 1 * 1_024 * 1_024)))
+    #expect(result.status == 0)
+    #expect(result.standardOutput.contains("tick"))
+}
