@@ -69,12 +69,19 @@ makes reading a single red sweep as one story a mistake.
 
 ### What makes it appear
 
-Both occurrences followed a change to the C and C++ flags every Linux SwiftPM
-invocation receives. That gives each of them a new identity, so eleven builds
-that are normally cache hits plan and compile back to back in one sweep. The
-fault has not been seen on a sweep where most lanes were clean. Treat a
-toolchain-flag change as the condition that makes it likely rather than as its
-cause.
+The first occurrences followed a change to the C and C++ flags every Linux
+SwiftPM invocation receives. That gives each of them a new identity, so eleven
+builds that are normally cache hits plan and compile back to back in one sweep.
+The fault has not been seen on a sweep where most lanes were clean.
+
+What matters is the count of Linux SwiftPM invocations planning in one sweep,
+not what raised it. A change that stopped keying identity on postconditions
+re-keyed every task in the graph rather than one lane's flags, and the two
+sweeps after it lost a build each -- different tasks, so the attribution rule
+below cleared the change itself -- while a third resumed past them and
+finished. Treat anything that invalidates Linux lanes in bulk as the condition
+that makes this likely, with a graph-wide re-key as its extreme, rather than as
+its cause.
 
 ### On recurrence
 
