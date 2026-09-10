@@ -566,6 +566,39 @@ trusting the run that produced it. A product cohort admitted for signing
 carries the digest a rebuild reproduces, and a cohort that fails to reproduce
 is refused regardless of which run produced it.
 
+Status: partly established, and by a mechanism that was not built for it.
+
+Thirty-six of the eighty-four cohorts the product store holds -- eighteen per
+architecture -- carry provenance from two independent producers against one
+manifest. That is a reproduction result rather than a coincidence of storage:
+publishing an identity that already exists compares the entire incoming
+manifest against the stored one, archive digest and every file digest included,
+and refuses a mismatch as an artifact that "already exists with a different
+manifest". Two productions of one cohort identity have therefore agreed byte
+for byte, and a third that disagreed would already be refused. The remaining
+forty-eight were published by one producer, so nothing has checked them.
+
+Two things separate that from the gate. The first is that the check is
+incidental: it fires only where a second producer happens to publish the same
+identity, so a cohort is verified by luck of scheduling rather than because
+anything asked. A single run cannot verify one deliberately, because
+`--verify-reproduction` compares productions under the SwiftPM scratch roots
+and stops there -- it reaches compiled products and never the packages
+assembled from them, which is what a cohort is.
+
+The second is that nothing yet refuses. Signing and release publication belong
+to the [Linux package distribution and update
+plan](linux-package-distribution-and-update-plan.md) and do not exist, so the
+clause about what cannot reach them has nothing to attach to. Recording a
+reproduction qualification before there is a consumer for it would be
+scaffolding, and the qualification record already carries a role, a capability,
+an evidence digest and a qualifier trust domain, so the shape is there when the
+consumer arrives.
+
+What this phase needs next is therefore the first gap and not the second:
+reproduction verification that reaches through packaging, so that one run can
+establish what two runs currently establish between them by accident.
+
 Gate: rebuilding an admitted cohort from its recorded source and toolchain
 reproduces its exact digests; a cohort whose rebuild diverges cannot reach
 signing or publication.
