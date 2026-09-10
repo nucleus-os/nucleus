@@ -487,14 +487,29 @@ than by keying, which is what makes reusing across selections safe, and which a
 weakened assertion no longer pays for with a rebuild. Declared output slots
 stay in identity: a slot is the contract other tasks reference by name.
 
+With that removed the pair measures, and it measures the same in both
+orderings. A protected-main sweep followed by a local verification of one
+revision reuses 130 of the selection's 160 tasks and executes 30; the reverse
+ordering reuses 130 and executes 30. Neither side executes a compilation the
+other performed -- no Swift package build, no Skia or native SDK, no React
+Native, no browser or AOSP compile appears on either list -- and the sweep that
+follows the other falls from twenty-six minutes to five and a half.
+
+The thirty are the same thirty each way, and each belongs to a category this
+gate already excludes: eight declared to run every time or discovered directly
+from one, two whose incrementality SwiftPM owns, two always-run test lowerings,
+the provenance-stamped source snapshot with the seven publication tasks beneath
+it, and the tests and release gates. What remains of Phase 4 is product-store
+digest agreement across the two checkouts.
+
 Byte-identity is the assertion, not identity equality. Equal identities that
 name unequal artifacts is the failure this plan exists to prevent, and only
 comparing the produced bytes distinguishes the two.
 
-Local-to-automated reuse on an identical effective dirty tree and product-store
-digest agreement across the two checkouts remain. The CI checkout is the
-supported second checkout on this host; the launcher deliberately admits no
-other local source location.
+Product-store digest agreement across the two checkouts remains, as does reuse
+on an identical effective dirty tree rather than a committed revision. The CI
+checkout is the supported second checkout on this host; the launcher
+deliberately admits no other local source location.
 
 Cross-machine reproduction was carried here as an acceptance clause and does
 not belong to this plan. This host is the sole CI builder and the primary
