@@ -608,19 +608,28 @@ against it. That is not a defect in the roots -- a declared output slot is the
 contract other tasks reference by name, and belongs in identity for the same
 reason the scratch does not.
 
-Forcing the tail to re-run in place does not reach it either. The packaging
-entrypoint's roots are the storage assertion and the storage retention, and
-`--rebuild` forces the tasks a selection names rather than everything beneath
-them, so the cohort upstream of those roots is reused however often it is asked
-for. No surface today re-assembles a cohort at an unchanged identity, which is
-exactly why the store's comparison has only ever been reached by a second
-producer arriving on its own.
+Forcing the tail to re-run in place did not reach it either, until the
+entrypoint named what it is for. Rebuilding forces the tasks a selection names
+rather than everything beneath them, and the packaging entrypoint named only
+its terminal storage tasks, so a request to rebuild the packages rebuilt none
+of them and the cohort upstream was reused however often it was asked for. The
+entrypoint now names the cohort and the publication that stores it as well.
+Reachability was never the only thing a root decides.
 
-The mechanism that is needed is therefore narrow: something that re-runs the
-packaging tail in place at its existing identity, so that publication meets the
-retained manifest and adjudicates. The comparison itself needs no new code --
-the store already refuses an identity whose manifest differs -- and it is the
-forcing, not the comparing, that is missing.
+That is the whole of the mechanism, because the comparison already existed.
+Asking for the rebuild re-assembles each cohort at the identity it already has,
+publication meets the manifest the store retained, and an identity that exists
+is refused unless every digest in it matches. Run against the store's
+forty-eight retained cohorts, both architectures re-assembled and republished
+and every identity kept its archive digest, so the cohorts reproduce -- asked
+for by one run, rather than waited for until a second producer happened to
+arrive.
+
+What remains is the refusal. Nothing consumes this yet, because signing and
+release publication are not built, and a reproduction qualification recorded
+before there is a consumer would be scaffolding. The record already carries a
+role, a capability, an evidence digest and a qualifier trust domain for when
+one exists.
 
 Gate: rebuilding an admitted cohort from its recorded source and toolchain
 reproduces its exact digests; a cohort whose rebuild diverges cannot reach

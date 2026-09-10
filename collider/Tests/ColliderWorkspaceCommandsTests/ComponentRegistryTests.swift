@@ -590,17 +590,30 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() async 
                 .readWrite,
                 scope: .output(sourceSnapshotOutput.removingLastComponent())))
             == true)
-    // Two roots rather than one. Retention consumes every publication and
-    // qualification, so the rest of the lane is reachable through it; the
-    // storage assertion consumes nothing on purpose, because what it inspects
-    // is the cohort a previous run left, and a dependency on this run's
-    // publication would move it to the end where it answers too late to be
-    // worth asking.
+    // Retention consumes every publication and qualification, so the rest of
+    // the lane is reachable through it; the storage assertion consumes nothing
+    // on purpose, because what it inspects is the cohort a previous run left,
+    // and a dependency on this run's publication would move it to the end
+    // where it answers too late to be worth asking.
+    //
+    // Reachability is not the only thing roots decide. Rebuilding forces what
+    // a selection names rather than everything beneath it, so the cohort and
+    // the publication that stores it are named too -- otherwise a request to
+    // rebuild the packages rebuilds none of them, and the delivery phase has
+    // no way to ask a cohort to re-assemble at the identity it already has.
     #expect(
-        selected == [
-            LinuxTaskIDs.packageStorageAssertion,
-            LinuxTaskIDs.packageStorageRetention,
-        ])
+        selected
+            == Set(
+                [
+                    LinuxTaskIDs.packageStorageAssertion,
+                    LinuxTaskIDs.packageStorageRetention,
+                ]
+                    + [PlatformArchitecture.arm64, .x86_64].flatMap {
+                        [
+                            LinuxTaskIDs.packageCohort($0),
+                            LinuxTaskIDs.packageProductPublication($0),
+                        ]
+                    }))
     let retention = try #require(
         catalog.tasks.first { $0.id == LinuxTaskIDs.packageStorageRetention })
     #expect(retention.action?.kind == "linux.retain-package-storage")
@@ -3796,4 +3809,34 @@ private func artifactInput(
     #expect(
         Set(snapshots.values).count == 1,
         "Ubuntu package snapshots disagree: \(snapshots.sorted { $0.key < $1.key })")
+}
+
+@Test
+func askingToRebuildThePackagesSelectsThePackages() async throws {
+    let catalog = try await sharedFixtureCatalog()
+    let selected = Set(
+        try ColliderPlanner().selectedTasks(
+            in: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    spelling: "linux-runtime",
+                    entrypoint: LinuxEntrypoints.packageRuntime)
+            ]))
+
+    // Rebuilding forces the tasks a selection names rather than everything
+    // beneath them. An entrypoint that named only its terminal storage tasks
+    // answered a request to rebuild the packages by rebuilding none of them,
+    // and the cohort upstream of them was reused however often it was asked
+    // for. Naming the cohort is also what lets the delivery phase ask whether
+    // one reproduces: it re-assembles at the identity it already has, and
+    // publication meets the manifest the store retained.
+    for architecture in [PlatformArchitecture.arm64, .x86_64] {
+        #expect(
+            selected.contains(
+                TaskID(rawValue: "linux.\(architecture.rawValue).package-cohort")))
+        #expect(
+            selected.contains(
+                TaskID(
+                    rawValue: "linux.\(architecture.rawValue).package-product-publication")))
+    }
 }

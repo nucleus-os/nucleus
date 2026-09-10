@@ -327,12 +327,26 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 configuration: runtimeArtifact)
             tasks.append(nativePackages.task)
             packagePublications.append(nativePackages)
+            // Named by this entrypoint, and not merely reached through it.
+            // Rebuilding forces the tasks a selection names rather than
+            // everything beneath them, so an entrypoint that named only the
+            // storage tasks answered a request to rebuild the packages by
+            // rebuilding none of them.
+            //
+            // Naming the cohort and the publication that stores it also gives
+            // the delivery phase the check it was missing. The cohort
+            // re-assembles at the identity it already has, publication meets
+            // the manifest the store retained, and an identity that already
+            // exists is refused unless every digest in it matches -- so asking
+            // for the rebuild is asking whether the cohort reproduces.
+            packageTasks.insert(nativePackages.task.id)
             let productPublication = try packageProductPublicationTask(
                 architecture: architecture,
                 lane: lane,
                 packages: nativePackages,
                 configuration: runtimeArtifact)
             tasks.append(productPublication.task)
+            packageTasks.insert(productPublication.task.id)
             let qualification = try packageQualificationTask(
                 architecture: architecture,
                 lane: lane,
