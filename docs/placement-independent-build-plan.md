@@ -519,11 +519,25 @@ second provenance can only attach where the bytes agreed, so those thirty-six
 are receipts rather than observations. The remaining forty-eight were produced
 by one side only.
 
-What is untested is the dirty tree. Both orderings above were measured on a
-committed revision, and a working tree with uncommitted changes is the case the
-gate's "one effective source" also covers. The CI checkout is the supported
-second checkout on this host; the launcher deliberately admits no other local
-source location.
+The dirty tree resolves to the same thing. A Linux product build's identity was
+read with an edit uncommitted, then with that identical content committed: 1505
+components, byte for byte the same, while the edit itself moved exactly one
+source-checkout digest against the unedited tree. Identity follows content and
+not the state of the index, so a revision built by a sweep is reusable by a
+working tree holding the same content, and the reverse.
+
+What a dirty tree contributes is bounded, and it was worth measuring rather
+than assuming. An edited document, and an untracked file anywhere outside a
+declared source root, leave every product identity untouched. An untracked file
+that Git ignores does too, even inside a source root. An untracked file that
+Git does not ignore, inside a source root, changes the identity -- which is
+correct rather than a leak: a package manager compiles what is on disk, and a
+source file someone has not committed yet is source. The boundary is the
+content of declared source roots, and it is the same boundary whether that
+content is committed.
+
+The CI checkout is the supported second checkout on this host; the launcher
+deliberately admits no other local source location.
 
 Cross-machine reproduction was carried here as an acceptance clause and does
 not belong to this plan. This host is the sole CI builder and the primary
