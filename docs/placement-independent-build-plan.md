@@ -599,6 +599,29 @@ What this phase needs next is therefore the first gap and not the second:
 reproduction verification that reaches through packaging, so that one run can
 establish what two runs currently establish between them by accident.
 
+Two ways of reaching it were tried and neither works, for reasons worth
+keeping. Producing into a sibling, which is how the scratch roots are verified,
+cannot be applied to the packaging roots: `${artifacts}/package-work/...`
+appears in the cohort's identity, so a moved root is a different cohort, and
+the second production would be published beside the first rather than compared
+against it. That is not a defect in the roots -- a declared output slot is the
+contract other tasks reference by name, and belongs in identity for the same
+reason the scratch does not.
+
+Forcing the tail to re-run in place does not reach it either. The packaging
+entrypoint's roots are the storage assertion and the storage retention, and
+`--rebuild` forces the tasks a selection names rather than everything beneath
+them, so the cohort upstream of those roots is reused however often it is asked
+for. No surface today re-assembles a cohort at an unchanged identity, which is
+exactly why the store's comparison has only ever been reached by a second
+producer arriving on its own.
+
+The mechanism that is needed is therefore narrow: something that re-runs the
+packaging tail in place at its existing identity, so that publication meets the
+retained manifest and adjudicates. The comparison itself needs no new code --
+the store already refuses an identity whose manifest differs -- and it is the
+forcing, not the comparing, that is missing.
+
 Gate: rebuilding an admitted cohort from its recorded source and toolchain
 reproduces its exact digests; a cohort whose rebuild diverges cannot reach
 signing or publication.
