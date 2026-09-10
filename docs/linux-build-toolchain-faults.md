@@ -1,9 +1,11 @@
 # Linux build toolchain faults
 
-Observations, not a plan. Each entry records a fault that originates below
-Collider -- in the Swift toolchain or its runtime inside a build container --
-so that a recurrence is recognised rather than re-diagnosed as a defect in
-whatever change happened to be in flight.
+Observations, not a plan. Each entry records a fault that is not the change
+that happened to be in flight when it appeared, so that a recurrence is
+recognised rather than re-diagnosed. Most originate below Collider, in the
+Swift toolchain or its runtime inside a build container. Where an entry has not
+established that, it says so, because a fault whose origin is open is exactly
+the one a second occurrence has to settle.
 
 ## SIGSEGV in libdispatch during SwiftBuild task planning
 
@@ -97,3 +99,47 @@ crash inside a container leaves no macOS crash report, so that in-log
 backtrace is the whole of the evidence, and the diagnostic bundle described in
 [CI diagnostic artifacts](ci-diagnostic-artifacts-contract.md) carries only
 what the stage log happened to receive.
+
+## SIGSEGV in a Linux test runner, origin not established
+
+`NucleusReactRuntimeFabricTests-test-runner` exited on signal 11 during a
+`swift.package.test` task, in a release build for `aarch64-unknown-linux-gnu`:
+
+```
+error: Process '…/NucleusReactRuntimeFabricTests-test-runner --skip …
+  --xunit-output …/xunit-29-NucleusReactRuntimeFabricTests.xml
+  --testing-library swift-testing' exited with unexpected signal code 11
+```
+
+The runner died mid-write, so its xUnit file was truncated and the driver
+reported a parse error -- "Premature end of data in tag testsuites" -- beside
+the signal. That parse error is a consequence and not a second fault.
+
+### Observed
+
+Once, in run `2026-09-09T05-40-51.737Z-72493` on revision `932d5b62`. Three
+suites were running concurrently in that binary, and five tests had started
+without reporting when it died, among them
+`fabricMeasurementRunsConcurrentlyThroughSendableManager` and
+`transactionsShareOneOrderedDrainPerBurst`.
+
+It has not recurred. The lane has executed successfully several times since,
+including under a full re-key that ran every task in the graph.
+
+### Why it is recorded separately
+
+It resembles the entry above and is not it. That one is `swift-package-manager`
+dying while planning a build; this is a test runner dying while executing one
+-- a different process in a different phase, and with no backtrace, where the
+other produced a complete one. The sweep that carried this crash also carried
+an unrelated hang whose cause was a test that forked and then recorded an
+expectation in the child, so reading one red sweep as one story would have
+attributed all of it to whichever cause was found first.
+
+### On recurrence
+
+What a second occurrence has to settle is whether this originates below
+Collider at all. The tests that never reported are concurrency tests, so a race
+in first-party code is as likely as a runtime fault, and nothing observed so
+far distinguishes them. Capture the stage log before rerunning: the signal line
+is the whole of the evidence today, and a backtrace would decide it.
